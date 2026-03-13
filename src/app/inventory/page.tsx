@@ -6,7 +6,7 @@ import { Modal } from '@/components/ui/modal'
 import { supabase } from '@/lib/supabase'
 import {
   ArrowDownCircle, ArrowUpCircle, Search, AlertTriangle,
-  Plus, Package, RefreshCw, ShieldAlert, ClipboardList,
+  Plus, Package, RefreshCw, ShieldAlert, ClipboardList, Edit2, ChevronDown, ChevronRight,
 } from 'lucide-react'
 
 /* ─── 타입 ──────────────────────────────────────────────────── */
@@ -63,6 +63,19 @@ export default function InventoryPage() {
   const [defectModal,    setDefectModal]    = useState(false)
   const [adjustModal,    setAdjustModal]    = useState(false)
 
+  // 버튼 로딩 상태
+  const [inSaving,     setInSaving]     = useState(false)
+  const [outSaving,    setOutSaving]    = useState(false)
+  const [defSaving,    setDefSaving]    = useState(false)
+  const [adjSaving,    setAdjSaving]    = useState(false)
+
+  // 날짜별 수정 모달
+  const [editDateModal, setEditDateModal]     = useState(false)
+  const [editDateKey,   setEditDateKey]       = useState('')
+  const [editDateRows,  setEditDateRows]      = useState<TxRecord[]>([])
+  const [editDateSaving,setEditDateSaving]    = useState(false)
+  const [expandedDates, setExpandedDates]     = useState<Set<string>>(new Set())
+
   // 공통 폼 상태
   const [selProduct, setSelProduct] = useState('')
   const [selOption,  setSelOption]  = useState('')
@@ -116,42 +129,37 @@ export default function InventoryPage() {
   /* ── 입고 등록 ── */
   const handleIn = async () => {
     if (!selectedProd || !selectedOpt || !qty) return
-    const n = Number(qty)
-    if (n <= 0) return
+    const n = Number(qty); if (n <= 0) return
+    setInSaving(true)
     await updateOption(selectedProd.id, selectedProd.options, selOption, o => ({
-      ...o,
-      received: (o.received || 0) + n,
-      current_stock: getStock(o) + n,
+      ...o, received: (o.received || 0) + n, current_stock: getStock(o) + n,
     }))
     addTx('in', selectedProd, selectedOpt, n, note)
-    setInModal(false); resetForm()
+    setInSaving(false); setInModal(false); resetForm()
   }
 
   /* ── 출고 등록 ── */
   const handleOut = async () => {
     if (!selectedProd || !selectedOpt || !qty) return
-    const n = Number(qty)
-    if (n <= 0) return
+    const n = Number(qty); if (n <= 0) return
+    setOutSaving(true)
     await updateOption(selectedProd.id, selectedProd.options, selOption, o => ({
-      ...o,
-      current_stock: Math.max(0, getStock(o) - n),
+      ...o, current_stock: Math.max(0, getStock(o) - n),
     }))
     addTx('out', selectedProd, selectedOpt, -n, note)
-    setOutModal(false); resetForm()
+    setOutSaving(false); setOutModal(false); resetForm()
   }
 
   /* ── 불량 등록 ── */
   const handleDefect = async () => {
     if (!selectedProd || !selectedOpt || !qty) return
-    const n = Number(qty)
-    if (n <= 0) return
+    const n = Number(qty); if (n <= 0) return
+    setDefSaving(true)
     await updateOption(selectedProd.id, selectedProd.options, selOption, o => ({
-      ...o,
-      current_stock: Math.max(0, getStock(o) - n),
-      defective: getDefective(o) + n,
+      ...o, current_stock: Math.max(0, getStock(o) - n), defective: getDefective(o) + n,
     }))
     addTx('defective', selectedProd, selectedOpt, -n, note || '불량 처리')
-    setDefectModal(false); resetForm()
+    setDefSaving(false); setDefectModal(false); resetForm()
   }
 
   /* ── 재고 등록 (직접 조정) ── */
@@ -164,8 +172,59 @@ export default function InventoryPage() {
     await updateOption(selectedProd.id, selectedProd.options, selOption, o => ({
       ...o, current_stock: newStock,
     }))
+    setAdjSaving(true)
     addTx('adjust', selectedProd, selectedOpt, delta, note || `재고 조정 (${prev}→${newStock})`)
-    setAdjustModal(false); resetForm()
+    setAdjSaving(false); setAdjustModal(false); resetForm()
+  }
+
+  /* ── 날짜별 그룹 처리 ── */
+  const txByDate = txList.reduce<Record<string, TxRecord[]>>((acc, tx) => {
+    const key = tx.date.slice(0, 10)
+    if (!acc[key]) acc[key] = []
+    acc[key].push(tx)
+    return acc
+  }, {})
+  const sortedDates = Object.keys(txByDate).sort((a, b) => b.localeCompare(a))
+
+  const openDateEdit = (dateKey: string) => {
+    setEditDateKey(dateKey)
+    setEditDateRows(txByDate[dateKey].map(r => ({ ...r })))
+    setEditDateModal(true)
+  }
+
+  const handleDateEditSave = async () => {
+    setEditDateSaving(true)
+    // 변경된 레코드에 대해 Supabase delta 처리
+    const origRows = txByDate[editDateKey] || []
+    for (const newRow of editDateRows) {
+      const orig = origRows.find(r => r.id === newRow.id)
+      if (!orig || (orig.qty === newRow.qty && orig.note === newRow.note && orig.type === newRow.type)) continue
+      const delta = newRow.qty - orig.qty
+      if (delta !== 0) {
+        // 재고에 delta 반영
+        const prod = products.find(p => p.code === newRow.product_code)
+        if (prod) {
+          await updateOption(prod.id, prod.options, newRow.option_name, o => ({
+            ...o,
+            current_stock: Math.max(0, getStock(o) + delta),
+          }))
+        }
+      }
+    }
+    const newList = txList.map(tx => {
+      const edited = editDateRows.find(r => r.id === tx.id)
+      return edited ?? tx
+    })
+    setTxList(newList); saveTx(newList)
+    setEditDateSaving(false); setEditDateModal(false)
+  }
+
+  const toggleDate = (key: string) => {
+    setExpandedDates(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key); else next.add(key)
+      return next
+    })
   }
 
   /* ── KPI 계산 ── */
@@ -375,42 +434,79 @@ export default function InventoryPage() {
 
         {/* ── 입출고 내역 탭 ── */}
         {tab==='tx' && (
-          <div className="pm-table-wrap">
-            <table className="pm-table">
-              <thead><tr>{['일시','유형','상품명','옵션명','바코드','수량','비고'].map(h=><th key={h}>{h}</th>)}</tr></thead>
-              <tbody>
-                {txList.length === 0 && (
-                  <tr><td colSpan={7} style={{ textAlign:'center', padding:'3rem 1rem', color:'#94a3b8' }}>
-                    <p style={{ fontSize:13.5, fontWeight:700 }}>입출고 내역이 없습니다</p>
-                  </td></tr>
-                )}
-                {txList.map(tx => {
-                  const ts = TX_STYLE[tx.type]
-                  return (
-                    <tr key={tx.id}>
-                      <td style={{ fontSize:11.5, color:'#94a3b8', whiteSpace:'nowrap' }}>
-                        {new Date(tx.date).toLocaleString('ko-KR', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit' })}
-                      </td>
-                      <td>
-                        <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, background:ts.bg, color:ts.color, padding:'3px 9px', borderRadius:99 }}>
-                          <span style={{ width:5,height:5,borderRadius:'50%',background:ts.dot,display:'inline-block' }}/>
-                          {ts.label}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight:800, color:'#1e293b', fontSize:13 }}>{tx.product_name}</td>
-                      <td style={{ fontSize:12.5, color:'#64748b' }}>{tx.option_name}</td>
-                      <td><span style={{ fontFamily:'monospace', fontSize:11, background:'#f1f5f9', color:'#475569', padding:'2px 6px', borderRadius:4 }}>{tx.barcode||'-'}</span></td>
-                      <td>
-                        <span style={{ fontSize:15, fontWeight:900, color: tx.qty > 0 ? '#059669' : '#dc2626' }}>
-                          {tx.qty > 0 ? `+${tx.qty}` : tx.qty}
-                        </span>
-                      </td>
-                      <td style={{ fontSize:12, color:'#64748b' }}>{tx.note}</td>
-                    </tr>
-                  )
-                })}
-              </tbody>
-            </table>
+          <div style={{ padding:'8px 0' }}>
+            {txList.length === 0 && (
+              <div style={{ textAlign:'center', padding:'3rem 1rem', color:'#94a3b8' }}>
+                <p style={{ fontSize:13.5, fontWeight:700 }}>입출고 내역이 없습니다</p>
+              </div>
+            )}
+            {sortedDates.map(dateKey => {
+              const dayTx = txByDate[dateKey]
+              const expanded = expandedDates.has(dateKey)
+              const inCount  = dayTx.filter(t => t.type === 'in').length
+              const outCount = dayTx.filter(t => t.type === 'out').length
+              const defCount = dayTx.filter(t => t.type === 'defective').length
+              const adjCount = dayTx.filter(t => t.type === 'adjust').length
+              return (
+                <div key={dateKey} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                  {/* 날짜 행 */}
+                  <div
+                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', background:'#f8fafc', cursor:'pointer' }}
+                    onClick={() => toggleDate(dateKey)}
+                  >
+                    {expanded ? <ChevronDown size={14} color="#94a3b8"/> : <ChevronRight size={14} color="#94a3b8"/>}
+                    <span style={{ fontSize:13, fontWeight:900, color:'#334155' }}>{dateKey}</span>
+                    <span style={{ fontSize:11.5, fontWeight:700, color:'#94a3b8' }}>총 {dayTx.length}건</span>
+                    <div style={{ display:'flex', gap:5 }}>
+                      {inCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#ecfdf5', color:'#15803d', padding:'2px 7px', borderRadius:5 }}>입고 {inCount}</span>}
+                      {outCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#fff1f2', color:'#be123c', padding:'2px 7px', borderRadius:5 }}>출고 {outCount}</span>}
+                      {defCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'2px 7px', borderRadius:5 }}>불량 {defCount}</span>}
+                      {adjCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#eff6ff', color:'#2563eb', padding:'2px 7px', borderRadius:5 }}>조정 {adjCount}</span>}
+                    </div>
+                    <div style={{ marginLeft:'auto' }}>
+                      <button
+                        onClick={e => { e.stopPropagation(); openDateEdit(dateKey) }}
+                        style={{ display:'flex', alignItems:'center', gap:4, background:'#eff6ff', color:'#2563eb', border:'none', borderRadius:7, padding:'4px 10px', fontSize:11.5, fontWeight:800, cursor:'pointer' }}
+                      ><Edit2 size={11}/>수정</button>
+                    </div>
+                  </div>
+                  {/* 상세 항목 */}
+                  {expanded && (
+                    <div className="pm-table-wrap" style={{ paddingLeft:16 }}>
+                      <table className="pm-table">
+                        <thead><tr>{['시간','유형','상품명','옵션명','바코드','수량','비고'].map(h=><th key={h}>{h}</th>)}</tr></thead>
+                        <tbody>
+                          {dayTx.map(tx => {
+                            const ts = TX_STYLE[tx.type]
+                            return (
+                              <tr key={tx.id}>
+                                <td style={{ fontSize:11, color:'#94a3b8', whiteSpace:'nowrap' }}>
+                                  {new Date(tx.date).toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' })}
+                                </td>
+                                <td>
+                                  <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, background:ts.bg, color:ts.color, padding:'2px 8px', borderRadius:99 }}>
+                                    <span style={{ width:5,height:5,borderRadius:'50%',background:ts.dot,display:'inline-block' }}/>{ts.label}
+                                  </span>
+                                </td>
+                                <td style={{ fontWeight:800, color:'#1e293b', fontSize:12.5 }}>{tx.product_name}</td>
+                                <td style={{ fontSize:12, color:'#64748b' }}>{tx.option_name}</td>
+                                <td><span style={{ fontFamily:'monospace', fontSize:11, background:'#f1f5f9', color:'#475569', padding:'2px 6px', borderRadius:4 }}>{tx.barcode||'-'}</span></td>
+                                <td>
+                                  <span style={{ fontSize:14, fontWeight:900, color: tx.qty > 0 ? '#059669' : '#dc2626' }}>
+                                    {tx.qty > 0 ? `+${tx.qty}` : tx.qty}
+                                  </span>
+                                </td>
+                                <td style={{ fontSize:12, color:'#64748b' }}>{tx.note}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
@@ -423,8 +519,8 @@ export default function InventoryPage() {
         <CommonForm type="in"/>
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
           <Button variant="outline" onClick={() => { setInModal(false); resetForm() }}>취소</Button>
-          <Button onClick={handleIn} style={{ background:'#059669', borderColor:'#059669' }}>
-            <ArrowDownCircle size={13}/>입고 처리 완료
+          <Button onClick={handleIn} disabled={inSaving} style={{ background:'#059669', borderColor:'#059669', opacity: inSaving ? 0.6 : 1 }}>
+            <ArrowDownCircle size={13}/>{inSaving ? '처리 중...' : '입고 처리 완료'}
           </Button>
         </div>
       </Modal>
@@ -437,8 +533,8 @@ export default function InventoryPage() {
         <CommonForm type="out"/>
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
           <Button variant="outline" onClick={() => { setOutModal(false); resetForm() }}>취소</Button>
-          <Button onClick={handleOut} style={{ background:'#dc2626', borderColor:'#dc2626' }}>
-            <ArrowUpCircle size={13}/>출고 처리 완료
+          <Button onClick={handleOut} disabled={outSaving} style={{ background:'#dc2626', borderColor:'#dc2626', opacity: outSaving ? 0.6 : 1 }}>
+            <ArrowUpCircle size={13}/>{outSaving ? '처리 중...' : '출고 처리 완료'}
           </Button>
         </div>
       </Modal>
@@ -451,8 +547,8 @@ export default function InventoryPage() {
         <CommonForm type="defective"/>
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
           <Button variant="outline" onClick={() => { setDefectModal(false); resetForm() }}>취소</Button>
-          <Button onClick={handleDefect} style={{ background:'#ea580c', borderColor:'#ea580c' }}>
-            <ShieldAlert size={13}/>불량 등록 완료
+          <Button onClick={handleDefect} disabled={defSaving} style={{ background:'#ea580c', borderColor:'#ea580c', opacity: defSaving ? 0.6 : 1 }}>
+            <ShieldAlert size={13}/>{defSaving ? '처리 중...' : '불량 등록 완료'}
           </Button>
         </div>
       </Modal>
@@ -465,8 +561,49 @@ export default function InventoryPage() {
         <CommonForm type="adjust"/>
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
           <Button variant="outline" onClick={() => { setAdjustModal(false); resetForm() }}>취소</Button>
-          <Button onClick={handleAdjust}>
-            <Plus size={13}/>재고 조정 완료
+          <Button onClick={handleAdjust} disabled={adjSaving} style={{ opacity: adjSaving ? 0.6 : 1 }}>
+            <Plus size={13}/>{adjSaving ? '처리 중...' : '재고 조정 완료'}
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ── 날짜별 내역 수정 모달 ── */}
+      <Modal isOpen={editDateModal} onClose={() => setEditDateModal(false)} title={`내역 수정 — ${editDateKey}`} size="xl">
+        <div style={{ marginBottom:12, padding:'8px 12px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, fontSize:12, fontWeight:700, color:'#b45309' }}>
+          ⚠️ 수량 수정 시 해당 변동분이 상품의 현재고에 반영됩니다.
+        </div>
+        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+          {editDateRows.map((row, idx) => {
+            const ts = TX_STYLE[row.type]
+            return (
+              <div key={row.id} style={{ display:'grid', gridTemplateColumns:'80px 80px 1fr 1fr 60px 1fr', gap:8, alignItems:'center', padding:'8px 10px', background:'#f8fafc', borderRadius:8, border:'1px solid #f1f5f9' }}>
+                <span style={{ fontSize:11, color:'#94a3b8' }}>{new Date(row.date).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>
+                <div>
+                  <select value={row.type} onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, type: e.target.value as TxType} : r))}
+                    style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'3px 6px', fontSize:11, fontWeight:700, background:ts.bg, color:ts.color, width:'100%' }}>
+                    {Object.entries(TX_STYLE).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                  </select>
+                </div>
+                <span style={{ fontSize:12.5, fontWeight:800, color:'#1e293b' }}>{row.product_name}</span>
+                <span style={{ fontSize:12, color:'#64748b' }}>{row.option_name}</span>
+                <div>
+                  <input type="number" value={row.qty}
+                    onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, qty:Number(e.target.value)} : r))}
+                    style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 6px', fontSize:13, fontWeight:800, textAlign:'center', outline:'none' }}
+                  />
+                </div>
+                <input value={row.note} placeholder="비고"
+                  onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, note:e.target.value} : r))}
+                  style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 8px', fontSize:12, outline:'none', width:'100%' }}
+                />
+              </div>
+            )
+          })}
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+          <Button variant="outline" onClick={() => setEditDateModal(false)}>취소</Button>
+          <Button onClick={handleDateEditSave} disabled={editDateSaving} style={{ opacity: editDateSaving ? 0.6 : 1 }}>
+            {editDateSaving ? '저장 중...' : '저장하기'}
           </Button>
         </div>
       </Modal>

@@ -25,7 +25,8 @@ type CostCurrency  = 'KRW' | 'CNY'
 
 interface ProductOption {
   name: string
-  chinese_name: string  // 중국명
+  korean_name: string    // 한글 색상명 (자동입력)
+  chinese_name: string   // 중국명
   barcode: string
   image: string
   ordered: number
@@ -53,6 +54,23 @@ const DEF_BASIC_INFO: BasicInfo = { title:'', brand:'', origin:'', manufacturer:
 
 const CNY_TO_KRW = 210
 const DEFAULT_CATS = ['전체', '가방', '의류', '잡화']
+
+/* ─── 옵션 영문 코드 → 한글 색상명 매핑표 ─────────────────────── */
+const OPT_COLOR_MAP: Record<string, string> = {
+  BD:'버건디', BE:'베이지', BG:'볼주그린', BI:'볼주인디고', BK:'블랙', BL:'블루',
+  BN:'볼루그린', BR:'브라운', CA:'자갈', CB:'코발트블루', CH:'조셋', CL:'스빌',
+  CM:'카멜', CO:'코코아', CP:'체리핑크', CR:'크림', DB:'다크브라운', DE:'다크베이지',
+  DG:'다크카키', DI:'다크인디고', DN:'다크그린', DO:'다크올리브', DP:'다크핑크',
+  DU:'다크블루', GN:'그린', GO:'골드', GP:'그래파이트', GR:'그레이', IV:'아이보리',
+  KH:'카키', KN:'카키브라운', LB:'라이트브라운', LE:'레몬', LG:'라이트그레이',
+  LK:'라이트카키', LN:'라이트민트', LO:'라이트블루', LP:'라이트핑크', LU:'라이트블루',
+  LV:'라이트바이올렛', MC:'모카', MG:'밀리터리그레이', MN:'민트', MT:'머스타드',
+  MU:'멀티', NA:'네이비', OC:'올리브그린', OL:'올리브', OR:'오렌지', OT:'오트밀',
+  PC:'피치', PH:'핑크', PK:'핑크', RB:'레드브라운', RD:'레드', SK:'스카이블루',
+  SI:'실버', SL:'실버', VI:'바이올렛', WH:'화이트', WM:'화이트올란', WN:'와인',
+  YC:'옐로우크림', YE:'옐로우',
+}
+const getKoreanColor = (code: string) => OPT_COLOR_MAP[code.trim().toUpperCase()] || ''
 
 /* ─── 상태 맵 ───────────────────────────────────────────────── */
 const ST: Record<ProductStatus, { label:string; bg:string; color:string; dot:string }> = {
@@ -203,7 +221,7 @@ function ChannelPriceModal({
 const genBarcode = (code: string, opt: string) =>
   code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
 
-const INIT_OPT  = { name:'', chinese_name:'', barcode:'', image:'' }
+const INIT_OPT  = { name:'', korean_name:'', chinese_name:'', barcode:'', image:'' }
 const INIT_MALL_CAT = { channel:'', category:'', category_code:'' }
 const INIT_FORM = {
   code:'', name:'', category:'', supplier:'', loca:'',
@@ -241,7 +259,10 @@ function rowToProduct(row: any): Product {
     cost_currency: (row.cost_currency ?? 'CNY') as CostCurrency,
     status: (row.status ?? 'active') as ProductStatus,
     supplier: row.supplier ?? '',
-    options: (row.options ?? []) as ProductOption[],
+    options: ((row.options ?? []) as ProductOption[]).map(o => ({
+      ...o,
+      korean_name: o.korean_name || getKoreanColor(o.name),
+    })),
     channel_prices: (row.channel_prices ?? []) as ChannelPrice[],
     mall_categories: (row.mall_categories ?? []) as MallCategory[],
     basic_info: (row.basic_info ?? null) as BasicInfo | null,
@@ -284,7 +305,7 @@ export default function ProductsPage() {
   const handleOptImage  = useOptImageUpload(setForm)
 
   // 수정 폼 상태
-  type EditOptRow = { name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number; current_stock?:number; defective?:number }
+  type EditOptRow = { name:string; korean_name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number; current_stock?:number; defective?:number }
   type EditFormState = {
     code:string; name:string; category:string; newCat:string; supplier:string; loca:string
     cost_price:string; cost_currency:CostCurrency; status:ProductStatus; options:EditOptRow[]
@@ -351,11 +372,15 @@ export default function ProductsPage() {
     setCatDeleteTarget(null)
   }
 
+  const [basicInfoSaving, setBasicInfoSaving] = useState(false)
+
   /* ── 기본정보 저장 ── */
   const handleBasicInfoSave = async () => {
     if (!basicInfoTarget) return
+    setBasicInfoSaving(true)
     const payload = { basic_info: basicInfoForm, status: 'ready_to_ship' as ProductStatus }
     const { error } = await supabase.from('pm_products').update(payload).eq('id', basicInfoTarget.id)
+    setBasicInfoSaving(false)
     if (error) { console.error('기본정보 저장 오류:', error); return }
     setProducts(prev => prev.map(p => p.id === basicInfoTarget.id ? { ...p, ...payload } : p))
     setBasicInfoTarget(null)
@@ -369,7 +394,8 @@ export default function ProductsPage() {
       cost_price: String(p.cost_price), cost_currency: p.cost_currency,
       status: p.status,
       options: p.options.map(o => ({
-        name: o.name, chinese_name: o.chinese_name || '',
+        name: o.name, korean_name: o.korean_name || getKoreanColor(o.name),
+        chinese_name: o.chinese_name || '',
         barcode: o.barcode, image: o.image,
         ordered: o.ordered, received: o.received, sold: o.sold,
         current_stock: o.current_stock, defective: o.defective,
@@ -378,17 +404,22 @@ export default function ProductsPage() {
     setIsEdit(p)
   }
 
+  const [editSaving, setEditSaving] = useState(false)
+
   /* ── 수정 저장 ── */
   const handleEditSave = async () => {
     if (!isEdit || !editForm) return
     const cat = editForm.category === '__new__' ? editForm.newCat.trim() : editForm.category
     if (!editForm.code || !editForm.name || !cat) return
+    setEditSaving(true)
     const options: ProductOption[] = editForm.options.filter(o => o.name).map(o => ({
-      name: o.name, chinese_name: o.chinese_name,
+      name: o.name, korean_name: o.korean_name || getKoreanColor(o.name),
+      chinese_name: o.chinese_name,
       barcode: o.barcode || genBarcode(editForm.code, o.name),
       image: o.image,
-      ordered: o.ordered, received: o.received, sold: o.sold,
-      current_stock: o.current_stock, defective: o.defective,
+      ordered: Number(o.ordered) || 0, received: Number(o.received) || 0, sold: Number(o.sold) || 0,
+      current_stock: o.current_stock !== undefined ? Number(o.current_stock) : undefined,
+      defective: o.defective !== undefined ? Number(o.defective) : undefined,
     }))
     const payload = {
       code: editForm.code, name: editForm.name, category: cat, loca: editForm.loca,
@@ -398,6 +429,7 @@ export default function ProductsPage() {
       options,
     }
     const { error } = await supabase.from('pm_products').update(payload).eq('id', isEdit.id)
+    setEditSaving(false)
     if (error) { console.error('수정 오류:', error); return }
     setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
     if (cat && !DEFAULT_CATS.includes(cat) && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
@@ -434,6 +466,7 @@ export default function ProductsPage() {
     setAddSubmitting(true)
     const options: ProductOption[] = form.options.filter(o => o.name.trim()).map(o => ({
       name: o.name,
+      korean_name: o.korean_name || getKoreanColor(o.name),
       chinese_name: o.chinese_name,
       barcode: o.barcode || genBarcode(form.code, o.name),
       image: o.image,
@@ -739,7 +772,14 @@ export default function ProductsPage() {
                               }
                             </div>
                             <span style={{ display:'flex', flexDirection:'column', gap:1, overflow:'hidden' }}>
-                              <span style={{ fontSize:12, fontWeight:800, color: optZero ? '#94a3b8' : '#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{opt.name}</span>
+                              <span style={{ display:'flex', alignItems:'center', gap:4, overflow:'hidden' }}>
+                                <span style={{ fontSize:12, fontWeight:800, color: optZero ? '#94a3b8' : '#334155', flexShrink:0 }}>{opt.name}</span>
+                                {(opt.korean_name || getKoreanColor(opt.name)) && (
+                                  <span style={{ fontSize:11, fontWeight:700, color:'#2563eb', background:'#eff6ff', padding:'0px 5px', borderRadius:4, flexShrink:0 }}>
+                                    {opt.korean_name || getKoreanColor(opt.name)}
+                                  </span>
+                                )}
+                              </span>
                               {opt.chinese_name && <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{opt.chinese_name}</span>}
                             </span>
                             <span style={{ fontFamily:'monospace', fontSize:10.5, color:'#1e293b', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{opt.barcode || '-'}</span>
@@ -990,15 +1030,24 @@ export default function ProductsPage() {
                         onChange={e => { const file = e.target.files?.[0]; if(file) handleOptImage(i, file) }} />
                     </label>
                   </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
                     <div>
-                      <Label>옵션명</Label>
+                      <Label>옵션코드 (영문)</Label>
                       <Input placeholder="BE" value={opt.name}
                         onChange={e => {
+                          const val = e.target.value
+                          const auto = getKoreanColor(val)
                           const o=[...form.options]
-                          o[i]={...o[i],name:e.target.value,barcode:genBarcode(form.code,e.target.value)}
+                          o[i]={...o[i], name:val, korean_name: auto || o[i].korean_name, barcode:genBarcode(form.code,val)}
                           setForm(f=>({...f,options:o}))
                         }}
+                      />
+                    </div>
+                    <div>
+                      <Label>한글명 (자동입력)</Label>
+                      <Input placeholder="베이지" value={opt.korean_name}
+                        style={{ background: opt.korean_name ? '#f0fdf4' : '#fafbfc' }}
+                        onChange={e => { const o=[...form.options];o[i]={...o[i],korean_name:e.target.value};setForm(f=>({...f,options:o}))}}
                       />
                     </div>
                     <div>
@@ -1271,15 +1320,23 @@ export default function ProductsPage() {
                         />
                       </label>
                     </div>
-                    {/* 옵션명 + 중국명 */}
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    {/* 옵션명 + 한글명 + 중국명 */}
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
                       <div>
-                        <Label>옵션명</Label>
+                        <Label>옵션코드 (영문)</Label>
                         <Input placeholder="BE" value={opt.name}
                           onChange={e => {
                             const nm = e.target.value
-                            setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, name:nm, barcode:genBarcode(f.code, nm)} : o) }) : f)
+                            const auto = getKoreanColor(nm)
+                            setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, name:nm, korean_name: auto || o.korean_name, barcode:genBarcode(f.code, nm)} : o) }) : f)
                           }}
+                        />
+                      </div>
+                      <div>
+                        <Label>한글명 (자동입력)</Label>
+                        <Input placeholder="베이지" value={opt.korean_name}
+                          style={{ background: opt.korean_name ? '#f0fdf4' : '#fafbfc' }}
+                          onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, korean_name:e.target.value} : o) }) : f)}
                         />
                       </div>
                       <div>
@@ -1305,18 +1362,34 @@ export default function ProductsPage() {
                       )}
                     </div>
                   </div>
-                  {/* 재고 현황 표시 (읽기 전용) */}
-                  <div style={{ display:'flex', gap:12, marginTop:10, padding:'8px 12px', background:'#f8fafc', borderRadius:8 }}>
-                    {([['발주',opt.ordered,'#6366f1'],['입고',opt.received,'#0ea5e9'],['판매',optSold(opt),'#64748b'],['현재고',optStock(opt),'#059669'],['불량',optDefective(opt),'#dc2626']] as [string,number,string][]).map(([lbl,val,clr])=>(
-                      <div key={lbl} style={{ textAlign:'center' }}>
-                        <p style={{ fontSize:10, fontWeight:800, color: lbl==='불량'?'#fca5a5':'#94a3b8' }}>{lbl}</p>
-                        <p style={{ fontSize:14, fontWeight:900, color:clr }}>{val}</p>
+                  {/* 수량 직접 수정 */}
+                  <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8, marginTop:10 }}>
+                    {([
+                      ['발주', 'ordered', '#6366f1'],
+                      ['입고', 'received', '#0ea5e9'],
+                      ['현재고', 'current_stock', '#059669'],
+                      ['불량', 'defective', '#dc2626'],
+                    ] as [string, keyof typeof opt, string][]).map(([lbl, field, clr]) => (
+                      <div key={lbl}>
+                        <p style={{ fontSize:10, fontWeight:800, color:'#94a3b8', marginBottom:4 }}>{lbl}</p>
+                        <input
+                          type="number" min="0"
+                          value={opt[field] as number ?? 0}
+                          onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, [field]: Number(e.target.value)} : o) }) : f)}
+                          style={{ width:'100%', border:`1.5px solid ${clr}44`, borderRadius:8, padding:'5px 8px', fontSize:13, fontWeight:800, color:clr, background:`${clr}0a`, outline:'none', textAlign:'center' }}
+                        />
                       </div>
                     ))}
+                    <div>
+                      <p style={{ fontSize:10, fontWeight:800, color:'#64748b', marginBottom:4 }}>판매 (자동)</p>
+                      <div style={{ border:'1.5px solid #e2e8f0', borderRadius:8, padding:'5px 8px', fontSize:13, fontWeight:800, color:'#64748b', background:'#f8fafc', textAlign:'center' }}>
+                        {Math.max(0, (opt.received||0) - (opt.current_stock ?? Math.max(0,(opt.received||0)-(opt.sold||0))))}
+                      </div>
+                    </div>
                   </div>
                 </div>
               ))}
-              <button onClick={() => setEditForm(f => f ? ({ ...f, options:[...f.options,{name:'',chinese_name:'',barcode:'',image:'',ordered:0,received:0,sold:0,current_stock:0,defective:0}] }) : f)}
+              <button onClick={() => setEditForm(f => f ? ({ ...f, options:[...f.options,{name:'',korean_name:'',chinese_name:'',barcode:'',image:'',ordered:0,received:0,sold:0,current_stock:0,defective:0}] }) : f)}
                 style={{ fontSize:12,fontWeight:800,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
                 <Plus size={12}/>옵션 추가
               </button>
@@ -1324,8 +1397,10 @@ export default function ProductsPage() {
           </div>
 
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-            <Button variant="outline" onClick={() => { setIsEdit(null); setEditForm(null) }}>취소</Button>
-            <Button onClick={handleEditSave}>저장하기</Button>
+            <Button variant="outline" onClick={() => { setIsEdit(null); setEditForm(null); setEditSaving(false) }}>취소</Button>
+            <Button onClick={handleEditSave} disabled={editSaving} style={{ opacity: editSaving ? 0.6 : 1 }}>
+              {editSaving ? '저장 중...' : '저장하기'}
+            </Button>
           </div>
         </Modal>
       )}
@@ -1374,8 +1449,8 @@ export default function ProductsPage() {
           </div>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
             <Button variant="outline" onClick={() => setBasicInfoTarget(null)}>취소</Button>
-            <Button onClick={handleBasicInfoSave} style={{ background:'#7e22ce', borderColor:'#7e22ce' }}>
-              저장 (전송준비로 변경)
+            <Button onClick={handleBasicInfoSave} disabled={basicInfoSaving} style={{ background:'#7e22ce', borderColor:'#7e22ce', opacity: basicInfoSaving ? 0.6 : 1 }}>
+              {basicInfoSaving ? '저장 중...' : '저장 (전송준비로 변경)'}
             </Button>
           </div>
         </Modal>
