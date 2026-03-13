@@ -277,6 +277,7 @@ export default function ProductsPage() {
   const [deletedCats, setDeletedCats]     = useState<string[]>([])
 
   const [form, setForm] = useState(INIT_FORM)
+  const [addErrors, setAddErrors] = useState<Set<string>>(new Set())
   const [loading, setLoading] = useState(true)
   const handleOptImage  = useOptImageUpload(setForm)
 
@@ -421,7 +422,12 @@ export default function ProductsPage() {
 
   const handleAdd = async () => {
     const cat = form.category === '__new__' ? form.newCat : form.category
-    if (!form.name || !form.code || !cat) return
+    const errors = new Set<string>()
+    if (!form.code) errors.add('code')
+    if (!form.name) errors.add('name')
+    if (!cat) errors.add('category')
+    if (errors.size > 0) { setAddErrors(errors); return }
+    setAddErrors(new Set())
     const options: ProductOption[] = form.options.filter(o => o.name).map(o => ({
       name: o.name,
       chinese_name: o.chinese_name,
@@ -862,31 +868,47 @@ export default function ProductsPage() {
       </div>
 
       {/* ── 상품 등록 모달 ── */}
-      <Modal isOpen={isAdd} onClose={() => setIsAdd(false)} title="상품 등록" size="xl">
+      <Modal isOpen={isAdd} onClose={() => { setIsAdd(false); setAddErrors(new Set()) }} title="상품 등록" size="xl">
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
           <div style={{ gridColumn:'1/-1' }}>
             <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', paddingBottom:6, borderBottom:'1px solid #eff6ff', marginBottom:10 }}>📦 기본 정보</p>
           </div>
 
-          <div><Label>상품코드 *</Label><Input placeholder="WA5AC001" value={form.code}
-            onChange={e => {
-              const newCode = e.target.value
-              setForm(f => ({
-                ...f,
-                code: newCode,
-                options: f.options.map(o => ({ ...o, barcode: genBarcode(newCode, o.name) })),
-              }))
-            }}
-          /></div>
-          <div><Label>상품명 *</Label><Input placeholder="상품명 입력" value={form.name} onChange={e => setForm(f => ({...f,name:e.target.value}))}/></div>
+          <div>
+            <Label>상품코드 *</Label>
+            <Input placeholder="WA5AC001" value={form.code}
+              style={addErrors.has('code') ? { borderColor:'#ef4444', outline:'none' } : undefined}
+              onChange={e => {
+                const newCode = e.target.value
+                setAddErrors(prev => { const n = new Set(prev); n.delete('code'); return n })
+                setForm(f => ({
+                  ...f,
+                  code: newCode,
+                  options: f.options.map(o => ({ ...o, barcode: genBarcode(newCode, o.name) })),
+                }))
+              }}
+            />
+            {addErrors.has('code') && <p style={{ fontSize:11, color:'#ef4444', marginTop:3 }}>상품코드를 입력해주세요</p>}
+          </div>
+          <div>
+            <Label>상품명 *</Label>
+            <Input placeholder="상품명 입력" value={form.name}
+              style={addErrors.has('name') ? { borderColor:'#ef4444', outline:'none' } : undefined}
+              onChange={e => { setAddErrors(prev => { const n = new Set(prev); n.delete('name'); return n }); setForm(f => ({...f,name:e.target.value})) }}
+            />
+            {addErrors.has('name') && <p style={{ fontSize:11, color:'#ef4444', marginTop:3 }}>상품명을 입력해주세요</p>}
+          </div>
 
           <div>
             <Label>카테고리 *</Label>
-            <Select className="w-full" value={form.category} onChange={e => setForm(f => ({...f,category:e.target.value,newCat:''}))}>
+            <Select className="w-full" value={form.category}
+              style={addErrors.has('category') ? { borderColor:'#ef4444', outline:'none' } : undefined}
+              onChange={e => { setAddErrors(prev => { const n = new Set(prev); n.delete('category'); return n }); setForm(f => ({...f,category:e.target.value,newCat:''})) }}>
               <option value="">선택하세요</option>
               {allCats.filter(c => c!=='전체').map(c => <option key={c}>{c}</option>)}
               <option value="__new__">+ 새 카테고리 추가</option>
             </Select>
+            {addErrors.has('category') && <p style={{ fontSize:11, color:'#ef4444', marginTop:3 }}>카테고리를 선택해주세요</p>}
             {form.category==='__new__' && (
               <Input style={{ marginTop:6 }} placeholder="새 카테고리명" value={form.newCat} onChange={e => setForm(f => ({...f,newCat:e.target.value}))}/>
             )}
@@ -1035,7 +1057,7 @@ export default function ProductsPage() {
         </div>
 
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-          <Button variant="outline" onClick={() => setIsAdd(false)}>취소</Button>
+          <Button variant="outline" onClick={() => { setIsAdd(false); setAddErrors(new Set()) }}>취소</Button>
           <Button onClick={handleAdd}>등록하기</Button>
         </div>
       </Modal>

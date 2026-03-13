@@ -16,6 +16,7 @@ const pageTitles: Record<string, { title: string; desc: string }> = {
   '/shipping':  { title: '배송·송장', desc: '배송 현황 및 송장번호 관리' },
   '/channels':  { title: '쇼핑몰 관리', desc: '쇼핑몰 API 연동 및 카테고리 설정' },
   '/analytics': { title: '통계·분석', desc: '매출 및 상품별 판매 분석' },
+  '/mapping':   { title: '매핑관리',  desc: '쇼핑몰 상품 매핑 관리' },
   '/settings':  { title: '설정',     desc: '시스템 환경설정' },
 }
 

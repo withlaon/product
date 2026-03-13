@@ -1,6 +1,6 @@
 'use client'
 import { X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
@@ -17,6 +17,8 @@ const sizeMap = { sm: 480, md: 560, lg: 720, xl: 900 }
 
 export function Modal({ isOpen, onClose, title, children, className, size = 'md' }: ModalProps) {
   const [mounted, setMounted] = useState(false)
+  // 드래그 시작이 백드롭인지 추적 (입력칸 드래그→백드롭 해제 방지)
+  const mouseDownOnBackdrop = useRef(false)
 
   useEffect(() => { setMounted(true) }, [])
 
@@ -34,7 +36,8 @@ export function Modal({ isOpen, onClose, title, children, className, size = 'md'
 
   return createPortal(
     <div
-      onClick={onClose}
+      onMouseDown={e => { mouseDownOnBackdrop.current = e.target === e.currentTarget }}
+      onClick={e => { if (e.target === e.currentTarget && mouseDownOnBackdrop.current) onClose() }}
       style={{
         position: 'fixed',
         inset: 0,
