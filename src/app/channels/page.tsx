@@ -3,7 +3,7 @@ import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
-import { RefreshCw, Settings, Zap, Plus, CheckCircle2, XCircle, Unlink, Tag, Truck, Search, X } from 'lucide-react'
+import { RefreshCw, Settings, Zap, Plus, CheckCircle2, Unlink, Tag, Truck, Search, X, BookOpen } from 'lucide-react'
 
 /* ─── 전체 쇼핑몰 정의 ────────────────────────────────────────── */
 const ALL_MALLS = [
@@ -61,12 +61,89 @@ const MALL_CATS: Record<string, string[]> = {
   toss:       ['패션의류', '패션잡화'],
 }
 
+/* ─── 쇼핑몰별 API 입력 필드 정의 ───────────────────────────── */
+type ApiField = { key: string; label: string; placeholder: string; type: 'text'|'password' }
+
+const MALL_API_FIELDS: Record<string, ApiField[]> = {
+  cafe24: [
+    { key:'seller_id',     label:'쇼핑몰 ID',     placeholder:'카페24 쇼핑몰 ID',        type:'text' },
+    { key:'api_secret',    label:'패스워드',       placeholder:'카페24 관리자 패스워드',   type:'password' },
+    { key:'site_name',     label:'사이트명',       placeholder:'예) myshop (영문)',        type:'text' },
+    { key:'refresh_token', label:'Refresh Token', placeholder:'OAuth Refresh Token 입력', type:'password' },
+    { key:'access_key',    label:'Access Key',    placeholder:'발급받은 Access Key 입력', type:'password' },
+  ],
+}
+
+const DEFAULT_API_FIELDS: ApiField[] = [
+  { key:'seller_id',  label:'판매자 ID / 계정', placeholder:'판매자 ID 또는 이메일', type:'text' },
+  { key:'api_key',    label:'API Key',          placeholder:'API Key 입력',          type:'password' },
+  { key:'api_secret', label:'API Secret',       placeholder:'API Secret 입력',       type:'password' },
+]
+
+/* ─── 쇼핑몰 연동방법 안내 가이드 ────────────────────────────── */
+const MALL_GUIDES: Record<string, { title:string; steps:string[]; links:{label:string; url:string}[] }> = {
+  cafe24: {
+    title: '카페24 API 연동 방법',
+    steps: [
+      '① 카페24 관리자 센터(admin.cafe24.com)에 로그인합니다.',
+      '② 상단 메뉴에서 [앱스토어] → [개발자센터]로 이동합니다.',
+      '③ [내 앱 관리] → [앱 만들기]를 클릭하여 새 앱을 생성합니다.',
+      '④ 앱 기본 정보(이름, 설명)와 Redirect URL을 입력하고 저장합니다.',
+      '⑤ 생성된 앱의 [클라이언트 아이디 / 시크릿]을 복사합니다.',
+      '⑥ OAuth 2.0 인증 흐름으로 Authorization Code를 발급받습니다.',
+      '  → https://{사이트명}.cafe24api.com/api/v2/oauth/authorize',
+      '⑦ Authorization Code로 Access Token과 Refresh Token을 발급받습니다.',
+      '  → POST https://{사이트명}.cafe24api.com/api/v2/oauth/token',
+      '⑧ 발급된 쇼핑몰 ID, 패스워드, 사이트명, Refresh Token, Access Key를 위 입력란에 입력합니다.',
+      '⑨ [저장하고 연동 시작]을 클릭하면 연동이 완료됩니다.',
+    ],
+    links: [
+      { label:'카페24 개발자센터', url:'https://developers.cafe24.com' },
+      { label:'API 문서',          url:'https://developers.cafe24.com/docs/api/admin' },
+      { label:'OAuth 2.0 가이드',  url:'https://developers.cafe24.com/docs/api/admin/#oauth-2-0' },
+    ],
+  },
+}
+
+function openGuideWindow(key: string) {
+  const guide = MALL_GUIDES[key]
+  if (!guide) return
+  const html = `<!DOCTYPE html><html lang="ko"><head>
+<meta charset="UTF-8"><title>${guide.title}</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Nanum Gothic', sans-serif; background: #f8fafc; color: #1e293b; padding: 40px 32px; max-width: 640px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 900; color: #1e293b; margin-bottom: 24px; padding-bottom: 14px; border-bottom: 2.5px solid #6366f1; }
+  .steps { background: white; border-radius: 14px; padding: 24px 28px; box-shadow: 0 4px 20px rgba(0,0,0,0.07); margin-bottom: 24px; }
+  .steps p { font-size: 14px; font-weight: 700; color: #334155; line-height: 1.9; padding: 4px 0; }
+  .steps p:not(:last-child) { border-bottom: 1px dashed #f1f5f9; }
+  .links { display: flex; flex-direction: column; gap: 10px; }
+  .links a { display: inline-flex; align-items: center; gap: 8px; background: #6366f1; color: white; text-decoration: none; font-size: 13px; font-weight: 800; padding: 10px 18px; border-radius: 10px; }
+  .links a:hover { background: #4f46e5; }
+  .note { background: #fffbeb; border: 1px solid #fde68a; border-radius: 10px; padding: 12px 16px; font-size: 12.5px; color: #92400e; font-weight: 700; margin-bottom: 20px; }
+  h2 { font-size: 13px; font-weight: 900; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 10px; }
+</style></head><body>
+<h1>📋 ${guide.title}</h1>
+<div class="note">💡 API 연동을 위해 카페24 판매자 계정과 개발자 앱이 필요합니다. 아래 단계를 순서대로 따라하세요.</div>
+<div class="steps">
+${guide.steps.map(s => `  <p>${s}</p>`).join('\n')}
+</div>
+<h2>🔗 관련 링크</h2>
+<div class="links">
+${guide.links.map(l => `  <a href="${l.url}" target="_blank">🔗 ${l.label}</a>`).join('\n')}
+</div>
+</body></html>`
+  const w = window.open('', '_blank', 'width=700,height=680,scrollbars=yes,resizable=yes')
+  if (w) { w.document.write(html); w.document.close() }
+}
+
 /* ─── 타입 ──────────────────────────────────────────────────── */
 type MallCategory = { id:string; displayName:string; mallCat:string; code:string }
 type DeliveryInfo = typeof DELIVERY_TEMPLATE
 type ChannelData = {
   key:string; name:string; domain:string; color:string
   active:boolean; seller_id:string; api_key:string; api_secret:string
+  site_name:string; refresh_token:string; access_key:string
   synced:number; orders:number
   categories: MallCategory[]
   delivery: DeliveryInfo
@@ -75,7 +152,7 @@ type ChannelData = {
 const STORAGE_KEY = 'pm_mall_channels_v2'
 
 function makeChannel(mall: typeof ALL_MALLS[0]): ChannelData {
-  return { ...mall, active:false, seller_id:'', api_key:'', api_secret:'', synced:0, orders:0, categories:[], delivery:{...DELIVERY_TEMPLATE} }
+  return { ...mall, active:false, seller_id:'', api_key:'', api_secret:'', site_name:'', refresh_token:'', access_key:'', synced:0, orders:0, categories:[], delivery:{...DELIVERY_TEMPLATE} }
 }
 
 function loadChannels(): ChannelData[] {
@@ -117,7 +194,7 @@ export default function ChannelsPage() {
   const [confirmDisconnect, setConfirmDisconnect] = useState<ChannelData|null>(null)
 
   // API 설정 폼
-  const [apiForm, setApiForm] = useState({ seller_id:'', api_key:'', api_secret:'' })
+  const [apiForm, setApiForm] = useState({ seller_id:'', api_key:'', api_secret:'', site_name:'', refresh_token:'', access_key:'' })
 
   // 카테고리 폼
   const [catSearch, setCatSearch]   = useState('')
@@ -145,7 +222,7 @@ export default function ChannelsPage() {
   /* ── API 설정 열기/저장 ── */
   const openApi = (ch: ChannelData) => {
     setApiTarget(ch)
-    setApiForm({ seller_id:ch.seller_id, api_key:ch.api_key, api_secret:ch.api_secret })
+    setApiForm({ seller_id:ch.seller_id, api_key:ch.api_key, api_secret:ch.api_secret, site_name:ch.site_name||'', refresh_token:ch.refresh_token||'', access_key:ch.access_key||'' })
   }
   const saveApi = () => {
     if (!apiTarget) return
@@ -309,37 +386,58 @@ export default function ChannelsPage() {
       </Modal>
 
       {/* ── API 설정 모달 ── */}
-      {apiTarget && (
-        <Modal isOpen onClose={() => setApiTarget(null)} title={`${apiTarget.name} API 설정`} size="md">
-          <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-            <div className={`bg-gradient-to-r ${apiTarget.color}`} style={{ borderRadius:14, padding:'14px 16px', display:'flex', alignItems:'center', gap:14 }}>
-              <MallLogo domain={apiTarget.domain} name={apiTarget.name} size={44}/>
-              <div>
-                <p style={{ fontWeight:900, color:'white', fontSize:15 }}>{apiTarget.name}</p>
-                <p style={{ color:'rgba(255,255,255,0.75)', fontSize:12, fontWeight:700, marginTop:2 }}>API 연동 설정</p>
+      {apiTarget && (() => {
+        const fields = MALL_API_FIELDS[apiTarget.key] || DEFAULT_API_FIELDS
+        const hasGuide = !!MALL_GUIDES[apiTarget.key]
+        return (
+          <Modal isOpen onClose={() => setApiTarget(null)} title={`${apiTarget.name} API 설정`} size="md">
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+              {/* 헤더 배너 */}
+              <div className={`bg-gradient-to-r ${apiTarget.color}`} style={{ borderRadius:14, padding:'14px 16px', display:'flex', alignItems:'center', gap:14 }}>
+                <MallLogo domain={apiTarget.domain} name={apiTarget.name} size={44}/>
+                <div style={{ flex:1 }}>
+                  <p style={{ fontWeight:900, color:'white', fontSize:15 }}>{apiTarget.name}</p>
+                  <p style={{ color:'rgba(255,255,255,0.75)', fontSize:12, fontWeight:700, marginTop:2 }}>API 연동 설정</p>
+                </div>
+                {hasGuide && (
+                  <button
+                    onClick={() => openGuideWindow(apiTarget.key)}
+                    style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.2)', border:'1.5px solid rgba(255,255,255,0.5)', borderRadius:10, padding:'7px 14px', color:'white', fontSize:12, fontWeight:800, cursor:'pointer', backdropFilter:'blur(4px)', whiteSpace:'nowrap' }}
+                    onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.35)'}
+                    onMouseLeave={e => e.currentTarget.style.background='rgba(255,255,255,0.2)'}
+                  >
+                    <BookOpen size={13}/>연동방법
+                  </button>
+                )}
+              </div>
+
+              {/* 동적 입력 필드 */}
+              {fields.map(({ label, key, placeholder, type }) => (
+                <div key={key}>
+                  <label style={{ display:'block', fontSize:12, fontWeight:800, color:'#475569', marginBottom:6 }}>{label}</label>
+                  <Input
+                    type={type}
+                    placeholder={placeholder}
+                    value={(apiForm as Record<string,string>)[key] || ''}
+                    onChange={e => setApiForm(f => ({...f, [key]:e.target.value}))}
+                  />
+                </div>
+              ))}
+
+              <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'10px 14px', fontSize:12, fontWeight:700, color:'#92400e' }}>
+                {hasGuide
+                  ? '💡 [연동방법] 버튼을 클릭하면 단계별 API 발급 가이드를 확인할 수 있습니다.'
+                  : '💡 API 키는 각 쇼핑몰 판매자센터 → 개발자 API 메뉴에서 발급받을 수 있습니다.'}
+              </div>
+
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+                <Button variant="outline" onClick={() => setApiTarget(null)}>취소</Button>
+                <Button onClick={saveApi}><Zap size={13}/>저장하고 연동 시작</Button>
               </div>
             </div>
-            {[
-              { label:'판매자 ID / 계정', key:'seller_id' as const, placeholder:'판매자 ID 또는 이메일', type:'text' },
-              { label:'API Key',        key:'api_key' as const,    placeholder:'API Key 입력',          type:'password' },
-              { label:'API Secret',     key:'api_secret' as const, placeholder:'API Secret 입력',       type:'password' },
-            ].map(({ label, key, placeholder, type }) => (
-              <div key={key}>
-                <label style={{ display:'block', fontSize:12, fontWeight:800, color:'#475569', marginBottom:6 }}>{label}</label>
-                <Input type={type} placeholder={placeholder} value={apiForm[key]}
-                  onChange={e => setApiForm(f => ({...f, [key]:e.target.value}))}/>
-              </div>
-            ))}
-            <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'10px 14px', fontSize:12, fontWeight:700, color:'#92400e' }}>
-              💡 API 키는 각 쇼핑몰 판매자센터 → 개발자 API 메뉴에서 발급받을 수 있습니다.
-            </div>
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
-              <Button variant="outline" onClick={() => setApiTarget(null)}>취소</Button>
-              <Button onClick={saveApi}><Zap size={13}/>저장하고 연동 시작</Button>
-            </div>
-          </div>
-        </Modal>
-      )}
+          </Modal>
+        )
+      })()}
 
       {/* ── 카테고리/배송정보 모달 ── */}
       {mallInfoTarget && (
