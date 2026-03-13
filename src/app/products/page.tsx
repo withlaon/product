@@ -30,7 +30,9 @@ interface ProductOption {
   image: string
   ordered: number
   received: number
-  sold: number
+  sold: number           // legacy (for backward compat)
+  current_stock?: number // 현재 실재고
+  defective?: number     // 불량 수량
 }
 interface ChannelPrice { channel: string; price: number }
 interface MallCategory { channel: string; category: string; category_code: string }
@@ -78,7 +80,12 @@ const CH_STYLE: Record<string, { bg:string; color:string }> = {
 }
 
 /* ─── 헬퍼 ──────────────────────────────────────────────────── */
-const optStock       = (o: ProductOption) => Math.max(0, o.received - o.sold)
+// 현재고: current_stock 필드 우선, 없으면 legacy received - sold
+const optStock       = (o: ProductOption) =>
+  o.current_stock !== undefined ? o.current_stock : Math.max(0, o.received - (o.sold || 0))
+// 판매수량 = 입고 - 현재고 (사용자 요청)
+const optSold        = (o: ProductOption) => Math.max(0, o.received - optStock(o))
+const optDefective   = (o: ProductOption) => o.defective || 0
 const optUndelivered = (o: ProductOption) => Math.max(0, o.ordered - o.received)
 const totalCurStock  = (p: Product) => p.options.reduce((s, o) => s + optStock(o), 0)
 const isUrl          = (s: string) => /^https?:\/\//i.test(s.trim())
@@ -274,7 +281,7 @@ export default function ProductsPage() {
   const handleOptImage  = useOptImageUpload(setForm)
 
   // 수정 폼 상태
-  type EditOptRow = { name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number }
+  type EditOptRow = { name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number; current_stock?:number; defective?:number }
   type EditFormState = {
     code:string; name:string; category:string; newCat:string; supplier:string; loca:string
     cost_price:string; cost_currency:CostCurrency; status:ProductStatus; options:EditOptRow[]
@@ -362,6 +369,7 @@ export default function ProductsPage() {
         name: o.name, chinese_name: o.chinese_name || '',
         barcode: o.barcode, image: o.image,
         ordered: o.ordered, received: o.received, sold: o.sold,
+        current_stock: o.current_stock, defective: o.defective,
       })),
     })
     setIsEdit(p)
@@ -377,6 +385,7 @@ export default function ProductsPage() {
       barcode: o.barcode || genBarcode(editForm.code, o.name),
       image: o.image,
       ordered: o.ordered, received: o.received, sold: o.sold,
+      current_stock: o.current_stock, defective: o.defective,
     }))
     const payload = {
       code: editForm.code, name: editForm.name, category: cat, loca: editForm.loca,
@@ -677,66 +686,50 @@ export default function ProductsPage() {
                     {/* 옵션명/바코드/재고 세분화 */}
                     <td style={{ padding:'8px 10px 8px 12px' }}>
                       {/* 헤더 행 */}
-                      <div style={{ display:'grid', gridTemplateColumns:'28px 74px 1fr 36px 36px 38px 36px 40px 36px', gap:'0 6px', paddingBottom:4, marginBottom:2, borderBottom:'1px solid #f1f5f9' }}>
-                        {['', '옵션명', '바코드', '발주', '입고', '미입고', '판매', '현재고', ''].map((h, hi) => (
-                          <span key={hi} style={{ fontSize:9.5, fontWeight:800, color:'#cbd5e1', textTransform:'uppercase', letterSpacing:'0.04em', textAlign: hi >= 3 ? 'right' : 'left' }}>{h}</span>
+                      <div style={{ display:'grid', gridTemplateColumns:'28px 74px 1fr 36px 36px 38px 36px 40px 36px 36px', gap:'0 6px', paddingBottom:4, marginBottom:2, borderBottom:'1px solid #f1f5f9' }}>
+                        {['', '옵션명', '바코드', '발주', '입고', '미입고', '판매', '현재고', '불량', ''].map((h, hi) => (
+                          <span key={hi} style={{ fontSize:9.5, fontWeight:800, color: h==='불량'?'#fca5a5':'#cbd5e1', textTransform:'uppercase', letterSpacing:'0.04em', textAlign: hi >= 3 ? 'right' : 'left' }}>{h}</span>
                         ))}
                       </div>
                       {p.options.map((opt, i) => {
                         const curStock    = optStock(opt)
                         const undelivered = optUndelivered(opt)
+                        const sold        = optSold(opt)
+                        const defective   = optDefective(opt)
                         const optLow      = curStock <= 2
                         const optZero     = curStock === 0
                         return (
                           <div key={i} style={{
-                            display:'grid', gridTemplateColumns:'28px 74px 1fr 36px 36px 38px 36px 40px 36px', gap:'0 6px',
+                            display:'grid', gridTemplateColumns:'28px 74px 1fr 36px 36px 38px 36px 40px 36px 36px', gap:'0 6px',
                             padding:'5px 0',
                             borderBottom: i < p.options.length-1 ? '1px solid rgba(15,23,42,0.04)' : 'none',
                             alignItems:'center',
                             background: optLow ? 'rgba(239,68,68,0.03)' : 'transparent',
                           }}>
-                            {/* 이미지 */}
                             <div style={{ width:28, height:28, borderRadius:6, overflow:'hidden', background:'#f1f5f9', flexShrink:0 }}>
                               {opt.image
                                 ? <img src={opt.image} alt={opt.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
-                                : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                                    <ImageIcon size={11} color="#cbd5e1" />
-                                  </div>
+                                : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}><ImageIcon size={11} color="#cbd5e1" /></div>
                               }
                             </div>
-                            {/* 옵션명 + 중국명 */}
                             <span style={{ display:'flex', flexDirection:'column', gap:1, overflow:'hidden' }}>
-                              <span style={{ fontSize:12, fontWeight:800, color: optZero ? '#94a3b8' : '#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                {opt.name}
-                              </span>
-                              {opt.chinese_name && (
-                                <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                  {opt.chinese_name}
-                                </span>
-                              )}
+                              <span style={{ fontSize:12, fontWeight:800, color: optZero ? '#94a3b8' : '#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{opt.name}</span>
+                              {opt.chinese_name && <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{opt.chinese_name}</span>}
                             </span>
-                            {/* 바코드 */}
-                            <span style={{ fontFamily:'monospace', fontSize:10.5, color:'#1e293b', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                              {opt.barcode || '-'}
-                            </span>
-                            {/* 발주 */}
+                            <span style={{ fontFamily:'monospace', fontSize:10.5, color:'#1e293b', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{opt.barcode || '-'}</span>
                             <span style={{ textAlign:'right', fontSize:12, fontWeight:800, color:'#6366f1' }}>{opt.ordered}</span>
-                            {/* 입고 */}
                             <span style={{ textAlign:'right', fontSize:12, fontWeight:800, color:'#0ea5e9' }}>{opt.received}</span>
-                            {/* 미입고 */}
                             <span style={{ textAlign:'right', fontSize:12, fontWeight:800, color: undelivered > 0 ? '#f59e0b' : '#94a3b8' }}>{undelivered}</span>
-                            {/* 판매 */}
-                            <span style={{ textAlign:'right', fontSize:12, fontWeight:800, color:'#64748b' }}>{opt.sold}</span>
+                            {/* 판매 = 입고 - 현재고 */}
+                            <span style={{ textAlign:'right', fontSize:12, fontWeight:800, color:'#64748b' }}>{sold}</span>
                             {/* 현재고 */}
                             <span style={{ textAlign:'right', fontSize:13, fontWeight:900, color: optLow ? '#dc2626' : '#334155' }}>{curStock}</span>
-                            {/* 뱃지 */}
+                            {/* 불량 */}
+                            <span style={{ textAlign:'right', fontSize:12, fontWeight:800, color: defective > 0 ? '#dc2626' : '#cbd5e1' }}>{defective > 0 ? defective : '-'}</span>
                             <span>
-                              {optZero
-                                ? <span style={{ fontSize:9, fontWeight:800, background:'#fff1f2', color:'#dc2626', padding:'1px 5px', borderRadius:4 }}>품절</span>
-                                : optLow
-                                  ? <span style={{ fontSize:9, fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'1px 5px', borderRadius:4 }}>부족</span>
-                                  : null
-                              }
+                              {optZero ? <span style={{ fontSize:9, fontWeight:800, background:'#fff1f2', color:'#dc2626', padding:'1px 5px', borderRadius:4 }}>품절</span>
+                                : optLow ? <span style={{ fontSize:9, fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'1px 5px', borderRadius:4 }}>부족</span>
+                                : null}
                             </span>
                           </div>
                         )
@@ -1077,13 +1070,13 @@ export default function ProductsPage() {
 
             <div style={{ gridColumn:'1/-1', background:'#f8fafc', borderRadius:12, padding:14 }}>
               <p style={{ fontSize:11, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>옵션 재고 현황</p>
-              <div style={{ display:'grid', gridTemplateColumns:'32px 1fr 80px 60px 60px 60px 60px 60px', gap:'0 8px', paddingBottom:6, borderBottom:'1px solid #f1f5f9', marginBottom:4 }}>
-                {['','옵션명','바코드','발주','입고','미입고','판매','현재고'].map((h,i) => (
-                  <span key={i} style={{ fontSize:10, fontWeight:800, color:'#94a3b8', textTransform:'uppercase' }}>{h}</span>
+              <div style={{ display:'grid', gridTemplateColumns:'32px 1fr 80px 60px 60px 60px 60px 60px 54px', gap:'0 8px', paddingBottom:6, borderBottom:'1px solid #f1f5f9', marginBottom:4 }}>
+                {['','옵션명','바코드','발주','입고','미입고','판매','현재고','불량'].map((h,i) => (
+                  <span key={i} style={{ fontSize:10, fontWeight:800, color: h==='불량'?'#fca5a5':'#94a3b8', textTransform:'uppercase' }}>{h}</span>
                 ))}
               </div>
               {detail.options.map((opt, i) => (
-                <div key={i} style={{ display:'grid', gridTemplateColumns:'32px 1fr 80px 60px 60px 60px 60px 60px', gap:'0 8px', padding:'6px 0', borderTop:i>0?'1px solid rgba(15,23,42,0.05)':'none', alignItems:'center' }}>
+                <div key={i} style={{ display:'grid', gridTemplateColumns:'32px 1fr 80px 60px 60px 60px 60px 60px 54px', gap:'0 8px', padding:'6px 0', borderTop:i>0?'1px solid rgba(15,23,42,0.05)':'none', alignItems:'center' }}>
                   <div style={{ width:28, height:28, borderRadius:6, overflow:'hidden', background:'#f1f5f9' }}>
                     {opt.image ? <img src={opt.image} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}><ImageIcon size={11} color="#cbd5e1"/></div>}
                   </div>
@@ -1092,8 +1085,9 @@ export default function ProductsPage() {
                   <span style={{ fontSize:13, fontWeight:800, color:'#6366f1', textAlign:'right' }}>{opt.ordered}</span>
                   <span style={{ fontSize:13, fontWeight:800, color:'#0ea5e9', textAlign:'right' }}>{opt.received}</span>
                   <span style={{ fontSize:13, fontWeight:800, color: optUndelivered(opt)>0?'#f59e0b':'#94a3b8', textAlign:'right' }}>{optUndelivered(opt)}</span>
-                  <span style={{ fontSize:13, fontWeight:800, color:'#64748b', textAlign:'right' }}>{opt.sold}</span>
+                  <span style={{ fontSize:13, fontWeight:800, color:'#64748b', textAlign:'right' }}>{optSold(opt)}</span>
                   <span style={{ fontSize:14, fontWeight:900, color: optStock(opt)<=2?'#dc2626':'#1e293b', textAlign:'right' }}>{optStock(opt)}</span>
+                  <span style={{ fontSize:13, fontWeight:800, color: optDefective(opt)>0?'#dc2626':'#cbd5e1', textAlign:'right' }}>{optDefective(opt)||'-'}</span>
                 </div>
               ))}
             </div>
@@ -1263,16 +1257,16 @@ export default function ProductsPage() {
                   </div>
                   {/* 재고 현황 표시 (읽기 전용) */}
                   <div style={{ display:'flex', gap:12, marginTop:10, padding:'8px 12px', background:'#f8fafc', borderRadius:8 }}>
-                    {[['발주',opt.ordered,'#6366f1'],['입고',opt.received,'#0ea5e9'],['판매',opt.sold,'#64748b'],['현재고',Math.max(0,opt.received-opt.sold),'#059669']].map(([lbl,val,clr])=>(
-                      <div key={String(lbl)} style={{ textAlign:'center' }}>
-                        <p style={{ fontSize:10, fontWeight:800, color:'#94a3b8' }}>{lbl}</p>
-                        <p style={{ fontSize:14, fontWeight:900, color:String(clr) }}>{val}</p>
+                    {([['발주',opt.ordered,'#6366f1'],['입고',opt.received,'#0ea5e9'],['판매',optSold(opt),'#64748b'],['현재고',optStock(opt),'#059669'],['불량',optDefective(opt),'#dc2626']] as [string,number,string][]).map(([lbl,val,clr])=>(
+                      <div key={lbl} style={{ textAlign:'center' }}>
+                        <p style={{ fontSize:10, fontWeight:800, color: lbl==='불량'?'#fca5a5':'#94a3b8' }}>{lbl}</p>
+                        <p style={{ fontSize:14, fontWeight:900, color:clr }}>{val}</p>
                       </div>
                     ))}
                   </div>
                 </div>
               ))}
-              <button onClick={() => setEditForm(f => f ? ({ ...f, options:[...f.options,{name:'',chinese_name:'',barcode:'',image:'',ordered:0,received:0,sold:0}] }) : f)}
+              <button onClick={() => setEditForm(f => f ? ({ ...f, options:[...f.options,{name:'',chinese_name:'',barcode:'',image:'',ordered:0,received:0,sold:0,current_stock:0,defective:0}] }) : f)}
                 style={{ fontSize:12,fontWeight:800,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
                 <Plus size={12}/>옵션 추가
               </button>

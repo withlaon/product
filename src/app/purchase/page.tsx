@@ -106,10 +106,10 @@ async function syncOrdered(items: PurchaseItem[]) {
   }
 }
 
-/* ── 상품 입고 수량 동기화 ── */
+/* ── 상품 입고 수량 동기화 (received + current_stock 동시 반영) ── */
 async function syncReceived(items: PurchaseItem[]) {
   for (const item of items) {
-    if (!item.product_code) continue
+    if (!item.product_code || item.received <= 0) continue
     const { data:prods } = await supabase.from('pm_products').select('id,options').eq('code', item.product_code)
     if (!prods?.length) continue
     const prod = prods[0]
@@ -117,7 +117,9 @@ async function syncReceived(items: PurchaseItem[]) {
     const opts: any[] = Array.isArray(prod.options) ? prod.options : []
     const updated = opts.map(o => {
       const match = !item.option_name || o.name === item.option_name || o.barcode === item.barcode
-      return match ? { ...o, received: (o.received||0) + item.received } : o
+      if (!match) return o
+      const prevStock = o.current_stock !== undefined ? o.current_stock : Math.max(0, (o.received||0) - (o.sold||0))
+      return { ...o, received: (o.received||0) + item.received, current_stock: prevStock + item.received }
     })
     await supabase.from('pm_products').update({ options: updated }).eq('id', prod.id)
   }
@@ -129,10 +131,12 @@ export default function PurchasePage() {
   const [sf, setSf]               = useState('전체')
   const [isAdd, setIsAdd]         = useState(false)
   const [isInAdd, setIsInAdd]     = useState(false)
-  const [isBulkIn, setIsBulkIn]   = useState(false)   // 일괄 입고 등록
-  const [isBulkPo, setIsBulkPo]   = useState(false)   // 일괄 발주 등록
+  const [isBulkIn, setIsBulkIn]   = useState(false)
+  const [isBulkPo, setIsBulkPo]   = useState(false)
   const [detail, setDetail]       = useState<Purchase | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<Purchase | null>(null)
+  const [editTarget, setEditTarget]   = useState<Purchase | null>(null)   // 수정 모달
+  const [editFormData, setEditFormData] = useState<Purchase | null>(null) // 수정 폼 데이터
   const [form, setForm]           = useState(INIT_FORM)
   const [inForm, setInForm]       = useState(INIT_IN_FORM)
   // 일괄 입고 폼
@@ -291,6 +295,37 @@ export default function PurchasePage() {
     setInForm(INIT_IN_FORM)
   }
 
+  /* ── 수정 열기 ── */
+  const openEdit = (p: Purchase) => {
+    setEditTarget(p)
+    setEditFormData(JSON.parse(JSON.stringify(p)))  // deep copy
+  }
+
+  /* ── 수정 저장 (델타로 상품 수량 반영) ── */
+  const handleEditSave = async () => {
+    if (!editTarget || !editFormData) return
+    // ordered 델타
+    const orderedDelta: PurchaseItem[] = editFormData.items.map((newItem, i) => {
+      const oldItem = editTarget.items[i] || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
+      return { ...newItem, ordered: newItem.ordered - oldItem.ordered, received: 0 }
+    }).filter(d => d.ordered !== 0 && d.product_code)
+    // received 델타
+    const receivedDelta: PurchaseItem[] = editFormData.items.map((newItem, i) => {
+      const oldItem = editTarget.items[i] || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
+      return { ...newItem, ordered: 0, received: newItem.received - oldItem.received }
+    }).filter(d => d.received !== 0 && d.product_code)
+
+    await supabase.from('pm_purchases').update({
+      order_date: editFormData.order_date, supplier: editFormData.supplier,
+      status: editFormData.status, items: editFormData.items,
+    }).eq('id', editTarget.id)
+
+    if (orderedDelta.length) await syncOrdered(orderedDelta)
+    if (receivedDelta.length) await syncReceived(receivedDelta)
+    await loadPurchases()
+    setEditTarget(null); setEditFormData(null)
+  }
+
   const kpis = [
     { label:'전체 발주',  value: purchases.length,                                         bg:'#eff6ff', color:'#2563eb' },
     { label:'발주완료',   value: purchases.filter(p=>p.status==='ordered').length,          bg:'#eef2ff', color:'#4338ca' },
@@ -397,15 +432,19 @@ export default function PurchasePage() {
                       </span>
                     </td>
                     <td style={{ textAlign:'center' }}>
-                      <div style={{ display:'flex', gap:6, justifyContent:'center' }}>
+                      <div style={{ display:'flex', gap:5, justifyContent:'center' }}>
                         {p.status !== 'completed' && p.status !== 'cancelled' && (
                           <button onClick={() => setReceiveTarget(p)}
-                            style={{ fontSize:11.5, fontWeight:800, color:'#059669', background:'#ecfdf5', border:'none', borderRadius:7, padding:'4px 10px', cursor:'pointer' }}>
+                            style={{ fontSize:11, fontWeight:800, color:'#059669', background:'#ecfdf5', border:'none', borderRadius:7, padding:'4px 9px', cursor:'pointer' }}>
                             <span style={{ display:'flex', alignItems:'center', gap:3 }}><Truck size={11}/>입고처리</span>
                           </button>
                         )}
+                        <button onClick={() => openEdit(p)}
+                          style={{ fontSize:11, fontWeight:800, color:'#7e22ce', background:'#fdf4ff', border:'none', borderRadius:7, padding:'4px 9px', cursor:'pointer' }}>
+                          수정
+                        </button>
                         <button onClick={() => setDetail(p)}
-                          style={{ fontSize:11.5, fontWeight:800, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:7, padding:'4px 10px', cursor:'pointer' }}>
+                          style={{ fontSize:11, fontWeight:800, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:7, padding:'4px 9px', cursor:'pointer' }}>
                           상세
                         </button>
                       </div>
@@ -702,6 +741,81 @@ export default function PurchasePage() {
       {/* ── 입고 처리 모달 ── */}
       {receiveTarget && (
         <ReceiveModal purchase={receiveTarget} onClose={() => setReceiveTarget(null)} onSave={handleReceive} />
+      )}
+
+      {/* ── 수정 모달 ── */}
+      {editTarget && editFormData && (
+        <Modal isOpen onClose={() => { setEditTarget(null); setEditFormData(null) }} title={`발주 수정 — ${editTarget.order_date}`} size="xl">
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
+            <div>
+              <Label>발주일 *</Label>
+              <Input type="date" value={editFormData.order_date}
+                onChange={e => setEditFormData(f => f ? {...f, order_date:e.target.value} : f)}/>
+            </div>
+            <div>
+              <Label>구매처 *</Label>
+              <Input placeholder="구매처" value={editFormData.supplier}
+                onChange={e => setEditFormData(f => f ? {...f, supplier:e.target.value} : f)}/>
+            </div>
+          </div>
+
+          <p style={{ fontSize:12, fontWeight:800, color:'#475569', marginBottom:8, paddingBottom:6, borderBottom:'1px solid #f1f5f9' }}>📦 발주 상품 목록 (수정 가능)</p>
+          {editFormData.items.map((item, i) => (
+            <div key={i} style={{ display:'grid', gridTemplateColumns:'1.4fr 1fr 1.6fr 0.8fr 0.8fr auto', gap:8, marginBottom:8, alignItems:'end' }}>
+              <div>
+                {i===0 && <Label>상품코드</Label>}
+                <Input placeholder="WA5AC001" value={item.product_code}
+                  onChange={e => setEditFormData(f => {
+                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],product_code:e.target.value}; return {...f,items:it}
+                  })}/>
+              </div>
+              <div>
+                {i===0 && <Label>옵션명</Label>}
+                <Input placeholder="BE" value={item.option_name}
+                  onChange={e => setEditFormData(f => {
+                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],option_name:e.target.value}; return {...f,items:it}
+                  })}/>
+              </div>
+              <div>
+                {i===0 && <Label>바코드</Label>}
+                <Input style={{ fontFamily:'monospace', background:'#f8fafc' }} value={item.barcode}
+                  onChange={e => setEditFormData(f => {
+                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],barcode:e.target.value}; return {...f,items:it}
+                  })}/>
+              </div>
+              <div>
+                {i===0 && <Label>발주 수량</Label>}
+                <Input type="number" value={item.ordered}
+                  onChange={e => setEditFormData(f => {
+                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],ordered:Number(e.target.value)||0}; return {...f,items:it}
+                  })}/>
+              </div>
+              <div>
+                {i===0 && <Label>입고 수량</Label>}
+                <Input type="number" value={item.received}
+                  onChange={e => setEditFormData(f => {
+                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],received:Number(e.target.value)||0}; return {...f,items:it}
+                  })}/>
+              </div>
+              <button onClick={() => setEditFormData(f => f ? {...f, items: f.items.filter((_,j)=>j!==i)} : f)}
+                style={{ width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff1f2',color:'#dc2626',border:'none',borderRadius:7,cursor:'pointer',marginBottom:1 }}>
+                <X size={12}/>
+              </button>
+            </div>
+          ))}
+          <button onClick={() => setEditFormData(f => f ? {...f, items:[...f.items,{product_code:'',option_name:'',barcode:'',ordered:0,received:0}]} : f)}
+            style={{ fontSize:12,fontWeight:800,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4,marginBottom:16 }}>
+            <Plus size={12}/>상품 추가
+          </button>
+
+          <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'9px 14px', fontSize:12, fontWeight:700, color:'#92400e', marginBottom:16 }}>
+            💡 수정 후 저장하면 발주수량/입고수량의 변동분이 상품관리 탭에 자동 반영됩니다.
+          </div>
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+            <Button variant="outline" onClick={() => { setEditTarget(null); setEditFormData(null) }}>취소</Button>
+            <Button onClick={handleEditSave}>저장 및 상품 반영</Button>
+          </div>
+        </Modal>
       )}
 
       {/* ── 발주 상세 모달 ── */}
