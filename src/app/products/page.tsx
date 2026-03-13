@@ -238,9 +238,16 @@ export default function ProductsPage() {
   const [detail, setDetail]           = useState<Product | null>(null)
   const [isEdit, setIsEdit]           = useState<Product | null>(null)
   const [channelPriceTarget, setChannelPriceTarget] = useState<Product | null>(null)
-  const [editStatusId, setEditStatusId] = useState<string | null>(null)  // 인라인 상태 편집
+  const [editStatusId, setEditStatusId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
+
+  // 카테고리 관리 상태
+  const [catAddMode, setCatAddMode]       = useState(false)
+  const [catAddInput, setCatAddInput]     = useState('')
+  const [catEditTarget, setCatEditTarget] = useState<string | null>(null)
+  const [catEditInput, setCatEditInput]   = useState('')
+  const [catDeleteTarget, setCatDeleteTarget] = useState<string | null>(null)
 
   const [form, setForm] = useState(INIT_FORM)
   const [loading, setLoading] = useState(true)
@@ -266,6 +273,41 @@ export default function ProductsPage() {
   }, [])
 
   const allCats  = useMemo(() => [...new Set([...DEFAULT_CATS, ...extraCats])], [extraCats])
+
+  /* ── 카테고리 추가 ── */
+  const handleCatAdd = () => {
+    const name = catAddInput.trim()
+    if (!name || allCats.includes(name)) { setCatAddMode(false); setCatAddInput(''); return }
+    setExtraCats(prev => [...prev, name])
+    setCatAddMode(false)
+    setCatAddInput('')
+  }
+
+  /* ── 카테고리 이름변경 ── */
+  const handleCatRename = () => {
+    if (!catEditTarget) return
+    const newName = catEditInput.trim()
+    if (!newName || newName === catEditTarget || allCats.includes(newName)) {
+      setCatEditTarget(null); return
+    }
+    // state 업데이트
+    setExtraCats(prev => prev.includes(catEditTarget)
+      ? prev.map(c => c === catEditTarget ? newName : c)
+      : [...prev, newName].filter(c => c !== catEditTarget)
+    )
+    // 해당 카테고리 상품들 메모리 업데이트 (Supabase는 백그라운드)
+    setProducts(prev => prev.map(p => p.category === catEditTarget ? { ...p, category: newName } : p))
+    supabase.from('pm_products').update({ category: newName }).eq('category', catEditTarget).then(() => {})
+    if (activeTab === catEditTarget) setActiveTab(newName)
+    setCatEditTarget(null)
+  }
+
+  /* ── 카테고리 삭제 ── */
+  const handleCatDelete = (cat: string) => {
+    setExtraCats(prev => prev.filter(c => c !== cat))
+    if (activeTab === cat) setActiveTab('전체')
+    setCatDeleteTarget(null)
+  }
   const filtered = useMemo(() => {
     setPage(1)
     return products.filter(p => {
@@ -332,7 +374,7 @@ export default function ProductsPage() {
     { label:'전체 상품', value:products.length+'개',                                               bg:'#eff6ff', color:'#2563eb', icon:Package },
     { label:'판매중',    value:products.filter(p=>p.status==='active').length+'개',                bg:'#ecfdf5', color:'#059669', icon:TrendingUp },
     { label:'재고 부족', value:products.filter(p=>totalCurStock(p)<=2&&p.status!=='soldout').length+'개', bg:'#fffbeb', color:'#d97706', icon:AlertTriangle },
-    { label:'품절',      value:products.filter(p=>p.status==='soldout').length+'개',               bg:'#fff1f2', color:'#be123c', icon:AlertTriangle },
+    { label:'품절',      value:products.filter(p=>p.status==='soldout'||totalCurStock(p)===0).length+'개', bg:'#fff1f2', color:'#be123c', icon:AlertTriangle },
   ]
 
   if (loading) return (
@@ -364,24 +406,98 @@ export default function ProductsPage() {
       <div className="pm-card overflow-hidden">
         <div style={{ display:'flex', alignItems:'center', borderBottom:'1px solid rgba(15,23,42,0.07)', padding:'0 4px', gap:2, overflowX:'auto' }} className="scrollbar-hide">
           {allCats.map(cat => (
-            <button key={cat} onClick={() => setActiveTab(cat)} style={{
-              flexShrink:0, padding:'12px 18px', fontSize:13, fontWeight:800,
-              color: activeTab===cat ? '#2563eb' : '#94a3b8',
-              borderBottom:`2px solid ${activeTab===cat ? '#2563eb' : 'transparent'}`,
-              background:'none', border:'none', cursor:'pointer', transition:'all 150ms ease', whiteSpace:'nowrap',
-            }}>
-              {cat}
-              {cat !== '전체' && (
-                <span style={{ marginLeft:6, fontSize:10.5, fontWeight:800,
-                  background: activeTab===cat ? '#eff6ff' : '#f1f5f9',
+            <div key={cat} style={{ flexShrink:0, position:'relative', display:'flex', alignItems:'center' }}>
+              {/* 이름 변경 인라인 입력 */}
+              {catEditTarget === cat ? (
+                <div style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 8px' }}>
+                  <input
+                    autoFocus
+                    value={catEditInput}
+                    onChange={e => setCatEditInput(e.target.value)}
+                    onBlur={handleCatRename}
+                    onKeyDown={e => { if (e.key==='Enter') handleCatRename(); if (e.key==='Escape') setCatEditTarget(null) }}
+                    style={{ width:90, fontSize:13, fontWeight:800, border:'1px solid #3b82f6', borderRadius:6, padding:'4px 8px', outline:'none', color:'#1e293b' }}
+                  />
+                </div>
+              ) : (
+                <button onClick={() => setActiveTab(cat)} style={{
+                  padding: cat==='전체' ? '12px 18px' : '12px 10px 12px 16px',
+                  fontSize:13, fontWeight:800,
                   color: activeTab===cat ? '#2563eb' : '#94a3b8',
-                  padding:'1px 6px', borderRadius:99 }}>
-                  {products.filter(p => p.category===cat).length}
-                </span>
+                  borderBottom:`2px solid ${activeTab===cat ? '#2563eb' : 'transparent'}`,
+                  background:'none', border:'none', cursor:'pointer', transition:'all 150ms ease', whiteSpace:'nowrap',
+                  display:'flex', alignItems:'center', gap:4,
+                }}>
+                  {cat}
+                  {cat !== '전체' && (
+                    <span style={{ fontSize:10.5, fontWeight:800,
+                      background: activeTab===cat ? '#eff6ff' : '#f1f5f9',
+                      color: activeTab===cat ? '#2563eb' : '#94a3b8',
+                      padding:'1px 6px', borderRadius:99 }}>
+                      {products.filter(p => p.category===cat).length}
+                    </span>
+                  )}
+                  {/* 편집/삭제 아이콘 — 전체 탭 제외 */}
+                  {cat !== '전체' && (
+                    <span style={{ display:'inline-flex', gap:2, marginLeft:2 }}
+                      onClick={e => e.stopPropagation()}>
+                      <span title="이름변경"
+                        onClick={() => { setCatEditTarget(cat); setCatEditInput(cat) }}
+                        style={{ display:'flex', alignItems:'center', justifyContent:'center', width:16, height:16, borderRadius:3, color:'#94a3b8', cursor:'pointer', fontSize:10 }}>
+                        ✏️
+                      </span>
+                      <span title="삭제"
+                        onClick={() => setCatDeleteTarget(cat)}
+                        style={{ display:'flex', alignItems:'center', justifyContent:'center', width:16, height:16, borderRadius:3, color:'#94a3b8', cursor:'pointer', fontSize:10 }}>
+                        🗑️
+                      </span>
+                    </span>
+                  )}
+                </button>
               )}
-            </button>
+            </div>
           ))}
+
+          {/* 카테고리 추가 버튼/입력 */}
+          {catAddMode ? (
+            <div style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 8px', flexShrink:0 }}>
+              <input
+                autoFocus
+                value={catAddInput}
+                onChange={e => setCatAddInput(e.target.value)}
+                onBlur={handleCatAdd}
+                onKeyDown={e => { if (e.key==='Enter') handleCatAdd(); if (e.key==='Escape') { setCatAddMode(false); setCatAddInput('') } }}
+                placeholder="카테고리명"
+                style={{ width:100, fontSize:13, fontWeight:800, border:'1px solid #3b82f6', borderRadius:6, padding:'4px 8px', outline:'none', color:'#1e293b' }}
+              />
+            </div>
+          ) : (
+            <button
+              onClick={() => setCatAddMode(true)}
+              style={{ flexShrink:0, display:'flex', alignItems:'center', gap:4, padding:'8px 12px', margin:'4px',
+                fontSize:12, fontWeight:800, color:'#2563eb', background:'#eff6ff',
+                border:'1px dashed #93c5fd', borderRadius:8, cursor:'pointer', whiteSpace:'nowrap' }}>
+              <Plus size={12}/>추가
+            </button>
+          )}
         </div>
+
+        {/* 카테고리 삭제 확인 */}
+        {catDeleteTarget && (
+          <div style={{ padding:'10px 16px', background:'#fff1f2', display:'flex', alignItems:'center', gap:10, borderBottom:'1px solid #fecdd3' }}>
+            <span style={{ fontSize:12.5, fontWeight:700, color:'#dc2626', flex:1 }}>
+              &quot;<b>{catDeleteTarget}</b>&quot; 카테고리를 삭제하시겠습니까? (해당 카테고리 상품은 &apos;전체&apos;에서만 조회됩니다)
+            </span>
+            <button onClick={() => handleCatDelete(catDeleteTarget)}
+              style={{ fontSize:12, fontWeight:800, color:'#fff', background:'#dc2626', border:'none', borderRadius:7, padding:'5px 14px', cursor:'pointer' }}>
+              삭제
+            </button>
+            <button onClick={() => setCatDeleteTarget(null)}
+              style={{ fontSize:12, fontWeight:800, color:'#64748b', background:'#f1f5f9', border:'none', borderRadius:7, padding:'5px 14px', cursor:'pointer' }}>
+              취소
+            </button>
+          </div>
+        )}
 
         <div style={{ padding:'12px 16px', display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
           <div style={{ display:'flex', gap:6, flex:'1 1 280px' }}>
