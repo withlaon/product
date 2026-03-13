@@ -248,10 +248,19 @@ export default function ProductsPage() {
   const [catEditTarget, setCatEditTarget] = useState<string | null>(null)
   const [catEditInput, setCatEditInput]   = useState('')
   const [catDeleteTarget, setCatDeleteTarget] = useState<string | null>(null)
+  const [deletedCats, setDeletedCats]     = useState<string[]>([])
 
   const [form, setForm] = useState(INIT_FORM)
   const [loading, setLoading] = useState(true)
   const handleOptImage  = useOptImageUpload(setForm)
+
+  // 수정 폼 상태
+  type EditOptRow = { name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number }
+  type EditFormState = {
+    code:string; name:string; category:string; newCat:string; supplier:string; loca:string
+    cost_price:string; cost_currency:CostCurrency; status:ProductStatus; options:EditOptRow[]
+  }
+  const [editForm, setEditForm] = useState<EditFormState | null>(null)
 
   /* ── Supabase 로드 ── */
   useEffect(() => {
@@ -272,7 +281,10 @@ export default function ProductsPage() {
     load()
   }, [])
 
-  const allCats  = useMemo(() => [...new Set([...DEFAULT_CATS, ...extraCats])], [extraCats])
+  const allCats  = useMemo(
+    () => [...new Set([...DEFAULT_CATS, ...extraCats])].filter(c => !deletedCats.includes(c)),
+    [extraCats, deletedCats]
+  )
 
   /* ── 카테고리 추가 ── */
   const handleCatAdd = () => {
@@ -305,8 +317,51 @@ export default function ProductsPage() {
   /* ── 카테고리 삭제 ── */
   const handleCatDelete = (cat: string) => {
     setExtraCats(prev => prev.filter(c => c !== cat))
+    setDeletedCats(prev => [...prev, cat])
     if (activeTab === cat) setActiveTab('전체')
     setCatDeleteTarget(null)
+  }
+
+  /* ── 수정 모달 열기 ── */
+  const openEdit = (p: Product) => {
+    setEditForm({
+      code: p.code, name: p.name, category: p.category, newCat: '',
+      supplier: p.supplier, loca: p.loca,
+      cost_price: String(p.cost_price), cost_currency: p.cost_currency,
+      status: p.status,
+      options: p.options.map(o => ({
+        name: o.name, chinese_name: o.chinese_name || '',
+        barcode: o.barcode, image: o.image,
+        ordered: o.ordered, received: o.received, sold: o.sold,
+      })),
+    })
+    setIsEdit(p)
+  }
+
+  /* ── 수정 저장 ── */
+  const handleEditSave = async () => {
+    if (!isEdit || !editForm) return
+    const cat = editForm.category === '__new__' ? editForm.newCat.trim() : editForm.category
+    if (!editForm.code || !editForm.name || !cat) return
+    const options: ProductOption[] = editForm.options.filter(o => o.name).map(o => ({
+      name: o.name, chinese_name: o.chinese_name,
+      barcode: o.barcode || genBarcode(editForm.code, o.name),
+      image: o.image,
+      ordered: o.ordered, received: o.received, sold: o.sold,
+    }))
+    const payload = {
+      code: editForm.code, name: editForm.name, category: cat, loca: editForm.loca,
+      cost_price: Number(editForm.cost_price) || 0,
+      cost_currency: editForm.cost_currency,
+      status: editForm.status, supplier: editForm.supplier,
+      options,
+    }
+    const { error } = await supabase.from('pm_products').update(payload).eq('id', isEdit.id)
+    if (error) { console.error('수정 오류:', error); return }
+    setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
+    if (cat && !DEFAULT_CATS.includes(cat) && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
+    setIsEdit(null)
+    setEditForm(null)
   }
   const filtered = useMemo(() => {
     setPage(1)
@@ -722,7 +777,7 @@ export default function ProductsPage() {
                     {/* 관리 */}
                     <td style={{ paddingTop:12 }}>
                       <div style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'center' }}>
-                        <MgmtBtn onClick={() => setIsEdit(p)} bg="#ecfdf5" color="#059669" hoverBg="#d1fae5"><Edit size={11}/>수정</MgmtBtn>
+                        <MgmtBtn onClick={() => openEdit(p)} bg="#ecfdf5" color="#059669" hoverBg="#d1fae5"><Edit size={11}/>수정</MgmtBtn>
                         <MgmtBtn onClick={() => handleDelete(p.id)} bg="#fff1f2" color="#be123c" hoverBg="#ffe4e6"><Trash2 size={11}/>삭제</MgmtBtn>
                       </div>
                     </td>
@@ -998,38 +1053,164 @@ export default function ProductsPage() {
           </div>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
             <Button variant="outline" onClick={() => setDetail(null)}>닫기</Button>
-            <Button onClick={() => { setIsEdit(detail); setDetail(null) }}>수정하기</Button>
+            <Button onClick={() => { openEdit(detail); setDetail(null) }}>수정하기</Button>
           </div>
         </Modal>
       )}
 
       {/* ── 수정 모달 ── */}
-      {isEdit && (
-        <Modal isOpen={!!isEdit} onClose={() => setIsEdit(null)} title={`상품 수정 — ${isEdit.name}`} size="lg">
+      {isEdit && editForm && (
+        <Modal isOpen={!!isEdit} onClose={() => { setIsEdit(null); setEditForm(null) }} title={`상품 수정 — ${isEdit.name}`} size="xl">
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <div><Label>상품코드</Label><Input defaultValue={isEdit.code}/></div>
-            <div><Label>상품명</Label><Input defaultValue={isEdit.name}/></div>
-            <div><Label>LOCA</Label><Input defaultValue={isEdit.loca} style={{ fontFamily:'monospace' }}/></div>
-            <div><Label>구매처</Label><Input defaultValue={isEdit.supplier} placeholder="상회명 또는 https://..."/></div>
-            <div>
-              <Label>원가</Label>
-              <div style={{ display:'flex', gap:8 }}>
-                <Input type="number" defaultValue={isEdit.cost_price} style={{ flex:1 }}/>
-                <Select style={{ width:90 }} defaultValue={isEdit.cost_currency}>
-                  <option value="CNY">¥ 위안</option>
-                  <option value="KRW">₩ 원</option>
-                </Select>
-              </div>
+
+            {/* ① 기본 정보 */}
+            <div><Label>상품코드 *</Label>
+              <Input placeholder="WA5AC001" value={editForm.code}
+                onChange={e => {
+                  const newCode = e.target.value
+                  setEditForm(f => f ? ({
+                    ...f, code: newCode,
+                    options: f.options.map(o => ({ ...o, barcode: genBarcode(newCode, o.name) })),
+                  }) : f)
+                }}
+              />
+            </div>
+            <div><Label>상품명 *</Label>
+              <Input placeholder="상품명" value={editForm.name}
+                onChange={e => setEditForm(f => f ? ({ ...f, name: e.target.value }) : f)}/>
+            </div>
+
+            <div><Label>카테고리 *</Label>
+              <Select value={editForm.category} onChange={e => setEditForm(f => f ? ({ ...f, category: e.target.value }) : f)}>
+                <option value="">선택하세요</option>
+                {allCats.filter(c => c !== '전체').map(c => <option key={c}>{c}</option>)}
+                <option value="__new__">+ 새 카테고리 직접 입력</option>
+              </Select>
+              {editForm.category === '__new__' && (
+                <Input placeholder="새 카테고리 이름" value={editForm.newCat}
+                  onChange={e => setEditForm(f => f ? ({ ...f, newCat: e.target.value }) : f)}
+                  style={{ marginTop:6 }}/>
+              )}
+            </div>
+            <div><Label>LOCA</Label>
+              <Input placeholder="A-1-01" value={editForm.loca} style={{ fontFamily:'monospace' }}
+                onChange={e => setEditForm(f => f ? ({ ...f, loca: e.target.value }) : f)}/>
+            </div>
+
+            <div><Label>구매처</Label>
+              <Input placeholder="상회명 또는 https://..." value={editForm.supplier}
+                onChange={e => setEditForm(f => f ? ({ ...f, supplier: e.target.value }) : f)}/>
             </div>
             <div><Label>상태</Label>
-              <Select className="w-full" defaultValue={isEdit.status}>
+              <Select value={editForm.status} onChange={e => setEditForm(f => f ? ({ ...f, status: e.target.value as ProductStatus }) : f)}>
                 {ST_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </Select>
             </div>
+
+            <div style={{ gridColumn:'1/-1' }}>
+              <Label>원가</Label>
+              <div style={{ display:'flex', gap:8 }}>
+                <Input type="number" placeholder="0" value={editForm.cost_price} style={{ flex:1 }}
+                  onChange={e => setEditForm(f => f ? ({ ...f, cost_price: e.target.value }) : f)}/>
+                <Select style={{ width:110 }} value={editForm.cost_currency}
+                  onChange={e => setEditForm(f => f ? ({ ...f, cost_currency: e.target.value as CostCurrency }) : f)}>
+                  <option value="CNY">¥ 위안(CNY)</option>
+                  <option value="KRW">₩ 원(KRW)</option>
+                </Select>
+              </div>
+              {editForm.cost_currency === 'CNY' && Number(editForm.cost_price) > 0 && (
+                <p style={{ fontSize:11.5, color:'#2563eb', fontWeight:700, marginTop:5 }}>
+                  ≈ ₩{(Number(editForm.cost_price)*CNY_TO_KRW).toLocaleString()} (1위안={CNY_TO_KRW}원 기준)
+                </p>
+              )}
+            </div>
+
+            {/* ② 옵션 목록 */}
+            <div style={{ gridColumn:'1/-1', marginTop:4 }}>
+              <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', paddingBottom:6, borderBottom:'1px solid #eff6ff', marginBottom:10 }}>
+                📦 옵션 관리
+              </p>
+              {editForm.options.map((opt, i) => (
+                <div key={i} style={{ border:'1px solid rgba(15,23,42,0.07)', borderRadius:12, padding:12, marginBottom:10, background:'#fafbfc' }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'52px 2fr 1.5fr auto', gap:8, alignItems:'flex-end' }}>
+                    {/* 이미지 */}
+                    <div>
+                      <Label>이미지</Label>
+                      <label style={{ display:'block', width:44, height:44, borderRadius:8, overflow:'hidden', background:'#f1f5f9', cursor:'pointer', border:'1px dashed #cbd5e1' }}>
+                        {opt.image
+                          ? <img src={opt.image} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                          : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center', flexDirection:'column', gap:2 }}>
+                              <ImageIcon size={14} color="#94a3b8"/><span style={{ fontSize:8, color:'#94a3b8', fontWeight:700 }}>업로드</span>
+                            </div>
+                        }
+                        <input type="file" accept="image/*" style={{ display:'none' }}
+                          onChange={e => {
+                            const file = e.target.files?.[0]; if (!file) return
+                            const reader = new FileReader()
+                            reader.onload = ev => {
+                              const result = ev.target?.result as string ?? ''
+                              setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, image:result} : o) }) : f)
+                            }
+                            reader.readAsDataURL(file)
+                          }}
+                        />
+                      </label>
+                    </div>
+                    {/* 옵션명 + 중국명 */}
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                      <div>
+                        <Label>옵션명</Label>
+                        <Input placeholder="BE" value={opt.name}
+                          onChange={e => {
+                            const nm = e.target.value
+                            setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, name:nm, barcode:genBarcode(f.code, nm)} : o) }) : f)
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label>중국명</Label>
+                        <Input placeholder="黑色/M" value={opt.chinese_name}
+                          onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, chinese_name:e.target.value} : o) }) : f)}
+                        />
+                      </div>
+                    </div>
+                    {/* 바코드 */}
+                    <div>
+                      <Label>바코드 (자동)</Label>
+                      <Input readOnly value={opt.barcode || genBarcode(editForm.code, opt.name)}
+                        style={{ background:'#f8fafc', color:'#334155', fontFamily:'monospace', fontSize:12 }}/>
+                    </div>
+                    {/* 삭제 */}
+                    <div style={{ paddingBottom:1 }}>
+                      {editForm.options.length > 1 && (
+                        <button onClick={() => setEditForm(f => f ? ({ ...f, options: f.options.filter((_,j)=>j!==i) }) : f)}
+                          style={{ width:36, height:36, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:8, cursor:'pointer', marginTop:21 }}>
+                          <X size={13}/>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  {/* 재고 현황 표시 (읽기 전용) */}
+                  <div style={{ display:'flex', gap:12, marginTop:10, padding:'8px 12px', background:'#f8fafc', borderRadius:8 }}>
+                    {[['발주',opt.ordered,'#6366f1'],['입고',opt.received,'#0ea5e9'],['판매',opt.sold,'#64748b'],['현재고',Math.max(0,opt.received-opt.sold),'#059669']].map(([lbl,val,clr])=>(
+                      <div key={String(lbl)} style={{ textAlign:'center' }}>
+                        <p style={{ fontSize:10, fontWeight:800, color:'#94a3b8' }}>{lbl}</p>
+                        <p style={{ fontSize:14, fontWeight:900, color:String(clr) }}>{val}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+              <button onClick={() => setEditForm(f => f ? ({ ...f, options:[...f.options,{name:'',chinese_name:'',barcode:'',image:'',ordered:0,received:0,sold:0}] }) : f)}
+                style={{ fontSize:12,fontWeight:800,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+                <Plus size={12}/>옵션 추가
+              </button>
+            </div>
           </div>
-          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
-            <Button variant="outline" onClick={() => setIsEdit(null)}>취소</Button>
-            <Button onClick={() => setIsEdit(null)}>저장하기</Button>
+
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+            <Button variant="outline" onClick={() => { setIsEdit(null); setEditForm(null) }}>취소</Button>
+            <Button onClick={handleEditSave}>저장하기</Button>
           </div>
         </Modal>
       )}
