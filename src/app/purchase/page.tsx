@@ -1,6 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import * as XLSX from 'xlsx'
+import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -88,6 +89,40 @@ function parseExcelToBulkRows(file: File, onDone:(rows:BulkRow[])=>void) {
   reader.readAsBinaryString(file)
 }
 
+/* ── 상품 발주 수량 동기화 ── */
+async function syncOrdered(items: PurchaseItem[]) {
+  for (const item of items) {
+    if (!item.product_code) continue
+    const { data:prods } = await supabase.from('pm_products').select('id,options').eq('code', item.product_code)
+    if (!prods?.length) continue
+    const prod = prods[0]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const opts: any[] = Array.isArray(prod.options) ? prod.options : []
+    const updated = opts.map(o => {
+      const match = !item.option_name || o.name === item.option_name || o.barcode === item.barcode
+      return match ? { ...o, ordered: (o.ordered||0) + item.ordered } : o
+    })
+    await supabase.from('pm_products').update({ options: updated }).eq('id', prod.id)
+  }
+}
+
+/* ── 상품 입고 수량 동기화 ── */
+async function syncReceived(items: PurchaseItem[]) {
+  for (const item of items) {
+    if (!item.product_code) continue
+    const { data:prods } = await supabase.from('pm_products').select('id,options').eq('code', item.product_code)
+    if (!prods?.length) continue
+    const prod = prods[0]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const opts: any[] = Array.isArray(prod.options) ? prod.options : []
+    const updated = opts.map(o => {
+      const match = !item.option_name || o.name === item.option_name || o.barcode === item.barcode
+      return match ? { ...o, received: (o.received||0) + item.received } : o
+    })
+    await supabase.from('pm_products').update({ options: updated }).eq('id', prod.id)
+  }
+}
+
 export default function PurchasePage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [search, setSearch]       = useState('')
@@ -109,6 +144,14 @@ export default function PurchasePage() {
   const [bulkPoSupplier, setBulkPoSupplier] = useState('')
   const [bulkPoRows, setBulkPoRows]         = useState<BulkRow[]>([{ ...INIT_BULK_ROW }])
 
+  /* ── Supabase 로드 ── */
+  const loadPurchases = useCallback(async () => {
+    const { data } = await supabase.from('pm_purchases').select('*').order('created_at', { ascending: false })
+    if (data) setPurchases(data as Purchase[])
+  }, [])
+
+  useEffect(() => { loadPurchases() }, [loadPurchases])
+
   const filtered = purchases.filter(p =>
     (sf === '전체' || p.status === sf) &&
     (!search || p.order_date.includes(search) || p.supplier.includes(search) ||
@@ -116,7 +159,7 @@ export default function PurchasePage() {
   )
 
   /* ── 일괄 입고 등록 ── */
-  const handleBulkInSubmit = () => {
+  const handleBulkInSubmit = async () => {
     if (!bulkInSupplier) return
     const today = bulkInDate || new Date().toISOString().slice(0,10)
     const items = bulkInRows.filter(r => r.product_code).map(r => ({
@@ -136,13 +179,15 @@ export default function PurchasePage() {
       received_at: new Date(`${today}T00:00:00`).toISOString(),
       items,
     }
-    setPurchases(prev => [...prev, p])
+    await supabase.from('pm_purchases').insert({ ...p })
+    await syncReceived(items)
+    await loadPurchases()
     setIsBulkIn(false)
     setBulkInDate(''); setBulkInSupplier(''); setBulkInRows([{ ...INIT_BULK_ROW }])
   }
 
   /* ── 일괄 발주 등록 ── */
-  const handleBulkPoSubmit = () => {
+  const handleBulkPoSubmit = async () => {
     if (!bulkPoDate || !bulkPoSupplier) return
     const items = bulkPoRows.filter(r => r.product_code).map(r => ({
       product_code: r.product_code,
@@ -161,14 +206,23 @@ export default function PurchasePage() {
       received_at: null,
       items,
     }
-    setPurchases(prev => [...prev, p])
+    await supabase.from('pm_purchases').insert({ ...p })
+    await syncOrdered(items)
+    await loadPurchases()
     setIsBulkPo(false)
     setBulkPoDate(''); setBulkPoSupplier(''); setBulkPoRows([{ ...INIT_BULK_ROW }])
   }
 
   /* ── 개별 발주 등록 ── */
-  const handleAdd = () => {
+  const handleAdd = async () => {
     if (!form.order_date || !form.supplier) return
+    const items = form.items.filter(i => i.product_code).map(i => ({
+      product_code: i.product_code,
+      option_name: i.option_name,
+      barcode: i.barcode || genBarcode(i.product_code, i.option_name),
+      ordered: Number(i.ordered) || 0,
+      received: 0,
+    }))
     const p: Purchase = {
       id: String(Date.now()),
       order_date: form.order_date,
@@ -176,41 +230,42 @@ export default function PurchasePage() {
       status: 'ordered',
       ordered_at: new Date().toISOString(),
       received_at: null,
-      items: form.items.filter(i => i.product_code).map(i => ({
-        product_code: i.product_code,
-        option_name: i.option_name,
-        barcode: i.barcode || genBarcode(i.product_code, i.option_name),
-        ordered: Number(i.ordered) || 0,
-        received: 0,
-      })),
+      items,
     }
-    setPurchases(prev => [...prev, p])
+    await supabase.from('pm_purchases').insert({ ...p })
+    await syncOrdered(items)
+    await loadPurchases()
     setIsAdd(false)
     setForm(INIT_FORM)
   }
 
   // 입고 처리
-  const handleReceive = (receivedItems: Record<number, number>) => {
+  const handleReceive = async (receivedItems: Record<number, number>) => {
     if (!receiveTarget) return
-    setPurchases(prev => prev.map(p => {
-      if (p.id !== receiveTarget.id) return p
-      const items = p.items.map((item, i) => ({
-        ...item,
-        received: Math.min(item.ordered, item.received + (receivedItems[i] || 0)),
-      }))
-      const allDone = items.every(i => i.received >= i.ordered)
-      const anyDone = items.some(i => i.received > 0)
-      return {
-        ...p, items,
-        status: allDone ? 'completed' : anyDone ? 'partial' : p.status,
-        received_at: allDone ? new Date().toISOString() : p.received_at,
-      }
+    const items = receiveTarget.items.map((item, i) => ({
+      ...item,
+      received: Math.min(item.ordered, item.received + (receivedItems[i] || 0)),
     }))
+    const allDone = items.every(i => i.received >= i.ordered)
+    const anyDone = items.some(i => i.received > 0)
+    const updated = {
+      ...receiveTarget, items,
+      status: (allDone ? 'completed' : anyDone ? 'partial' : receiveTarget.status) as PurchaseStatus,
+      received_at: allDone ? new Date().toISOString() : receiveTarget.received_at,
+    }
+    await supabase.from('pm_purchases').update({ items: updated.items, status: updated.status, received_at: updated.received_at }).eq('id', receiveTarget.id)
+    // 입고된 수량만큼 상품에 반영
+    const newlyReceived = receiveTarget.items.map((item, i) => ({
+      ...item,
+      received: receivedItems[i] || 0,
+    }))
+    await syncReceived(newlyReceived)
+    await loadPurchases()
     setReceiveTarget(null)
   }
 
   // 직접 입고 등록 (발주 없이)
-  const handleInAdd = () => {
+  const handleInAdd = async () => {
     if (!inForm.items.some(i => i.product_code)) return
     const today = inForm.received_date || new Date().toISOString().slice(0,10)
     const items = inForm.items.filter(i => i.product_code).map(i => ({
@@ -229,7 +284,9 @@ export default function PurchasePage() {
       received_at: new Date(`${today}T00:00:00`).toISOString(),
       items,
     }
-    setPurchases(prev => [...prev, p])
+    await supabase.from('pm_purchases').insert({ ...p })
+    await syncReceived(items)
+    await loadPurchases()
     setIsInAdd(false)
     setInForm(INIT_IN_FORM)
   }

@@ -170,3 +170,22 @@ CREATE TRIGGER trg_pm_products_updated_at
   FOR EACH ROW EXECUTE FUNCTION update_pm_products_updated_at();
 
 ALTER TABLE pm_products DISABLE ROW LEVEL SECURITY;
+
+-- ─── 발주/입고 관리 테이블 ──────────────────────────────────────
+-- pm_products와 연동하여 발주·입고 수량을 자동 반영합니다.
+
+CREATE TABLE IF NOT EXISTS pm_purchases (
+  id           TEXT        PRIMARY KEY,
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  order_date   TEXT        NOT NULL,
+  supplier     TEXT        DEFAULT '',
+  status       TEXT        DEFAULT 'ordered',
+  ordered_at   TIMESTAMPTZ DEFAULT NOW(),
+  received_at  TIMESTAMPTZ,
+  items        JSONB       DEFAULT '[]'
+);
+
+CREATE INDEX IF NOT EXISTS idx_pm_purchases_order_date ON pm_purchases(order_date);
+CREATE INDEX IF NOT EXISTS idx_pm_purchases_status     ON pm_purchases(status);
+
+ALTER TABLE pm_purchases DISABLE ROW LEVEL SECURITY;
