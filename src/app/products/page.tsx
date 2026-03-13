@@ -20,28 +20,34 @@ const CONNECTED_CHANNELS = [
 const DISCONNECTED_CHANNELS = ['G마켓', '옥션', '티몬', '위메프']
 
 /* ─── 타입 ──────────────────────────────────────────────────── */
-type ProductStatus = 'active' | 'soldout' | 'pending_delete' | 'upcoming'
+type ProductStatus = 'active' | 'soldout' | 'pending_delete' | 'upcoming' | 'ready_to_ship'
 type CostCurrency  = 'KRW' | 'CNY'
 
 interface ProductOption {
   name: string
   chinese_name: string  // 중국명
   barcode: string
-  image: string     // 옵션 이미지 (URL 또는 base64)
-  ordered: number   // 발주 수량
-  received: number  // 입고 수량
-  sold: number      // 판매 수량
-  // 미입고 = ordered - received  (계산)
-  // 현재고 = received - sold     (계산)
+  image: string
+  ordered: number
+  received: number
+  sold: number
 }
 interface ChannelPrice { channel: string; price: number }
+interface MallCategory { channel: string; category: string; category_code: string }
+interface BasicInfo {
+  title: string; brand: string; origin: string; manufacturer: string
+  material: string; description: string; handling: string; notes: string
+}
 interface Product {
   id: string; code: string; name: string; category: string; loca: string
   options: ProductOption[]
   cost_price: number; cost_currency: CostCurrency
   channel_prices: ChannelPrice[]
+  mall_categories: MallCategory[]
+  basic_info: BasicInfo | null
   status: ProductStatus; supplier: string
 }
+const DEF_BASIC_INFO: BasicInfo = { title:'', brand:'', origin:'', manufacturer:'', material:'', description:'', handling:'', notes:'' }
 
 const CNY_TO_KRW = 193
 const DEFAULT_CATS = ['전체', '가방', '의류', '잡화']
@@ -52,13 +58,18 @@ const ST: Record<ProductStatus, { label:string; bg:string; color:string; dot:str
   soldout:        { label:'품절',     bg:'#fff1f2', color:'#be123c', dot:'#ef4444' },
   pending_delete: { label:'삭제예정', bg:'#fff7ed', color:'#c2410c', dot:'#f97316' },
   upcoming:       { label:'판매예정', bg:'#eff6ff', color:'#2563eb', dot:'#3b82f6' },
+  ready_to_ship:  { label:'전송준비', bg:'#fdf4ff', color:'#7e22ce', dot:'#a855f7' },
 }
 const ST_OPTIONS: { value: ProductStatus; label: string }[] = [
   { value:'active',         label:'판매중'   },
   { value:'upcoming',       label:'판매예정' },
   { value:'soldout',        label:'품절'     },
   { value:'pending_delete', label:'삭제예정' },
+  { value:'ready_to_ship',  label:'전송준비' },
 ]
+
+/* ─── 연동된 채널 목록 (쇼핑몰 관리 연동) ── */
+const ACTIVE_CHANNELS = ['쿠팡', '네이버 스마트스토어', '11번가']
 const CH_STYLE: Record<string, { bg:string; color:string }> = {
   '쿠팡':  { bg:'#fff7ed', color:'#c2410c' },
   '네이버':{ bg:'#f0fdf4', color:'#15803d' },
@@ -186,11 +197,13 @@ const genBarcode = (code: string, opt: string) =>
   code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
 
 const INIT_OPT  = { name:'', chinese_name:'', barcode:'', image:'' }
+const INIT_MALL_CAT = { channel:'', category:'', category_code:'' }
 const INIT_FORM = {
   code:'', name:'', category:'', supplier:'', loca:'',
   cost_price:'', cost_currency:'CNY' as CostCurrency,
   newCat:'', status:'active' as ProductStatus,
   options:[{ ...INIT_OPT }],
+  mall_categories: [] as { channel:string; category:string; category_code:string }[],
 }
 
 /* ─── 옵션 이미지 파일→base64 ───────────────────────────────── */
@@ -223,6 +236,8 @@ function rowToProduct(row: any): Product {
     supplier: row.supplier ?? '',
     options: (row.options ?? []) as ProductOption[],
     channel_prices: (row.channel_prices ?? []) as ChannelPrice[],
+    mall_categories: (row.mall_categories ?? []) as MallCategory[],
+    basic_info: (row.basic_info ?? null) as BasicInfo | null,
   }
 }
 
@@ -241,6 +256,10 @@ export default function ProductsPage() {
   const [editStatusId, setEditStatusId] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
+
+  // 기본정보 팝업 상태
+  const [basicInfoTarget, setBasicInfoTarget] = useState<Product | null>(null)
+  const [basicInfoForm, setBasicInfoForm]     = useState<BasicInfo>({...DEF_BASIC_INFO})
 
   // 카테고리 관리 상태
   const [catAddMode, setCatAddMode]       = useState(false)
@@ -322,6 +341,16 @@ export default function ProductsPage() {
     setCatDeleteTarget(null)
   }
 
+  /* ── 기본정보 저장 ── */
+  const handleBasicInfoSave = async () => {
+    if (!basicInfoTarget) return
+    const payload = { basic_info: basicInfoForm, status: 'ready_to_ship' as ProductStatus }
+    const { error } = await supabase.from('pm_products').update(payload).eq('id', basicInfoTarget.id)
+    if (error) { console.error('기본정보 저장 오류:', error); return }
+    setProducts(prev => prev.map(p => p.id === basicInfoTarget.id ? { ...p, ...payload } : p))
+    setBasicInfoTarget(null)
+  }
+
   /* ── 수정 모달 열기 ── */
   const openEdit = (p: Product) => {
     setEditForm({
@@ -397,6 +426,8 @@ export default function ProductsPage() {
       cost_currency: form.cost_currency,
       status: form.status, supplier: form.supplier,
       options, channel_prices: [],
+      mall_categories: form.mall_categories.filter(m => m.channel && m.category),
+      basic_info: null,
     }
     const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
     if (error) { console.error('상품 등록 오류:', error); return }
@@ -630,7 +661,10 @@ export default function ProductsPage() {
 
                     {/* 상품명 */}
                     <td style={{ paddingTop:13 }}>
-                      <p style={{ fontSize:13, fontWeight:800, color:'#1e293b', lineHeight:1.4 }}>{p.name}</p>
+                      <button onClick={() => { setBasicInfoTarget(p); setBasicInfoForm(p.basic_info ?? {...DEF_BASIC_INFO, title:p.name}) }}
+                        style={{ background:'none', border:'none', cursor:'pointer', padding:0, textAlign:'left' }}>
+                        <p style={{ fontSize:13, fontWeight:800, color:'#2563eb', lineHeight:1.4, textDecoration:'underline', textDecorationStyle:'dotted', textUnderlineOffset:3 }}>{p.name}</p>
+                      </button>
                       <p style={{ fontSize:11, fontWeight:700, color:'#94a3b8', marginTop:3 }}>{p.category}</p>
                       <p style={{ fontSize:11, fontWeight:800, color: low ? '#dc2626' : '#64748b', marginTop:4 }}>
                         현재고 <span style={{ fontSize:13, fontWeight:900 }}>{tot}</span>개
@@ -962,6 +996,43 @@ export default function ProductsPage() {
             </button>
           </div>
 
+          {/* 쇼핑몰 카테고리 매핑 */}
+          <div style={{ gridColumn:'1/-1', marginTop:4 }}>
+            <p style={{ fontSize:12, fontWeight:800, color:'#7e22ce', paddingBottom:6, borderBottom:'1px solid #f3e8ff', marginBottom:10 }}>
+              🛒 쇼핑몰별 카테고리 매핑
+            </p>
+            {form.mall_categories.map((mc, i) => (
+              <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr auto', gap:8, marginBottom:8 }}>
+                <div>
+                  <Label>쇼핑몰</Label>
+                  <select value={mc.channel} onChange={e=>{const m=[...form.mall_categories];m[i]={...m[i],channel:e.target.value};setForm(f=>({...f,mall_categories:m}))}}
+                    style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:12, outline:'none', fontWeight:700 }}>
+                    <option value="">선택</option>
+                    {ACTIVE_CHANNELS.map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div><Label>카테고리명</Label>
+                  <Input placeholder="여성패션 > 가방" value={mc.category}
+                    onChange={e=>{const m=[...form.mall_categories];m[i]={...m[i],category:e.target.value};setForm(f=>({...f,mall_categories:m}))}}/>
+                </div>
+                <div><Label>카테고리 코드</Label>
+                  <Input placeholder="숫자코드" value={mc.category_code}
+                    onChange={e=>{const m=[...form.mall_categories];m[i]={...m[i],category_code:e.target.value};setForm(f=>({...f,mall_categories:m}))}}/>
+                </div>
+                <div style={{ paddingTop:21 }}>
+                  <button onClick={() => setForm(f=>({...f,mall_categories:f.mall_categories.filter((_,j)=>j!==i)}))}
+                    style={{ width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff1f2',color:'#dc2626',border:'none',borderRadius:8,cursor:'pointer' }}>
+                    <X size={13}/>
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button onClick={() => setForm(f=>({...f,mall_categories:[...f.mall_categories,{...INIT_MALL_CAT}]}))}
+              style={{ fontSize:12,fontWeight:800,color:'#7e22ce',background:'#fdf4ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+              <Plus size={12}/>카테고리 추가
+            </button>
+          </div>
+
           <div style={{ gridColumn:'1/-1' }}>
             <p style={{ fontSize:11.5, fontWeight:800, color:'#64748b', background:'#f8fafc', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:8 }}>
               <Store size={13} color="#94a3b8"/>
@@ -1211,6 +1282,57 @@ export default function ProductsPage() {
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
             <Button variant="outline" onClick={() => { setIsEdit(null); setEditForm(null) }}>취소</Button>
             <Button onClick={handleEditSave}>저장하기</Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── 기본정보 입력 팝업 (상품명 클릭) ── */}
+      {basicInfoTarget && (
+        <Modal isOpen onClose={() => setBasicInfoTarget(null)} title={`기본정보 입력 — ${basicInfoTarget.name}`} size="lg">
+          <div style={{ background:'#fdf4ff', borderRadius:10, padding:'10px 14px', marginBottom:16, fontSize:12, fontWeight:700, color:'#7e22ce' }}>
+            💡 한국 쇼핑몰 등록용 기본 정보를 입력하세요. 저장 시 상태가 <b>전송준비</b>로 변경됩니다.
+          </div>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div style={{ gridColumn:'1/-1' }}>
+              <Label>상품 타이틀 *</Label>
+              <Input placeholder="쇼핑몰에 등록될 상품명" value={basicInfoForm.title}
+                onChange={e => setBasicInfoForm(f=>({...f,title:e.target.value}))}/>
+            </div>
+            {([
+              { key:'brand' as const,        label:'브랜드',   placeholder:'브랜드명' },
+              { key:'origin' as const,       label:'원산지',   placeholder:'예) 중국' },
+              { key:'manufacturer' as const, label:'제조사',   placeholder:'제조사명' },
+              { key:'material' as const,     label:'소재',     placeholder:'예) 폴리에스터 100%' },
+            ]).map(({key, label, placeholder}) => (
+              <div key={key}>
+                <Label>{label}</Label>
+                <Input placeholder={placeholder} value={basicInfoForm[key]}
+                  onChange={e => setBasicInfoForm(f=>({...f,[key]:e.target.value}))}/>
+              </div>
+            ))}
+            <div style={{ gridColumn:'1/-1' }}>
+              <Label>상세 설명</Label>
+              <textarea value={basicInfoForm.description}
+                onChange={e => setBasicInfoForm(f=>({...f,description:e.target.value}))}
+                placeholder="상품 상세 설명을 입력하세요"
+                style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:80 }}/>
+            </div>
+            <div>
+              <Label>취급 주의</Label>
+              <Input placeholder="예) 세탁기 사용불가" value={basicInfoForm.handling}
+                onChange={e => setBasicInfoForm(f=>({...f,handling:e.target.value}))}/>
+            </div>
+            <div>
+              <Label>비고</Label>
+              <Input placeholder="기타 메모" value={basicInfoForm.notes}
+                onChange={e => setBasicInfoForm(f=>({...f,notes:e.target.value}))}/>
+            </div>
+          </div>
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+            <Button variant="outline" onClick={() => setBasicInfoTarget(null)}>취소</Button>
+            <Button onClick={handleBasicInfoSave} style={{ background:'#7e22ce', borderColor:'#7e22ce' }}>
+              저장 (전송준비로 변경)
+            </Button>
           </div>
         </Modal>
       )}

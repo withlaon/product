@@ -47,8 +47,8 @@ const genBarcode = (code: string, opt: string) =>
 const INIT_ITEM    = { product_code:'', option_name:'', barcode:'', ordered:'' }
 const INIT_FORM    = { order_date:'', supplier:'', items:[{ ...INIT_ITEM }] }
 const INIT_IN_ITEM = { product_code:'', option_name:'', barcode:'', qty:'' }
-const INIT_IN_FORM: { in_number:string; supplier:string; received_date:string; items:typeof INIT_IN_ITEM[] } = {
-  in_number:'', supplier:'', received_date:'', items:[{ ...INIT_IN_ITEM }],
+const INIT_IN_FORM: { received_date:string; items:typeof INIT_IN_ITEM[] } = {
+  received_date:'', items:[{ ...INIT_IN_ITEM }],
 }
 
 type BulkRow = { product_code:string; option_name:string; barcode:string; qty:string }
@@ -211,7 +211,7 @@ export default function PurchasePage() {
 
   // 직접 입고 등록 (발주 없이)
   const handleInAdd = () => {
-    if (!inForm.supplier) return
+    if (!inForm.items.some(i => i.product_code)) return
     const today = inForm.received_date || new Date().toISOString().slice(0,10)
     const items = inForm.items.filter(i => i.product_code).map(i => ({
       product_code: i.product_code,
@@ -223,7 +223,7 @@ export default function PurchasePage() {
     const p: Purchase = {
       id:          String(Date.now()),
       order_date:  today,
-      supplier:    inForm.supplier,
+      supplier:    '직접입고',
       status:      'completed',
       ordered_at:  new Date().toISOString(),
       received_at: new Date(`${today}T00:00:00`).toISOString(),
@@ -410,16 +410,6 @@ export default function PurchasePage() {
           💡 발주 없이 직접 입고된 상품을 등록합니다. 등록 후 <strong>입고완료</strong> 상태로 처리됩니다.
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-          <div>
-            <Label>입고번호</Label>
-            <Input placeholder="자동 생성 (비워두면 자동)" value={inForm.in_number}
-              onChange={e => setInForm(f => ({...f, in_number:e.target.value}))}/>
-          </div>
-          <div>
-            <Label>구매처 *</Label>
-            <Input placeholder="동대문 A상회" value={inForm.supplier}
-              onChange={e => setInForm(f => ({...f, supplier:e.target.value}))}/>
-          </div>
           <div>
             <Label>입고일</Label>
             <Input type="date" value={inForm.received_date}

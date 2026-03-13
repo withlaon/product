@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Package, Warehouse, ShoppingCart,
   MessageSquare, Truck, Store, Settings, BarChart3,
-  PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, Send,
+  PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, Send, PenSquare,
 } from 'lucide-react'
 
 const navGroups = [
@@ -17,10 +17,11 @@ const navGroups = [
   {
     label: '상품 · 재고',
     items: [
-      { label: '상품관리',     href: '/products',          icon: Package },
-      { label: '발주/입고관리', href: '/purchase',           icon: PackagePlus },
-      { label: '상품전송',     href: '/product-transfer',  icon: Send },
-      { label: '재고관리',     href: '/inventory',          icon: Warehouse },
+      { label: '상품관리',       href: '/products',              icon: Package },
+      { label: '발주/입고관리',   href: '/purchase',              icon: PackagePlus },
+      { label: '상품전송',       href: '/product-transfer',      icon: Send },
+      { label: '전송상품수정',    href: '/product-edit-transfer', icon: PenSquare },
+      { label: '재고관리',       href: '/inventory',              icon: Warehouse },
     ],
   },
   {
@@ -34,8 +35,8 @@ const navGroups = [
   {
     label: '연동 · 분석',
     items: [
-      { label: '채널연동', href: '/channels', icon: Store },
-      { label: '통계/분석', href: '/analytics', icon: BarChart3 },
+      { label: '쇼핑몰 관리', href: '/channels', icon: Store },
+      { label: '통계/분석',   href: '/analytics', icon: BarChart3 },
     ],
   },
   {

@@ -3,7 +3,7 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
-import { RefreshCw, Settings, Zap, Plus, CheckCircle2, XCircle, ShoppingCart, Package, Unlink } from 'lucide-react'
+import { RefreshCw, Settings, Zap, Plus, CheckCircle2, XCircle, ShoppingCart, Package, Unlink, Tag, Info, X } from 'lucide-react'
 
 /* ─── 채널 로고 (Google Favicon API) ────────────────────────── */
 const LOGO: Record<string, string> = {
@@ -15,15 +15,24 @@ const LOGO: Record<string, string> = {
   wemakeprice: 'https://www.google.com/s2/favicons?domain=wemakeprice.com&sz=64',
 }
 
-const INIT_CHANNELS = [
-  { id:'1', name:'쿠팡',            type:'coupang', color:'from-orange-400 to-orange-600', active:true,  seller_id:'A000123456', synced:89,  orders:32, features:['상품등록','가격수정','주문수집','송장전송','CS연동'] },
-  { id:'2', name:'네이버 스마트스토어', type:'naver',   color:'from-green-400 to-green-600',  active:true,  seller_id:'mystore001', synced:134, orders:18, features:['상품등록','가격수정','주문수집','송장전송'] },
-  { id:'3', name:'11번가',           type:'11st',    color:'from-red-400 to-red-600',       active:true,  seller_id:'seller789',  synced:67,  orders:8,  features:['상품등록','주문수집','송장전송'] },
-  { id:'4', name:'G마켓',            type:'gmarket', color:'from-blue-400 to-blue-600',     active:false, seller_id:null,         synced:0,   orders:0,  features:['상품등록','가격수정','주문수집','송장전송'] },
-  { id:'5', name:'옥션',             type:'auction', color:'from-yellow-400 to-yellow-600', active:false, seller_id:null,         synced:0,   orders:0,  features:['상품등록','주문수집','송장전송'] },
-]
+type MallCategory = { id:string; name:string; code:string }
+type MallExtraInfo = { store_name:string; store_url:string; contact:string; delivery_days:string; notes:string }
+type Channel = {
+  id:string; name:string; type:string; color:string; active:boolean
+  seller_id:string|null; synced:number; orders:number; features:string[]
+  categories: MallCategory[]
+  extra_info: MallExtraInfo
+}
 
-type Channel = typeof INIT_CHANNELS[0]
+const DEF_EXTRA: MallExtraInfo = { store_name:'', store_url:'', contact:'', delivery_days:'', notes:'' }
+
+const INIT_CHANNELS: Channel[] = [
+  { id:'1', name:'쿠팡',            type:'coupang', color:'from-orange-400 to-orange-600', active:true,  seller_id:'A000123456', synced:89,  orders:32, features:['상품등록','가격수정','주문수집','송장전송','CS연동'], categories:[], extra_info:{...DEF_EXTRA} },
+  { id:'2', name:'네이버 스마트스토어', type:'naver',   color:'from-green-400 to-green-600',  active:true,  seller_id:'mystore001', synced:134, orders:18, features:['상품등록','가격수정','주문수집','송장전송'], categories:[], extra_info:{...DEF_EXTRA} },
+  { id:'3', name:'11번가',           type:'11st',    color:'from-red-400 to-red-600',       active:true,  seller_id:'seller789',  synced:67,  orders:8,  features:['상품등록','주문수집','송장전송'], categories:[], extra_info:{...DEF_EXTRA} },
+  { id:'4', name:'G마켓',            type:'gmarket', color:'from-blue-400 to-blue-600',     active:false, seller_id:null,         synced:0,   orders:0,  features:['상품등록','가격수정','주문수집','송장전송'], categories:[], extra_info:{...DEF_EXTRA} },
+  { id:'5', name:'옥션',             type:'auction', color:'from-yellow-400 to-yellow-600', active:false, seller_id:null,         synced:0,   orders:0,  features:['상품등록','주문수집','송장전송'], categories:[], extra_info:{...DEF_EXTRA} },
+]
 
 /* ─── 채널 로고 이미지 컴포넌트 ─────────────────────────────── */
 function ChannelLogo({ ch, size = 44 }: { ch: Channel; size?: number }) {
@@ -53,6 +62,35 @@ export default function ChannelsPage() {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [addOpen, setAddOpen]   = useState(false)
   const [confirmDisconnect, setConfirmDisconnect] = useState<Channel | null>(null)
+  const [mallInfoOpen, setMallInfoOpen] = useState(false)
+  const [mallInfoTab, setMallInfoTab]   = useState<'category'|'extra'>('category')
+  const [newCatName, setNewCatName]     = useState('')
+  const [newCatCode, setNewCatCode]     = useState('')
+
+  const [extraDraft, setExtraDraft] = useState<MallExtraInfo>({...DEF_EXTRA})
+
+  const openMallInfo = (ch: Channel) => {
+    setSelCh(ch); setMallInfoOpen(true); setMallInfoTab('category')
+    setNewCatName(''); setNewCatCode('')
+    setExtraDraft({...ch.extra_info})
+  }
+  const addCategory = () => {
+    if (!selCh || !newCatName.trim()) return
+    const cat: MallCategory = { id: String(Date.now()), name: newCatName.trim(), code: newCatCode.trim() }
+    setChannels(prev => prev.map(c => c.id === selCh.id ? { ...c, categories:[...c.categories, cat] } : c))
+    setSelCh(prev => prev ? { ...prev, categories:[...prev.categories, cat] } : prev)
+    setNewCatName(''); setNewCatCode('')
+  }
+  const removeCategory = (catId: string) => {
+    if (!selCh) return
+    setChannels(prev => prev.map(c => c.id === selCh.id ? { ...c, categories: c.categories.filter(ct=>ct.id!==catId) } : c))
+    setSelCh(prev => prev ? { ...prev, categories: prev.categories.filter(ct=>ct.id!==catId) } : prev)
+  }
+  const saveExtraInfo = (info: MallExtraInfo) => {
+    if (!selCh) return
+    setChannels(prev => prev.map(c => c.id === selCh.id ? { ...c, extra_info:info } : c))
+    setSelCh(prev => prev ? { ...prev, extra_info:info } : prev)
+  }
 
   const active       = channels.filter(c => c.active)
   const totalOrders  = active.reduce((s, c) => s + c.orders, 0)
@@ -80,8 +118,8 @@ export default function ChannelsPage() {
       </div>
 
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-        <h2 style={{ fontSize:14, fontWeight:900, color:'#1e293b' }}>채널 목록</h2>
-        <Button onClick={() => setAddOpen(true)}><Plus size={14}/>채널 추가</Button>
+        <h2 style={{ fontSize:14, fontWeight:900, color:'#1e293b' }}>쇼핑몰 목록</h2>
+        <Button onClick={() => setAddOpen(true)}><Plus size={14}/>쇼핑몰 추가</Button>
       </div>
 
       {/* 채널 카드 그리드 */}
@@ -159,21 +197,133 @@ export default function ChannelsPage() {
                 ))}
               </div>
 
+              {/* 카테고리 표시 */}
+              {ch.categories.length > 0 && (
+                <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginBottom:10 }}>
+                  {ch.categories.slice(0,3).map(ct=>(
+                    <span key={ct.id} style={{ fontSize:10.5, fontWeight:700, background:'#faf5ff', color:'#7e22ce', padding:'2px 8px', borderRadius:99, border:'1px solid #e9d5ff' }}>
+                      {ct.name}{ct.code?` (${ct.code})`:''}
+                    </span>
+                  ))}
+                  {ch.categories.length > 3 && <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:700 }}>+{ch.categories.length-3}개</span>}
+                </div>
+              )}
+
               {/* 버튼 */}
-              <div style={{ display:'flex', gap:8 }}>
+              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
                 {ch.active ? (
                   <>
                     <Button variant="outline" size="sm" style={{ flex:1, fontSize:12 }}><RefreshCw size={12}/>동기화</Button>
                     <Button variant="outline" size="sm" style={{ flex:1, fontSize:12 }} onClick={() => { setSelCh(ch); setSettingsOpen(true) }}><Settings size={12}/>설정</Button>
                   </>
                 ) : (
-                  <Button size="sm" style={{ width:'100%', fontSize:12 }} onClick={() => { setSelCh(ch); setSettingsOpen(true) }}><Zap size={12}/>연동 시작</Button>
+                  <Button size="sm" style={{ flex:1, fontSize:12 }} onClick={() => { setSelCh(ch); setSettingsOpen(true) }}><Zap size={12}/>연동 시작</Button>
                 )}
+                <Button variant="outline" size="sm" style={{ fontSize:12 }} onClick={() => openMallInfo(ch)}>
+                  <Tag size={12}/>카테고리/정보
+                </Button>
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* ── 카테고리 / 부가정보 모달 ── */}
+      {selCh && mallInfoOpen && (
+        <Modal isOpen onClose={() => setMallInfoOpen(false)} title={`${selCh.name} — 카테고리 · 부가정보`} size="lg">
+          {/* 탭 */}
+          <div style={{ display:'flex', gap:0, borderBottom:'2px solid #f1f5f9', marginBottom:18 }}>
+            {(['category','extra'] as const).map(t => (
+              <button key={t} onClick={() => setMallInfoTab(t)}
+                style={{ padding:'8px 20px', fontSize:13, fontWeight:800, background:'none', border:'none', cursor:'pointer',
+                  color: mallInfoTab===t ? '#7e22ce' : '#94a3b8',
+                  borderBottom: mallInfoTab===t ? '2px solid #7e22ce' : '2px solid transparent',
+                  marginBottom:-2 }}>
+                {t==='category' ? '📂 카테고리 등록' : '📋 부가정보'}
+              </button>
+            ))}
+          </div>
+
+          {mallInfoTab === 'category' && (
+            <div>
+              <p style={{ fontSize:12, color:'#64748b', marginBottom:14 }}>
+                상품 등록 시 자동으로 매핑할 <b>{selCh.name}</b> 카테고리를 등록하세요.
+              </p>
+              {/* 카테고리 추가 입력 */}
+              <div style={{ display:'flex', gap:8, marginBottom:14, alignItems:'flex-end' }}>
+                <div style={{ flex:2 }}>
+                  <label style={{ fontSize:11.5, fontWeight:800, color:'#475569', display:'block', marginBottom:4 }}>카테고리명 *</label>
+                  <input value={newCatName} onChange={e=>setNewCatName(e.target.value)}
+                    placeholder="예) 여성패션 > 가방" onKeyDown={e=>{if(e.key==='Enter') addCategory()}}
+                    style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                </div>
+                <div style={{ flex:1 }}>
+                  <label style={{ fontSize:11.5, fontWeight:800, color:'#475569', display:'block', marginBottom:4 }}>카테고리 코드</label>
+                  <input value={newCatCode} onChange={e=>setNewCatCode(e.target.value)}
+                    placeholder="숫자코드"
+                    style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                </div>
+                <button onClick={addCategory}
+                  style={{ height:36, padding:'0 16px', background:'#7e22ce', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer', display:'flex', alignItems:'center', gap:4, flexShrink:0 }}>
+                  <Plus size={12}/>추가
+                </button>
+              </div>
+              {/* 카테고리 목록 */}
+              {selCh.categories.length === 0 ? (
+                <div style={{ textAlign:'center', padding:'24px 0', color:'#cbd5e1', fontSize:13 }}>등록된 카테고리가 없습니다</div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {selCh.categories.map(ct => (
+                    <div key={ct.id} style={{ display:'flex', alignItems:'center', gap:10, background:'#faf5ff', border:'1px solid #e9d5ff', borderRadius:10, padding:'8px 14px' }}>
+                      <Tag size={13} color="#7e22ce" style={{ flexShrink:0 }}/>
+                      <span style={{ flex:1, fontSize:13, fontWeight:700, color:'#4c1d95' }}>{ct.name}</span>
+                      {ct.code && <span style={{ fontSize:11, fontFamily:'monospace', color:'#7e22ce', background:'#ede9fe', padding:'2px 7px', borderRadius:5 }}>{ct.code}</span>}
+                      <button onClick={() => removeCategory(ct.id)}
+                        style={{ width:22, height:22, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:5, cursor:'pointer' }}>
+                        <X size={11}/>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {mallInfoTab === 'extra' && (
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              {[
+                { label:'스토어명', key:'store_name' as const, placeholder:'쇼핑몰 스토어/상점 이름' },
+                { label:'스토어 URL', key:'store_url' as const, placeholder:'https://...' },
+                { label:'담당자 연락처', key:'contact' as const, placeholder:'010-0000-0000' },
+                { label:'배송 기간 (일)', key:'delivery_days' as const, placeholder:'예) 3' },
+              ].map(({ label, key, placeholder }) => (
+                <div key={key}>
+                  <label style={{ fontSize:11.5, fontWeight:800, color:'#475569', display:'block', marginBottom:4 }}>{label}</label>
+                  <input value={extraDraft[key]} onChange={e => setExtraDraft(d=>({...d,[key]:e.target.value}))}
+                    placeholder={placeholder}
+                    style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                </div>
+              ))}
+              <div>
+                <label style={{ fontSize:11.5, fontWeight:800, color:'#475569', display:'block', marginBottom:4 }}>비고</label>
+                <textarea value={extraDraft.notes} onChange={e=>setExtraDraft(d=>({...d,notes:e.target.value}))}
+                  placeholder="메모"
+                  style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:70 }}/>
+              </div>
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:4 }}>
+                <Button variant="outline" onClick={() => setMallInfoOpen(false)}>취소</Button>
+                <Button onClick={() => { saveExtraInfo(extraDraft); setMallInfoOpen(false) }}><Info size={13}/>저장</Button>
+              </div>
+            </div>
+          )}
+
+          {mallInfoTab === 'category' && (
+            <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+              <Button onClick={() => setMallInfoOpen(false)}>확인</Button>
+            </div>
+          )}
+        </Modal>
+      )}
 
       {/* ── 연동 해제 확인 모달 ── */}
       {confirmDisconnect && (
