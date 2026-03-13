@@ -51,7 +51,7 @@ interface Product {
 }
 const DEF_BASIC_INFO: BasicInfo = { title:'', brand:'', origin:'', manufacturer:'', material:'', description:'', handling:'', notes:'' }
 
-const CNY_TO_KRW = 193
+const CNY_TO_KRW = 210
 const DEFAULT_CATS = ['전체', '가방', '의류', '잡화']
 
 /* ─── 상태 맵 ───────────────────────────────────────────────── */
@@ -278,6 +278,8 @@ export default function ProductsPage() {
 
   const [form, setForm] = useState(INIT_FORM)
   const [addErrors, setAddErrors] = useState<Set<string>>(new Set())
+  const [addSubmitting, setAddSubmitting] = useState(false)
+  const [addDbError, setAddDbError] = useState('')
   const [loading, setLoading] = useState(true)
   const handleOptImage  = useOptImageUpload(setForm)
 
@@ -296,7 +298,7 @@ export default function ProductsPage() {
       const { data, error } = await supabase
         .from('pm_products')
         .select('*')
-        .order('created_at', { ascending: false })
+        .order('code', { ascending: true })
       if (!error && data) {
         const loaded = data.map(rowToProduct)
         setProducts(loaded)
@@ -410,7 +412,7 @@ export default function ProductsPage() {
       const mC  = activeTab === '전체' || p.category === activeTab
       const mSt = statusFilter === '전체' || p.status === statusFilter
       return mS && mC && mSt
-    })
+    }).sort((a, b) => a.code.localeCompare(b.code))
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products, search, activeTab, statusFilter])
 
@@ -421,14 +423,16 @@ export default function ProductsPage() {
   const clearSearch = () => { setSearch(''); setSearchInput(''); setPage(1) }
 
   const handleAdd = async () => {
-    const cat = form.category === '__new__' ? form.newCat : form.category
+    const cat = form.category === '__new__' ? form.newCat.trim() : form.category
     const errors = new Set<string>()
-    if (!form.code) errors.add('code')
-    if (!form.name) errors.add('name')
+    if (!form.code.trim()) errors.add('code')
+    if (!form.name.trim()) errors.add('name')
     if (!cat) errors.add('category')
     if (errors.size > 0) { setAddErrors(errors); return }
     setAddErrors(new Set())
-    const options: ProductOption[] = form.options.filter(o => o.name).map(o => ({
+    setAddDbError('')
+    setAddSubmitting(true)
+    const options: ProductOption[] = form.options.filter(o => o.name.trim()).map(o => ({
       name: o.name,
       chinese_name: o.chinese_name,
       barcode: o.barcode || genBarcode(form.code, o.name),
@@ -436,7 +440,7 @@ export default function ProductsPage() {
       ordered: 0, received: 0, sold: 0,
     }))
     const payload = {
-      code: form.code, name: form.name, category: cat, loca: form.loca,
+      code: form.code.trim(), name: form.name.trim(), category: cat, loca: form.loca,
       cost_price: Number(form.cost_price) || 0,
       cost_currency: form.cost_currency,
       status: form.status, supplier: form.supplier,
@@ -445,9 +449,25 @@ export default function ProductsPage() {
       basic_info: null,
     }
     const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
-    if (error) { console.error('상품 등록 오류:', error); return }
+    setAddSubmitting(false)
+    if (error) {
+      console.error('상품 등록 오류:', error)
+      // mall_categories/basic_info 컬럼 미존재 시 fallback
+      if (error.message?.includes('mall_categories') || error.message?.includes('basic_info') || error.code === '42703') {
+        const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload
+        void _mc; void _bi
+        const { data: d2, error: e2 } = await supabase.from('pm_products').insert(fallback).select().single()
+        if (e2) { setAddDbError(`등록 실패: ${e2.message}\n※ Supabase에서 schema.sql의 ALTER TABLE 구문을 실행해주세요.`); return }
+        const p = rowToProduct(d2)
+        setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
+        if (cat && !DEFAULT_CATS.includes(cat) && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
+        setIsAdd(false); setForm(INIT_FORM); return
+      }
+      setAddDbError(`등록 실패: ${error.message}`)
+      return
+    }
     const p = rowToProduct(data)
-    setProducts(prev => [p, ...prev])
+    setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
     if (cat && !DEFAULT_CATS.includes(cat) && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
     setIsAdd(false)
     setForm(INIT_FORM)
@@ -868,7 +888,7 @@ export default function ProductsPage() {
       </div>
 
       {/* ── 상품 등록 모달 ── */}
-      <Modal isOpen={isAdd} onClose={() => { setIsAdd(false); setAddErrors(new Set()) }} title="상품 등록" size="xl">
+      <Modal isOpen={isAdd} onClose={() => { setIsAdd(false); setAddErrors(new Set()); setAddDbError('') }} title="상품 등록" size="xl">
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
           <div style={{ gridColumn:'1/-1' }}>
             <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', paddingBottom:6, borderBottom:'1px solid #eff6ff', marginBottom:10 }}>📦 기본 정보</p>
@@ -1056,9 +1076,17 @@ export default function ProductsPage() {
           </div>
         </div>
 
+        {addDbError && (
+          <div style={{ marginTop:12, padding:'10px 14px', background:'#fff1f2', border:'1.5px solid #fecdd3', borderRadius:10 }}>
+            <p style={{ fontSize:12, fontWeight:800, color:'#be123c', whiteSpace:'pre-line' }}>{addDbError}</p>
+          </div>
+        )}
+
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-          <Button variant="outline" onClick={() => { setIsAdd(false); setAddErrors(new Set()) }}>취소</Button>
-          <Button onClick={handleAdd}>등록하기</Button>
+          <Button variant="outline" onClick={() => { setIsAdd(false); setAddErrors(new Set()); setAddDbError('') }}>취소</Button>
+          <Button onClick={handleAdd} disabled={addSubmitting} style={{ opacity: addSubmitting ? 0.6 : 1 }}>
+            {addSubmitting ? '등록 중...' : '등록하기'}
+          </Button>
         </div>
       </Modal>
 
