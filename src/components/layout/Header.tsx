@@ -7,7 +7,8 @@ import type { Session } from '@supabase/supabase-js'
 const pageTitles: Record<string, { title: string; desc: string }> = {
   '/dashboard': { title: '대시보드', desc: '전체 현황을 한눈에 확인하세요' },
   '/products':  { title: '상품관리',     desc: '상품 등록, 수정 및 상태 관리' },
-  '/purchase':  { title: '발주/입고관리', desc: '발주 등록 및 입고 처리 현황' },
+  '/purchase':          { title: '발주/입고관리', desc: '발주 등록 및 입고 처리 현황' },
+  '/product-transfer':  { title: '상품전송',     desc: '연동 채널에 상품 전송 관리' },
   '/inventory': { title: '재고관리',     desc: '입고·출고 및 재고 현황 관리' },
   '/orders':    { title: '주문관리', desc: '주문 확인 및 처리 현황' },
   '/cs':        { title: 'CS관리',   desc: '고객 문의 및 클레임 처리' },

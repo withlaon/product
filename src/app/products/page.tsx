@@ -25,6 +25,7 @@ type CostCurrency  = 'KRW' | 'CNY'
 
 interface ProductOption {
   name: string
+  chinese_name: string  // 중국명
   barcode: string
   image: string     // 옵션 이미지 (URL 또는 base64)
   ordered: number   // 발주 수량
@@ -181,7 +182,10 @@ function ChannelPriceModal({
 }
 
 /* ─── 폼 초기값 ─────────────────────────────────────────────── */
-const INIT_OPT  = { name:'', barcode:'', image:'' }
+const genBarcode = (code: string, opt: string) =>
+  code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
+
+const INIT_OPT  = { name:'', chinese_name:'', barcode:'', image:'' }
 const INIT_FORM = {
   code:'', name:'', category:'', supplier:'', loca:'',
   cost_price:'', cost_currency:'CNY' as CostCurrency,
@@ -284,7 +288,10 @@ export default function ProductsPage() {
     const cat = form.category === '__new__' ? form.newCat : form.category
     if (!form.name || !form.code || !cat) return
     const options: ProductOption[] = form.options.filter(o => o.name).map(o => ({
-      name: o.name, barcode: o.barcode, image: o.image,
+      name: o.name,
+      chinese_name: o.chinese_name,
+      barcode: o.barcode || genBarcode(form.code, o.name),
+      image: o.image,
       ordered: 0, received: 0, sold: 0,
     }))
     const payload = {
@@ -492,9 +499,16 @@ export default function ProductsPage() {
                                   </div>
                               }
                             </div>
-                            {/* 옵션명 */}
-                            <span style={{ fontSize:12, fontWeight:800, color: optZero ? '#94a3b8' : '#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                              {opt.name}
+                            {/* 옵션명 + 중국명 */}
+                            <span style={{ display:'flex', flexDirection:'column', gap:1, overflow:'hidden' }}>
+                              <span style={{ fontSize:12, fontWeight:800, color: optZero ? '#94a3b8' : '#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                {opt.name}
+                              </span>
+                              {opt.chinese_name && (
+                                <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                  {opt.chinese_name}
+                                </span>
+                              )}
                             </span>
                             {/* 바코드 */}
                             <span style={{ fontFamily:'monospace', fontSize:10.5, color:'#1e293b', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
@@ -656,7 +670,16 @@ export default function ProductsPage() {
             <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', paddingBottom:6, borderBottom:'1px solid #eff6ff', marginBottom:10 }}>📦 기본 정보</p>
           </div>
 
-          <div><Label>상품코드 *</Label><Input placeholder="P-00001" value={form.code} onChange={e => setForm(f => ({...f,code:e.target.value}))}/></div>
+          <div><Label>상품코드 *</Label><Input placeholder="WA5AC001" value={form.code}
+            onChange={e => {
+              const newCode = e.target.value
+              setForm(f => ({
+                ...f,
+                code: newCode,
+                options: f.options.map(o => ({ ...o, barcode: genBarcode(newCode, o.name) })),
+              }))
+            }}
+          /></div>
           <div><Label>상품명 *</Label><Input placeholder="상품명 입력" value={form.name} onChange={e => setForm(f => ({...f,name:e.target.value}))}/></div>
 
           <div>
@@ -710,8 +733,8 @@ export default function ProductsPage() {
             <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', paddingBottom:6, borderBottom:'1px solid #eff6ff', marginBottom:10 }}>🏷️ 옵션</p>
             {form.options.map((opt, i) => (
               <div key={i} style={{ border:'1px solid rgba(15,23,42,0.07)', borderRadius:12, padding:12, marginBottom:10, background:'#fafbfc' }}>
-                {/* Row 1: 이미지 + 이름 + 바코드 + 삭제 */}
-                <div style={{ display:'grid', gridTemplateColumns:'52px 1fr 1fr auto', gap:8, marginBottom:8, alignItems:'flex-end' }}>
+                {/* Row 1: 이미지 + 이름/중국명 + 바코드(자동) + 삭제 */}
+                <div style={{ display:'grid', gridTemplateColumns:'52px 2fr 1.5fr auto', gap:8, marginBottom:8, alignItems:'flex-end' }}>
                   {/* 이미지 업로드 */}
                   <div>
                     <Label>이미지</Label>
@@ -727,8 +750,30 @@ export default function ProductsPage() {
                         onChange={e => { const file = e.target.files?.[0]; if(file) handleOptImage(i, file) }} />
                     </label>
                   </div>
-                  <div><Label>옵션명</Label><Input placeholder="블랙/M" value={opt.name} onChange={e => { const o=[...form.options];o[i]={...o[i],name:e.target.value};setForm(f=>({...f,options:o}))}}/></div>
-                  <div><Label>바코드</Label><Input placeholder="8801234567890" value={opt.barcode} onChange={e => { const o=[...form.options];o[i]={...o[i],barcode:e.target.value};setForm(f=>({...f,options:o}))}}/></div>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                    <div>
+                      <Label>옵션명</Label>
+                      <Input placeholder="BE" value={opt.name}
+                        onChange={e => {
+                          const o=[...form.options]
+                          o[i]={...o[i],name:e.target.value,barcode:genBarcode(form.code,e.target.value)}
+                          setForm(f=>({...f,options:o}))
+                        }}
+                      />
+                    </div>
+                    <div>
+                      <Label>중국명</Label>
+                      <Input placeholder="黑色/M" value={opt.chinese_name}
+                        onChange={e => { const o=[...form.options];o[i]={...o[i],chinese_name:e.target.value};setForm(f=>({...f,options:o}))}}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <Label>바코드 (자동)</Label>
+                    <Input readOnly value={opt.barcode || genBarcode(form.code, opt.name)}
+                      style={{ background:'#f8fafc', color:'#334155', fontFamily:'monospace', fontSize:12 }}
+                    />
+                  </div>
                   <div style={{ paddingBottom:1 }}>
                     {form.options.length > 1 && (
                       <button onClick={() => setForm(f=>({...f,options:f.options.filter((_,j)=>j!==i)}))}

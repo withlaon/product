@@ -13,7 +13,7 @@ import {
 type PurchaseStatus = 'ordered' | 'partial' | 'completed' | 'cancelled'
 
 interface PurchaseItem {
-  product_name: string
+  product_code: string
   option_name: string
   barcode: string
   ordered: number
@@ -21,14 +21,12 @@ interface PurchaseItem {
 }
 interface Purchase {
   id: string
-  po_number: string
+  order_date: string
   supplier: string
   status: PurchaseStatus
   ordered_at: string
-  expected_at: string
   received_at: string | null
   items: PurchaseItem[]
-  notes: string
 }
 
 const ST: Record<PurchaseStatus, { label:string; bg:string; color:string; dot:string; icon: React.ReactNode }> = {
@@ -42,11 +40,14 @@ function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display:'block', fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:5 }}>{children}</label>
 }
 
-const INIT_ITEM    = { product_name:'', option_name:'', barcode:'', ordered:'', received:'' }
-const INIT_FORM    = { po_number:'', supplier:'', expected_at:'', notes:'', items:[{ ...INIT_ITEM }] }
-const INIT_IN_ITEM = { product_name:'', option_name:'', barcode:'', qty:'' }
-const INIT_IN_FORM: { in_number:string; supplier:string; received_date:string; notes:string; items:typeof INIT_IN_ITEM[] } = {
-  in_number:'', supplier:'', received_date:'', notes:'', items:[{ ...INIT_IN_ITEM }],
+const genBarcode = (code: string, opt: string) =>
+  code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
+
+const INIT_ITEM    = { product_code:'', option_name:'', barcode:'', ordered:'' }
+const INIT_FORM    = { order_date:'', supplier:'', items:[{ ...INIT_ITEM }] }
+const INIT_IN_ITEM = { product_code:'', option_name:'', barcode:'', qty:'' }
+const INIT_IN_FORM: { in_number:string; supplier:string; received_date:string; items:typeof INIT_IN_ITEM[] } = {
+  in_number:'', supplier:'', received_date:'', items:[{ ...INIT_IN_ITEM }],
 }
 
 export default function PurchasePage() {
@@ -62,25 +63,23 @@ export default function PurchasePage() {
 
   const filtered = purchases.filter(p =>
     (sf === '전체' || p.status === sf) &&
-    (!search || p.po_number.includes(search) || p.supplier.includes(search) ||
-      p.items.some(i => i.product_name.includes(search)))
+    (!search || p.order_date.includes(search) || p.supplier.includes(search) ||
+      p.items.some(i => i.product_code.includes(search)))
   )
 
   const handleAdd = () => {
-    if (!form.po_number || !form.supplier) return
+    if (!form.order_date || !form.supplier) return
     const p: Purchase = {
       id: String(Date.now()),
-      po_number: form.po_number,
+      order_date: form.order_date,
       supplier: form.supplier,
       status: 'ordered',
       ordered_at: new Date().toISOString(),
-      expected_at: form.expected_at,
       received_at: null,
-      notes: form.notes,
-      items: form.items.filter(i => i.product_name).map(i => ({
-        product_name: i.product_name,
+      items: form.items.filter(i => i.product_code).map(i => ({
+        product_code: i.product_code,
         option_name: i.option_name,
-        barcode: i.barcode,
+        barcode: i.barcode || genBarcode(i.product_code, i.option_name),
         ordered: Number(i.ordered) || 0,
         received: 0,
       })),
@@ -114,22 +113,20 @@ export default function PurchasePage() {
   const handleInAdd = () => {
     if (!inForm.supplier) return
     const today = inForm.received_date || new Date().toISOString().slice(0,10)
-    const items = inForm.items.filter(i => i.product_name).map(i => ({
-      product_name: i.product_name,
+    const items = inForm.items.filter(i => i.product_code).map(i => ({
+      product_code: i.product_code,
       option_name:  i.option_name,
-      barcode:      i.barcode,
+      barcode:      i.barcode || genBarcode(i.product_code, i.option_name),
       ordered:      Number(i.qty) || 0,
       received:     Number(i.qty) || 0,
     }))
     const p: Purchase = {
       id:          String(Date.now()),
-      po_number:   inForm.in_number || `IN-${Date.now().toString().slice(-6)}`,
+      order_date:  today,
       supplier:    inForm.supplier,
       status:      'completed',
       ordered_at:  new Date().toISOString(),
-      expected_at: today,
       received_at: new Date(`${today}T00:00:00`).toISOString(),
-      notes:       inForm.notes,
       items,
     }
     setPurchases(prev => [...prev, p])
@@ -185,14 +182,13 @@ export default function PurchasePage() {
           <table className="pm-table" style={{ minWidth:900 }}>
             <thead>
               <tr>
-                <th>발주번호</th>
+                <th>발주일</th>
                 <th>구매처</th>
                 <th style={{ textAlign:'center' }}>상품 수</th>
                 <th style={{ textAlign:'right' }}>발주 수량</th>
                 <th style={{ textAlign:'right' }}>입고 수량</th>
                 <th style={{ textAlign:'right' }}>미입고</th>
-                <th>발주일</th>
-                <th>입고 예정일</th>
+                <th>등록일</th>
                 <th style={{ textAlign:'center' }}>상태</th>
                 <th style={{ textAlign:'center' }}>관리</th>
               </tr>
@@ -219,7 +215,7 @@ export default function PurchasePage() {
                     <td>
                       <button onClick={() => setDetail(p)}
                         style={{ fontFamily:'monospace', fontWeight:800, color:'#2563eb', fontSize:12.5, background:'none', border:'none', cursor:'pointer', padding:0 }}>
-                        {p.po_number}
+                        {p.order_date}
                       </button>
                     </td>
                     <td style={{ fontSize:12.5, fontWeight:700, color:'#334155' }}>{p.supplier}</td>
@@ -230,7 +226,6 @@ export default function PurchasePage() {
                       {undelivered.toLocaleString()}
                     </td>
                     <td style={{ fontSize:11.5, color:'#94a3b8' }}>{p.ordered_at ? new Date(p.ordered_at).toLocaleDateString('ko-KR') : '-'}</td>
-                    <td style={{ fontSize:11.5, color:'#94a3b8' }}>{p.expected_at || '-'}</td>
                     <td style={{ textAlign:'center' }}>
                       <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, background:st.bg, color:st.color, padding:'4px 10px', borderRadius:99 }}>
                         {st.icon}{st.label}
@@ -264,19 +259,21 @@ export default function PurchasePage() {
       {/* ── 발주 등록 모달 ── */}
       <Modal isOpen={isAdd} onClose={() => setIsAdd(false)} title="발주 등록" size="xl">
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-          <div><Label>발주번호 *</Label><Input placeholder="PO-2026-0001" value={form.po_number} onChange={e=>setForm(f=>({...f,po_number:e.target.value}))}/></div>
+          <div><Label>발주일 *</Label><Input type="date" value={form.order_date} onChange={e=>setForm(f=>({...f,order_date:e.target.value}))}/></div>
           <div><Label>구매처 *</Label><Input placeholder="동대문 A상회" value={form.supplier} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))}/></div>
-          <div><Label>입고 예정일</Label><Input type="date" value={form.expected_at} onChange={e=>setForm(f=>({...f,expected_at:e.target.value}))}/></div>
-          <div><Label>비고</Label><Input placeholder="메모" value={form.notes} onChange={e=>setForm(f=>({...f,notes:e.target.value}))}/></div>
 
           <div style={{ gridColumn:'1/-1', marginTop:8 }}>
             <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', paddingBottom:6, borderBottom:'1px solid #eff6ff', marginBottom:10 }}>📦 발주 상품</p>
             {form.items.map((item, i) => (
-              <div key={i} style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr 1fr 1fr auto', gap:8, marginBottom:8 }}>
-                <div><Label>상품명</Label><Input placeholder="상품명" value={item.product_name} onChange={e=>{const it=[...form.items];it[i]={...it[i],product_name:e.target.value};setForm(f=>({...f,items:it}))}}/></div>
-                <div><Label>옵션명</Label><Input placeholder="블랙/M" value={item.option_name} onChange={e=>{const it=[...form.items];it[i]={...it[i],option_name:e.target.value};setForm(f=>({...f,items:it}))}}/></div>
-                <div><Label>바코드</Label><Input placeholder="8801234567890" value={item.barcode} onChange={e=>{const it=[...form.items];it[i]={...it[i],barcode:e.target.value};setForm(f=>({...f,items:it}))}}/></div>
-                <div><Label>발주 수량</Label><Input type="number" placeholder="0" value={item.ordered} onChange={e=>{const it=[...form.items];it[i]={...it[i],ordered:e.target.value};setForm(f=>({...f,items:it}))}}/></div>
+              <div key={i} style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr 1.5fr 1fr auto', gap:8, marginBottom:8 }}>
+                <div><Label>상품코드</Label><Input placeholder="WA5AC001" value={item.product_code}
+                  onChange={e=>{const it=[...form.items];it[i]={...it[i],product_code:e.target.value,barcode:genBarcode(e.target.value,it[i].option_name)};setForm(f=>({...f,items:it}))}}/></div>
+                <div><Label>옵션명</Label><Input placeholder="BE" value={item.option_name}
+                  onChange={e=>{const it=[...form.items];it[i]={...it[i],option_name:e.target.value,barcode:genBarcode(it[i].product_code,e.target.value)};setForm(f=>({...f,items:it}))}}/></div>
+                <div><Label>바코드 (자동)</Label><Input readOnly value={item.barcode}
+                  style={{ background:'#f8fafc', color:'#334155', fontFamily:'monospace' }}/></div>
+                <div><Label>발주 수량</Label><Input type="number" placeholder="0" value={item.ordered}
+                  onChange={e=>{const it=[...form.items];it[i]={...it[i],ordered:e.target.value};setForm(f=>({...f,items:it}))}}/></div>
                 <div style={{ paddingTop:21 }}>
                   {form.items.length > 1 && (
                     <button onClick={() => setForm(f=>({...f,items:f.items.filter((_,j)=>j!==i)}))}
@@ -320,27 +317,22 @@ export default function PurchasePage() {
             <Input type="date" value={inForm.received_date}
               onChange={e => setInForm(f => ({...f, received_date:e.target.value}))}/>
           </div>
-          <div>
-            <Label>비고</Label>
-            <Input placeholder="메모" value={inForm.notes}
-              onChange={e => setInForm(f => ({...f, notes:e.target.value}))}/>
-          </div>
 
           <div style={{ gridColumn:'1/-1', marginTop:8 }}>
             <p style={{ fontSize:12, fontWeight:800, color:'#059669', paddingBottom:6, borderBottom:'1px solid #ecfdf5', marginBottom:10 }}>📦 입고 상품</p>
             {inForm.items.map((item, i) => (
-              <div key={i} style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr 1fr 0.8fr auto', gap:8, marginBottom:8 }}>
-                <div><Label>상품명</Label>
-                  <Input placeholder="상품명" value={item.product_name}
-                    onChange={e=>{const it=[...inForm.items];it[i]={...it[i],product_name:e.target.value};setInForm(f=>({...f,items:it}))}}/>
+              <div key={i} style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr 1.5fr 0.8fr auto', gap:8, marginBottom:8 }}>
+                <div><Label>상품코드</Label>
+                  <Input placeholder="WA5AC001" value={item.product_code}
+                    onChange={e=>{const it=[...inForm.items];it[i]={...it[i],product_code:e.target.value,barcode:genBarcode(e.target.value,it[i].option_name)};setInForm(f=>({...f,items:it}))}}/>
                 </div>
                 <div><Label>옵션명</Label>
-                  <Input placeholder="블랙/M" value={item.option_name}
-                    onChange={e=>{const it=[...inForm.items];it[i]={...it[i],option_name:e.target.value};setInForm(f=>({...f,items:it}))}}/>
+                  <Input placeholder="BE" value={item.option_name}
+                    onChange={e=>{const it=[...inForm.items];it[i]={...it[i],option_name:e.target.value,barcode:genBarcode(it[i].product_code,e.target.value)};setInForm(f=>({...f,items:it}))}}/>
                 </div>
-                <div><Label>바코드</Label>
-                  <Input placeholder="8801234567890" value={item.barcode}
-                    onChange={e=>{const it=[...inForm.items];it[i]={...it[i],barcode:e.target.value};setInForm(f=>({...f,items:it}))}}/>
+                <div><Label>바코드 (자동)</Label>
+                  <Input readOnly value={item.barcode}
+                    style={{ background:'#f8fafc', color:'#334155', fontFamily:'monospace' }}/>
                 </div>
                 <div><Label>입고 수량</Label>
                   <Input type="number" placeholder="0" value={item.qty}
@@ -377,9 +369,9 @@ export default function PurchasePage() {
 
       {/* ── 발주 상세 모달 ── */}
       {detail && (
-        <Modal isOpen={!!detail} onClose={() => setDetail(null)} title={`발주 상세 — ${detail.po_number}`} size="lg">
+        <Modal isOpen={!!detail} onClose={() => setDetail(null)} title={`발주 상세 — ${detail.order_date}`} size="lg">
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16 }}>
-            {[['발주번호',detail.po_number],['구매처',detail.supplier],['발주일',detail.ordered_at ? new Date(detail.ordered_at).toLocaleDateString('ko-KR') : '-'],['입고예정',detail.expected_at||'-'],['입고일',detail.received_at ? new Date(detail.received_at).toLocaleDateString('ko-KR') : '-'],['비고',detail.notes||'-']].map(([k,v])=>(
+            {[['발주일',detail.order_date],['구매처',detail.supplier],['등록일',detail.ordered_at ? new Date(detail.ordered_at).toLocaleDateString('ko-KR') : '-'],['입고일',detail.received_at ? new Date(detail.received_at).toLocaleDateString('ko-KR') : '-']].map(([k,v])=>(
               <div key={k} style={{ background:'#f8fafc', borderRadius:10, padding:'10px 14px' }}>
                 <p style={{ fontSize:10, fontWeight:800, color:'#94a3b8', textTransform:'uppercase' }}>{k}</p>
                 <p style={{ fontSize:13, fontWeight:800, color:'#1e293b', marginTop:3 }}>{v}</p>
@@ -388,11 +380,11 @@ export default function PurchasePage() {
           </div>
           <div style={{ borderRadius:12, overflow:'hidden', border:'1px solid rgba(15,23,42,0.07)' }}>
             <table className="pm-table">
-              <thead><tr>{['상품명','옵션','바코드','발주','입고','미입고'].map(h=><th key={h}>{h}</th>)}</tr></thead>
+              <thead><tr>{['상품코드','옵션','바코드','발주','입고','미입고'].map(h=><th key={h}>{h}</th>)}</tr></thead>
               <tbody>
                 {detail.items.map((item, i) => (
                   <tr key={i}>
-                    <td style={{ fontWeight:800, color:'#1e293b' }}>{item.product_name}</td>
+                    <td style={{ fontWeight:800, color:'#1e293b', fontFamily:'monospace' }}>{item.product_code}</td>
                     <td style={{ fontSize:12, color:'#64748b' }}>{item.option_name||'-'}</td>
                     <td style={{ fontFamily:'monospace', fontSize:11.5, color:'#475569' }}>{item.barcode||'-'}</td>
                     <td style={{ textAlign:'right', fontWeight:800, color:'#1e293b' }}>{item.ordered}</td>
@@ -427,7 +419,7 @@ function ReceiveModal({
     () => Object.fromEntries(purchase.items.map((item, i) => [i, String(item.ordered - item.received)]))
   )
   return (
-    <Modal isOpen onClose={onClose} title={`입고 처리 — ${purchase.po_number}`} size="md">
+    <Modal isOpen onClose={onClose} title={`입고 처리 — ${purchase.order_date}`} size="md">
       <p style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:14 }}>
         실제 입고된 수량을 입력하세요.
       </p>
@@ -438,7 +430,7 @@ function ReceiveModal({
             <div key={i} style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
               <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
                 <div>
-                  <p style={{ fontSize:13, fontWeight:800, color:'#1e293b' }}>{item.product_name}</p>
+                  <p style={{ fontSize:13, fontWeight:800, color:'#1e293b', fontFamily:'monospace' }}>{item.product_code}</p>
                   {item.option_name && <p style={{ fontSize:11.5, color:'#94a3b8', marginTop:2 }}>{item.option_name}</p>}
                 </div>
                 <div style={{ textAlign:'right' }}>
