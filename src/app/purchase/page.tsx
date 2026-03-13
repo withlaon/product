@@ -1,5 +1,6 @@
 'use client'
 import { useState } from 'react'
+import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -7,7 +8,7 @@ import { Modal } from '@/components/ui/modal'
 import { formatDateTime } from '@/lib/utils'
 import {
   Plus, Search, PackagePlus, CheckCircle2, Clock, AlertCircle,
-  Truck, X, Package,
+  Truck, X, Package, Upload, Download, Layers,
 } from 'lucide-react'
 
 type PurchaseStatus = 'ordered' | 'partial' | 'completed' | 'cancelled'
@@ -50,16 +51,63 @@ const INIT_IN_FORM: { in_number:string; supplier:string; received_date:string; i
   in_number:'', supplier:'', received_date:'', items:[{ ...INIT_IN_ITEM }],
 }
 
+type BulkRow = { product_code:string; option_name:string; barcode:string; qty:string }
+const INIT_BULK_ROW: BulkRow = { product_code:'', option_name:'', barcode:'', qty:'' }
+
+/* ── 엑셀 양식 다운로드 헬퍼 ── */
+function downloadExcelTemplate(type: 'in' | 'po') {
+  const headers = type === 'in'
+    ? [['상품코드','옵션명','입고수량'],['WA5AC001','BE','10']]
+    : [['상품코드','옵션명','발주수량'],['WA5AC001','BE','10']]
+  const ws = XLSX.utils.aoa_to_sheet(headers)
+  ws['!cols'] = [{wch:18},{wch:14},{wch:12}]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, type==='in' ? '일괄입고' : '일괄발주')
+  XLSX.writeFile(wb, type==='in' ? '일괄입고_양식.xlsx' : '일괄발주_양식.xlsx')
+}
+
+/* ── 엑셀 파싱 헬퍼 ── */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function parseExcelToBulkRows(file: File, onDone:(rows:BulkRow[])=>void) {
+  const reader = new FileReader()
+  reader.onload = ev => {
+    const data = ev.target?.result
+    const wb = XLSX.read(data, { type:'binary' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const json: any[] = XLSX.utils.sheet_to_json(ws)
+    const rows: BulkRow[] = json.map(r => {
+      const code = String(r['상품코드'] ?? r['product_code'] ?? '')
+      const opt  = String(r['옵션명'] ?? r['option_name'] ?? '')
+      const qty  = String(r['입고수량'] ?? r['발주수량'] ?? r['수량'] ?? r['qty'] ?? '')
+      const bc   = code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
+      return { product_code:code, option_name:opt, barcode:bc, qty }
+    }).filter(r => r.product_code)
+    onDone(rows)
+  }
+  reader.readAsBinaryString(file)
+}
+
 export default function PurchasePage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [search, setSearch]       = useState('')
   const [sf, setSf]               = useState('전체')
   const [isAdd, setIsAdd]         = useState(false)
-  const [isInAdd, setIsInAdd]     = useState(false)   // 직접 입고 등록
+  const [isInAdd, setIsInAdd]     = useState(false)
+  const [isBulkIn, setIsBulkIn]   = useState(false)   // 일괄 입고 등록
+  const [isBulkPo, setIsBulkPo]   = useState(false)   // 일괄 발주 등록
   const [detail, setDetail]       = useState<Purchase | null>(null)
   const [receiveTarget, setReceiveTarget] = useState<Purchase | null>(null)
   const [form, setForm]           = useState(INIT_FORM)
   const [inForm, setInForm]       = useState(INIT_IN_FORM)
+  // 일괄 입고 폼
+  const [bulkInDate, setBulkInDate]         = useState('')
+  const [bulkInSupplier, setBulkInSupplier] = useState('')
+  const [bulkInRows, setBulkInRows]         = useState<BulkRow[]>([{ ...INIT_BULK_ROW }])
+  // 일괄 발주 폼
+  const [bulkPoDate, setBulkPoDate]         = useState('')
+  const [bulkPoSupplier, setBulkPoSupplier] = useState('')
+  const [bulkPoRows, setBulkPoRows]         = useState<BulkRow[]>([{ ...INIT_BULK_ROW }])
 
   const filtered = purchases.filter(p =>
     (sf === '전체' || p.status === sf) &&
@@ -67,6 +115,58 @@ export default function PurchasePage() {
       p.items.some(i => i.product_code.includes(search)))
   )
 
+  /* ── 일괄 입고 등록 ── */
+  const handleBulkInSubmit = () => {
+    if (!bulkInSupplier) return
+    const today = bulkInDate || new Date().toISOString().slice(0,10)
+    const items = bulkInRows.filter(r => r.product_code).map(r => ({
+      product_code: r.product_code,
+      option_name: r.option_name,
+      barcode: r.barcode || genBarcode(r.product_code, r.option_name),
+      ordered: Number(r.qty) || 0,
+      received: Number(r.qty) || 0,
+    }))
+    if (!items.length) return
+    const p: Purchase = {
+      id: String(Date.now()),
+      order_date: today,
+      supplier: bulkInSupplier,
+      status: 'completed',
+      ordered_at: new Date().toISOString(),
+      received_at: new Date(`${today}T00:00:00`).toISOString(),
+      items,
+    }
+    setPurchases(prev => [...prev, p])
+    setIsBulkIn(false)
+    setBulkInDate(''); setBulkInSupplier(''); setBulkInRows([{ ...INIT_BULK_ROW }])
+  }
+
+  /* ── 일괄 발주 등록 ── */
+  const handleBulkPoSubmit = () => {
+    if (!bulkPoDate || !bulkPoSupplier) return
+    const items = bulkPoRows.filter(r => r.product_code).map(r => ({
+      product_code: r.product_code,
+      option_name: r.option_name,
+      barcode: r.barcode || genBarcode(r.product_code, r.option_name),
+      ordered: Number(r.qty) || 0,
+      received: 0,
+    }))
+    if (!items.length) return
+    const p: Purchase = {
+      id: String(Date.now()),
+      order_date: bulkPoDate,
+      supplier: bulkPoSupplier,
+      status: 'ordered',
+      ordered_at: new Date().toISOString(),
+      received_at: null,
+      items,
+    }
+    setPurchases(prev => [...prev, p])
+    setIsBulkPo(false)
+    setBulkPoDate(''); setBulkPoSupplier(''); setBulkPoRows([{ ...INIT_BULK_ROW }])
+  }
+
+  /* ── 개별 발주 등록 ── */
   const handleAdd = () => {
     if (!form.order_date || !form.supplier) return
     const p: Purchase = {
@@ -164,13 +264,21 @@ export default function PurchasePage() {
             <option value="전체">전체 상태</option>
             {Object.entries(ST).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
           </Select>
-          <div style={{ display:'flex', gap:6, marginLeft:'auto' }}>
+          <div style={{ display:'flex', gap:6, marginLeft:'auto', flexWrap:'wrap' }}>
             <Button size="sm" onClick={() => setIsInAdd(true)}
               style={{ background:'#059669', borderColor:'#059669' }}>
               <CheckCircle2 size={13}/>입고 등록
             </Button>
+            <Button size="sm" onClick={() => setIsBulkIn(true)}
+              style={{ background:'#0d9488', borderColor:'#0d9488' }}>
+              <Layers size={13}/>일괄 입고 등록
+            </Button>
             <Button size="sm" onClick={() => setIsAdd(true)}>
               <Plus size={13}/>발주 등록
+            </Button>
+            <Button size="sm" onClick={() => setIsBulkPo(true)}
+              style={{ background:'#2563eb', borderColor:'#2563eb' }}>
+              <Layers size={13}/>일괄 발주 등록
             </Button>
           </div>
         </div>
@@ -358,6 +466,188 @@ export default function PurchasePage() {
           <Button variant="outline" onClick={() => setIsInAdd(false)}>취소</Button>
           <Button onClick={handleInAdd} style={{ background:'#059669' }}>
             <CheckCircle2 size={13}/>입고 등록 완료
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ── 일괄 입고 등록 모달 ── */}
+      <Modal isOpen={isBulkIn} onClose={() => setIsBulkIn(false)} title="일괄 입고 등록" size="xl">
+        <div style={{ background:'#f0fdf4', borderRadius:10, padding:'10px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#059669' }}>
+          💡 여러 상품을 한번에 입고 등록합니다. 엑셀로 대량 업로드도 가능합니다.
+        </div>
+
+        {/* 헤더 정보 */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
+          <div><Label>입고일 *</Label>
+            <Input type="date" value={bulkInDate} onChange={e => setBulkInDate(e.target.value)}/>
+          </div>
+          <div><Label>구매처 *</Label>
+            <Input placeholder="동대문 A상회" value={bulkInSupplier} onChange={e => setBulkInSupplier(e.target.value)}/>
+          </div>
+        </div>
+
+        {/* 툴바 */}
+        <div style={{ display:'flex', gap:8, marginBottom:10, alignItems:'center' }}>
+          <p style={{ fontSize:12, fontWeight:800, color:'#059669', flex:1 }}>📦 입고 상품 목록</p>
+          <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            <Upload size={12}/>엑셀 업로드
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }}
+              onChange={e => { const f=e.target.files?.[0]; if(f) parseExcelToBulkRows(f, rows => setBulkInRows(prev => [...prev.filter(r=>r.product_code), ...rows])); e.target.value='' }}/>
+          </label>
+          <button onClick={() => downloadExcelTemplate('in')}
+            style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#64748b', background:'#f1f5f9', border:'none', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            <Download size={12}/>양식 다운로드
+          </button>
+        </div>
+
+        {/* 테이블 */}
+        <div style={{ border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden', marginBottom:12 }}>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr style={{ background:'#f8fafc' }}>
+                {['#','상품코드','옵션명','바코드 (자동)','수량',''].map((h,i)=>(
+                  <th key={i} style={{ padding:'8px 10px', fontSize:11, fontWeight:800, color:'#64748b', textAlign: i>=4?'center':'left', borderBottom:'1px solid #e2e8f0' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {bulkInRows.map((row, i) => (
+                <tr key={i} style={{ borderBottom: i<bulkInRows.length-1 ? '1px solid #f1f5f9' : 'none' }}>
+                  <td style={{ padding:'6px 10px', fontSize:11, color:'#94a3b8', fontWeight:700, width:28 }}>{i+1}</td>
+                  <td style={{ padding:'4px 6px' }}>
+                    <input value={row.product_code} placeholder="WA5AC001"
+                      onChange={e => { const r=[...bulkInRows]; r[i]={...r[i],product_code:e.target.value,barcode:genBarcode(e.target.value,r[i].option_name)}; setBulkInRows(r) }}
+                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, fontFamily:'monospace', fontWeight:700, outline:'none' }}/>
+                  </td>
+                  <td style={{ padding:'4px 6px' }}>
+                    <input value={row.option_name} placeholder="BE"
+                      onChange={e => { const r=[...bulkInRows]; r[i]={...r[i],option_name:e.target.value,barcode:genBarcode(r[i].product_code,e.target.value)}; setBulkInRows(r) }}
+                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, outline:'none' }}/>
+                  </td>
+                  <td style={{ padding:'4px 6px' }}>
+                    <input readOnly value={row.barcode}
+                      style={{ width:'100%', border:'1px solid #f1f5f9', borderRadius:6, padding:'5px 8px', fontSize:11, fontFamily:'monospace', background:'#f8fafc', color:'#475569' }}/>
+                  </td>
+                  <td style={{ padding:'4px 6px', width:80 }}>
+                    <input type="number" value={row.qty} placeholder="0"
+                      onChange={e => { const r=[...bulkInRows]; r[i]={...r[i],qty:e.target.value}; setBulkInRows(r) }}
+                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, textAlign:'right', outline:'none' }}/>
+                  </td>
+                  <td style={{ padding:'4px 6px', textAlign:'center', width:32 }}>
+                    {bulkInRows.length > 1 && (
+                      <button onClick={() => setBulkInRows(prev => prev.filter((_,j)=>j!==i))}
+                        style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:5, cursor:'pointer' }}>
+                        <X size={11}/>
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <button onClick={() => setBulkInRows(prev => [...prev, { ...INIT_BULK_ROW }])}
+            style={{ fontSize:12,fontWeight:800,color:'#059669',background:'#ecfdf5',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+            <Plus size={12}/>행 추가
+          </button>
+          <span style={{ fontSize:12, color:'#94a3b8' }}>총 {bulkInRows.filter(r=>r.product_code).length}건</span>
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+          <Button variant="outline" onClick={() => setIsBulkIn(false)}>취소</Button>
+          <Button onClick={handleBulkInSubmit} style={{ background:'#059669' }}>
+            <CheckCircle2 size={13}/>일괄 입고 등록
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ── 일괄 발주 등록 모달 ── */}
+      <Modal isOpen={isBulkPo} onClose={() => setIsBulkPo(false)} title="일괄 발주 등록" size="xl">
+        <div style={{ background:'#eff6ff', borderRadius:10, padding:'10px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#2563eb' }}>
+          💡 여러 상품을 한번에 발주 등록합니다. 엑셀로 대량 업로드도 가능합니다.
+        </div>
+
+        {/* 헤더 정보 */}
+        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
+          <div><Label>발주일 *</Label>
+            <Input type="date" value={bulkPoDate} onChange={e => setBulkPoDate(e.target.value)}/>
+          </div>
+          <div><Label>구매처 *</Label>
+            <Input placeholder="동대문 A상회" value={bulkPoSupplier} onChange={e => setBulkPoSupplier(e.target.value)}/>
+          </div>
+        </div>
+
+        {/* 툴바 */}
+        <div style={{ display:'flex', gap:8, marginBottom:10, alignItems:'center' }}>
+          <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', flex:1 }}>📦 발주 상품 목록</p>
+          <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            <Upload size={12}/>엑셀 업로드
+            <input type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }}
+              onChange={e => { const f=e.target.files?.[0]; if(f) parseExcelToBulkRows(f, rows => setBulkPoRows(prev => [...prev.filter(r=>r.product_code), ...rows])); e.target.value='' }}/>
+          </label>
+          <button onClick={() => downloadExcelTemplate('po')}
+            style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#64748b', background:'#f1f5f9', border:'none', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            <Download size={12}/>양식 다운로드
+          </button>
+        </div>
+
+        {/* 테이블 */}
+        <div style={{ border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden', marginBottom:12 }}>
+          <table style={{ width:'100%', borderCollapse:'collapse' }}>
+            <thead>
+              <tr style={{ background:'#f8fafc' }}>
+                {['#','상품코드','옵션명','바코드 (자동)','발주수량',''].map((h,i)=>(
+                  <th key={i} style={{ padding:'8px 10px', fontSize:11, fontWeight:800, color:'#64748b', textAlign: i>=4?'center':'left', borderBottom:'1px solid #e2e8f0' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {bulkPoRows.map((row, i) => (
+                <tr key={i} style={{ borderBottom: i<bulkPoRows.length-1 ? '1px solid #f1f5f9' : 'none' }}>
+                  <td style={{ padding:'6px 10px', fontSize:11, color:'#94a3b8', fontWeight:700, width:28 }}>{i+1}</td>
+                  <td style={{ padding:'4px 6px' }}>
+                    <input value={row.product_code} placeholder="WA5AC001"
+                      onChange={e => { const r=[...bulkPoRows]; r[i]={...r[i],product_code:e.target.value,barcode:genBarcode(e.target.value,r[i].option_name)}; setBulkPoRows(r) }}
+                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, fontFamily:'monospace', fontWeight:700, outline:'none' }}/>
+                  </td>
+                  <td style={{ padding:'4px 6px' }}>
+                    <input value={row.option_name} placeholder="BE"
+                      onChange={e => { const r=[...bulkPoRows]; r[i]={...r[i],option_name:e.target.value,barcode:genBarcode(r[i].product_code,e.target.value)}; setBulkPoRows(r) }}
+                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, outline:'none' }}/>
+                  </td>
+                  <td style={{ padding:'4px 6px' }}>
+                    <input readOnly value={row.barcode}
+                      style={{ width:'100%', border:'1px solid #f1f5f9', borderRadius:6, padding:'5px 8px', fontSize:11, fontFamily:'monospace', background:'#f8fafc', color:'#475569' }}/>
+                  </td>
+                  <td style={{ padding:'4px 6px', width:80 }}>
+                    <input type="number" value={row.qty} placeholder="0"
+                      onChange={e => { const r=[...bulkPoRows]; r[i]={...r[i],qty:e.target.value}; setBulkPoRows(r) }}
+                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, textAlign:'right', outline:'none' }}/>
+                  </td>
+                  <td style={{ padding:'4px 6px', textAlign:'center', width:32 }}>
+                    {bulkPoRows.length > 1 && (
+                      <button onClick={() => setBulkPoRows(prev => prev.filter((_,j)=>j!==i))}
+                        style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:5, cursor:'pointer' }}>
+                        <X size={11}/>
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+          <button onClick={() => setBulkPoRows(prev => [...prev, { ...INIT_BULK_ROW }])}
+            style={{ fontSize:12,fontWeight:800,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+            <Plus size={12}/>행 추가
+          </button>
+          <span style={{ fontSize:12, color:'#94a3b8' }}>총 {bulkPoRows.filter(r=>r.product_code).length}건</span>
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+          <Button variant="outline" onClick={() => setIsBulkPo(false)}>취소</Button>
+          <Button onClick={handleBulkPoSubmit}>
+            <Layers size={13}/>일괄 발주 등록
           </Button>
         </div>
       </Modal>
