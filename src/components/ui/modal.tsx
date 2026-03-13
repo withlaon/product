@@ -1,6 +1,7 @@
 'use client'
 import { X } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 
 interface ModalProps {
@@ -12,35 +13,88 @@ interface ModalProps {
   size?: 'sm' | 'md' | 'lg' | 'xl'
 }
 
-const sizeMap = { sm: 'max-w-md', md: 'max-w-lg', lg: 'max-w-2xl', xl: 'max-w-4xl' }
+const sizeMap = { sm: 480, md: 560, lg: 720, xl: 900 }
 
 export function Modal({ isOpen, onClose, title, children, className, size = 'md' }: ModalProps) {
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => { setMounted(true) }, [])
+
+  // 키보드 ESC 닫기
   useEffect(() => {
-    if (isOpen) document.body.style.overflow = 'hidden'
-    else document.body.style.overflow = ''
-    return () => { document.body.style.overflow = '' }
-  }, [isOpen])
+    if (!isOpen) return
+    const handler = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [isOpen, onClose])
 
-  if (!isOpen) return null
+  if (!isOpen || !mounted) return null
 
-  return (
-    <div className="pm-modal-backdrop" onClick={onClose}>
+  const maxW = sizeMap[size]
+
+  return createPortal(
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        background: 'rgba(2,6,23,0.62)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        padding: '2rem 1rem 4rem',
+      }}
+    >
       <div
-        className={cn('pm-modal w-full', sizeMap[size], className)}
         onClick={e => e.stopPropagation()}
+        className={cn(className)}
+        style={{
+          position: 'relative',
+          background: 'white',
+          borderRadius: 20,
+          boxShadow: '0 24px 64px rgba(2,6,23,0.28)',
+          border: '1px solid rgba(255,255,255,0.7)',
+          width: '100%',
+          maxWidth: maxW,
+          margin: '0 auto',
+        }}
       >
-        <div className="pm-modal-header">
-          <h2 className="text-[14.5px] font-extrabold text-slate-800 tracking-tight">{title}</h2>
+        {/* 헤더 — sticky */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '18px 24px',
+          borderBottom: '1px solid rgba(15,23,42,0.07)',
+          background: '#fafbfc',
+          borderRadius: '20px 20px 0 0',
+          position: 'sticky',
+          top: 0,
+          zIndex: 1,
+        }}>
+          <h2 style={{ fontSize: 14.5, fontWeight: 900, color: '#1e293b', letterSpacing: '-0.01em' }}>{title}</h2>
           <button
             onClick={onClose}
-            className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors"
-            style={{ transition: 'all 150ms var(--ease)' }}
+            style={{
+              width: 28, height: 28, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              borderRadius: 8, border: 'none', background: 'transparent', color: '#94a3b8',
+              cursor: 'pointer', transition: 'all 150ms',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#334155' }}
+            onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#94a3b8' }}
           >
             <X size={15} />
           </button>
         </div>
-        <div className="pm-modal-body">{children}</div>
+
+        {/* 바디 */}
+        <div style={{ padding: '24px' }}>
+          {children}
+        </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }
