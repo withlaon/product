@@ -1,13 +1,14 @@
 'use client'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
+import { supabase } from '@/lib/supabase'
 import {
   Plus, Search, Download, Upload, Package, TrendingUp, AlertTriangle,
-  Eye, Edit, Trash2, X, Store, ImageIcon, Link2,
+  Edit, Trash2, X, Store, ImageIcon, Link2,
 } from 'lucide-react'
 
 /* ─── 연동된 채널 ────────────────────────────────────────────── */
@@ -180,10 +181,10 @@ function ChannelPriceModal({
 }
 
 /* ─── 폼 초기값 ─────────────────────────────────────────────── */
-const INIT_OPT  = { name:'', barcode:'', image:'', ordered:'', received:'', sold:'' }
+const INIT_OPT  = { name:'', barcode:'', image:'' }
 const INIT_FORM = {
   code:'', name:'', category:'', supplier:'', loca:'',
-  cost_price:'', cost_currency:'CNY' as CostCurrency,   // 기본: 위안
+  cost_price:'', cost_currency:'CNY' as CostCurrency,
   newCat:'', status:'active' as ProductStatus,
   options:[{ ...INIT_OPT }],
 }
@@ -200,6 +201,24 @@ function useOptImageUpload(setForm: React.Dispatch<React.SetStateAction<typeof I
       })
     }
     reader.readAsDataURL(file)
+  }
+}
+
+/* ─── Supabase row → Product 변환 ──────────────────────────── */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function rowToProduct(row: any): Product {
+  return {
+    id: row.id,
+    code: row.code ?? '',
+    name: row.name ?? '',
+    category: row.category ?? '',
+    loca: row.loca ?? '',
+    cost_price: row.cost_price ?? 0,
+    cost_currency: (row.cost_currency ?? 'CNY') as CostCurrency,
+    status: (row.status ?? 'active') as ProductStatus,
+    supplier: row.supplier ?? '',
+    options: (row.options ?? []) as ProductOption[],
+    channel_prices: (row.channel_prices ?? []) as ChannelPrice[],
   }
 }
 
@@ -220,7 +239,27 @@ export default function ProductsPage() {
   const PAGE_SIZE = 10
 
   const [form, setForm] = useState(INIT_FORM)
+  const [loading, setLoading] = useState(true)
   const handleOptImage  = useOptImageUpload(setForm)
+
+  /* ── Supabase 로드 ── */
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true)
+      const { data, error } = await supabase
+        .from('pm_products')
+        .select('*')
+        .order('created_at', { ascending: false })
+      if (!error && data) {
+        const loaded = data.map(rowToProduct)
+        setProducts(loaded)
+        const cats = loaded.map(p => p.category).filter(c => c && !DEFAULT_CATS.includes(c))
+        setExtraCats([...new Set(cats)] as string[])
+      }
+      setLoading(false)
+    }
+    load()
+  }, [])
 
   const allCats  = useMemo(() => [...new Set([...DEFAULT_CATS, ...extraCats])], [extraCats])
   const filtered = useMemo(() => {
@@ -241,36 +280,45 @@ export default function ProductsPage() {
   const doSearch    = () => { setSearch(searchInput); setPage(1) }
   const clearSearch = () => { setSearch(''); setSearchInput(''); setPage(1) }
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const cat = form.category === '__new__' ? form.newCat : form.category
     if (!form.name || !form.code || !cat) return
-    const p: Product = {
-      id: String(Date.now()), code: form.code, name: form.name, category: cat, loca: form.loca,
-      options: form.options.filter(o => o.name).map(o => ({
-        name: o.name, barcode: o.barcode, image: o.image,
-        ordered:  Number(o.ordered)  || 0,
-        received: Number(o.received) || 0,
-        sold:     Number(o.sold)     || 0,
-      })),
+    const options: ProductOption[] = form.options.filter(o => o.name).map(o => ({
+      name: o.name, barcode: o.barcode, image: o.image,
+      ordered: 0, received: 0, sold: 0,
+    }))
+    const payload = {
+      code: form.code, name: form.name, category: cat, loca: form.loca,
       cost_price: Number(form.cost_price) || 0,
       cost_currency: form.cost_currency,
-      channel_prices: [], status: form.status, supplier: form.supplier,
+      status: form.status, supplier: form.supplier,
+      options, channel_prices: [],
     }
-    setProducts(prev => [...prev, p])
+    const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
+    if (error) { console.error('상품 등록 오류:', error); return }
+    const p = rowToProduct(data)
+    setProducts(prev => [p, ...prev])
     if (cat && !DEFAULT_CATS.includes(cat) && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
     setIsAdd(false)
     setForm(INIT_FORM)
   }
 
-  const handleChannelPriceSave = (prices: ChannelPrice[]) => {
+  const handleChannelPriceSave = async (prices: ChannelPrice[]) => {
     if (!channelPriceTarget) return
-    setProducts(prev => prev.map(p => p.id === channelPriceTarget.id ? { ...p, channel_prices: prices } : p))
+    const { error } = await supabase.from('pm_products').update({ channel_prices: prices }).eq('id', channelPriceTarget.id)
+    if (!error) setProducts(prev => prev.map(p => p.id === channelPriceTarget.id ? { ...p, channel_prices: prices } : p))
     setChannelPriceTarget(null)
   }
 
-  const handleStatusChange = (id: string, status: ProductStatus) => {
-    setProducts(prev => prev.map(p => p.id === id ? { ...p, status } : p))
+  const handleStatusChange = async (id: string, status: ProductStatus) => {
+    const { error } = await supabase.from('pm_products').update({ status }).eq('id', id)
+    if (!error) setProducts(prev => prev.map(p => p.id === id ? { ...p, status } : p))
     setEditStatusId(null)
+  }
+
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from('pm_products').delete().eq('id', id)
+    if (!error) setProducts(prev => prev.filter(p => p.id !== id))
   }
 
   const kpis = [
@@ -279,6 +327,13 @@ export default function ProductsPage() {
     { label:'재고 부족', value:products.filter(p=>totalCurStock(p)<=2&&p.status!=='soldout').length+'개', bg:'#fffbeb', color:'#d97706', icon:AlertTriangle },
     { label:'품절',      value:products.filter(p=>p.status==='soldout').length+'개',               bg:'#fff1f2', color:'#be123c', icon:AlertTriangle },
   ]
+
+  if (loading) return (
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:300, gap:10, color:'#94a3b8' }}>
+      <div style={{ width:22, height:22, borderRadius:'50%', border:'3px solid #e2e8f0', borderTopColor:'#2563eb', animation:'spin-slow 0.7s linear infinite' }}/>
+      <span style={{ fontSize:13, fontWeight:700 }}>데이터를 불러오는 중...</span>
+    </div>
+  )
 
   return (
     <div className="pm-page space-y-4">
@@ -537,9 +592,8 @@ export default function ProductsPage() {
                     {/* 관리 */}
                     <td style={{ paddingTop:12 }}>
                       <div style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'center' }}>
-                        <MgmtBtn onClick={() => setDetail(p)} bg="#eff6ff" color="#2563eb" hoverBg="#dbeafe"><Eye size={11}/>상세</MgmtBtn>
                         <MgmtBtn onClick={() => setIsEdit(p)} bg="#ecfdf5" color="#059669" hoverBg="#d1fae5"><Edit size={11}/>수정</MgmtBtn>
-                        <MgmtBtn onClick={() => setProducts(prev => prev.filter(x => x.id !== p.id))} bg="#fff1f2" color="#be123c" hoverBg="#ffe4e6"><Trash2 size={11}/>삭제</MgmtBtn>
+                        <MgmtBtn onClick={() => handleDelete(p.id)} bg="#fff1f2" color="#be123c" hoverBg="#ffe4e6"><Trash2 size={11}/>삭제</MgmtBtn>
                       </div>
                     </td>
                   </tr>
@@ -684,31 +738,6 @@ export default function ProductsPage() {
                     )}
                   </div>
                 </div>
-                {/* Row 2: 발주 / 입고 / 판매 */}
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
-                  <div>
-                    <Label>발주 수량</Label>
-                    <Input type="number" placeholder="0" value={opt.ordered}
-                      onChange={e => { const o=[...form.options];o[i]={...o[i],ordered:e.target.value};setForm(f=>({...f,options:o}))}}/>
-                  </div>
-                  <div>
-                    <Label>입고 수량</Label>
-                    <Input type="number" placeholder="0" value={opt.received}
-                      onChange={e => { const o=[...form.options];o[i]={...o[i],received:e.target.value};setForm(f=>({...f,options:o}))}}/>
-                  </div>
-                  <div>
-                    <Label>판매 수량</Label>
-                    <Input type="number" placeholder="0" value={opt.sold}
-                      onChange={e => { const o=[...form.options];o[i]={...o[i],sold:e.target.value};setForm(f=>({...f,options:o}))}}/>
-                  </div>
-                </div>
-                {/* 현재고 미리보기 */}
-                {(opt.received || opt.sold) && (
-                  <p style={{ fontSize:11.5, fontWeight:700, color:'#64748b', marginTop:6 }}>
-                    현재고 = 입고({Number(opt.received)||0}) - 판매({Number(opt.sold)||0}) =
-                    <strong style={{ color:'#1e293b', marginLeft:4 }}>{Math.max(0, (Number(opt.received)||0) - (Number(opt.sold)||0))}개</strong>
-                  </p>
-                )}
               </div>
             ))}
             <button onClick={() => setForm(f=>({...f,options:[...f.options,{...INIT_OPT}]}))}

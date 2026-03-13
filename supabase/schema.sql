@@ -140,3 +140,33 @@ ALTER TABLE channels DISABLE ROW LEVEL SECURITY;
 ALTER TABLE orders DISABLE ROW LEVEL SECURITY;
 ALTER TABLE order_items DISABLE ROW LEVEL SECURITY;
 ALTER TABLE cs_tickets DISABLE ROW LEVEL SECURITY;
+
+-- ─── ProductPRO 상품관리 전용 테이블 ───────────────────────────
+-- Supabase SQL Editor에서 아래 SQL을 실행하세요
+
+CREATE TABLE IF NOT EXISTS pm_products (
+  id           UUID        PRIMARY KEY DEFAULT gen_random_uuid(),
+  created_at   TIMESTAMPTZ DEFAULT NOW(),
+  updated_at   TIMESTAMPTZ DEFAULT NOW(),
+  code         TEXT        NOT NULL,
+  name         TEXT        NOT NULL,
+  category     TEXT        DEFAULT '',
+  loca         TEXT        DEFAULT '',
+  cost_price   INTEGER     DEFAULT 0,
+  cost_currency TEXT       DEFAULT 'CNY',
+  status       TEXT        DEFAULT 'active',
+  supplier     TEXT        DEFAULT '',
+  options      JSONB       DEFAULT '[]',
+  channel_prices JSONB     DEFAULT '[]'
+);
+
+CREATE OR REPLACE FUNCTION update_pm_products_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN NEW.updated_at = NOW(); RETURN NEW; END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_pm_products_updated_at
+  BEFORE UPDATE ON pm_products
+  FOR EACH ROW EXECUTE FUNCTION update_pm_products_updated_at();
+
+ALTER TABLE pm_products DISABLE ROW LEVEL SECURITY;
