@@ -174,6 +174,7 @@ ALTER TABLE pm_products DISABLE ROW LEVEL SECURITY;
 -- 이후 추가된 컬럼 (기존 테이블에 없는 경우 실행)
 ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS mall_categories JSONB DEFAULT '[]';
 ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS basic_info JSONB DEFAULT NULL;
+ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS abbr TEXT DEFAULT '';
 
 -- ─── 발주/입고 관리 테이블 ──────────────────────────────────────
 -- pm_products와 연동하여 발주·입고 수량을 자동 반영합니다.

@@ -42,7 +42,7 @@ interface BasicInfo {
   material: string; description: string; handling: string; notes: string
 }
 interface Product {
-  id: string; code: string; name: string; category: string; loca: string
+  id: string; code: string; name: string; abbr: string; category: string; loca: string
   options: ProductOption[]
   cost_price: number; cost_currency: CostCurrency
   channel_prices: ChannelPrice[]
@@ -224,7 +224,7 @@ const genBarcode = (code: string, opt: string) =>
 const INIT_OPT  = { name:'', korean_name:'', chinese_name:'', barcode:'', image:'' }
 const INIT_MALL_CAT = { channel:'', category:'', category_code:'' }
 const INIT_FORM = {
-  code:'', name:'', category:'', supplier:'', loca:'',
+  code:'', name:'', abbr:'', category:'', supplier:'', loca:'',
   cost_price:'', cost_currency:'CNY' as CostCurrency,
   newCat:'', status:'active' as ProductStatus,
   options:[{ ...INIT_OPT }],
@@ -253,6 +253,7 @@ function rowToProduct(row: any): Product {
     id: row.id,
     code: row.code ?? '',
     name: row.name ?? '',
+    abbr: row.abbr ?? '',
     category: row.category ?? '',
     loca: row.loca ?? '',
     cost_price: row.cost_price ?? 0,
@@ -307,7 +308,7 @@ export default function ProductsPage() {
   // 수정 폼 상태
   type EditOptRow = { name:string; korean_name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number; current_stock?:number; defective?:number }
   type EditFormState = {
-    code:string; name:string; category:string; newCat:string; supplier:string; loca:string
+    code:string; name:string; abbr:string; category:string; newCat:string; supplier:string; loca:string
     cost_price:string; cost_currency:CostCurrency; status:ProductStatus; options:EditOptRow[]
   }
   const [editForm, setEditForm] = useState<EditFormState | null>(null)
@@ -389,7 +390,7 @@ export default function ProductsPage() {
   /* ── 수정 모달 열기 ── */
   const openEdit = (p: Product) => {
     setEditForm({
-      code: p.code, name: p.name, category: p.category, newCat: '',
+      code: p.code, name: p.name, abbr: p.abbr ?? '', category: p.category, newCat: '',
       supplier: p.supplier, loca: p.loca,
       cost_price: String(p.cost_price), cost_currency: p.cost_currency,
       status: p.status,
@@ -423,7 +424,7 @@ export default function ProductsPage() {
     }))
     const editCostPriceInt = Math.round(Number(editForm.cost_price) || 0)
     const payload = {
-      code: editForm.code, name: editForm.name, category: cat, loca: editForm.loca,
+      code: editForm.code, name: editForm.name, abbr: editForm.abbr.trim(), category: cat, loca: editForm.loca,
       cost_price: editCostPriceInt,
       cost_currency: editForm.cost_currency,
       status: editForm.status, supplier: editForm.supplier,
@@ -475,7 +476,7 @@ export default function ProductsPage() {
     }))
     const costPriceInt = Math.round(Number(form.cost_price) || 0)
     const payload = {
-      code: form.code.trim(), name: form.name.trim(), category: cat, loca: form.loca,
+      code: form.code.trim(), name: form.name.trim(), abbr: form.abbr.trim(), category: cat, loca: form.loca,
       cost_price: costPriceInt,
       cost_currency: form.cost_currency,
       status: form.status, supplier: form.supplier,
@@ -775,6 +776,11 @@ export default function ProductsPage() {
                             </div>
                             <span style={{ display:'flex', flexDirection:'column', gap:1, overflow:'hidden' }}>
                               <span style={{ display:'flex', alignItems:'center', gap:4, overflow:'hidden' }}>
+                                {p.abbr && (
+                                  <span style={{ fontSize:10, fontWeight:900, color:'#7e22ce', background:'#f3e8ff', padding:'0px 5px', borderRadius:4, flexShrink:0, letterSpacing:'0.02em' }}>
+                                    {p.abbr}
+                                  </span>
+                                )}
                                 <span style={{ fontSize:12, fontWeight:800, color: optZero ? '#94a3b8' : '#334155', flexShrink:0 }}>{opt.name}</span>
                                 {(opt.korean_name || getKoreanColor(opt.name)) && (
                                   <span style={{ fontSize:11, fontWeight:700, color:'#2563eb', background:'#eff6ff', padding:'0px 5px', borderRadius:4, flexShrink:0 }}>
@@ -959,6 +965,14 @@ export default function ProductsPage() {
               onChange={e => { setAddErrors(prev => { const n = new Set(prev); n.delete('name'); return n }); setForm(f => ({...f,name:e.target.value})) }}
             />
             {addErrors.has('name') && <p style={{ fontSize:11, color:'#ef4444', marginTop:3 }}>상품명을 입력해주세요</p>}
+          </div>
+
+          <div>
+            <Label>상품약어</Label>
+            <Input placeholder="예) 사각숄더, 미니백" value={form.abbr}
+              onChange={e => setForm(f => ({...f, abbr: e.target.value}))}
+            />
+            <p style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, marginTop:3 }}>옵션명 앞에 표시되는 짧은 상품 별칭</p>
           </div>
 
           <div>
@@ -1244,6 +1258,12 @@ export default function ProductsPage() {
             <div><Label>상품명 *</Label>
               <Input placeholder="상품명" value={editForm.name}
                 onChange={e => setEditForm(f => f ? ({ ...f, name: e.target.value }) : f)}/>
+            </div>
+
+            <div><Label>상품약어</Label>
+              <Input placeholder="예) 사각숄더, 미니백" value={editForm.abbr}
+                onChange={e => setEditForm(f => f ? ({ ...f, abbr: e.target.value }) : f)}/>
+              <p style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, marginTop:3 }}>옵션명 앞에 표시되는 짧은 상품 별칭</p>
             </div>
 
             <div><Label>카테고리 *</Label>
