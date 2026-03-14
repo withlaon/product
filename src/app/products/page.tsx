@@ -53,7 +53,8 @@ interface Product {
 const DEF_BASIC_INFO: BasicInfo = { title:'', brand:'', origin:'', manufacturer:'', material:'', description:'', handling:'', notes:'' }
 
 const CNY_TO_KRW = 210
-const DEFAULT_CATS = ['전체', '가방', '의류', '잡화']
+const DEFAULT_CATS = ['전체'] // '전체' 탭은 항상 고정, 나머지는 extraCats로 관리
+const INIT_EXTRA_CATS = ['가방', '의류', '잡화'] // 앱 최초 실행 시 기본 카테고리
 
 /* ─── 옵션 영문 코드 → 한글 색상명 매핑표 ─────────────────────── */
 const OPT_COLOR_MAP: Record<string, string> = {
@@ -276,7 +277,7 @@ function rowToProduct(row: any): Product {
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */
 export default function ProductsPage() {
   const [products, setProducts]   = useState<Product[]>([])
-  const [extraCats, setExtraCats] = useState<string[]>([])
+  const [extraCats, setExtraCats] = useState<string[]>(INIT_EXTRA_CATS)
   const [activeTab, setActiveTab]     = useState('전체')
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch]           = useState('')
@@ -327,16 +328,20 @@ export default function ProductsPage() {
       if (!error && data) {
         const loaded = data.map(rowToProduct)
         setProducts(loaded)
-        const cats = loaded.map(p => p.category).filter(c => c && !DEFAULT_CATS.includes(c))
-        setExtraCats([...new Set(cats)] as string[])
+        // DB에 있는 카테고리와 기본 카테고리를 합쳐서 extraCats 구성
+        const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
+        setExtraCats(prev => {
+          const merged = [...new Set([...prev, ...dbCats])]
+          return merged
+        })
       }
       setLoading(false)
     }
     load()
   }, [])
 
-  const allCats  = useMemo(
-    () => [...new Set([...DEFAULT_CATS, ...extraCats])].filter(c => !deletedCats.includes(c)),
+  const allCats = useMemo(
+    () => ['전체', ...extraCats.filter(c => !deletedCats.includes(c))],
     [extraCats, deletedCats]
   )
 
@@ -345,6 +350,7 @@ export default function ProductsPage() {
     const name = catAddInput.trim()
     if (!name || allCats.includes(name)) { setCatAddMode(false); setCatAddInput(''); return }
     setExtraCats(prev => [...prev, name])
+    setDeletedCats(prev => prev.filter(c => c !== name)) // 혹시 삭제목록에 있으면 복구
     setCatAddMode(false)
     setCatAddInput('')
   }
@@ -353,15 +359,9 @@ export default function ProductsPage() {
   const handleCatRename = () => {
     if (!catEditTarget) return
     const newName = catEditInput.trim()
-    if (!newName || newName === catEditTarget || allCats.includes(newName)) {
-      setCatEditTarget(null); return
-    }
-    // state 업데이트
-    setExtraCats(prev => prev.includes(catEditTarget)
-      ? prev.map(c => c === catEditTarget ? newName : c)
-      : [...prev, newName].filter(c => c !== catEditTarget)
-    )
-    // 해당 카테고리 상품들 메모리 업데이트 (Supabase는 백그라운드)
+    if (!newName || newName === catEditTarget) { setCatEditTarget(null); return }
+    if (allCats.includes(newName)) { setCatEditTarget(null); return } // 이미 존재하는 이름
+    setExtraCats(prev => prev.map(c => c === catEditTarget ? newName : c))
     setProducts(prev => prev.map(p => p.category === catEditTarget ? { ...p, category: newName } : p))
     supabase.from('pm_products').update({ category: newName }).eq('category', catEditTarget).then(() => {})
     if (activeTab === catEditTarget) setActiveTab(newName)
@@ -437,7 +437,7 @@ export default function ProductsPage() {
     setEditSaving(false)
     if (error) { console.error('수정 오류:', error); return }
     setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
-    if (cat && !DEFAULT_CATS.includes(cat) && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
+    if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
     setIsEdit(null)
     setEditForm(null)
   }
@@ -449,9 +449,11 @@ export default function ProductsPage() {
       const mC  = activeTab === '전체' || p.category === activeTab
       let mSt = true
       if (statusFilter === '__low_stock__') {
-        mSt = p.status !== 'pending_delete' && totalCurStock(p) <= 2 && totalCurStock(p) > 0
+        // 판매중이면서 옵션 중 하나라도 재고 1~2개
+        mSt = p.status === 'active' && p.options.some(o => optStock(o) > 0 && optStock(o) <= 2)
       } else if (statusFilter === '__soldout__') {
-        mSt = p.status !== 'pending_delete' && (p.status === 'soldout' || totalCurStock(p) === 0)
+        // 판매중이면서 옵션 중 하나라도 재고 0개
+        mSt = p.status === 'active' && p.options.some(o => optStock(o) === 0)
       } else if (statusFilter !== '전체') {
         mSt = p.status === statusFilter
       }
@@ -506,7 +508,7 @@ export default function ProductsPage() {
         if (e2) { setAddDbError(`등록 실패: ${e2.message}\n※ Supabase에서 schema.sql의 ALTER TABLE 구문을 실행해주세요.`); return }
         const p = rowToProduct(d2)
         setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
-        if (cat && !DEFAULT_CATS.includes(cat) && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
+        if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
         setIsAdd(false); setForm(INIT_FORM); return
       }
       setAddDbError(`등록 실패: ${error.message}`)
@@ -514,7 +516,7 @@ export default function ProductsPage() {
     }
     const p = rowToProduct(data)
     setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
-    if (cat && !DEFAULT_CATS.includes(cat) && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
+    if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
     setIsAdd(false)
     setForm(INIT_FORM)
   }
@@ -537,35 +539,46 @@ export default function ProductsPage() {
     if (!error) setProducts(prev => prev.filter(p => p.id !== id))
   }
 
+  // KPI는 현재 선택된 카테고리 탭 기준으로 카운팅
+  const catProducts = activeTab === '전체' ? products : products.filter(p => p.category === activeTab)
+
   const kpis = [
     {
       label:'전체 상품', filterKey:'전체',
-      value: products.length,
+      value: catProducts.length,
       bg:'#eff6ff', activeBg:'#2563eb', color:'#2563eb', activeColor:'white', icon:Package,
     },
     {
       label:'판매중', filterKey:'active',
-      value: products.filter(p => p.status === 'active').length,
+      value: catProducts.filter(p => p.status === 'active').length,
       bg:'#ecfdf5', activeBg:'#059669', color:'#059669', activeColor:'white', icon:TrendingUp,
     },
     {
       label:'판매예정', filterKey:'upcoming',
-      value: products.filter(p => p.status === 'upcoming').length,
+      value: catProducts.filter(p => p.status === 'upcoming').length,
       bg:'#eff6ff', activeBg:'#3b82f6', color:'#3b82f6', activeColor:'white', icon:Package,
     },
     {
       label:'삭제예정', filterKey:'pending_delete',
-      value: products.filter(p => p.status === 'pending_delete').length,
+      value: catProducts.filter(p => p.status === 'pending_delete').length,
       bg:'#fff7ed', activeBg:'#c2410c', color:'#c2410c', activeColor:'white', icon:Trash2,
     },
     {
+      // 판매중인 상품 중 옵션 하나라도 재고 1~2개
       label:'재고 부족', filterKey:'__low_stock__',
-      value: products.filter(p => p.status === 'active' && totalCurStock(p) <= 2 && totalCurStock(p) > 0).length,
+      value: catProducts.filter(p =>
+        p.status === 'active' &&
+        p.options.some(o => optStock(o) > 0 && optStock(o) <= 2)
+      ).length,
       bg:'#fffbeb', activeBg:'#d97706', color:'#d97706', activeColor:'white', icon:AlertTriangle,
     },
     {
+      // 판매중인 상품 중 옵션 하나라도 재고 0개
       label:'품절', filterKey:'__soldout__',
-      value: products.filter(p => p.status === 'active' && totalCurStock(p) === 0).length,
+      value: catProducts.filter(p =>
+        p.status === 'active' &&
+        p.options.some(o => optStock(o) === 0)
+      ).length,
       bg:'#fff1f2', activeBg:'#be123c', color:'#be123c', activeColor:'white', icon:AlertTriangle,
     },
   ]
