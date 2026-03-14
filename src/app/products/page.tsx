@@ -445,25 +445,24 @@ export default function ProductsPage() {
     setEditForm(null)
   }
   const filtered = useMemo(() => {
-    setPage(1)
     return products.filter(p => {
       const q   = search.trim()
       const mS  = !q || p.name.includes(q) || p.code.includes(q) || p.options.some(o => o.barcode.includes(q) || o.name.includes(q))
       const mC  = activeTab === '전체' || p.category === activeTab
       let mSt = true
       if (statusFilter === '__low_stock__') {
-        // 판매중이면서 옵션 중 하나라도 재고 1~2개
         mSt = p.status === 'active' && p.options.some(o => optStock(o) > 0 && optStock(o) <= 2)
       } else if (statusFilter === '__soldout__') {
-        // 판매중이면서 옵션 중 하나라도 재고 0개
         mSt = p.status === 'active' && p.options.some(o => optStock(o) === 0)
       } else if (statusFilter !== '전체') {
         mSt = p.status === statusFilter
       }
       return mS && mC && mSt
     }).sort((a, b) => a.code.localeCompare(b.code))
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [products, search, activeTab, statusFilter])
+
+  // 검색/탭/필터 변경 시에만 1페이지 리셋 (등록·수정 후에는 현재 페이지 유지)
+  useEffect(() => { setPage(1) }, [search, activeTab, statusFilter])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -1144,6 +1143,35 @@ export default function ProductsPage() {
           </table>
         </div>
       </div>
+
+      {/* ── 하단 페이지네이션 ── */}
+      {totalPages > 1 && (
+        <div style={{ display:'flex', justifyContent:'center', gap:4, alignItems:'center', padding:'12px 0 4px' }}>
+          <button disabled={page===1} onClick={() => setPage(p=>p-1)}
+            className="pm-btn pm-btn-ghost pm-btn-sm"
+            style={{ height:28, minWidth:40, fontSize:12, opacity:page===1?0.35:1, cursor:page===1?'not-allowed':'pointer' }}>이전</button>
+          {Array.from({length:totalPages},(_,i)=>i+1)
+            .filter(n=>n===1||n===totalPages||Math.abs(n-page)<=1)
+            .reduce<(number|'...')[]>((acc,n,i,arr)=>{
+              if(i>0&&(n as number)-(arr[i-1] as number)>1) acc.push('...')
+              acc.push(n); return acc
+            },[])
+            .map((v,i)=>v==='...'
+              ?<span key={`e${i}`} style={{fontSize:12,color:'#94a3b8',padding:'0 2px'}}>…</span>
+              :<button key={v} onClick={()=>setPage(v as number)}
+                  className="pm-btn pm-btn-ghost pm-btn-sm"
+                  style={{height:28,minWidth:28,fontSize:12,
+                    background:page===v?'#2563eb':undefined,
+                    color:page===v?'white':undefined,
+                    fontWeight:page===v?900:undefined}}>
+                  {v}
+                </button>
+            )}
+          <button disabled={page===totalPages} onClick={() => setPage(p=>p+1)}
+            className="pm-btn pm-btn-ghost pm-btn-sm"
+            style={{ height:28, minWidth:40, fontSize:12, opacity:page===totalPages?0.35:1, cursor:page===totalPages?'not-allowed':'pointer' }}>다음</button>
+        </div>
+      )}
 
       {/* ── 상품 등록 모달 ── */}
       <Modal isOpen={isAdd} onClose={() => { setIsAdd(false); setAddErrors(new Set()); setAddDbError('') }} title="상품 등록" size="xl">
