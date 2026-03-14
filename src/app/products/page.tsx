@@ -109,10 +109,13 @@ const totalCurStock  = (p: Product) => p.options.reduce((s, o) => s + optStock(o
 const isUrl          = (s: string) => /^https?:\/\//i.test(s.trim())
 
 function formatCost(p: Product) {
+  const priceStr = Number.isInteger(p.cost_price)
+    ? p.cost_price.toLocaleString()
+    : p.cost_price.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })
   if (p.cost_currency === 'CNY') {
     return (
       <div>
-        <span style={{ fontSize:12.5, fontWeight:900, color:'#1e293b' }}>¥{p.cost_price.toLocaleString()}</span>
+        <span style={{ fontSize:12.5, fontWeight:900, color:'#1e293b' }}>¥{priceStr}</span>
         <span style={{ fontSize:10, fontWeight:700, color:'#94a3b8', marginLeft:3 }}>위안</span>
         <div style={{ fontSize:10.5, fontWeight:700, color:'#64748b', marginTop:1 }}>
           ≈ {formatCurrency(Math.round(p.cost_price * CNY_TO_KRW))}
@@ -120,7 +123,7 @@ function formatCost(p: Product) {
       </div>
     )
   }
-  return <span style={{ fontSize:13, fontWeight:800, color:'#1e293b' }}>{formatCurrency(p.cost_price)}</span>
+  return <span style={{ fontSize:13, fontWeight:800, color:'#1e293b' }}>₩{priceStr}</span>
 }
 
 function Label({ children }: { children: React.ReactNode }) {
@@ -444,7 +447,14 @@ export default function ProductsPage() {
       const q   = search.trim()
       const mS  = !q || p.name.includes(q) || p.code.includes(q) || p.options.some(o => o.barcode.includes(q) || o.name.includes(q))
       const mC  = activeTab === '전체' || p.category === activeTab
-      const mSt = statusFilter === '전체' || p.status === statusFilter
+      let mSt = true
+      if (statusFilter === '__low_stock__') {
+        mSt = p.status !== 'pending_delete' && totalCurStock(p) <= 2 && totalCurStock(p) > 0
+      } else if (statusFilter === '__soldout__') {
+        mSt = p.status !== 'pending_delete' && (p.status === 'soldout' || totalCurStock(p) === 0)
+      } else if (statusFilter !== '전체') {
+        mSt = p.status === statusFilter
+      }
       return mS && mC && mSt
     }).sort((a, b) => a.code.localeCompare(b.code))
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -528,10 +538,31 @@ export default function ProductsPage() {
   }
 
   const kpis = [
-    { label:'전체 상품', value:products.length+'개',                                               bg:'#eff6ff', color:'#2563eb', icon:Package },
-    { label:'판매중',    value:products.filter(p=>p.status==='active').length+'개',                bg:'#ecfdf5', color:'#059669', icon:TrendingUp },
-    { label:'재고 부족', value:products.filter(p=>totalCurStock(p)<=2&&p.status!=='soldout').length+'개', bg:'#fffbeb', color:'#d97706', icon:AlertTriangle },
-    { label:'품절',      value:products.filter(p=>p.status==='soldout'||totalCurStock(p)===0).length+'개', bg:'#fff1f2', color:'#be123c', icon:AlertTriangle },
+    {
+      label:'전체 상품', filterKey:'전체',
+      value: products.length,
+      bg:'#eff6ff', activeBg:'#2563eb', color:'#2563eb', activeColor:'white', icon:Package,
+    },
+    {
+      label:'판매중', filterKey:'active',
+      value: products.filter(p => p.status === 'active').length,
+      bg:'#ecfdf5', activeBg:'#059669', color:'#059669', activeColor:'white', icon:TrendingUp,
+    },
+    {
+      label:'판매예정', filterKey:'upcoming',
+      value: products.filter(p => p.status === 'upcoming').length,
+      bg:'#eff6ff', activeBg:'#2563eb', color:'#2563eb', activeColor:'white', icon:Package,
+    },
+    {
+      label:'재고 부족', filterKey:'__low_stock__',
+      value: products.filter(p => p.status !== 'pending_delete' && totalCurStock(p) <= 2 && totalCurStock(p) > 0).length,
+      bg:'#fffbeb', activeBg:'#d97706', color:'#d97706', activeColor:'white', icon:AlertTriangle,
+    },
+    {
+      label:'품절', filterKey:'__soldout__',
+      value: products.filter(p => p.status !== 'pending_delete' && (p.status === 'soldout' || totalCurStock(p) === 0)).length,
+      bg:'#fff1f2', activeBg:'#be123c', color:'#be123c', activeColor:'white', icon:AlertTriangle,
+    },
   ]
 
   if (loading) return (
@@ -544,19 +575,32 @@ export default function ProductsPage() {
   return (
     <div className="pm-page space-y-4">
 
-      {/* KPI */}
-      <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpis.map(c => (
-          <div key={c.label} className="pm-card p-4 flex items-center gap-4">
-            <div style={{ width:40, height:40, borderRadius:12, background:c.bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-              <c.icon size={18} color={c.color} />
-            </div>
-            <div>
-              <p style={{ fontSize:11, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
-              <p style={{ fontSize:20, fontWeight:900, color:'#0f172a', lineHeight:1, marginTop:4 }}>{c.value}</p>
-            </div>
-          </div>
-        ))}
+      {/* KPI 필터 버튼 */}
+      <div className="grid grid-cols-3 xl:grid-cols-5 gap-3">
+        {kpis.map(c => {
+          const isActive = statusFilter === c.filterKey
+          return (
+            <button key={c.label}
+              onClick={() => setStatusFilter(isActive ? '전체' : c.filterKey)}
+              className="pm-card p-4 flex items-center gap-3"
+              style={{
+                cursor:'pointer', textAlign:'left', border:'none', width:'100%',
+                outline: isActive ? `2px solid ${c.activeBg}` : '2px solid transparent',
+                background: isActive ? c.activeBg : 'white',
+                transition:'all 150ms ease',
+                boxShadow: isActive ? `0 4px 14px ${c.activeBg}40` : undefined,
+              }}
+            >
+              <div style={{ width:38, height:38, borderRadius:11, background: isActive ? 'rgba(255,255,255,0.25)' : c.bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <c.icon size={17} color={isActive ? 'white' : c.color} />
+              </div>
+              <div>
+                <p style={{ fontSize:10.5, fontWeight:800, color: isActive ? 'rgba(255,255,255,0.8)' : '#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
+                <p style={{ fontSize:20, fontWeight:900, color: isActive ? 'white' : '#0f172a', lineHeight:1, marginTop:3 }}>{c.value}<span style={{ fontSize:13, fontWeight:700, marginLeft:2 }}>개</span></p>
+              </div>
+            </button>
+          )
+        })}
       </div>
 
       {/* 카테고리 탭 + 검색 */}
@@ -578,7 +622,7 @@ export default function ProductsPage() {
                 </div>
               ) : (
                 <button onClick={() => setActiveTab(cat)} style={{
-                  padding: cat==='전체' ? '12px 18px' : '12px 10px 12px 16px',
+                  padding: cat==='전체' ? '12px 14px' : '12px 10px 12px 16px',
                   fontSize:13, fontWeight:800,
                   color: activeTab===cat ? '#2563eb' : '#94a3b8',
                   borderBottom:`2px solid ${activeTab===cat ? '#2563eb' : 'transparent'}`,
@@ -586,14 +630,12 @@ export default function ProductsPage() {
                   display:'flex', alignItems:'center', gap:4,
                 }}>
                   {cat}
-                  {cat !== '전체' && (
-                    <span style={{ fontSize:10.5, fontWeight:800,
-                      background: activeTab===cat ? '#eff6ff' : '#f1f5f9',
-                      color: activeTab===cat ? '#2563eb' : '#94a3b8',
-                      padding:'1px 6px', borderRadius:99 }}>
-                      {products.filter(p => p.category===cat).length}
-                    </span>
-                  )}
+                  <span style={{ fontSize:10.5, fontWeight:800,
+                    background: activeTab===cat ? '#eff6ff' : '#f1f5f9',
+                    color: activeTab===cat ? '#2563eb' : '#94a3b8',
+                    padding:'1px 6px', borderRadius:99 }}>
+                    {cat === '전체' ? products.length : products.filter(p => p.category===cat).length}
+                  </span>
                   {/* 편집/삭제 아이콘 — 전체 탭 제외 */}
                   {cat !== '전체' && (
                     <span style={{ display:'inline-flex', gap:2, marginLeft:2 }}
