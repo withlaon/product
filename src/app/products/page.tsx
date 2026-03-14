@@ -421,9 +421,10 @@ export default function ProductsPage() {
       current_stock: o.current_stock !== undefined ? Number(o.current_stock) : undefined,
       defective: o.defective !== undefined ? Number(o.defective) : undefined,
     }))
+    const editCostPriceInt = parseInt(String(editForm.cost_price).replace(/[^0-9]/g, ''), 10) || 0
     const payload = {
       code: editForm.code, name: editForm.name, category: cat, loca: editForm.loca,
-      cost_price: Math.round(Number(editForm.cost_price) || 0),
+      cost_price: editCostPriceInt,
       cost_currency: editForm.cost_currency,
       status: editForm.status, supplier: editForm.supplier,
       options,
@@ -472,9 +473,10 @@ export default function ProductsPage() {
       image: o.image,
       ordered: 0, received: 0, sold: 0,
     }))
+    const costPriceInt = parseInt(String(form.cost_price).replace(/[^0-9]/g, ''), 10) || 0
     const payload = {
       code: form.code.trim(), name: form.name.trim(), category: cat, loca: form.loca,
-      cost_price: Math.round(Number(form.cost_price) || 0),
+      cost_price: costPriceInt,
       cost_currency: form.cost_currency,
       status: form.status, supplier: form.supplier,
       options, channel_prices: [],
@@ -987,8 +989,11 @@ export default function ProductsPage() {
           <div>
             <Label>원가 *</Label>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-              <Input type="number" placeholder="0" value={form.cost_price}
-                onChange={e => setForm(f => ({...f,cost_price:e.target.value}))} style={{ flex:1 }}/>
+              <Input type="number" placeholder="0" min="0" step="1" value={form.cost_price}
+                onChange={e => {
+                  const val = e.target.value.replace(/[^0-9]/g, '')
+                  setForm(f => ({...f, cost_price: val}))
+                }} style={{ flex:1 }}/>
               <Select value={form.cost_currency} onChange={e => setForm(f => ({...f,cost_currency:e.target.value as CostCurrency}))} style={{ width:90 }}>
                 <option value="CNY">¥ 위안</option>
                 <option value="KRW">₩ 원</option>
@@ -996,7 +1001,7 @@ export default function ProductsPage() {
             </div>
             {form.cost_currency==='CNY' && form.cost_price && (
               <p style={{ fontSize:11.5, fontWeight:700, color:'#64748b', marginTop:5 }}>
-                ≈ {formatCurrency(Math.round(Number(form.cost_price) * CNY_TO_KRW))} (환율 {CNY_TO_KRW}원/위안 기준)
+                ≈ {formatCurrency((parseInt(form.cost_price, 10) || 0) * CNY_TO_KRW)} (환율 {CNY_TO_KRW}원/위안 기준)
               </p>
             )}
           </div>
@@ -1274,17 +1279,20 @@ export default function ProductsPage() {
             <div style={{ gridColumn:'1/-1' }}>
               <Label>원가</Label>
               <div style={{ display:'flex', gap:8 }}>
-                <Input type="number" placeholder="0" value={editForm.cost_price} style={{ flex:1 }}
-                  onChange={e => setEditForm(f => f ? ({ ...f, cost_price: e.target.value }) : f)}/>
+                <Input type="number" placeholder="0" min="0" step="1" value={editForm.cost_price} style={{ flex:1 }}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^0-9]/g, '')
+                    setEditForm(f => f ? ({ ...f, cost_price: val }) : f)
+                  }}/>
                 <Select style={{ width:110 }} value={editForm.cost_currency}
                   onChange={e => setEditForm(f => f ? ({ ...f, cost_currency: e.target.value as CostCurrency }) : f)}>
                   <option value="CNY">¥ 위안(CNY)</option>
                   <option value="KRW">₩ 원(KRW)</option>
                 </Select>
               </div>
-              {editForm.cost_currency === 'CNY' && Number(editForm.cost_price) > 0 && (
+              {editForm.cost_currency === 'CNY' && (parseInt(editForm.cost_price, 10) || 0) > 0 && (
                 <p style={{ fontSize:11.5, color:'#2563eb', fontWeight:700, marginTop:5 }}>
-                  ≈ ₩{(Number(editForm.cost_price)*CNY_TO_KRW).toLocaleString()} (1위안={CNY_TO_KRW}원 기준)
+                  ≈ ₩{((parseInt(editForm.cost_price, 10) || 0) * CNY_TO_KRW).toLocaleString()} (1위안={CNY_TO_KRW}원 기준)
                 </p>
               )}
             </div>
