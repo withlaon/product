@@ -25,6 +25,7 @@ const ALL_MALLS = [
   { key:'lotteon',    name:'롯데온',       domain:'lotteon.com',          color:'from-red-500 to-red-700'      },
   { key:'ssg',        name:'SSG.COM',      domain:'ssg.com',              color:'from-orange-500 to-red-500'   },
   { key:'toss',       name:'토스쇼핑',     domain:'shop.toss.im',         color:'from-blue-500 to-indigo-600'  },
+  { key:'kakaostore', name:'톡스토어',     domain:'store.kakao.com',      color:'from-yellow-400 to-yellow-500'},
 ]
 
 /* ─── 쇼핑몰별 API 입력 필드 ──────────────────────────────────────── */
@@ -106,6 +107,11 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
   toss: [
     { key:'seller_id', label:'판매자 ID', placeholder:'토스쇼핑 판매자 ID', type:'text'     },
     { key:'api_key',   label:'API Key',   placeholder:'API Key 입력',        type:'password' },
+  ],
+  kakaostore: [
+    { key:'seller_id', label:'비즈니스 채널 ID', placeholder:'카카오 비즈니스 채널 ID', type:'text'     },
+    { key:'api_key',   label:'REST API Key',      placeholder:'카카오 REST API Key',     type:'password' },
+    { key:'api_secret',label:'Admin Key',          placeholder:'카카오 Admin Key',        type:'password' },
   ],
 }
 
@@ -199,6 +205,21 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     steps:['① 토스쇼핑 판매자센터(partners.toss.im) 로그인합니다.','② [API 설정]에서 API Key를 발급받습니다.','③ 판매자 ID와 API Key를 입력하고 저장합니다.'],
     links:[{label:'토스쇼핑 파트너',url:'https://partners.toss.im'}],
   },
+  kakaostore: {
+    title:'카카오 톡스토어 API 연동 방법', note:'카카오 비즈니스 계정과 채널이 필요합니다.',
+    steps:[
+      '① 카카오 비즈니스(business.kakao.com) 로그인 후 [내 비즈니스] → [채널] 선택합니다.',
+      '② [설정] → [비즈니스 채널 연결]에서 채널 ID를 확인합니다.',
+      '③ 카카오 개발자(developers.kakao.com)에서 앱 생성 후 REST API Key / Admin Key를 발급받습니다.',
+      '④ [카카오쇼핑] → [스토어 개설]에서 톡스토어를 연결합니다.',
+      '⑤ 비즈니스 채널 ID, REST API Key, Admin Key를 입력하고 저장합니다.',
+    ],
+    links:[
+      {label:'카카오 비즈니스',url:'https://business.kakao.com'},
+      {label:'카카오 개발자',url:'https://developers.kakao.com'},
+      {label:'톡스토어 셀러센터',url:'https://store.kakao.com/sellers'},
+    ],
+  },
 }
 
 function openGuideWindow(key: string, name: string) {
@@ -246,6 +267,7 @@ const MALL_CATS: Record<string, string[]> = {
   lotteon:    ['패션의류 > 여성의류 > 원피스','패션의류 > 여성의류 > 블라우스','패션의류 > 남성의류','패션잡화 > 가방','패션잡화 > 지갑','스포츠/레저 > 스포츠의류'],
   ssg:        ['패션의류 > 여성의류 > 원피스','패션의류 > 여성의류 > 블라우스','패션의류 > 남성의류','패션잡화 > 가방 > 숄더백','패션잡화 > 가방 > 크로스백'],
   toss:       ['패션의류 > 여성의류','패션의류 > 남성의류','패션잡화 > 가방','패션잡화 > 지갑'],
+  kakaostore: ['패션의류 > 여성패션 > 원피스','패션의류 > 여성패션 > 블라우스','패션의류 > 여성패션 > 바지','패션의류 > 남성패션 > 티셔츠','패션의류 > 남성패션 > 바지','패션잡화 > 가방 > 숄더백','패션잡화 > 가방 > 크로스백','패션잡화 > 지갑','액세서리 > 귀걸이','뷰티 > 스킨케어'],
 }
 
 /* ─── 배송정보 프리셋 ──────────────────────────────────────────────── */

@@ -423,7 +423,7 @@ export default function ProductsPage() {
     }))
     const payload = {
       code: editForm.code, name: editForm.name, category: cat, loca: editForm.loca,
-      cost_price: Number(editForm.cost_price) || 0,
+      cost_price: Math.round(Number(editForm.cost_price) || 0),
       cost_currency: editForm.cost_currency,
       status: editForm.status, supplier: editForm.supplier,
       options,
@@ -474,7 +474,7 @@ export default function ProductsPage() {
     }))
     const payload = {
       code: form.code.trim(), name: form.name.trim(), category: cat, loca: form.loca,
-      cost_price: Number(form.cost_price) || 0,
+      cost_price: Math.round(Number(form.cost_price) || 0),
       cost_currency: form.cost_currency,
       status: form.status, supplier: form.supplier,
       options, channel_prices: [],
