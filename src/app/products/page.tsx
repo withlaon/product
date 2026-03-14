@@ -551,16 +551,21 @@ export default function ProductsPage() {
     {
       label:'판매예정', filterKey:'upcoming',
       value: products.filter(p => p.status === 'upcoming').length,
-      bg:'#eff6ff', activeBg:'#2563eb', color:'#2563eb', activeColor:'white', icon:Package,
+      bg:'#eff6ff', activeBg:'#3b82f6', color:'#3b82f6', activeColor:'white', icon:Package,
+    },
+    {
+      label:'삭제예정', filterKey:'pending_delete',
+      value: products.filter(p => p.status === 'pending_delete').length,
+      bg:'#fff7ed', activeBg:'#c2410c', color:'#c2410c', activeColor:'white', icon:Trash2,
     },
     {
       label:'재고 부족', filterKey:'__low_stock__',
-      value: products.filter(p => p.status !== 'pending_delete' && totalCurStock(p) <= 2 && totalCurStock(p) > 0).length,
+      value: products.filter(p => p.status === 'active' && totalCurStock(p) <= 2 && totalCurStock(p) > 0).length,
       bg:'#fffbeb', activeBg:'#d97706', color:'#d97706', activeColor:'white', icon:AlertTriangle,
     },
     {
       label:'품절', filterKey:'__soldout__',
-      value: products.filter(p => p.status !== 'pending_delete' && (p.status === 'soldout' || totalCurStock(p) === 0)).length,
+      value: products.filter(p => p.status === 'active' && totalCurStock(p) === 0).length,
       bg:'#fff1f2', activeBg:'#be123c', color:'#be123c', activeColor:'white', icon:AlertTriangle,
     },
   ]
@@ -576,7 +581,7 @@ export default function ProductsPage() {
     <div className="pm-page space-y-4">
 
       {/* KPI 필터 버튼 */}
-      <div className="grid grid-cols-3 xl:grid-cols-5 gap-3">
+      <div className="grid grid-cols-3 xl:grid-cols-6 gap-3">
         {kpis.map(c => {
           const isActive = statusFilter === c.filterKey
           return (
@@ -615,10 +620,22 @@ export default function ProductsPage() {
                     autoFocus
                     value={catEditInput}
                     onChange={e => setCatEditInput(e.target.value)}
-                    onBlur={handleCatRename}
-                    onKeyDown={e => { if (e.key==='Enter') handleCatRename(); if (e.key==='Escape') setCatEditTarget(null) }}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') handleCatRename()
+                      if (e.key === 'Escape') setCatEditTarget(null)
+                    }}
                     style={{ width:90, fontSize:13, fontWeight:800, border:'1px solid #3b82f6', borderRadius:6, padding:'4px 8px', outline:'none', color:'#1e293b' }}
                   />
+                  <button
+                    onMouseDown={e => { e.preventDefault(); handleCatRename() }}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', width:26, height:26, background:'#2563eb', color:'white', border:'none', borderRadius:6, cursor:'pointer', fontSize:13, flexShrink:0 }}>
+                    ✓
+                  </button>
+                  <button
+                    onMouseDown={e => { e.preventDefault(); setCatEditTarget(null) }}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', width:26, height:26, background:'#f1f5f9', color:'#64748b', border:'none', borderRadius:6, cursor:'pointer', fontSize:12, flexShrink:0 }}>
+                    ✕
+                  </button>
                 </div>
               ) : (
                 <button onClick={() => setActiveTab(cat)} style={{
@@ -664,11 +681,23 @@ export default function ProductsPage() {
                 autoFocus
                 value={catAddInput}
                 onChange={e => setCatAddInput(e.target.value)}
-                onBlur={handleCatAdd}
-                onKeyDown={e => { if (e.key==='Enter') handleCatAdd(); if (e.key==='Escape') { setCatAddMode(false); setCatAddInput('') } }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') handleCatAdd()
+                  if (e.key === 'Escape') { setCatAddMode(false); setCatAddInput('') }
+                }}
                 placeholder="카테고리명"
                 style={{ width:100, fontSize:13, fontWeight:800, border:'1px solid #3b82f6', borderRadius:6, padding:'4px 8px', outline:'none', color:'#1e293b' }}
               />
+              <button
+                onMouseDown={e => { e.preventDefault(); handleCatAdd() }}
+                style={{ display:'flex', alignItems:'center', justifyContent:'center', width:26, height:26, background:'#2563eb', color:'white', border:'none', borderRadius:6, cursor:'pointer', fontSize:13, flexShrink:0 }}>
+                ✓
+              </button>
+              <button
+                onMouseDown={e => { e.preventDefault(); setCatAddMode(false); setCatAddInput('') }}
+                style={{ display:'flex', alignItems:'center', justifyContent:'center', width:26, height:26, background:'#f1f5f9', color:'#64748b', border:'none', borderRadius:6, cursor:'pointer', fontSize:12, flexShrink:0 }}>
+                ✕
+              </button>
             </div>
           ) : (
             <button
