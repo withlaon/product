@@ -734,7 +734,14 @@ export default function ProductsPage() {
                     <td style={{ paddingTop:13 }}>
                       <button onClick={() => { setBasicInfoTarget(p); setBasicInfoForm(p.basic_info ?? {...DEF_BASIC_INFO, title:p.name}) }}
                         style={{ background:'none', border:'none', cursor:'pointer', padding:0, textAlign:'left' }}>
-                        <p style={{ fontSize:13, fontWeight:800, color:'#2563eb', lineHeight:1.4, textDecoration:'underline', textDecorationStyle:'dotted', textUnderlineOffset:3 }}>{p.name}</p>
+                        <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                          <p style={{ fontSize:13, fontWeight:800, color:'#2563eb', lineHeight:1.4, textDecoration:'underline', textDecorationStyle:'dotted', textUnderlineOffset:3 }}>{p.name}</p>
+                          {p.abbr && (
+                            <span style={{ fontSize:11, fontWeight:900, color:'#7e22ce', background:'#f3e8ff', padding:'1px 7px', borderRadius:5, letterSpacing:'0.02em', flexShrink:0 }}>
+                              {p.abbr}
+                            </span>
+                          )}
+                        </div>
                       </button>
                       <p style={{ fontSize:11, fontWeight:700, color:'#94a3b8', marginTop:3 }}>{p.category}</p>
                       <p style={{ fontSize:11, fontWeight:800, color: low ? '#dc2626' : '#64748b', marginTop:4 }}>
@@ -776,11 +783,6 @@ export default function ProductsPage() {
                             </div>
                             <span style={{ display:'flex', flexDirection:'column', gap:1, overflow:'hidden' }}>
                               <span style={{ display:'flex', alignItems:'center', gap:4, overflow:'hidden' }}>
-                                {p.abbr && (
-                                  <span style={{ fontSize:10, fontWeight:900, color:'#7e22ce', background:'#f3e8ff', padding:'0px 5px', borderRadius:4, flexShrink:0, letterSpacing:'0.02em' }}>
-                                    {p.abbr}
-                                  </span>
-                                )}
                                 <span style={{ fontSize:12, fontWeight:800, color: optZero ? '#94a3b8' : '#334155', flexShrink:0 }}>{opt.name}</span>
                                 {(opt.korean_name || getKoreanColor(opt.name)) && (
                                   <span style={{ fontSize:11, fontWeight:700, color:'#2563eb', background:'#eff6ff', padding:'0px 5px', borderRadius:4, flexShrink:0 }}>
