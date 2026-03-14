@@ -1,5 +1,6 @@
 'use client'
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -421,9 +422,11 @@ export default function ProductsPage() {
       chinese_name: o.chinese_name,
       barcode: o.barcode || genBarcode(editForm.code, o.name),
       image: o.image,
-      ordered: Number(o.ordered) || 0, received: Number(o.received) || 0, sold: Number(o.sold) || 0,
-      current_stock: o.current_stock !== undefined ? Number(o.current_stock) : undefined,
-      defective: o.defective !== undefined ? Number(o.defective) : undefined,
+      ordered: Number(o.ordered) || 0,
+      received: Number(o.received) || 0,
+      sold: Number(o.sold) || 0,
+      current_stock: o.current_stock !== undefined ? Number(o.current_stock) : 0,
+      defective: Number(o.defective) || 0,
     }))
     const editCostPriceInt = Math.round(Number(editForm.cost_price) || 0)
     const payload = {
@@ -537,6 +540,143 @@ export default function ProductsPage() {
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from('pm_products').delete().eq('id', id)
     if (!error) setProducts(prev => prev.filter(p => p.id !== id))
+  }
+
+  /* ── 파일 input ref ── */
+  const importInputRef = useRef<HTMLInputElement>(null)
+
+  /* ── 전체목록 다운로드 ── */
+  const handleFullDownload = () => {
+    const rows: Record<string, string|number>[] = []
+    products.forEach(p => {
+      if (p.options.length === 0) {
+        rows.push({
+          상품코드: p.code, 상품명: p.name, 상품약어: p.abbr ?? '',
+          카테고리: p.category, LOCA: p.loca,
+          원가: p.cost_price, 통화: p.cost_currency,
+          상태: ST[p.status]?.label ?? p.status,
+          옵션코드: '', 한글명: '', 중국명: '', 바코드: '',
+          발주: 0, 입고: 0, 현재고: 0, 불량: 0,
+        })
+      } else {
+        p.options.forEach((o, idx) => {
+          rows.push({
+            상품코드: idx === 0 ? p.code : '',
+            상품명: idx === 0 ? p.name : '',
+            상품약어: idx === 0 ? (p.abbr ?? '') : '',
+            카테고리: idx === 0 ? p.category : '',
+            LOCA: idx === 0 ? p.loca : '',
+            원가: idx === 0 ? p.cost_price : '',
+            통화: idx === 0 ? p.cost_currency : '',
+            상태: idx === 0 ? (ST[p.status]?.label ?? p.status) : '',
+            옵션코드: o.name, 한글명: o.korean_name ?? '',
+            중국명: o.chinese_name ?? '', 바코드: o.barcode ?? '',
+            발주: o.ordered ?? 0, 입고: o.received ?? 0,
+            현재고: o.current_stock ?? 0, 불량: o.defective ?? 0,
+          })
+        })
+      }
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '상품목록')
+    XLSX.writeFile(wb, `상품목록_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
+  /* ── 상품요약 다운로드 (코드/명/약어/옵션명+이미지여부/LOCA) ── */
+  const handleSummaryDownload = () => {
+    const rows: Record<string, string>[] = []
+    products.forEach(p => {
+      if (p.options.length === 0) {
+        rows.push({ 상품코드: p.code, 상품명: p.name, 상품약어: p.abbr ?? '', 옵션코드: '', 한글명: '', 이미지: '', LOCA: p.loca })
+      } else {
+        p.options.forEach((o, idx) => {
+          rows.push({
+            상품코드: idx === 0 ? p.code : '',
+            상품명: idx === 0 ? p.name : '',
+            상품약어: idx === 0 ? (p.abbr ?? '') : '',
+            옵션코드: o.name,
+            한글명: o.korean_name ?? '',
+            이미지: o.image ? 'O' : '',
+            LOCA: idx === 0 ? p.loca : '',
+          })
+        })
+      }
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    // 컬럼 너비 설정
+    ws['!cols'] = [
+      { wch: 12 }, { wch: 30 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 6 }, { wch: 10 },
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '상품요약')
+    XLSX.writeFile(wb, `상품요약_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
+  /* ── 엑셀 가져오기 ── */
+  const handleImportExcel = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+    const buf = await file.arrayBuffer()
+    const wb = XLSX.read(buf, { type: 'array' })
+    const ws = wb.Sheets[wb.SheetNames[0]]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' })
+    if (!raw.length) return
+
+    // 행을 상품코드 기준으로 그룹핑
+    const map = new Map<string, typeof raw>()
+    raw.forEach(row => {
+      const code = String(row['상품코드'] || '').trim()
+      if (!code) return
+      if (!map.has(code)) map.set(code, [])
+      map.get(code)!.push(row)
+    })
+
+    for (const [code, rows] of map.entries()) {
+      const first = rows[0]
+      const options: ProductOption[] = rows
+        .filter(r => String(r['옵션코드'] || '').trim())
+        .map(r => ({
+          name: String(r['옵션코드'] || ''),
+          korean_name: String(r['한글명'] || '') || getKoreanColor(String(r['옵션코드'] || '')),
+          chinese_name: String(r['중국명'] || ''),
+          barcode: String(r['바코드'] || '') || genBarcode(code, String(r['옵션코드'] || '')),
+          image: '',
+          ordered: Number(r['발주']) || 0,
+          received: Number(r['입고']) || 0,
+          sold: 0,
+          current_stock: Number(r['현재고']) || 0,
+          defective: Number(r['불량']) || 0,
+        }))
+      const statusMap: Record<string, ProductStatus> = {
+        '판매중':'active','판매예정':'upcoming','품절':'soldout','삭제예정':'pending_delete','전송준비':'ready_to_ship'
+      }
+      const payload = {
+        code,
+        name: String(first['상품명'] || ''),
+        abbr: String(first['상품약어'] || ''),
+        category: String(first['카테고리'] || ''),
+        loca: String(first['LOCA'] || ''),
+        cost_price: Math.round(Number(first['원가']) || 0),
+        cost_currency: (String(first['통화'] || 'CNY') as CostCurrency),
+        status: statusMap[String(first['상태'] || '')] || 'active' as ProductStatus,
+        supplier: String(first['구매처'] || ''),
+        options,
+        channel_prices: [] as ChannelPrice[],
+        mall_categories: [] as MallCategory[],
+        basic_info: null,
+      }
+      const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
+      if (!error && data) {
+        const p = rowToProduct(data)
+        setProducts(prev => [...prev, p].sort((a,b) => a.code.localeCompare(b.code)))
+        const cat = payload.category
+        if (cat && cat !== '전체') setExtraCats(prev => prev.includes(cat) ? prev : [...prev, cat])
+      }
+    }
+    alert(`가져오기 완료! ${map.size}개 상품이 등록되었습니다.`)
   }
 
   // KPI는 현재 선택된 카테고리 탭 기준으로 카운팅
@@ -760,9 +900,38 @@ export default function ProductsPage() {
             <option value="전체">전체 상태</option>
             {ST_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </Select>
+          {/* 페이지네이션 */}
+          <div style={{ display:'flex', gap:4, alignItems:'center' }}>
+            <span style={{ fontSize:11.5, fontWeight:700, color:'#94a3b8', whiteSpace:'nowrap' }}>총 {filtered.length}개</span>
+            <button disabled={page===1} onClick={() => setPage(p=>p-1)}
+              className="pm-btn pm-btn-ghost pm-btn-sm"
+              style={{ height:28, minWidth:40, fontSize:12, opacity:page===1?0.35:1, cursor:page===1?'not-allowed':'pointer' }}>이전</button>
+            {Array.from({length:totalPages},(_,i)=>i+1)
+              .filter(n=>n===1||n===totalPages||Math.abs(n-page)<=1)
+              .reduce<(number|'...')[]>((acc,n,i,arr)=>{
+                if(i>0&&(n as number)-(arr[i-1] as number)>1) acc.push('...')
+                acc.push(n); return acc
+              },[])
+              .map((v,i)=>v==='...'
+                ?<span key={`e${i}`} style={{fontSize:12,color:'#94a3b8',padding:'0 2px'}}>…</span>
+                :<button key={v} onClick={()=>setPage(v as number)}
+                    className="pm-btn pm-btn-ghost pm-btn-sm"
+                    style={{height:28,minWidth:28,fontSize:12,
+                      background:page===v?'#2563eb':undefined,
+                      color:page===v?'white':undefined,
+                      fontWeight:page===v?900:undefined}}>
+                    {v}
+                  </button>
+              )}
+            <button disabled={page===totalPages} onClick={() => setPage(p=>p+1)}
+              className="pm-btn pm-btn-ghost pm-btn-sm"
+              style={{ height:28, minWidth:40, fontSize:12, opacity:page===totalPages?0.35:1, cursor:page===totalPages?'not-allowed':'pointer' }}>다음</button>
+          </div>
           <div style={{ display:'flex', gap:6, marginLeft:'auto' }}>
-            <Button variant="outline" size="sm"><Download size={13}/>엑셀</Button>
-            <Button variant="outline" size="sm"><Upload size={13}/>가져오기</Button>
+            <Button variant="outline" size="sm" onClick={handleSummaryDownload}><Download size={13}/>상품요약</Button>
+            <Button variant="outline" size="sm" onClick={handleFullDownload}><Download size={13}/>전체목록</Button>
+            <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()}><Upload size={13}/>가져오기</Button>
+            <input ref={importInputRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleImportExcel}/>
             <Button size="sm" onClick={() => setIsAdd(true)}><Plus size={13}/>상품 등록</Button>
           </div>
         </div>
@@ -973,51 +1142,6 @@ export default function ProductsPage() {
               })}
             </tbody>
           </table>
-        </div>
-        <div className="pm-table-footer">
-          <span>총 {filtered.length}개 상품 (페이지 {page}/{totalPages})</span>
-          <div style={{ display:'flex', gap:4, alignItems:'center' }}>
-            {/* 이전 */}
-            <button
-              disabled={page === 1}
-              onClick={() => setPage(p => p - 1)}
-              className="pm-btn pm-btn-ghost pm-btn-sm"
-              style={{ height:28, minWidth:40, fontSize:12, opacity: page === 1 ? 0.35 : 1, cursor: page === 1 ? 'not-allowed' : 'pointer' }}>
-              이전
-            </button>
-
-            {/* 페이지 번호 */}
-            {Array.from({ length: totalPages }, (_, i) => i + 1)
-              .filter(n => n === 1 || n === totalPages || Math.abs(n - page) <= 2)
-              .reduce<(number | '...')[]>((acc, n, i, arr) => {
-                if (i > 0 && (n as number) - (arr[i-1] as number) > 1) acc.push('...')
-                acc.push(n)
-                return acc
-              }, [])
-              .map((v, i) =>
-                v === '...'
-                  ? <span key={`e${i}`} style={{ fontSize:12, color:'#94a3b8', padding:'0 2px' }}>…</span>
-                  : <button key={v}
-                      onClick={() => setPage(v as number)}
-                      className="pm-btn pm-btn-ghost pm-btn-sm"
-                      style={{ height:28, minWidth:28, fontSize:12,
-                        background: page === v ? '#2563eb' : undefined,
-                        color:      page === v ? 'white'   : undefined,
-                        fontWeight: page === v ? 900       : undefined,
-                      }}>
-                      {v}
-                    </button>
-              )}
-
-            {/* 다음 */}
-            <button
-              disabled={page === totalPages}
-              onClick={() => setPage(p => p + 1)}
-              className="pm-btn pm-btn-ghost pm-btn-sm"
-              style={{ height:28, minWidth:40, fontSize:12, opacity: page === totalPages ? 0.35 : 1, cursor: page === totalPages ? 'not-allowed' : 'pointer' }}>
-              다음
-            </button>
-          </div>
         </div>
       </div>
 
@@ -1482,8 +1606,11 @@ export default function ProductsPage() {
                         <p style={{ fontSize:10, fontWeight:800, color:'#94a3b8', marginBottom:4 }}>{lbl}</p>
                         <input
                           type="number" min="0"
-                          value={opt[field] as number ?? 0}
-                          onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, [field]: Number(e.target.value)} : o) }) : f)}
+                          value={(opt[field] as number) ?? 0}
+                          onChange={e => {
+                            const val = e.target.value === '' ? 0 : Number(e.target.value)
+                            setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, [field]: val} : o) }) : f)
+                          }}
                           style={{ width:'100%', border:`1.5px solid ${clr}44`, borderRadius:8, padding:'5px 8px', fontSize:13, fontWeight:800, color:clr, background:`${clr}0a`, outline:'none', textAlign:'center' }}
                         />
                       </div>
@@ -1491,7 +1618,7 @@ export default function ProductsPage() {
                     <div>
                       <p style={{ fontSize:10, fontWeight:800, color:'#64748b', marginBottom:4 }}>판매 (자동)</p>
                       <div style={{ border:'1.5px solid #e2e8f0', borderRadius:8, padding:'5px 8px', fontSize:13, fontWeight:800, color:'#64748b', background:'#f8fafc', textAlign:'center' }}>
-                        {Math.max(0, (opt.received||0) - (opt.current_stock ?? Math.max(0,(opt.received||0)-(opt.sold||0))))}
+                        {Math.max(0, (opt.received || 0) - (opt.current_stock ?? 0))}
                       </div>
                     </div>
                   </div>
