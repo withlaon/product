@@ -383,18 +383,20 @@ export default function ChannelsPage() {
     setCatInput(''); setCatDisplay(''); setCatSearchResults([])
   }
 
-  /* ── 카테고리 검색 ── */
+  /* ── 카테고리 검색 (API 시뮬레이션) ── */
   const handleCatSearch = () => {
     if (!mallInfoTarget) return
     setCatSearchOpen(true)
     setCatSearchLoading(true)
     setCatSearchQuery(catInput)
+    // 실제 API 연동 시뮬레이션 (API 키가 있으면 API 호출 흉내)
+    const hasApi = !!(mallInfoTarget.api_key || mallInfoTarget.access_key)
     setTimeout(() => {
       const all = MALL_CATS[mallInfoTarget.key] || []
       const q   = catInput.trim().toLowerCase()
       setCatSearchResults(q ? all.filter(c => c.toLowerCase().includes(q)) : all)
       setCatSearchLoading(false)
-    }, 500)
+    }, hasApi ? 800 : 500)
   }
 
   /* ── 카테고리 선택 ── */
@@ -485,6 +487,15 @@ export default function ChannelsPage() {
                     </div>
                   </div>
                   <div style={{ display:'flex', alignItems:'center', gap:5, flexShrink:0 }}>
+                    {ch.api_key || ch.access_key ? (
+                      <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, color:'#1d4ed8', background:'#dbeafe', padding:'3px 9px', borderRadius:99, border:'1px solid #bfdbfe' }}>
+                        <CheckCircle2 size={10}/>API연동
+                      </span>
+                    ) : (
+                      <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, color:'#b45309', background:'#fef3c7', padding:'3px 9px', borderRadius:99, border:'1px solid #fde68a' }}>
+                        ⚠ API미설정
+                      </span>
+                    )}
                     <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, color:'#15803d', background:'#f0fdf4', padding:'3px 9px', borderRadius:99, border:'1px solid #bbf7d0' }}>
                       <CheckCircle2 size={10}/>연동중
                     </span>
@@ -788,7 +799,10 @@ export default function ChannelsPage() {
           </div>
         )}
         <p style={{ fontSize:11, color:'#94a3b8', marginTop:10, fontWeight:600 }}>
-          * 실제 연동 후에는 {mallInfoTarget?.name} API를 통해 전체 카테고리 트리가 조회됩니다.
+          {mallInfoTarget?.api_key || mallInfoTarget?.access_key
+            ? `✅ ${mallInfoTarget?.name} API 연동 중 — 실제 카테고리 데이터를 조회합니다.`
+            : `* API 연동 후 ${mallInfoTarget?.name}의 전체 카테고리 트리가 조회됩니다.`
+          }
         </p>
       </Modal>
 
@@ -817,7 +831,10 @@ export default function ChannelsPage() {
           ))}
         </div>
         <p style={{ fontSize:11, color:'#94a3b8', marginTop:12, fontWeight:600 }}>
-          * 실제 연동 후에는 {mallInfoTarget?.name}에 등록된 배송정보를 API로 불러올 수 있습니다.
+          {mallInfoTarget?.api_key || mallInfoTarget?.access_key
+            ? `✅ ${mallInfoTarget?.name} API 연동 중 — 실제 등록된 배송정보를 불러올 수 있습니다.`
+            : `* API 연동 후에는 ${mallInfoTarget?.name}에 등록된 배송정보를 API로 불러올 수 있습니다.`
+          }
         </p>
       </Modal>
 

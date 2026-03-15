@@ -52,9 +52,11 @@ export default function MappingPage() {
       const raw = localStorage.getItem(CHANNEL_STORAGE_KEY)
       if (raw) {
         const parsed = JSON.parse(raw)
-        const connected = Object.entries(parsed)
-          .filter(([, v]) => (v as { connected?: boolean }).connected)
-          .map(([key, v]) => ({ key, name: (v as { name?: string }).name || key }))
+        // ChannelData[] 배열 형식 (active:true 기준)
+        const arr: { key: string; name: string; active: boolean }[] = Array.isArray(parsed) ? parsed : []
+        const connected = arr
+          .filter(c => c.active)
+          .map(c => ({ key: c.key, name: c.name }))
         setConnectedMalls(connected)
         if (connected.length > 0) setSelectedMall(connected[0].key)
       }
