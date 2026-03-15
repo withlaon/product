@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Modal } from '@/components/ui/modal'
 import { formatCurrency, formatDateTime } from '@/lib/utils'
-import { Search, Download, RefreshCw, Eye, Truck, Play, Clock, X, CheckSquare, Package } from 'lucide-react'
+import { Search, Download, RefreshCw, Eye, Truck, Play, Clock, X, CheckSquare, Package, Trash2 } from 'lucide-react'
 
 /* ── 공유 스토리지 키 ── */
 export const CHANNEL_STORAGE_KEY = 'pm_mall_channels_v3'
@@ -114,6 +114,9 @@ export default function OrdersPage() {
   const [collectSelected, setCollectSelected] = useState<Set<string>>(new Set())
   const [collecting, setCollecting] = useState(false)
   const [collectDone, setCollectDone] = useState(false)
+  // 수집 기간 선택
+  const [collectRange, setCollectRange] = useState<'1'|'3'|'5'|'7'|'custom'>('1')
+  const [collectCustomDate, setCollectCustomDate] = useState('')
 
   // 자동 수집 설정 모달
   const [autoModal, setAutoModal] = useState(false)
@@ -194,16 +197,41 @@ export default function OrdersPage() {
     if (!collectSelected.size) return
     setCollecting(true)
     setTimeout(() => {
+      // 수집 시작일 계산
+      let startDate: Date
+      if (collectRange === 'custom' && collectCustomDate) {
+        startDate = new Date(collectCustomDate)
+      } else {
+        const days = parseInt(collectRange)
+        startDate = new Date()
+        startDate.setDate(startDate.getDate() - days)
+        startDate.setHours(0, 0, 0, 0)
+      }
+
       const newOrd: Order[] = []
       collectSelected.forEach(key => {
         const mall = connectedMalls.find(m => m.key === key)
         if (!mall) return
-        newOrd.push(...makeSampleOrders(mall.name))
+        const samples = makeSampleOrders(mall.name)
+        // 신규주문(pending)만 수집 - 배송준비/배송중/배송완료 제외
+        const newOnly = samples.filter(o => o.status === 'pending' && !o.is_claim)
+        // 수집 기간 내 주문만 포함 (시뮬레이션이므로 created_at을 수집 기간 내로 설정)
+        newOnly.forEach(o => {
+          const orderDate = new Date()
+          orderDate.setDate(orderDate.getDate() - Math.floor(Math.random() * parseInt(collectRange === 'custom' ? '1' : collectRange)))
+          o.created_at = orderDate.toISOString()
+        })
+        newOrd.push(...newOnly)
       })
+
+      // 이미 수집된 주문과 중복 제거 (order_number 기준)
+      const existingNums = new Set(orders.map(o => o.order_number))
+      const deduped = newOrd.filter(o => !existingNums.has(o.order_number))
+
       setOrders(prev => {
-        const merged = [...newOrd, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        const merged = [...deduped, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         saveOrders(merged)
-        if (newOrd.some(o => o.is_claim)) localStorage.setItem(CS_NEW_KEY, 'true')
+        if (deduped.some(o => o.is_claim)) localStorage.setItem(CS_NEW_KEY, 'true')
         return merged
       })
       setCollecting(false)
@@ -242,6 +270,25 @@ export default function OrdersPage() {
   })
   const toggleAll = (checked: boolean) => {
     setSelectedIds(checked ? new Set(filtered.map(o => o.id)) : new Set())
+  }
+
+  const handleDeleteOrder = (id: string) => {
+    setOrders(prev => {
+      const updated = prev.filter(o => o.id !== id)
+      saveOrders(updated)
+      return updated
+    })
+    setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n })
+  }
+
+  const handleDeleteSelected = () => {
+    if (!selectedIds.size) return
+    setOrders(prev => {
+      const updated = prev.filter(o => !selectedIds.has(o.id))
+      saveOrders(updated)
+      return updated
+    })
+    setSelectedIds(new Set())
   }
 
   const filtered = orders.filter(o =>
@@ -299,6 +346,14 @@ export default function OrdersPage() {
             }}>
             <Package size={13}/>배송준비 {selectedIds.size > 0 && `(${selectedIds.size})`}
           </button>
+
+          {/* 선택 삭제 버튼 */}
+          {selectedIds.size > 0 && (
+            <button onClick={handleDeleteSelected}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, border:'1.5px solid #fecaca', fontSize:12.5, fontWeight:800, cursor:'pointer', background:'#fff1f2', color:'#dc2626' }}>
+              <Trash2 size={13}/>선택 삭제 ({selectedIds.size})
+            </button>
+          )}
 
           <div style={{ flex:1 }}/>
 
@@ -392,6 +447,7 @@ export default function OrdersPage() {
                       <div style={{ display:'flex', gap:4, opacity:0, transition:'opacity 150ms ease' }} className="group-hover:!opacity-100">
                         <button onClick={()=>setSel(o)} className="pm-btn pm-btn-ghost pm-btn-sm" style={{ width:28, height:28, padding:0, borderRadius:8 }}><Eye size={13}/></button>
                         <button onClick={()=>{setTrackOrder(o);setTrackModal(true);setTrackNum('');setTrackCarrier('CJ대한통운')}} className="pm-btn pm-btn-ghost pm-btn-sm" style={{ width:28, height:28, padding:0, borderRadius:8, color:'#7c3aed' }}><Truck size={13}/></button>
+                        <button onClick={()=>{ if(confirm('이 주문을 삭제하시겠습니까?')) handleDeleteOrder(o.id) }} className="pm-btn pm-btn-ghost pm-btn-sm" style={{ width:28, height:28, padding:0, borderRadius:8, color:'#dc2626' }}><Trash2 size={13}/></button>
                       </div>
                     </td>
                   </tr>
@@ -478,6 +534,36 @@ export default function OrdersPage() {
       {/* ── 주문수집 모달 ── */}
       <Modal isOpen={collectModal} onClose={()=>setCollectModal(false)} title="주문 수집" size="md">
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          {/* 수집 기간 선택 */}
+          <div>
+            <p style={{ fontSize:12, fontWeight:800, color:'#475569', marginBottom:8 }}>수집 기간</p>
+            <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+              {([['1','1일 전'],['3','3일 전'],['5','5일 전'],['7','7일 전']] as const).map(([val, label]) => (
+                <button key={val} onClick={() => setCollectRange(val)}
+                  style={{ padding:'6px 14px', borderRadius:8, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:'pointer',
+                    borderColor: collectRange === val ? '#2563eb' : '#e2e8f0',
+                    background: collectRange === val ? '#eff6ff' : 'white',
+                    color: collectRange === val ? '#1d4ed8' : '#475569',
+                  }}>{label}</button>
+              ))}
+              <button onClick={() => setCollectRange('custom')}
+                style={{ padding:'6px 14px', borderRadius:8, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:'pointer',
+                  borderColor: collectRange === 'custom' ? '#2563eb' : '#e2e8f0',
+                  background: collectRange === 'custom' ? '#eff6ff' : 'white',
+                  color: collectRange === 'custom' ? '#1d4ed8' : '#475569',
+                }}>시작일 선택</button>
+            </div>
+            {collectRange === 'custom' && (
+              <input type="date" value={collectCustomDate} onChange={e => setCollectCustomDate(e.target.value)}
+                max={new Date().toISOString().slice(0,10)}
+                style={{ marginTop:8, width:'100%', padding:'8px 12px', borderRadius:8, border:'1.5px solid #93c5fd', fontSize:13, fontWeight:700, color:'#1e293b', outline:'none' }}
+              />
+            )}
+            <p style={{ marginTop:6, fontSize:11.5, color:'#64748b', fontWeight:600 }}>
+              신규 주문(대기중)만 수집됩니다. 배송준비/배송중/배송완료 주문은 수집되지 않습니다.
+            </p>
+          </div>
+
           <p style={{ fontSize:13, color:'#64748b', fontWeight:700 }}>주문을 수집할 쇼핑몰을 선택하세요.</p>
           {connectedMalls.length === 0 ? (
             <div style={{ textAlign:'center', padding:'24px', color:'#94a3b8', fontSize:13, fontWeight:700 }}>
@@ -509,13 +595,13 @@ export default function OrdersPage() {
           )}
           {collectDone && (
             <div style={{ padding:'10px 14px', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, fontSize:12.5, fontWeight:800, color:'#15803d' }}>
-              ✅ 주문 수집 완료! 최신 주문이 추가되었습니다.
+              ✅ 주문 수집 완료! 신규 주문이 추가되었습니다.
             </div>
           )}
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
             <Button variant="outline" onClick={()=>setCollectModal(false)}>닫기</Button>
-            <Button onClick={handleCollect} disabled={!collectSelected.size || collecting || collectDone}
-              style={{ opacity: (!collectSelected.size || collectDone) ? 0.5 : 1 }}>
+            <Button onClick={handleCollect} disabled={!collectSelected.size || collecting || collectDone || (collectRange === 'custom' && !collectCustomDate)}
+              style={{ opacity: (!collectSelected.size || collectDone || (collectRange === 'custom' && !collectCustomDate)) ? 0.5 : 1 }}>
               {collecting ? <><RefreshCw size={13} style={{ animation:'spin 0.7s linear infinite' }}/>수집 중...</> : <><Play size={13}/>수집 시작</>}
             </Button>
           </div>

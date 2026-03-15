@@ -56,6 +56,14 @@ const DEF_BASIC_INFO: BasicInfo = { title:'', brand:'', origin:'', manufacturer:
 const CNY_TO_KRW = 210
 const DEFAULT_CATS = ['전체'] // '전체' 탭은 항상 고정, 나머지는 extraCats로 관리
 const INIT_EXTRA_CATS = ['가방', '의류', '잡화'] // 앱 최초 실행 시 기본 카테고리
+const CATS_STORAGE_KEY = 'pm_categories_v1'
+
+function loadSavedCats(): string[] | null {
+  try { const r = localStorage.getItem(CATS_STORAGE_KEY); return r ? JSON.parse(r) : null } catch { return null }
+}
+function saveCats(cats: string[]) {
+  try { localStorage.setItem(CATS_STORAGE_KEY, JSON.stringify(cats)) } catch {}
+}
 
 /* ─── 옵션 영문 코드 → 한글 색상명 매핑표 ─────────────────────── */
 const OPT_COLOR_MAP: Record<string, string> = {
@@ -322,6 +330,11 @@ export default function ProductsPage() {
   useEffect(() => {
     const load = async () => {
       setLoading(true)
+      // localStorage에 저장된 카테고리 먼저 복원
+      const saved = loadSavedCats()
+      if (saved && saved.length > 0) {
+        setExtraCats(saved)
+      }
       const { data, error } = await supabase
         .from('pm_products')
         .select('*')
@@ -329,10 +342,12 @@ export default function ProductsPage() {
       if (!error && data) {
         const loaded = data.map(rowToProduct)
         setProducts(loaded)
-        // DB에 있는 카테고리와 기본 카테고리를 합쳐서 extraCats 구성
+        // DB에 있는 카테고리와 저장된 카테고리를 합쳐서 extraCats 구성
         const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
         setExtraCats(prev => {
-          const merged = [...new Set([...prev, ...dbCats])]
+          const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
+          const merged = [...new Set([...base, ...dbCats])]
+          saveCats(merged)
           return merged
         })
       }
@@ -350,7 +365,11 @@ export default function ProductsPage() {
   const handleCatAdd = () => {
     const name = catAddInput.trim()
     if (!name || allCats.includes(name)) { setCatAddMode(false); setCatAddInput(''); return }
-    setExtraCats(prev => [...prev, name])
+    setExtraCats(prev => {
+      const updated = [...prev, name]
+      saveCats(updated)
+      return updated
+    })
     setDeletedCats(prev => prev.filter(c => c !== name)) // 혹시 삭제목록에 있으면 복구
     setCatAddMode(false)
     setCatAddInput('')
@@ -362,7 +381,11 @@ export default function ProductsPage() {
     const newName = catEditInput.trim()
     if (!newName || newName === catEditTarget) { setCatEditTarget(null); return }
     if (allCats.includes(newName)) { setCatEditTarget(null); return } // 이미 존재하는 이름
-    setExtraCats(prev => prev.map(c => c === catEditTarget ? newName : c))
+    setExtraCats(prev => {
+      const updated = prev.map(c => c === catEditTarget ? newName : c)
+      saveCats(updated)
+      return updated
+    })
     setProducts(prev => prev.map(p => p.category === catEditTarget ? { ...p, category: newName } : p))
     supabase.from('pm_products').update({ category: newName }).eq('category', catEditTarget).then(() => {})
     if (activeTab === catEditTarget) setActiveTab(newName)
@@ -371,7 +394,11 @@ export default function ProductsPage() {
 
   /* ── 카테고리 삭제 ── */
   const handleCatDelete = (cat: string) => {
-    setExtraCats(prev => prev.filter(c => c !== cat))
+    setExtraCats(prev => {
+      const updated = prev.filter(c => c !== cat)
+      saveCats(updated)
+      return updated
+    })
     setDeletedCats(prev => [...prev, cat])
     if (activeTab === cat) setActiveTab('전체')
     setCatDeleteTarget(null)
@@ -440,7 +467,11 @@ export default function ProductsPage() {
     setEditSaving(false)
     if (error) { console.error('수정 오류:', error); return }
     setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
-    if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
+    if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
+      const updated = [...prev, cat]
+      saveCats(updated)
+      return updated
+    })
     setIsEdit(null)
     setEditForm(null)
   }
@@ -513,7 +544,11 @@ export default function ProductsPage() {
         if (e2) { setAddDbError(`등록 실패: ${e2.message}\n※ Supabase에서 schema.sql의 ALTER TABLE 구문을 실행해주세요.`); return }
         const p = rowToProduct(d2)
         setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
-        if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
+        if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
+          const updated = [...prev, cat]
+          saveCats(updated)
+          return updated
+        })
         setIsAdd(false); setForm(INIT_FORM); return
       }
       setAddDbError(`등록 실패: ${error.message}`)
@@ -521,7 +556,11 @@ export default function ProductsPage() {
     }
     const p = rowToProduct(data)
     setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
-    if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => [...prev, cat])
+    if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
+      const updated = [...prev, cat]
+      saveCats(updated)
+      return updated
+    })
     setIsAdd(false)
     setForm(INIT_FORM)
   }
@@ -583,6 +622,42 @@ export default function ProductsPage() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '상품목록')
     XLSX.writeFile(wb, `상품목록_${new Date().toISOString().slice(0,10)}.xlsx`)
+  }
+
+  /* ── 엑셀 일괄등록 양식 다운로드 ── */
+  const handleDownloadImportTemplate = () => {
+    const templateRows = [
+      {
+        상품코드: 'BAG001', 상품명: '스웨이드 백', 상품약어: 'SB',
+        카테고리: '가방', LOCA: 'A-01', 원가: 25, 통화: 'CNY',
+        상태: '판매중', 구매처: 'https://example.com',
+        옵션코드: 'BK', 한글명: '블랙', 중국명: '黑色', 바코드: 'BAG001 BKFFF',
+        발주: 10, 입고: 10, 현재고: 10, 불량: 0,
+      },
+      {
+        상품코드: '', 상품명: '', 상품약어: '',
+        카테고리: '', LOCA: '', 원가: '', 통화: '',
+        상태: '', 구매처: '',
+        옵션코드: 'BE', 한글명: '베이지', 중국명: '米色', 바코드: 'BAG001 BEFFF',
+        발주: 5, 입고: 5, 현재고: 5, 불량: 0,
+      },
+      {
+        상품코드: 'CL001', 상품명: '베이직 티셔츠', 상품약어: 'BT',
+        카테고리: '의류', LOCA: 'B-02', 원가: 8000, 통화: 'KRW',
+        상태: '판매중', 구매처: '',
+        옵션코드: 'WH', 한글명: '화이트', 중국명: '白色', 바코드: 'CL001 WHFFF',
+        발주: 20, 입고: 20, 현재고: 15, 불량: 1,
+      },
+    ]
+    const ws = XLSX.utils.json_to_sheet(templateRows)
+    // 열 너비 설정
+    ws['!cols'] = [
+      {wch:12},{wch:24},{wch:12},{wch:10},{wch:8},{wch:8},{wch:8},
+      {wch:10},{wch:24},{wch:10},{wch:10},{wch:10},{wch:16},{wch:8},{wch:8},{wch:8},{wch:8},
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '상품등록양식')
+    XLSX.writeFile(wb, `상품등록양식.xlsx`)
   }
 
   /* ── 상품요약 다운로드 (코드/명/약어/옵션명+이미지/LOCA) ── */
@@ -720,7 +795,12 @@ export default function ProductsPage() {
         const p = rowToProduct(data)
         setProducts(prev => [...prev, p].sort((a,b) => a.code.localeCompare(b.code)))
         const cat = payload.category
-        if (cat && cat !== '전체') setExtraCats(prev => prev.includes(cat) ? prev : [...prev, cat])
+        if (cat && cat !== '전체') setExtraCats(prev => {
+          if (prev.includes(cat)) return prev
+          const updated = [...prev, cat]
+          saveCats(updated)
+          return updated
+        })
       }
     }
     alert(`가져오기 완료! ${map.size}개 상품이 등록되었습니다.`)
@@ -977,7 +1057,8 @@ export default function ProductsPage() {
           <div style={{ display:'flex', gap:6, marginLeft:'auto' }}>
             <Button variant="outline" size="sm" onClick={handleSummaryDownload}><Download size={13}/>상품요약</Button>
             <Button variant="outline" size="sm" onClick={handleFullDownload}><Download size={13}/>전체목록</Button>
-            <Button variant="outline" size="sm" onClick={() => importInputRef.current?.click()}><Upload size={13}/>가져오기</Button>
+            <Button variant="outline" size="sm" onClick={handleDownloadImportTemplate}><Download size={13}/>등록양식</Button>
+            <Button size="sm" onClick={() => importInputRef.current?.click()}><Upload size={13}/>엑셀 일괄등록</Button>
             <input ref={importInputRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleImportExcel}/>
             <Button size="sm" onClick={() => setIsAdd(true)}><Plus size={13}/>상품 등록</Button>
           </div>

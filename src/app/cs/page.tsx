@@ -38,13 +38,14 @@ const PR: Record<string, { label:string; cls:string }> = {
   low:    { label:'낮음', cls:'bg-slate-100 text-slate-500' },
 }
 const TY: Record<string, { label:string; cls:string }> = {
-  inquiry:   { label:'문의', cls:'bg-blue-100 text-blue-700' },
-  complaint: { label:'불만', cls:'bg-orange-100 text-orange-700' },
-  return:    { label:'반품', cls:'bg-red-100 text-red-700' },
-  exchange:  { label:'교환', cls:'bg-purple-100 text-purple-700' },
-  refund:    { label:'환불', cls:'bg-pink-100 text-pink-700' },
-  claim:     { label:'클레임', cls:'bg-rose-100 text-rose-700' },
-  other:     { label:'기타', cls:'bg-slate-100 text-slate-500' },
+  inquiry:               { label:'문의',           cls:'bg-blue-100 text-blue-700' },
+  complaint:             { label:'불만',           cls:'bg-orange-100 text-orange-700' },
+  return:                { label:'반품',           cls:'bg-red-100 text-red-700' },
+  exchange:              { label:'교환',           cls:'bg-purple-100 text-purple-700' },
+  refund:                { label:'환불',           cls:'bg-pink-100 text-pink-700' },
+  claim:                 { label:'클레임',         cls:'bg-rose-100 text-rose-700' },
+  cancel_before_invoice: { label:'주문취소(송장전송전)', cls:'bg-amber-100 text-amber-700' },
+  other:                 { label:'기타',           cls:'bg-slate-100 text-slate-500' },
 }
 
 export default function CSPage() {
@@ -54,6 +55,11 @@ export default function CSPage() {
   const [search, setSearch] = useState('')
   const [sf, setSf] = useState('전체')
   const [tf, setTf] = useState('전체')
+  // CS 접수일 필터: 기본 10일 전부터 표시
+  const defaultDateFrom = () => {
+    const d = new Date(); d.setDate(d.getDate() - 10); return d.toISOString().slice(0, 10)
+  }
+  const [dateFrom, setDateFrom] = useState(defaultDateFrom)
   const [sel, setSel] = useState<Ticket|null>(null)
   const [resp, setResp] = useState('')
   const [isNew, setIsNew] = useState(false)
@@ -111,10 +117,14 @@ export default function CSPage() {
   }
 
   const filtered = tickets
-    .filter(t =>
-      (t.ticket_number.includes(search) || t.customer_name.includes(search) || t.subject.includes(search)) &&
-      (sf === '전체' || t.status === sf) && (tf === '전체' || t.type === tf)
-    )
+    .filter(t => {
+      const matchSearch = t.ticket_number.includes(search) || t.customer_name.includes(search) || t.subject.includes(search)
+      const matchStatus = sf === '전체' || t.status === sf
+      const matchType = tf === '전체' || t.type === tf
+      // 접수일 필터: dateFrom 이후
+      const matchDate = !dateFrom || new Date(t.created_at) >= new Date(dateFrom)
+      return matchSearch && matchStatus && matchType && matchDate
+    })
     .sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
 
   const openCnt = tickets.filter(t=>t.status==='open').length
@@ -132,6 +142,29 @@ export default function CSPage() {
       saveTickets(updated)
       return updated
     })
+
+    // 주문취소(송장전송전) + 처리완료(resolved/closed) 시 주문관리/배송탭에서 삭제
+    if (sel.type === 'cancel_before_invoice' && (newSt === 'resolved' || newSt === 'closed')) {
+      // 주문관리에서 삭제 (order_id 기준)
+      try {
+        const ordersRaw = localStorage.getItem(ORDERS_STORAGE_KEY)
+        if (ordersRaw && sel.order_id) {
+          const orders = JSON.parse(ordersRaw)
+          const filtered = orders.filter((o: {order_number: string}) => o.order_number !== sel.order_id)
+          localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(filtered))
+        }
+      } catch {}
+      // 배송/송장에서도 삭제
+      try {
+        const shippingRaw = localStorage.getItem('pm_shipping_v1')
+        if (shippingRaw && sel.order_id) {
+          const shipping = JSON.parse(shippingRaw)
+          const filtered = shipping.filter((s: {order_number: string}) => s.order_number !== sel.order_id)
+          localStorage.setItem('pm_shipping_v1', JSON.stringify(filtered))
+        }
+      } catch {}
+    }
+
     setSel(null)
   }
 
@@ -196,8 +229,8 @@ export default function CSPage() {
 
       {/* 필터 바 */}
       <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4">
-        <div className="flex flex-col sm:flex-row gap-3">
-          <div className="relative flex-1">
+        <div className="flex flex-col sm:flex-row gap-3 flex-wrap">
+          <div className="relative flex-1" style={{ minWidth:200 }}>
             <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"/>
             <Input placeholder="티켓번호, 고객명, 제목..." value={search} onChange={e=>setSearch(e.target.value)} className="pl-9"/>
           </div>
@@ -207,8 +240,20 @@ export default function CSPage() {
           </Select>
           <Select value={tf} onChange={e=>setTf(e.target.value)} className="sm:w-36">
             <option value="전체">전체 유형</option>
-            <option value="inquiry">문의</option><option value="complaint">불만</option><option value="return">반품</option><option value="exchange">교환</option><option value="refund">환불</option><option value="claim">클레임</option>
+            <option value="inquiry">문의</option><option value="complaint">불만</option><option value="return">반품</option><option value="exchange">교환</option><option value="refund">환불</option><option value="claim">클레임</option><option value="cancel_before_invoice">주문취소(송장전송전)</option>
           </Select>
+          {/* 접수일 필터 */}
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <label style={{ fontSize:11.5, fontWeight:800, color:'#64748b', whiteSpace:'nowrap' }}>접수일 이후:</label>
+            <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)}
+              max={new Date().toISOString().slice(0,10)}
+              style={{ padding:'6px 10px', borderRadius:8, border:'1.5px solid #e2e8f0', fontSize:12.5, fontWeight:700, color:'#1e293b', outline:'none', cursor:'pointer' }}
+            />
+            <button onClick={()=>setDateFrom('')}
+              style={{ fontSize:11.5, fontWeight:700, color:'#94a3b8', background:'#f1f5f9', border:'none', borderRadius:6, padding:'4px 8px', cursor:'pointer', whiteSpace:'nowrap' }}>
+              전체
+            </button>
+          </div>
           <Button onClick={()=>setIsNew(true)}><Plus size={14}/>CS 등록</Button>
         </div>
       </div>
@@ -314,6 +359,11 @@ export default function CSPage() {
               <label className="block text-[12px] font-extrabold text-slate-700 mb-1.5">답변 작성</label>
               <textarea className="w-full rounded-2xl border border-slate-200 px-4 py-3 text-[13px] font-bold focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-400 resize-none" rows={4} placeholder="고객에게 전달할 답변을 입력하세요..." value={resp} onChange={e=>setResp(e.target.value)}/>
             </div>
+            {sel.type === 'cancel_before_invoice' && (
+              <div style={{ padding:'10px 14px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, fontSize:12, fontWeight:700, color:'#92400e' }}>
+                ⚠️ <b>주문취소(송장전송전)</b> 유형입니다. 해결됨/종료로 변경 시 해당 주문이 <b>주문관리</b> 및 <b>배송/송장</b> 목록에서 자동 삭제됩니다.
+              </div>
+            )}
             <div className="flex justify-between items-center pt-2">
               <Select className="w-44" value={newStatus} onChange={e=>setNewStatus(e.target.value)}>
                 <option>처리중으로 변경</option><option>해결됨으로 변경</option><option>종료로 변경</option>
@@ -333,7 +383,7 @@ export default function CSPage() {
           <div className="grid grid-cols-2 gap-3">
             <div><label className="block text-[12px] font-extrabold text-slate-600 mb-1.5">고객명 *</label><Input placeholder="고객명" value={newForm.customer_name} onChange={e=>setNewForm(f=>({...f,customer_name:e.target.value}))}/></div>
             <div><label className="block text-[12px] font-extrabold text-slate-600 mb-1.5">연락처</label><Input placeholder="010-0000-0000" value={newForm.customer_phone} onChange={e=>setNewForm(f=>({...f,customer_phone:e.target.value}))}/></div>
-            <div><label className="block text-[12px] font-extrabold text-slate-600 mb-1.5">유형 *</label><Select className="w-full" value={newForm.type} onChange={e=>setNewForm(f=>({...f,type:e.target.value}))}><option value="inquiry">문의</option><option value="complaint">불만</option><option value="return">반품</option><option value="exchange">교환</option><option value="refund">환불</option><option value="claim">클레임</option><option value="other">기타</option></Select></div>
+            <div><label className="block text-[12px] font-extrabold text-slate-600 mb-1.5">유형 *</label><Select className="w-full" value={newForm.type} onChange={e=>setNewForm(f=>({...f,type:e.target.value}))}><option value="inquiry">문의</option><option value="complaint">불만</option><option value="return">반품</option><option value="exchange">교환</option><option value="refund">환불</option><option value="claim">클레임</option><option value="cancel_before_invoice">주문취소(송장전송전)</option><option value="other">기타</option></Select></div>
             <div><label className="block text-[12px] font-extrabold text-slate-600 mb-1.5">우선순위</label><Select className="w-full" value={newForm.priority} onChange={e=>setNewForm(f=>({...f,priority:e.target.value}))}><option value="low">낮음</option><option value="medium">보통</option><option value="high">높음</option><option value="urgent">긴급</option></Select></div>
             <div><label className="block text-[12px] font-extrabold text-slate-600 mb-1.5">채널</label><Input placeholder="쿠팡, 네이버 등" value={newForm.channel} onChange={e=>setNewForm(f=>({...f,channel:e.target.value}))}/></div>
             <div><label className="block text-[12px] font-extrabold text-slate-600 mb-1.5">연관 주문번호</label><Input placeholder="ORD-2026-XXXX" value={newForm.order_id} onChange={e=>setNewForm(f=>({...f,order_id:e.target.value}))}/></div>
