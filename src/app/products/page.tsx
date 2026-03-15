@@ -476,6 +476,9 @@ export default function ProductsPage() {
     if (!form.code.trim()) errors.add('code')
     if (!form.name.trim()) errors.add('name')
     if (!cat) errors.add('category')
+    form.options.forEach((o, i) => {
+      if (o.name.trim() && !o.chinese_name.trim()) errors.add(`chinese_name_${i}`)
+    })
     if (errors.size > 0) { setAddErrors(errors); return }
     setAddErrors(new Set())
     setAddDbError('')
@@ -582,34 +585,79 @@ export default function ProductsPage() {
     XLSX.writeFile(wb, `상품목록_${new Date().toISOString().slice(0,10)}.xlsx`)
   }
 
-  /* ── 상품요약 다운로드 (코드/명/약어/옵션명+이미지여부/LOCA) ── */
-  const handleSummaryDownload = () => {
-    const rows: Record<string, string>[] = []
-    products.forEach(p => {
-      if (p.options.length === 0) {
-        rows.push({ 상품코드: p.code, 상품명: p.name, 상품약어: p.abbr ?? '', 옵션코드: '', 한글명: '', 이미지: '', LOCA: p.loca })
-      } else {
-        p.options.forEach((o, idx) => {
-          rows.push({
-            상품코드: idx === 0 ? p.code : '',
-            상품명: idx === 0 ? p.name : '',
-            상품약어: idx === 0 ? (p.abbr ?? '') : '',
-            옵션코드: o.name,
-            한글명: o.korean_name ?? '',
-            이미지: o.image ? 'O' : '',
-            LOCA: idx === 0 ? p.loca : '',
-          })
-        })
-      }
-    })
-    const ws = XLSX.utils.json_to_sheet(rows)
-    // 컬럼 너비 설정
-    ws['!cols'] = [
-      { wch: 12 }, { wch: 30 }, { wch: 12 }, { wch: 10 }, { wch: 12 }, { wch: 6 }, { wch: 10 },
+  /* ── 상품요약 다운로드 (코드/명/약어/옵션명+이미지/LOCA) ── */
+  const handleSummaryDownload = async () => {
+    const ExcelJS = (await import('exceljs')).default
+    const wb = new ExcelJS.Workbook()
+    const ws = wb.addWorksheet('상품요약')
+
+    // 열 너비 설정
+    ws.columns = [
+      { key: 'code',    width: 14 },
+      { key: 'name',    width: 32 },
+      { key: 'abbr',    width: 13 },
+      { key: 'option',  width: 11 },
+      { key: 'korean',  width: 13 },
+      { key: 'image',   width: 9  },
+      { key: 'loca',    width: 11 },
     ]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '상품요약')
-    XLSX.writeFile(wb, `상품요약_${new Date().toISOString().slice(0,10)}.xlsx`)
+
+    // 헤더 행
+    const headerRow = ws.addRow(['상품코드', '상품명', '상품약어', '옵션코드', '한글명', '이미지', 'LOCA'])
+    headerRow.font = { bold: true, size: 10 }
+    headerRow.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE2E8F0' } }
+    headerRow.alignment = { vertical: 'middle', horizontal: 'center' }
+    headerRow.height = 22
+
+    const IMAGE_ROW_HEIGHT = 55
+
+    for (const p of products) {
+      if (p.options.length === 0) {
+        ws.addRow([p.code, p.name, p.abbr ?? '', '', '', '', p.loca])
+        continue
+      }
+      for (let idx = 0; idx < p.options.length; idx++) {
+        const o = p.options[idx]
+        const row = ws.addRow([
+          idx === 0 ? p.code : '',
+          idx === 0 ? p.name : '',
+          idx === 0 ? (p.abbr ?? '') : '',
+          o.name,
+          o.korean_name ?? '',
+          '',
+          idx === 0 ? p.loca : '',
+        ])
+        row.alignment = { vertical: 'middle' }
+
+        // 첫 번째 옵션의 이미지만 삽입
+        if (idx === 0 && o.image && o.image.startsWith('data:image/')) {
+          try {
+            const [meta, b64] = o.image.split(',')
+            const ext = meta.includes('png') ? 'png' : meta.includes('gif') ? 'gif' : 'jpeg'
+            const imgId = wb.addImage({ base64: b64, extension: ext as 'png' | 'jpeg' | 'gif' })
+            const rowNum = row.number
+            row.height = IMAGE_ROW_HEIGHT
+            ws.addImage(imgId, {
+              tl: { col: 5, row: rowNum - 1 } as never,
+              br: { col: 6, row: rowNum } as never,
+              editAs: 'oneCell',
+            })
+          } catch {
+            row.getCell(6).value = 'O'
+          }
+        }
+      }
+    }
+
+    // 브라우저에서 Blob으로 다운로드
+    const buf = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `상품요약_${new Date().toISOString().slice(0, 10)}.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   /* ── 엑셀 가져오기 ── */
@@ -1305,10 +1353,16 @@ export default function ProductsPage() {
                       />
                     </div>
                     <div>
-                      <Label>중국명</Label>
+                      <Label>중국명 <span style={{ color:'#ef4444', fontWeight:900 }}>*</span></Label>
                       <Input placeholder="黑色/M" value={opt.chinese_name}
-                        onChange={e => { const o=[...form.options];o[i]={...o[i],chinese_name:e.target.value};setForm(f=>({...f,options:o}))}}
+                        style={addErrors.has(`chinese_name_${i}`) ? { borderColor:'#ef4444', outline:'none' } : undefined}
+                        onChange={e => {
+                          const o=[...form.options];o[i]={...o[i],chinese_name:e.target.value}
+                          setForm(f=>({...f,options:o}))
+                          setAddErrors(prev => { const n = new Set(prev); n.delete(`chinese_name_${i}`); return n })
+                        }}
                       />
+                      {addErrors.has(`chinese_name_${i}`) && <p style={{ fontSize:11, color:'#ef4444', marginTop:3 }}>중국명을 입력해주세요</p>}
                     </div>
                   </div>
                   <div>
