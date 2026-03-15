@@ -460,10 +460,10 @@ export default function ProductsPage() {
       current_stock: o.current_stock !== undefined ? Number(o.current_stock) : 0,
       defective: Number(o.defective) || 0,
     }))
-    const editCostPriceInt = Math.round(Number(editForm.cost_price) || 0)
+    const editCostPriceVal = Number(editForm.cost_price) || 0
     const payload = {
       code: editForm.code, name: editForm.name, abbr: editForm.abbr.trim(), category: cat, loca: editForm.loca,
-      cost_price: editCostPriceInt,
+      cost_price: editCostPriceVal,
       cost_currency: editForm.cost_currency,
       status: editForm.status, supplier: editForm.supplier,
       options,
@@ -538,10 +538,10 @@ export default function ProductsPage() {
       image: o.image,
       ordered: 0, received: 0, sold: 0,
     }))
-    const costPriceInt = Math.round(Number(form.cost_price) || 0)
+    const costPriceVal = Number(form.cost_price) || 0
     const payload = {
       code: form.code.trim(), name: form.name.trim(), abbr: form.abbr.trim(), category: cat, loca: form.loca,
-      cost_price: costPriceInt,
+      cost_price: costPriceVal,
       cost_currency: form.cost_currency,
       status: form.status, supplier: form.supplier,
       options, channel_prices: [],
@@ -772,78 +772,86 @@ export default function ProductsPage() {
     e.target.value = ''
     const buf = await file.arrayBuffer()
 
-    // ExcelJS로 파싱 (이미지 추출 지원)
+    // ExcelJS로 파싱 (내장 이미지 추출)
     const ExcelJS = (await import('exceljs')).default
     const wbEx = new ExcelJS.Workbook()
     await wbEx.xlsx.load(buf)
     const wsEx = wbEx.worksheets[0]
     if (!wsEx) { alert('파일에 시트가 없습니다.'); return }
 
-    // 헤더 행 파악 (첫 번째 행)
-    const headerRow = wsEx.getRow(1)
-    const colMap: Record<string, number> = {}
-    headerRow.eachCell((cell, colNum) => {
-      const v = String(cell.value || '').trim().replace(/\(.*?\)/g, '').trim()
-      colMap[v] = colNum
-    })
-    // 옵션이미지 컬럼 인덱스 (헤더에 '옵션이미지' 포함)
-    const imgColIdx = Object.entries(colMap).find(([k]) => k.includes('옵션이미지'))?.[1] ?? -1
-
-    // 워크시트 내장 이미지 — 행 번호별로 매핑
+    // 워크시트 내장 이미지 → 시트 행번호(1-based)별 base64 dataUrl 매핑
+    // tl.nativeRow는 0-based이므로 +1 해서 1-based 시트 행번호로 변환
     const rowImageMap: Record<number, string> = {}
     wsEx.getImages().forEach(img => {
-      const media = wbEx.model.media?.find((m: {name:string}) => m.name === img.imageId) as {buffer?:Buffer; extension?:string} | undefined
-      if (!media?.buffer) return
-      const ext = media.extension || 'jpeg'
-      const b64 = Buffer.from(media.buffer).toString('base64')
-      const dataUrl = `data:image/${ext};base64,${b64}`
-      // 이미지가 위치한 행 (tl.nativeRow는 0-based)
-      const rowNum = (img.range.tl.nativeRow ?? 0) + 1
-      if (!rowImageMap[rowNum]) rowImageMap[rowNum] = dataUrl
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const imgData = (wbEx as any).getImage(img.imageId)
+        if (!imgData?.buffer) return
+        const ext = imgData.extension || 'jpeg'
+        const b64 = Buffer.from(imgData.buffer).toString('base64')
+        const dataUrl = `data:image/${ext};base64,${b64}`
+        const rowNum = (img.range.tl.nativeRow ?? 0) + 1  // 1-based 시트 행번호
+        if (!rowImageMap[rowNum]) rowImageMap[rowNum] = dataUrl
+      } catch { /* 이미지 추출 실패 시 무시 */ }
     })
 
-    // XLSX로도 파싱 (텍스트 데이터용)
-    const wbXlsx = XLSX.read(buf, { type: 'array' })
-    const ws = wbXlsx.Sheets[wbXlsx.SheetNames[0]]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' })
+    // 헤더 행에서 '옵션이미지' 컬럼 번호 파악 (URL 텍스트 입력 지원용)
+    const headerRow = wsEx.getRow(1)
+    let imgColIdx = -1
+    headerRow.eachCell((cell, colNum) => {
+      if (String(cell.value || '').includes('옵션이미지')) imgColIdx = colNum
+    })
 
-    // 안내 행(이탤릭/설명 행) 제거: 상품코드, 상품명, 옵션코드 모두 없는 행 skip
-    const dataRaw = raw.filter(r => String(r['상품코드']||'').trim() || String(r['옵션코드']||'').trim())
-    if (!dataRaw.length) { alert('파일에 데이터가 없습니다.'); return }
-
-    // ExcelJS 행 데이터를 행번호→URL 텍스트로도 수집 (URL 텍스트 입력 지원)
+    // 옵션이미지 URL 텍스트 행 수집 (이미지가 없는 경우 URL 텍스트 fallback)
     const rowUrlMap: Record<number, string> = {}
     if (imgColIdx > 0) {
       wsEx.eachRow((row, rowNum) => {
-        if (rowNum <= 2) return // 헤더+안내 행 skip
-        const cell = row.getCell(imgColIdx)
-        const val = String(cell.value || '').trim()
+        if (rowNum === 1) return
+        const val = String(row.getCell(imgColIdx).value || '').trim()
         if (val && /^https?:\/\//i.test(val)) rowUrlMap[rowNum] = val
       })
     }
 
-    // 행 번호와 raw 데이터 매칭 (raw는 헤더 제외 0-based, 실제 시트 행은 2-based + 안내행 오프셋)
-    // 안내 행(2번째 행)이 있으면 +1 오프셋
-    const hasNoteRow = raw.length !== dataRaw.length || (raw[0] && String(raw[0]['상품코드']||'').includes('※'))
-    const rowOffset = hasNoteRow ? 3 : 2 // 1=헤더, 2=안내(있으면), dataRaw[i] → 시트 행번호
+    // XLSX로 텍스트 데이터 파싱
+    const wbXlsx = XLSX.read(buf, { type: 'array' })
+    const wsXlsx = wbXlsx.Sheets[wbXlsx.SheetNames[0]]
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rawAll: any[] = XLSX.utils.sheet_to_json(wsXlsx, { defval: '' })
 
-    // 상품코드 기준으로 그룹핑
-    const map = new Map<string, { rows: typeof raw; startSheetRow: number }>()
+    // 안내/설명 행 제거: 상품코드·옵션코드 모두 없고 '※' 포함된 행 skip
+    const raw = rawAll.filter(r => {
+      const code = String(r['상품코드'] || '').trim()
+      const opt  = String(r['옵션코드'] || '').trim()
+      const name = String(r['상품명'] || '').trim()
+      if (!code && !opt && !name) return false
+      if (!code && !opt && name.startsWith('※')) return false
+      return true
+    })
+
+    if (!raw.length) { alert('파일에 데이터가 없습니다.'); return }
+
+    // raw[i] → 실제 시트 행번호 계산
+    // 헤더=1행, 안내행 존재 여부에 따라 offset 결정
+    // rawAll[0]과 raw[0]이 다르면 안내행이 있는 것 → rawAll에서의 위치를 추적
+    const rawOffset = rawAll.indexOf(raw[0]) // raw[0]이 rawAll에서 몇 번째인지 (0-based)
+    const sheetRowOf = (rawIdx: number) => rawOffset + rawIdx + 2 // +2: 헤더 1행 + 0→1 변환
+
+    // 상품코드 기준 그룹핑
+    const map = new Map<string, { rows: typeof raw; sheetRowStart: number }>()
     let lastCode = ''
-    let lastStartRow = rowOffset
-    dataRaw.forEach((row, i) => {
+    let lastSheetRowStart = sheetRowOf(0)
+    raw.forEach((row, i) => {
       const code = String(row['상품코드'] || '').trim()
-      const sheetRow = i + rowOffset
+      const sr = sheetRowOf(i)
       if (code) {
         lastCode = code
-        lastStartRow = sheetRow
-        if (!map.has(code)) map.set(code, { rows: [], startSheetRow: sheetRow })
+        lastSheetRowStart = sr
+        if (!map.has(code)) map.set(code, { rows: [], sheetRowStart: sr })
       }
       if (lastCode) {
-        if (!map.has(lastCode)) map.set(lastCode, { rows: [], startSheetRow: lastStartRow })
-        const group = map.get(lastCode)!
-        if (!group.rows.includes(row)) group.rows.push(row)
+        if (!map.has(lastCode)) map.set(lastCode, { rows: [], sheetRowStart: lastSheetRowStart })
+        const g = map.get(lastCode)!
+        if (!g.rows.includes(row)) g.rows.push(row)
       }
     })
 
@@ -857,15 +865,14 @@ export default function ProductsPage() {
     let updateCount = 0
     const errors: string[] = []
 
-    for (const [code, { rows, startSheetRow }] of map.entries()) {
+    for (const [code, { rows, sheetRowStart }] of map.entries()) {
       const first = rows[0]
       const options: ProductOption[] = rows
         .filter(r => String(r['옵션코드'] || '').trim())
         .map((r, ri) => {
-          const sheetRow = startSheetRow + ri
-          // 이미지 결정: 내장 이미지 > URL 텍스트
-          let image = rowImageMap[sheetRow] || rowUrlMap[sheetRow] || ''
-          // URL이면 나중에 fetch 생략 (UI에서 <img src=url> 렌더 가능)
+          const sheetRow = sheetRowStart + ri
+          // 이미지: 내장 이미지(base64) > URL 텍스트 순서로 우선
+          const image = rowImageMap[sheetRow] || rowUrlMap[sheetRow] || ''
           return {
             name: String(r['옵션코드'] || ''),
             korean_name: String(r['한글명'] || '') || getKoreanColor(String(r['옵션코드'] || '')),
@@ -886,7 +893,7 @@ export default function ProductsPage() {
         abbr: String(first['상품약어'] || ''),
         category: String(first['카테고리'] || ''),
         loca: String(first['LOCA'] || ''),
-        cost_price: Math.round(Number(first['원가']) || 0),
+        cost_price: Number(first['원가']) || 0,
         cost_currency: (String(first['통화'] || 'CNY') as CostCurrency),
         status: statusMap[String(first['상태'] || '')] || 'active' as ProductStatus,
         supplier: String(first['구매처'] || ''),
