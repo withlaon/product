@@ -50,6 +50,7 @@ interface Product {
   mall_categories: MallCategory[]
   basic_info: BasicInfo | null
   status: ProductStatus; supplier: string
+  created_at?: string
 }
 const DEF_BASIC_INFO: BasicInfo = { title:'', brand:'', origin:'', manufacturer:'', material:'', description:'', handling:'', notes:'' }
 
@@ -280,6 +281,7 @@ function rowToProduct(row: any): Product {
     channel_prices: (row.channel_prices ?? []) as ChannelPrice[],
     mall_categories: (row.mall_categories ?? []) as MallCategory[],
     basic_info: (row.basic_info ?? null) as BasicInfo | null,
+    created_at: row.created_at ?? '',
   }
 }
 
@@ -291,6 +293,9 @@ export default function ProductsPage() {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('전체')
+  // 등록일 필터: 'all' | 'today' | '3' | '7' | 'custom'
+  const [dateFilter, setDateFilter]   = useState<'all'|'today'|'3'|'7'|'custom'>('all')
+  const [dateCustom, setDateCustom]   = useState('')
   const [isAdd, setIsAdd]             = useState(false)
   const [detail, setDetail]           = useState<Product | null>(null)
   const [isEdit, setIsEdit]           = useState<Product | null>(null)
@@ -476,6 +481,18 @@ export default function ProductsPage() {
     setEditForm(null)
   }
   const filtered = useMemo(() => {
+    // 등록일 필터 기준일 계산
+    let dateFrom: Date | null = null
+    if (dateFilter === 'today') {
+      dateFrom = new Date(); dateFrom.setHours(0,0,0,0)
+    } else if (dateFilter === '3') {
+      dateFrom = new Date(); dateFrom.setDate(dateFrom.getDate() - 3); dateFrom.setHours(0,0,0,0)
+    } else if (dateFilter === '7') {
+      dateFrom = new Date(); dateFrom.setDate(dateFrom.getDate() - 7); dateFrom.setHours(0,0,0,0)
+    } else if (dateFilter === 'custom' && dateCustom) {
+      dateFrom = new Date(dateCustom); dateFrom.setHours(0,0,0,0)
+    }
+
     return products.filter(p => {
       const q   = search.trim()
       const mS  = !q || p.name.includes(q) || p.code.includes(q) || p.options.some(o => o.barcode.includes(q) || o.name.includes(q))
@@ -488,12 +505,14 @@ export default function ProductsPage() {
       } else if (statusFilter !== '전체') {
         mSt = p.status === statusFilter
       }
-      return mS && mC && mSt
+      // 등록일 필터
+      const mDate = !dateFrom || (p.created_at ? new Date(p.created_at) >= dateFrom : false)
+      return mS && mC && mSt && mDate
     }).sort((a, b) => a.code.localeCompare(b.code))
-  }, [products, search, activeTab, statusFilter])
+  }, [products, search, activeTab, statusFilter, dateFilter, dateCustom])
 
   // 검색/탭/필터 변경 시에만 1페이지 리셋 (등록·수정 후에는 현재 페이지 유지)
-  useEffect(() => { setPage(1) }, [search, activeTab, statusFilter])
+  useEffect(() => { setPage(1) }, [search, activeTab, statusFilter, dateFilter, dateCustom])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -745,16 +764,36 @@ export default function ProductsPage() {
     const ws = wb.Sheets[wb.SheetNames[0]]
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' })
-    if (!raw.length) return
+    if (!raw.length) { alert('파일에 데이터가 없습니다.'); return }
 
-    // 행을 상품코드 기준으로 그룹핑
+    // 상품코드 기준으로 그룹핑 (빈 상품코드 행은 이전 코드에 이어붙임)
     const map = new Map<string, typeof raw>()
+    let lastCode = ''
     raw.forEach(row => {
       const code = String(row['상품코드'] || '').trim()
-      if (!code) return
-      if (!map.has(code)) map.set(code, [])
-      map.get(code)!.push(row)
+      if (code) {
+        lastCode = code
+        if (!map.has(code)) map.set(code, [])
+      }
+      if (lastCode) {
+        if (!map.has(lastCode)) map.set(lastCode, [])
+        // 상품코드 없는 행도 마지막 코드 그룹에 추가 (중복 방지)
+        if (!code || code === lastCode) {
+          const group = map.get(lastCode)!
+          if (!group.includes(row)) group.push(row)
+        }
+      }
     })
+
+    if (map.size === 0) { alert('유효한 상품코드가 없습니다.'); return }
+
+    const statusMap: Record<string, ProductStatus> = {
+      '판매중':'active','판매예정':'upcoming','품절':'soldout','삭제예정':'pending_delete','전송준비':'ready_to_ship'
+    }
+
+    let successCount = 0
+    let updateCount = 0
+    const errors: string[] = []
 
     for (const [code, rows] of map.entries()) {
       const first = rows[0]
@@ -772,9 +811,7 @@ export default function ProductsPage() {
           current_stock: Number(r['현재고']) || 0,
           defective: Number(r['불량']) || 0,
         }))
-      const statusMap: Record<string, ProductStatus> = {
-        '판매중':'active','판매예정':'upcoming','품절':'soldout','삭제예정':'pending_delete','전송준비':'ready_to_ship'
-      }
+
       const payload = {
         code,
         name: String(first['상품명'] || ''),
@@ -790,20 +827,63 @@ export default function ProductsPage() {
         mall_categories: [] as MallCategory[],
         basic_info: null,
       }
-      const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
-      if (!error && data) {
-        const p = rowToProduct(data)
-        setProducts(prev => [...prev, p].sort((a,b) => a.code.localeCompare(b.code)))
-        const cat = payload.category
-        if (cat && cat !== '전체') setExtraCats(prev => {
-          if (prev.includes(cat)) return prev
-          const updated = [...prev, cat]
-          saveCats(updated)
-          return updated
-        })
+
+      if (!payload.name) { errors.push(`${code}: 상품명 없음`); continue }
+
+      // 이미 존재하는 코드인지 확인 후 upsert
+      const existing = products.find(p => p.code === code)
+      if (existing) {
+        // update
+        const { error } = await supabase.from('pm_products').update(payload).eq('id', existing.id)
+        if (error) {
+          // mall_categories/basic_info 컬럼 미존재 시 fallback
+          if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
+            const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload
+            void _mc; void _bi
+            const { error: e2 } = await supabase.from('pm_products').update(fallback).eq('id', existing.id)
+            if (e2) { errors.push(`${code}: ${e2.message}`); continue }
+          } else {
+            errors.push(`${code}: ${error.message}`); continue
+          }
+        }
+        setProducts(prev => prev.map(p => p.code === code ? { ...p, ...payload } : p))
+        updateCount++
+      } else {
+        // insert
+        const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
+        if (error) {
+          if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
+            const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload
+            void _mc; void _bi
+            const { data: d2, error: e2 } = await supabase.from('pm_products').insert(fallback).select().single()
+            if (e2) { errors.push(`${code}: ${e2.message}`); continue }
+            const p = rowToProduct(d2)
+            setProducts(prev => [...prev, p].sort((a,b) => a.code.localeCompare(b.code)))
+          } else {
+            errors.push(`${code}: ${error.message}`); continue
+          }
+        } else if (data) {
+          const p = rowToProduct(data)
+          setProducts(prev => [...prev, p].sort((a,b) => a.code.localeCompare(b.code)))
+        }
+        successCount++
       }
+
+      const cat = payload.category
+      if (cat && cat !== '전체') setExtraCats(prev => {
+        if (prev.includes(cat)) return prev
+        const updated = [...prev, cat]
+        saveCats(updated)
+        return updated
+      })
     }
-    alert(`가져오기 완료! ${map.size}개 상품이 등록되었습니다.`)
+
+    const msg = [
+      successCount > 0 ? `신규 등록: ${successCount}개` : '',
+      updateCount > 0 ? `업데이트: ${updateCount}개` : '',
+      errors.length > 0 ? `\n실패: ${errors.length}개\n${errors.slice(0,5).join('\n')}${errors.length>5?'\n...':'' }` : '',
+    ].filter(Boolean).join(' / ')
+    alert(`엑셀 일괄등록 완료!\n${msg}`)
   }
 
   // KPI는 현재 선택된 카테고리 탭 기준으로 카운팅
@@ -1027,6 +1107,29 @@ export default function ProductsPage() {
             <option value="전체">전체 상태</option>
             {ST_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
           </Select>
+          {/* 등록일 필터 */}
+          <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap' }}>
+            {([['all','전체'],['today','오늘'],['3','최근 3일'],['7','최근 1주일']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => { setDateFilter(val); setDateCustom('') }}
+                style={{ padding:'5px 10px', borderRadius:7, border:'1.5px solid', fontSize:11.5, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap',
+                  borderColor: dateFilter === val ? '#2563eb' : '#e2e8f0',
+                  background: dateFilter === val ? '#eff6ff' : 'white',
+                  color: dateFilter === val ? '#1d4ed8' : '#64748b',
+                }}>{label}</button>
+            ))}
+            <button onClick={() => setDateFilter('custom')}
+              style={{ padding:'5px 10px', borderRadius:7, border:'1.5px solid', fontSize:11.5, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap',
+                borderColor: dateFilter === 'custom' ? '#2563eb' : '#e2e8f0',
+                background: dateFilter === 'custom' ? '#eff6ff' : 'white',
+                color: dateFilter === 'custom' ? '#1d4ed8' : '#64748b',
+              }}>날짜 선택</button>
+            {dateFilter === 'custom' && (
+              <input type="date" value={dateCustom} onChange={e => setDateCustom(e.target.value)}
+                max={new Date().toISOString().slice(0,10)}
+                style={{ padding:'4px 8px', borderRadius:7, border:'1.5px solid #93c5fd', fontSize:12, fontWeight:700, color:'#1e293b', outline:'none', cursor:'pointer' }}
+              />
+            )}
+          </div>
           {/* 페이지네이션 */}
           <div style={{ display:'flex', gap:4, alignItems:'center' }}>
             <span style={{ fontSize:11.5, fontWeight:700, color:'#94a3b8', whiteSpace:'nowrap' }}>총 {filtered.length}개</span>
