@@ -526,9 +526,6 @@ export default function ProductsPage() {
     if (!form.code.trim()) errors.add('code')
     if (!form.name.trim()) errors.add('name')
     if (!cat) errors.add('category')
-    form.options.forEach((o, i) => {
-      if (o.name.trim() && !o.chinese_name.trim()) errors.add(`chinese_name_${i}`)
-    })
     if (errors.size > 0) { setAddErrors(errors); return }
     setAddErrors(new Set())
     setAddDbError('')
@@ -643,40 +640,54 @@ export default function ProductsPage() {
     XLSX.writeFile(wb, `상품목록_${new Date().toISOString().slice(0,10)}.xlsx`)
   }
 
-  /* ── 엑셀 일괄등록 양식 다운로드 ── */
-  const handleDownloadImportTemplate = () => {
-    const templateRows = [
-      {
-        상품코드: 'BAG001', 상품명: '스웨이드 백', 상품약어: 'SB',
-        카테고리: '가방', LOCA: 'A-01', 원가: 25, 통화: 'CNY',
-        상태: '판매중', 구매처: 'https://example.com',
-        옵션코드: 'BK', 한글명: '블랙', 중국명: '黑色', 바코드: 'BAG001 BKFFF',
-        발주: 10, 입고: 10, 현재고: 10, 불량: 0,
-      },
-      {
-        상품코드: '', 상품명: '', 상품약어: '',
-        카테고리: '', LOCA: '', 원가: '', 통화: '',
-        상태: '', 구매처: '',
-        옵션코드: 'BE', 한글명: '베이지', 중국명: '米色', 바코드: 'BAG001 BEFFF',
-        발주: 5, 입고: 5, 현재고: 5, 불량: 0,
-      },
-      {
-        상품코드: 'CL001', 상품명: '베이직 티셔츠', 상품약어: 'BT',
-        카테고리: '의류', LOCA: 'B-02', 원가: 8000, 통화: 'KRW',
-        상태: '판매중', 구매처: '',
-        옵션코드: 'WH', 한글명: '화이트', 중국명: '白色', 바코드: 'CL001 WHFFF',
-        발주: 20, 입고: 20, 현재고: 15, 불량: 1,
-      },
+  /* ── 엑셀 일괄등록 양식 다운로드 (이미지 셀 포함) ── */
+  const handleDownloadImportTemplate = async () => {
+    const ExcelJS = (await import('exceljs')).default
+    const wbEx = new ExcelJS.Workbook()
+    const wsEx = wbEx.addWorksheet('상품등록양식')
+
+    wsEx.columns = [
+      { key:'상품코드', width:13 }, { key:'상품명', width:28 }, { key:'상품약어', width:13 },
+      { key:'카테고리', width:10 }, { key:'LOCA', width:8 }, { key:'원가', width:8 },
+      { key:'통화', width:7 }, { key:'상태', width:10 }, { key:'구매처', width:28 },
+      { key:'옵션코드', width:10 }, { key:'한글명', width:10 }, { key:'중국명', width:10 },
+      { key:'바코드', width:16 }, { key:'발주', width:7 }, { key:'입고', width:7 },
+      { key:'현재고', width:7 }, { key:'불량', width:7 },
+      { key:'옵션이미지', width:14 },
     ]
-    const ws = XLSX.utils.json_to_sheet(templateRows)
-    // 열 너비 설정
-    ws['!cols'] = [
-      {wch:12},{wch:24},{wch:12},{wch:10},{wch:8},{wch:8},{wch:8},
-      {wch:10},{wch:24},{wch:10},{wch:10},{wch:10},{wch:16},{wch:8},{wch:8},{wch:8},{wch:8},
+
+    // 헤더 행
+    const hdr = wsEx.addRow(['상품코드','상품명','상품약어','카테고리','LOCA','원가','통화','상태','구매처','옵션코드','한글명','중국명','바코드','발주','입고','현재고','불량','옵션이미지(URL또는붙여넣기)'])
+    hdr.font = { bold:true, size:10 }
+    hdr.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FFE2E8F0' } }
+    hdr.alignment = { vertical:'middle', horizontal:'center', wrapText:true }
+    hdr.height = 28
+
+    // 안내 행
+    const note = wsEx.addRow(['※ 옵션이미지 열에 이미지 URL을 입력하거나, 셀을 선택한 뒤 이미지를 직접 붙여넣기(Ctrl+V) 해주세요. 동일 상품의 옵션은 상품코드 없이 아래 행에 이어서 입력하세요.','','','','','','','','','','','','','','','','',''])
+    note.font = { italic:true, size:9, color:{ argb:'FF6B7280' } }
+    wsEx.mergeCells(`A${note.number}:R${note.number}`)
+
+    // 샘플 데이터
+    const samples = [
+      ['BAG001','스웨이드 백','SB','가방','A-01',25,'CNY','판매중','https://example.com','BK','블랙','黑色','BAG001 BKFFF',10,10,10,0,''],
+      ['','','','','','','','','','BE','베이지','米色','BAG001 BEFFF',5,5,5,0,''],
+      ['CL001','베이직 티셔츠','BT','의류','B-02',8000,'KRW','판매중','','WH','화이트','白色','CL001 WHFFF',20,20,15,1,''],
     ]
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '상품등록양식')
-    XLSX.writeFile(wb, `상품등록양식.xlsx`)
+    samples.forEach(r => {
+      const row = wsEx.addRow(r)
+      row.alignment = { vertical:'middle' }
+      row.height = 20
+    })
+
+    // 이미지 열 설명 셀 강조
+    wsEx.getColumn('옵션이미지').font = { color:{ argb:'FF2563EB' }, bold:true }
+
+    const buf = await wbEx.xlsx.writeBuffer()
+    const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a'); a.href=url; a.download='상품등록양식.xlsx'; a.click()
+    URL.revokeObjectURL(url)
   }
 
   /* ── 상품요약 다운로드 (코드/명/약어/옵션명+이미지/LOCA) ── */
@@ -760,28 +771,79 @@ export default function ProductsPage() {
     if (!file) return
     e.target.value = ''
     const buf = await file.arrayBuffer()
-    const wb = XLSX.read(buf, { type: 'array' })
-    const ws = wb.Sheets[wb.SheetNames[0]]
+
+    // ExcelJS로 파싱 (이미지 추출 지원)
+    const ExcelJS = (await import('exceljs')).default
+    const wbEx = new ExcelJS.Workbook()
+    await wbEx.xlsx.load(buf)
+    const wsEx = wbEx.worksheets[0]
+    if (!wsEx) { alert('파일에 시트가 없습니다.'); return }
+
+    // 헤더 행 파악 (첫 번째 행)
+    const headerRow = wsEx.getRow(1)
+    const colMap: Record<string, number> = {}
+    headerRow.eachCell((cell, colNum) => {
+      const v = String(cell.value || '').trim().replace(/\(.*?\)/g, '').trim()
+      colMap[v] = colNum
+    })
+    // 옵션이미지 컬럼 인덱스 (헤더에 '옵션이미지' 포함)
+    const imgColIdx = Object.entries(colMap).find(([k]) => k.includes('옵션이미지'))?.[1] ?? -1
+
+    // 워크시트 내장 이미지 — 행 번호별로 매핑
+    const rowImageMap: Record<number, string> = {}
+    wsEx.getImages().forEach(img => {
+      const media = wbEx.model.media?.find((m: {name:string}) => m.name === img.imageId) as {buffer?:Buffer; extension?:string} | undefined
+      if (!media?.buffer) return
+      const ext = media.extension || 'jpeg'
+      const b64 = Buffer.from(media.buffer).toString('base64')
+      const dataUrl = `data:image/${ext};base64,${b64}`
+      // 이미지가 위치한 행 (tl.nativeRow는 0-based)
+      const rowNum = (img.range.tl.nativeRow ?? 0) + 1
+      if (!rowImageMap[rowNum]) rowImageMap[rowNum] = dataUrl
+    })
+
+    // XLSX로도 파싱 (텍스트 데이터용)
+    const wbXlsx = XLSX.read(buf, { type: 'array' })
+    const ws = wbXlsx.Sheets[wbXlsx.SheetNames[0]]
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const raw: any[] = XLSX.utils.sheet_to_json(ws, { defval: '' })
-    if (!raw.length) { alert('파일에 데이터가 없습니다.'); return }
 
-    // 상품코드 기준으로 그룹핑 (빈 상품코드 행은 이전 코드에 이어붙임)
-    const map = new Map<string, typeof raw>()
+    // 안내 행(이탤릭/설명 행) 제거: 상품코드, 상품명, 옵션코드 모두 없는 행 skip
+    const dataRaw = raw.filter(r => String(r['상품코드']||'').trim() || String(r['옵션코드']||'').trim())
+    if (!dataRaw.length) { alert('파일에 데이터가 없습니다.'); return }
+
+    // ExcelJS 행 데이터를 행번호→URL 텍스트로도 수집 (URL 텍스트 입력 지원)
+    const rowUrlMap: Record<number, string> = {}
+    if (imgColIdx > 0) {
+      wsEx.eachRow((row, rowNum) => {
+        if (rowNum <= 2) return // 헤더+안내 행 skip
+        const cell = row.getCell(imgColIdx)
+        const val = String(cell.value || '').trim()
+        if (val && /^https?:\/\//i.test(val)) rowUrlMap[rowNum] = val
+      })
+    }
+
+    // 행 번호와 raw 데이터 매칭 (raw는 헤더 제외 0-based, 실제 시트 행은 2-based + 안내행 오프셋)
+    // 안내 행(2번째 행)이 있으면 +1 오프셋
+    const hasNoteRow = raw.length !== dataRaw.length || (raw[0] && String(raw[0]['상품코드']||'').includes('※'))
+    const rowOffset = hasNoteRow ? 3 : 2 // 1=헤더, 2=안내(있으면), dataRaw[i] → 시트 행번호
+
+    // 상품코드 기준으로 그룹핑
+    const map = new Map<string, { rows: typeof raw; startSheetRow: number }>()
     let lastCode = ''
-    raw.forEach(row => {
+    let lastStartRow = rowOffset
+    dataRaw.forEach((row, i) => {
       const code = String(row['상품코드'] || '').trim()
+      const sheetRow = i + rowOffset
       if (code) {
         lastCode = code
-        if (!map.has(code)) map.set(code, [])
+        lastStartRow = sheetRow
+        if (!map.has(code)) map.set(code, { rows: [], startSheetRow: sheetRow })
       }
       if (lastCode) {
-        if (!map.has(lastCode)) map.set(lastCode, [])
-        // 상품코드 없는 행도 마지막 코드 그룹에 추가 (중복 방지)
-        if (!code || code === lastCode) {
-          const group = map.get(lastCode)!
-          if (!group.includes(row)) group.push(row)
-        }
+        if (!map.has(lastCode)) map.set(lastCode, { rows: [], startSheetRow: lastStartRow })
+        const group = map.get(lastCode)!
+        if (!group.rows.includes(row)) group.rows.push(row)
       }
     })
 
@@ -795,22 +857,28 @@ export default function ProductsPage() {
     let updateCount = 0
     const errors: string[] = []
 
-    for (const [code, rows] of map.entries()) {
+    for (const [code, { rows, startSheetRow }] of map.entries()) {
       const first = rows[0]
       const options: ProductOption[] = rows
         .filter(r => String(r['옵션코드'] || '').trim())
-        .map(r => ({
-          name: String(r['옵션코드'] || ''),
-          korean_name: String(r['한글명'] || '') || getKoreanColor(String(r['옵션코드'] || '')),
-          chinese_name: String(r['중국명'] || ''),
-          barcode: String(r['바코드'] || '') || genBarcode(code, String(r['옵션코드'] || '')),
-          image: '',
-          ordered: Number(r['발주']) || 0,
-          received: Number(r['입고']) || 0,
-          sold: 0,
-          current_stock: Number(r['현재고']) || 0,
-          defective: Number(r['불량']) || 0,
-        }))
+        .map((r, ri) => {
+          const sheetRow = startSheetRow + ri
+          // 이미지 결정: 내장 이미지 > URL 텍스트
+          let image = rowImageMap[sheetRow] || rowUrlMap[sheetRow] || ''
+          // URL이면 나중에 fetch 생략 (UI에서 <img src=url> 렌더 가능)
+          return {
+            name: String(r['옵션코드'] || ''),
+            korean_name: String(r['한글명'] || '') || getKoreanColor(String(r['옵션코드'] || '')),
+            chinese_name: String(r['중국명'] || ''),
+            barcode: String(r['바코드'] || '') || genBarcode(code, String(r['옵션코드'] || '')),
+            image,
+            ordered: Number(r['발주']) || 0,
+            received: Number(r['입고']) || 0,
+            sold: 0,
+            current_stock: Number(r['현재고']) || 0,
+            defective: Number(r['불량']) || 0,
+          }
+        })
 
       const payload = {
         code,
@@ -830,41 +898,29 @@ export default function ProductsPage() {
 
       if (!payload.name) { errors.push(`${code}: 상품명 없음`); continue }
 
-      // 이미 존재하는 코드인지 확인 후 upsert
       const existing = products.find(p => p.code === code)
       if (existing) {
-        // update
         const { error } = await supabase.from('pm_products').update(payload).eq('id', existing.id)
         if (error) {
-          // mall_categories/basic_info 컬럼 미존재 시 fallback
           if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
-            const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload
-            void _mc; void _bi
+            const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload; void _mc; void _bi
             const { error: e2 } = await supabase.from('pm_products').update(fallback).eq('id', existing.id)
             if (e2) { errors.push(`${code}: ${e2.message}`); continue }
-          } else {
-            errors.push(`${code}: ${error.message}`); continue
-          }
+          } else { errors.push(`${code}: ${error.message}`); continue }
         }
         setProducts(prev => prev.map(p => p.code === code ? { ...p, ...payload } : p))
         updateCount++
       } else {
-        // insert
         const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
         if (error) {
           if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
-            const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload
-            void _mc; void _bi
+            const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload; void _mc; void _bi
             const { data: d2, error: e2 } = await supabase.from('pm_products').insert(fallback).select().single()
             if (e2) { errors.push(`${code}: ${e2.message}`); continue }
-            const p = rowToProduct(d2)
-            setProducts(prev => [...prev, p].sort((a,b) => a.code.localeCompare(b.code)))
-          } else {
-            errors.push(`${code}: ${error.message}`); continue
-          }
+            setProducts(prev => [...prev, rowToProduct(d2)].sort((a,b) => a.code.localeCompare(b.code)))
+          } else { errors.push(`${code}: ${error.message}`); continue }
         } else if (data) {
-          const p = rowToProduct(data)
-          setProducts(prev => [...prev, p].sort((a,b) => a.code.localeCompare(b.code)))
+          setProducts(prev => [...prev, rowToProduct(data)].sort((a,b) => a.code.localeCompare(b.code)))
         }
         successCount++
       }
@@ -872,16 +928,14 @@ export default function ProductsPage() {
       const cat = payload.category
       if (cat && cat !== '전체') setExtraCats(prev => {
         if (prev.includes(cat)) return prev
-        const updated = [...prev, cat]
-        saveCats(updated)
-        return updated
+        const updated = [...prev, cat]; saveCats(updated); return updated
       })
     }
 
     const msg = [
       successCount > 0 ? `신규 등록: ${successCount}개` : '',
       updateCount > 0 ? `업데이트: ${updateCount}개` : '',
-      errors.length > 0 ? `\n실패: ${errors.length}개\n${errors.slice(0,5).join('\n')}${errors.length>5?'\n...':'' }` : '',
+      errors.length > 0 ? `\n실패: ${errors.length}개\n${errors.slice(0,5).join('\n')}${errors.length>5?'\n...':''}` : '',
     ].filter(Boolean).join(' / ')
     alert(`엑셀 일괄등록 완료!\n${msg}`)
   }
@@ -1537,16 +1591,13 @@ export default function ProductsPage() {
                       />
                     </div>
                     <div>
-                      <Label>중국명 <span style={{ color:'#ef4444', fontWeight:900 }}>*</span></Label>
+                      <Label>중국명</Label>
                       <Input placeholder="黑色/M" value={opt.chinese_name}
-                        style={addErrors.has(`chinese_name_${i}`) ? { borderColor:'#ef4444', outline:'none' } : undefined}
                         onChange={e => {
                           const o=[...form.options];o[i]={...o[i],chinese_name:e.target.value}
                           setForm(f=>({...f,options:o}))
-                          setAddErrors(prev => { const n = new Set(prev); n.delete(`chinese_name_${i}`); return n })
                         }}
                       />
-                      {addErrors.has(`chinese_name_${i}`) && <p style={{ fontSize:11, color:'#ef4444', marginTop:3 }}>중국명을 입력해주세요</p>}
                     </div>
                   </div>
                   <div>

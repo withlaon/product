@@ -5,7 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Modal } from '@/components/ui/modal'
 import { formatDateTime } from '@/lib/utils'
-import { MessageSquare, Search, Plus, AlertTriangle, CheckCircle2, Clock } from 'lucide-react'
+import { MessageSquare, Search, Plus, AlertTriangle, CheckCircle2, Clock, Trash2 } from 'lucide-react'
 
 export const CS_STORAGE_KEY = 'pm_cs_tickets_v1'
 export const CS_NEW_KEY = 'pm_cs_new_flag'
@@ -64,6 +64,8 @@ export default function CSPage() {
   const [resp, setResp] = useState('')
   const [isNew, setIsNew] = useState(false)
   const [newStatus, setNewStatus] = useState('처리중으로 변경')
+  // 체크박스 선택
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
 
   // 신규 등록 폼
   const [newForm, setNewForm] = useState({ customer_name:'', customer_phone:'', type:'inquiry', priority:'medium', channel:'', order_id:'', subject:'', content:'' })
@@ -168,8 +170,23 @@ export default function CSPage() {
     setSel(null)
   }
 
-  const handleNewSubmit = () => {
-    if (!newForm.customer_name || !newForm.subject || !newForm.content) return
+  const handleDeleteTicket = (id: string) => {
+    setTickets(prev => { const updated = prev.filter(t => t.id !== id); saveTickets(updated); return updated })
+    setCheckedIds(prev => { const n = new Set(prev); n.delete(id); return n })
+  }
+
+  const handleDeleteSelected = () => {
+    if (!checkedIds.size) return
+    setTickets(prev => { const updated = prev.filter(t => !checkedIds.has(t.id)); saveTickets(updated); return updated })
+    setCheckedIds(new Set())
+  }
+
+  const toggleCheck = (id: string) => setCheckedIds(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+  const toggleAll = (checked: boolean) => setCheckedIds(checked ? new Set(filtered.map(t => t.id)) : new Set())
+
+  const handleNewSubmit = () => {    if (!newForm.customer_name || !newForm.subject || !newForm.content) return
     const ticket: Ticket = {
       id: `cs_${Date.now()}`,
       ticket_number: `CS-${Date.now()}`,
@@ -255,6 +272,12 @@ export default function CSPage() {
             </button>
           </div>
           <Button onClick={()=>setIsNew(true)}><Plus size={14}/>CS 등록</Button>
+          {checkedIds.size > 0 && (
+            <button onClick={handleDeleteSelected}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, border:'1.5px solid #fecaca', fontSize:12.5, fontWeight:800, cursor:'pointer', background:'#fff1f2', color:'#dc2626', whiteSpace:'nowrap' }}>
+              <Trash2 size={13}/>선택 삭제 ({checkedIds.size})
+            </button>
+          )}
         </div>
       </div>
 
@@ -264,7 +287,14 @@ export default function CSPage() {
           <table className="w-full text-[13px]">
             <thead>
               <tr className="border-b border-slate-200 bg-slate-50">
-                {['티켓번호','유형','고객','제목','채널','우선순위','상태','접수일시'].map(h=>(
+                <th className="px-3 py-3 w-8">
+                  <input type="checkbox"
+                    checked={filtered.length > 0 && checkedIds.size === filtered.length}
+                    onChange={e => toggleAll(e.target.checked)}
+                    className="rounded"
+                  />
+                </th>
+                {['티켓번호','유형','고객','제목','채널','우선순위','상태','접수일시',''].map(h=>(
                   <th key={h} className="px-4 py-3 text-left text-[11px] font-extrabold text-slate-400 uppercase tracking-wide whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -272,7 +302,7 @@ export default function CSPage() {
             <tbody className="divide-y divide-slate-100">
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
+                  <td colSpan={10} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
                       <MessageSquare size={36} style={{ opacity:0.2 }} />
                       <p style={{ fontSize:13.5, fontWeight:700 }}>CS 티켓이 없습니다</p>
@@ -289,7 +319,10 @@ export default function CSPage() {
                 const isAutoNew = t.is_auto && t.status === 'open'
                 return (
                   <tr key={t.id} onClick={()=>{setSel(t);setResp(t.response||'');setNewStatus('처리중으로 변경')}}
-                    className={`transition-colors cursor-pointer group ${isUrgentOpen?'bg-red-50/30 hover:bg-red-50/50':isAutoNew?'bg-orange-50/40 hover:bg-orange-50/60':'hover:bg-slate-50/60'}`}>
+                    className={`transition-colors cursor-pointer group ${isUrgentOpen?'bg-red-50/30 hover:bg-red-50/50':isAutoNew?'bg-orange-50/40 hover:bg-orange-50/60':checkedIds.has(t.id)?'bg-blue-50/50':'hover:bg-slate-50/60'}`}>
+                    <td className="px-3 py-3" onClick={e=>e.stopPropagation()}>
+                      <input type="checkbox" className="rounded" checked={checkedIds.has(t.id)} onChange={()=>toggleCheck(t.id)}/>
+                    </td>
                     <td className="px-4 py-3">
                       <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                         <span className="font-mono font-extrabold text-blue-600 text-[12px]">{t.ticket_number}</span>
@@ -319,6 +352,13 @@ export default function CSPage() {
                       </span>
                     </td>
                     <td className="px-4 py-3 text-[11.5px] text-slate-400 whitespace-nowrap">{formatDateTime(t.created_at)}</td>
+                    <td className="px-4 py-3" onClick={e=>e.stopPropagation()}>
+                      <button
+                        onClick={() => { if(confirm('이 CS를 삭제하시겠습니까?')) handleDeleteTicket(t.id) }}
+                        style={{ display:'flex', alignItems:'center', justifyContent:'center', width:28, height:28, borderRadius:8, border:'none', background:'transparent', cursor:'pointer', color:'#94a3b8', opacity:0, transition:'opacity 150ms' }}
+                        className="group-hover:!opacity-100"
+                      ><Trash2 size={13}/></button>
+                    </td>
                   </tr>
                 )
               })}
