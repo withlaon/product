@@ -49,23 +49,27 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_key',   label:'Application ID',     placeholder:'앱 등록 후 발급된 ID',  type:'text',     section:'api' },
     { key:'api_secret',label:'Application Secret', placeholder:'앱 Secret',            type:'password', section:'api' },
   ],
-  // 11번가: 로그인 + Open API 인증키
+  // 11번가: SCM 로그인ID/PW + SHOP ID(선택) + API 인증키(Open API KEY)
+  // ※ SCM [Open API] Seller API 정보의 호스팅여부를 '사방넷'으로 설정해야 연동 가능
   '11st': [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',        placeholder:'11번가 판매자 ID',    type:'text',     section:'api' },
-    { key:'api_key',   label:'Open API 인증키',  placeholder:'API 관리에서 발급',   type:'password', section:'api' },
+    { key:'login_id',  label:'쇼핑몰ID (SCM 로그인 ID)', placeholder:'SCM 로그인 아이디',           type:'text',     section:'login' },
+    { key:'login_pw',  label:'PASSWORD (SCM 비밀번호)',   placeholder:'SCM 비밀번호',               type:'password', section:'login' },
+    { key:'seller_id', label:'SHOP ID',                  placeholder:'내부 구분용 (선택사항)',       type:'text',     section:'api' },
+    { key:'api_key',   label:'API 인증키 (Open API KEY)', placeholder:'11번가 Open API CENTER에서 승인완료된 KEY', type:'password', section:'api' },
   ],
-  // ESM 지마켓: ESM+ 통합 아이디/비밀번호 + 지마켓 ID
+  // ESM 지마켓: 지마켓 전용 ID/PW (ESM PLUS 마스터 통합 ID 아님!)
+  // ※ ESM PLUS '2단계 인증' 해제 필요, 셀링툴 관리에서 '사방넷' 설정 필요
   gmarket: [
-    { key:'login_id', label:'ESM 통합 아이디',   placeholder:'ESM+ 로그인 아이디',  type:'text',     section:'login' },
-    { key:'login_pw', label:'ESM 통합 비밀번호', placeholder:'ESM+ 비밀번호',       type:'password', section:'login' },
-    { key:'seller_id',label:'지마켓 아이디',     placeholder:'지마켓 판매자 ID',    type:'text',     section:'api'   },
+    { key:'login_id',  label:'쇼핑몰ID (지마켓 전용)',   placeholder:'지마켓 전용 로그인 ID (ESM PLUS 마스터 ID 아님)', type:'text',     section:'login' },
+    { key:'login_pw',  label:'PASSWORD (지마켓 전용)',   placeholder:'+ 기호 사용 금지',            type:'password', section:'login' },
+    { key:'seller_id', label:'SHOP ID',                  placeholder:'내부 구분용 (선택사항)',       type:'text',     section:'api' },
   ],
-  // ESM 옥션: ESM+ 통합 아이디/비밀번호 + 옥션 ID
+  // ESM 옥션: 옥션 전용 ID/PW (ESM PLUS 마스터 통합 ID 아님!)
+  // ※ ESM PLUS '2단계 인증' 해제 필요, 셀링툴 관리에서 '사방넷' 설정 필요
   auction: [
-    { key:'login_id', label:'ESM 통합 아이디',   placeholder:'ESM+ 로그인 아이디',  type:'text',     section:'login' },
-    { key:'login_pw', label:'ESM 통합 비밀번호', placeholder:'ESM+ 비밀번호',       type:'password', section:'login' },
-    { key:'seller_id',label:'옥션 아이디',       placeholder:'옥션 판매자 ID',      type:'text',     section:'api'   },
+    { key:'login_id',  label:'쇼핑몰ID (옥션 전용)',     placeholder:'옥션 전용 로그인 ID (ESM PLUS 마스터 ID 아님)', type:'text',     section:'login' },
+    { key:'login_pw',  label:'PASSWORD (옥션 전용)',     placeholder:'+ 기호 사용 금지',            type:'password', section:'login' },
+    { key:'seller_id', label:'SHOP ID',                  placeholder:'내부 구분용 (선택사항)',       type:'text',     section:'api' },
   ],
   // 에이블리: 로그인 + API Key
   ablly: [
@@ -142,34 +146,44 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{label:'스마트스토어센터',url:'https://sell.smartstore.naver.com'}],
   },
   '11st': {
-    title:'11번가 Open API 연동', note:'11번가 판매자 계정 필요',
+    title:'11번가 Open API 연동',
+    note:'⚠ SCM [Open API] Seller API 정보의 호스팅여부를 반드시 "사방넷"으로 설정해야 연동 가능',
     steps:[
-      '① seller.11st.co.kr (스마트R) 로그인',
-      '② 상단 [마이페이지] → [API 관리] 이동',
-      '③ [Open API 인증키 발급] 클릭',
-      '④ 로그인 정보 + 발급된 API 인증키 입력 후 저장',
+      '① seller.11st.co.kr (SCM) 로그인',
+      '② 하단 [11번가 Open API CENTER] 클릭 → [서비스 등록·확인] 탭 이동',
+      '③ 서비스 등록 후 상태가 "승인완료"인 OPEN API KEY 복사',
+      '④ [Seller API 정보 수정] → 호스팅여부를 "사방넷"으로 설정 후 저장',
+      '⑤ SCM 로그인 ID / PW + 승인완료된 API 인증키 입력 후 저장',
     ],
-    links:[{label:'11번가 스마트R',url:'https://seller.11st.co.kr'}],
+    links:[
+      {label:'11번가 SCM(스마트R)',url:'https://seller.11st.co.kr'},
+      {label:'11번가 Open API CENTER',url:'https://openapi.11st.co.kr'},
+    ],
   },
   gmarket: {
-    title:'지마켓 ESM+ 연동', note:'ESM+ 통합 판매자 계정 필요',
+    title:'지마켓 ESM 연동',
+    note:'⚠ 지마켓 전용 ID/PW 사용 (ESM PLUS 마스터 통합 ID로는 연동 불가!) · PW에 + 기호 사용 금지',
     steps:[
-      '① esmplus.com 로그인 (ESM 통합 아이디/비밀번호)',
-      '② [도구] → [데이터 서비스] → [API 사용 신청]',
-      '③ 사용 승인 후 지마켓 아이디 확인',
-      '④ ESM 통합 아이디/비밀번호 + 지마켓 ID 입력 후 저장',
+      '① 사전준비: ESM PLUS에서 "2단계 인증" 반드시 해제',
+      '   → SCM [판매자정보 > 보안관리] 2단계 인증관리에서 상태 "해제"로 설정',
+      '② SCM [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함" 설정',
+      '③ 셀링툴 업체 선택 → 상품/주문 모두 "사방넷" 선택 후 저장',
+      '④ 지마켓 전용 로그인 ID / PW 입력 후 저장 (ESM PLUS 마스터 ID 아님)',
     ],
-    links:[{label:'ESM+',url:'https://www.esmplus.com'}],
+    links:[{label:'ESM PLUS',url:'https://www.esmplus.com'}],
   },
   auction: {
-    title:'옥션 ESM+ 연동', note:'ESM+ 통합 판매자 계정 필요',
+    title:'옥션 ESM 연동',
+    note:'⚠ 옥션 전용 ID/PW 사용 (ESM PLUS 마스터 통합 ID로는 연동 불가!) · PW에 + 기호 사용 금지 · ID는 소문자만 입력',
     steps:[
-      '① esmplus.com 로그인 (ESM 통합 아이디/비밀번호)',
-      '② [도구] → [데이터 서비스] → [API 사용 신청]',
-      '③ 사용 승인 후 옥션 아이디 확인',
-      '④ ESM 통합 아이디/비밀번호 + 옥션 ID 입력 후 저장',
+      '① 사전준비: ESM PLUS에서 "2단계 인증" 반드시 해제',
+      '   → SCM [판매자정보 > 보안관리] 2단계 인증관리에서 상태 "해제"로 설정',
+      '② SCM [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함" 설정',
+      '③ 셀링툴 업체 선택 → 상품/주문 모두 "사방넷" 선택 후 저장',
+      '④ 보안관리 → 2단계 인증 "적용안함" 설정 후 저장',
+      '⑤ 옥션 전용 로그인 ID(소문자) / PW 입력 후 저장 (ESM PLUS 마스터 ID 아님)',
     ],
-    links:[{label:'ESM+',url:'https://www.esmplus.com'}],
+    links:[{label:'ESM PLUS',url:'https://www.esmplus.com'}],
   },
   ablly: {
     title:'에이블리 파트너 API 연동', note:'에이블리 파트너센터 계정 필요',
