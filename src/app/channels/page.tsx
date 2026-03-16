@@ -29,10 +29,10 @@ const ALL_MALLS = [
 ]
 
 /* ─── API 필드 ─────────────────────────────────────────────────── */
-type ApiField = { key:string; label:string; placeholder:string; type:'text'|'password'; section?:string }
+type ApiField = { key:string; label:string; placeholder:string; type:'text'|'password'; section?:string; required?:boolean }
 const COMMON_LOGIN_FIELDS: ApiField[] = [
-  { key:'login_id', label:'로그인 아이디', placeholder:'판매자 로그인 아이디', type:'text', section:'login' },
-  { key:'login_pw', label:'로그인 비밀번호', placeholder:'판매자 로그인 비밀번호', type:'password', section:'login' },
+  { key:'login_id', label:'로그인 아이디', placeholder:'판매자 로그인 아이디', type:'text', section:'login', required:true },
+  { key:'login_pw', label:'로그인 비밀번호', placeholder:'판매자 로그인 비밀번호', type:'password', section:'login', required:true },
 ]
 const MALL_API_FIELDS: Record<string, ApiField[]> = {
   // 쿠팡: 로그인 + 판매자코드 + Access Key + Secret Key
@@ -98,8 +98,15 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_secret',   label:'Client Secret',  placeholder:'Client Secret',               type:'password', section:'api' },
     { key:'refresh_token',label:'Refresh Token',  placeholder:'OAuth2 Refresh Token',         type:'password', section:'api' },
   ],
-  // 패션플러스: 로그인 only
-  fashionplus: [...COMMON_LOGIN_FIELDS],
+  // 패션플러스: SCM 로그인ID/PW(필수) + 거래처코드(필수) + 수수료/브랜드코드(선택)
+  // ※ 거래처코드 입력 시 API로 자동 연동
+  fashionplus: [
+    { key:'login_id',  label:'쇼핑몰ID (SCM 로그인 ID)', placeholder:'패션플러스 SCM 로그인 아이디',              type:'text',     section:'login', required:true },
+    { key:'login_pw',  label:'PASSWORD (SCM 비밀번호)',   placeholder:'SCM 비밀번호',                            type:'password', section:'login', required:true },
+    { key:'api_key',   label:'거래처코드',                placeholder:'패션플러스 SCM에서 확인한 거래처코드 (예: 134873)', type:'text', section:'api', required:true },
+    { key:'api_secret',label:'수수료(주문) (%)',          placeholder:'예: 25  (선택사항)',                       type:'text',     section:'api',   required:false },
+    { key:'seller_id', label:'브랜드코드',                placeholder:'브랜드관리자 로그인 시 브랜드코드 (선택사항)', type:'text',   section:'api',   required:false },
+  ],
   // 하프클럽: 로그인 only
   halfclub: [...COMMON_LOGIN_FIELDS],
   // GS SHOP: 로그인 only
@@ -225,12 +232,23 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{label:'카페24 개발자센터',url:'https://developers.cafe24.com'}],
   },
   fashionplus: {
-    title:'패션플러스 연동', note:'패션플러스 판매자 계정 필요',
+    title:'패션플러스 SCM 연동',
+    note:'⚠ 거래처코드가 반드시 필요합니다 — 거래처코드 입력 시 API로 자동 연동됩니다',
     steps:[
-      '① fashionplus.co.kr 판매자 로그인',
-      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+      '━━━ [거래처코드 확인 방법] ━━━',
+      '① fashionplus.co.kr → 상단 메뉴 [공지/기본정보] 클릭',
+      '② 드롭다운에서 [사용자정보] 선택',
+      '③ "1. 거래처 기본 정보" 섹션에서 거래처코드 확인·복사',
+      '   (예시: 134873)',
+      '━━━ [연동 설정] ━━━',
+      '④ SCM 로그인 ID / PW 입력 (★필수)',
+      '⑤ 확인한 거래처코드 입력 (★필수)',
+      '⑥ 수수료(주문) 입력 (선택 — 입력 시 해당 수수료를 공급가에 적용)',
+      '⑦ 브랜드코드 입력 (선택 — 브랜드관리자로 로그인하는 경우만)',
+      '   확인 경로: 브랜드관리자 로그인 → 상품관리 → 상품등록 → 브랜드선택',
+      '⑧ 저장 클릭',
     ],
-    links:[{label:'패션플러스',url:'https://www.fashionplus.co.kr'}],
+    links:[{label:'패션플러스 SCM',url:'https://scm.fashionplus.co.kr'}],
   },
   halfclub: {
     title:'하프클럽 연동', note:'하프클럽 판매자 계정 필요',
@@ -824,11 +842,15 @@ export default function ChannelsPage() {
               <div style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
                 <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔑 판매자 계정 로그인 정보 <span style={{ fontSize:10,color:'#94a3b8' }}>(상품등록·운송장송신·클레임처리 등)</span></p>
                 <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                  {loginFields.map(({ label, key, placeholder, type }) => (
+                  {loginFields.map(({ label, key, placeholder, type, required }) => (
                     <div key={key}>
-                      <label style={{ display:'block', fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>{label}</label>
+                      <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>
+                        {required && <span style={{ color:'#ef4444', fontSize:10, lineHeight:1 }}>●</span>}
+                        {label}
+                        {required && <span style={{ color:'#ef4444', fontSize:10, fontWeight:700 }}>필수</span>}
+                      </label>
                       <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
-                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
+                        style={{ width:'100%', border:`1.5px solid ${required && !apiForm[key] ? '#fca5a5' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
                     </div>
                   ))}
                 </div>
@@ -837,11 +859,16 @@ export default function ChannelsPage() {
               <div style={{ background:'#fafbff', borderRadius:12, padding:'12px 14px' }}>
                 <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔌 API 연동 키 <span style={{ fontSize:10,color:'#94a3b8' }}>(카테고리/배송정보 조회·주문수집)</span></p>
                 <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                  {apiFields.map(({ label, key, placeholder, type }) => (
+                  {apiFields.map(({ label, key, placeholder, type, required }) => (
                     <div key={key}>
-                      <label style={{ display:'block', fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>{label}</label>
+                      <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>
+                        {required && <span style={{ color:'#ef4444', fontSize:10, lineHeight:1 }}>●</span>}
+                        {label}
+                        {required && <span style={{ color:'#ef4444', fontSize:10, fontWeight:700 }}>필수</span>}
+                        {required === false && <span style={{ color:'#94a3b8', fontSize:10, fontWeight:600 }}>선택</span>}
+                      </label>
                       <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
-                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
+                        style={{ width:'100%', border:`1.5px solid ${required && !apiForm[key] ? '#fca5a5' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
                     </div>
                   ))}
                 </div>
