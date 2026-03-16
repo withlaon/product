@@ -321,6 +321,8 @@ export default function ProductsPage() {
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addDbError, setAddDbError] = useState('')
   const [loading, setLoading] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [importProgress, setImportProgress] = useState({ current: 0, total: 0 })
   const handleOptImage  = useOptImageUpload(setForm)
 
   // 수정 폼 상태
@@ -331,34 +333,60 @@ export default function ProductsPage() {
   }
   const [editForm, setEditForm] = useState<EditFormState | null>(null)
 
-  /* ── Supabase 로드 ── */
+  /* ── Supabase 로드 (캐시 우선 표시 후 백그라운드 갱신) ── */
+  const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
+  const PRODUCTS_CACHE_TTL = 3 * 60 * 1000 // 3분
+
   useEffect(() => {
     const load = async () => {
-      setLoading(true)
       // localStorage에 저장된 카테고리 먼저 복원
       const saved = loadSavedCats()
-      if (saved && saved.length > 0) {
-        setExtraCats(saved)
-      }
-      const { data, error } = await supabase
-        .from('pm_products')
-        .select('*')
-        .order('code', { ascending: true })
+      if (saved && saved.length > 0) setExtraCats(saved)
+
+      // 캐시 확인 → 있으면 즉시 표시 (로딩 없이)
+      try {
+        const cacheRaw = localStorage.getItem(PRODUCTS_CACHE_KEY)
+        if (cacheRaw) {
+          const { ts, data: cached } = JSON.parse(cacheRaw)
+          if (Date.now() - ts < PRODUCTS_CACHE_TTL && Array.isArray(cached)) {
+            setProducts(cached)
+            setLoading(false)
+            // 캐시가 있어도 백그라운드에서 최신 데이터 갱신
+            const { data, error } = await supabase.from('pm_products').select('*').order('code', { ascending: true })
+            if (!error && data) {
+              const loaded = data.map(rowToProduct)
+              setProducts(loaded)
+              localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded }))
+              const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
+              setExtraCats(prev => {
+                const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
+                const merged = [...new Set([...base, ...dbCats])]
+                saveCats(merged); return merged
+              })
+            }
+            return
+          }
+        }
+      } catch {}
+
+      // 캐시 없거나 만료 → 로딩 표시 후 fetch
+      setLoading(true)
+      const { data, error } = await supabase.from('pm_products').select('*').order('code', { ascending: true })
       if (!error && data) {
         const loaded = data.map(rowToProduct)
         setProducts(loaded)
-        // DB에 있는 카테고리와 저장된 카테고리를 합쳐서 extraCats 구성
+        try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
         const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
         setExtraCats(prev => {
           const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
           const merged = [...new Set([...base, ...dbCats])]
-          saveCats(merged)
-          return merged
+          saveCats(merged); return merged
         })
       }
       setLoading(false)
     }
     load()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const allCats = useMemo(
@@ -613,9 +641,13 @@ export default function ProductsPage() {
     setEditStatusId(null)
   }
 
+  const invalidateProductsCache = () => {
+    try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+  }
+
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from('pm_products').delete().eq('id', id)
-    if (!error) setProducts(prev => prev.filter(p => p.id !== id))
+    if (!error) { setProducts(prev => prev.filter(p => p.id !== id)); invalidateProductsCache() }
   }
 
   /* ── 파일 input ref ── */
@@ -789,6 +821,8 @@ export default function ProductsPage() {
     const file = e.target.files?.[0]
     if (!file) return
     e.target.value = ''
+    setImporting(true)
+    setImportProgress({ current: 0, total: 0 })
     const buf = await file.arrayBuffer()
 
     // ExcelJS로 파싱 (내장 이미지 추출)
@@ -847,7 +881,7 @@ export default function ProductsPage() {
       return true
     })
 
-    if (!raw.length) { alert('파일에 데이터가 없습니다.'); return }
+    if (!raw.length) { setImporting(false); alert('파일에 데이터가 없습니다.'); return }
 
     // raw[i] → 실제 시트 행번호 계산
     // 헤더=1행, 안내행 존재 여부에 따라 offset 결정
@@ -874,7 +908,7 @@ export default function ProductsPage() {
       }
     })
 
-    if (map.size === 0) { alert('유효한 상품코드가 없습니다.'); return }
+    if (map.size === 0) { setImporting(false); alert('유효한 상품코드가 없습니다.'); return }
 
     const statusMap: Record<string, ProductStatus> = {
       '판매중':'active','판매예정':'upcoming','품절':'soldout','삭제예정':'pending_delete','전송준비':'ready_to_ship'
@@ -883,6 +917,9 @@ export default function ProductsPage() {
     let successCount = 0
     let updateCount = 0
     const errors: string[] = []
+    const totalItems = map.size
+    let processedCount = 0
+    setImportProgress({ current: 0, total: totalItems })
 
     for (const [code, { rows, sheetRowStart }] of map.entries()) {
       const first = rows[0]
@@ -985,8 +1022,11 @@ export default function ProductsPage() {
         if (prev.includes(cat)) return prev
         const updated = [...prev, cat]; saveCats(updated); return updated
       })
+      processedCount++
+      setImportProgress({ current: processedCount, total: totalItems })
     }
 
+    setImporting(false)
     const msg = [
       successCount > 0 ? `신규 등록: ${successCount}개` : '',
       updateCount > 0 ? `업데이트: ${updateCount}개` : '',
@@ -1270,7 +1310,14 @@ export default function ProductsPage() {
             <Button variant="outline" size="sm" onClick={handleSummaryDownload}><Download size={13}/>상품요약</Button>
             <Button variant="outline" size="sm" onClick={handleFullDownload}><Download size={13}/>전체목록</Button>
             <Button variant="outline" size="sm" onClick={handleDownloadImportTemplate}><Download size={13}/>등록양식</Button>
-            <Button size="sm" onClick={() => importInputRef.current?.click()}><Upload size={13}/>엑셀 일괄등록</Button>
+            <Button size="sm" onClick={() => !importing && importInputRef.current?.click()}
+              disabled={importing}
+              style={importing ? { opacity:0.7, cursor:'not-allowed', position:'relative' } : {}}>
+              {importing
+                ? <><span style={{ display:'inline-block', width:11, height:11, border:'2px solid rgba(255,255,255,0.4)', borderTopColor:'white', borderRadius:'50%', animation:'spin-slow 0.7s linear infinite', marginRight:4 }}/>
+                    등록중 ({importProgress.current}/{importProgress.total})</>
+                : <><Upload size={13}/>엑셀 일괄등록</>}
+            </Button>
             <input ref={importInputRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleImportExcel}/>
             <Button size="sm" onClick={() => setIsAdd(true)}><Plus size={13}/>상품 등록</Button>
           </div>
