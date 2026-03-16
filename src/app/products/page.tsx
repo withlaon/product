@@ -26,6 +26,7 @@ type CostCurrency  = 'KRW' | 'CNY'
 
 interface ProductOption {
   name: string
+  size: string           // 사이즈 (기본: FREE)
   korean_name: string    // 한글 색상명 (자동입력)
   chinese_name: string   // 중국명
   barcode: string
@@ -62,7 +63,7 @@ const CATS_STORAGE_KEY = 'pm_categories_v1'
 
 // 캐시 상수를 컴포넌트 바깥에 두어 useState 초기화 함수에서도 참조 가능
 const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
-const PRODUCTS_CACHE_TTL = 3 * 60 * 1000 // 3분
+const PRODUCTS_CACHE_TTL = 10 * 60 * 1000 // 10분
 
 function loadProductsFromCache(): Product[] {
   try {
@@ -72,6 +73,15 @@ function loadProductsFromCache(): Product[] {
     if (Date.now() - ts < PRODUCTS_CACHE_TTL && Array.isArray(cached)) return cached
   } catch {}
   return []
+}
+
+function hasFreshCache(): boolean {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
+    if (!raw) return false
+    const { ts, data: cached } = JSON.parse(raw)
+    return Date.now() - ts < PRODUCTS_CACHE_TTL && Array.isArray(cached) && cached.length > 0
+  } catch { return false }
 }
 
 function loadSavedCats(): string[] | null {
@@ -279,7 +289,7 @@ function ChannelPriceModal({
 const genBarcode = (code: string, opt: string) =>
   code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
 
-const INIT_OPT  = { name:'', korean_name:'', chinese_name:'', barcode:'', image:'' }
+const INIT_OPT  = { name:'', size:'FREE', korean_name:'', chinese_name:'', barcode:'', image:'' }
 const INIT_MALL_CAT = { channel:'', category:'', category_code:'' }
 const INIT_FORM = {
   code:'', name:'', abbr:'', category:'', supplier:'', loca:'',
@@ -320,6 +330,7 @@ function rowToProduct(row: any): Product {
     supplier: row.supplier ?? '',
     options: ((row.options ?? []) as ProductOption[]).map(o => ({
       ...o,
+      size: o.size ?? 'FREE',
       korean_name: o.korean_name || getKoreanColor(o.name),
     })),
     channel_prices: (row.channel_prices ?? []) as ChannelPrice[],
@@ -342,8 +353,8 @@ export default function ProductsPage() {
   // 등록일 필터: 'all' | 'today' | '30' | '365' | 'custom'
   const [dateFilter, setDateFilter]   = useState<'all'|'today'|'30'|'365'|'custom'>('all')
   const [dateCustom, setDateCustom]   = useState('')
-  // 목록 표시 여부: 버튼 클릭 or 검색 전까지 숨김
-  const [showList, setShowList]       = useState(false)
+  // 캐시가 있으면 즉시 목록 표시, 없으면 버튼/검색 시 표시
+  const [showList, setShowList]       = useState(() => hasFreshCache())
   const [isAdd, setIsAdd]             = useState(false)
   const [detail, setDetail]           = useState<Product | null>(null)
   const [isEdit, setIsEdit]           = useState<Product | null>(null)
@@ -374,7 +385,7 @@ export default function ProductsPage() {
   const handleOptImage  = useOptImageUpload(setForm)
 
   // 수정 폼 상태
-  type EditOptRow = { name:string; korean_name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number; current_stock?:number; defective?:number }
+  type EditOptRow = { name:string; size:string; korean_name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number; current_stock?:number; defective?:number }
   type EditFormState = {
     code:string; name:string; abbr:string; category:string; newCat:string; supplier:string; loca:string
     cost_price:string; cost_currency:CostCurrency; status:ProductStatus; options:EditOptRow[]
@@ -414,12 +425,13 @@ export default function ProductsPage() {
         }
       } catch {}
 
-      // 캐시 없거나 만료 → 로딩 표시 후 fetch
+      // 캐시 없거나 만료 → fetch 후 자동 표시
       setLoading(true)
       const { data, error } = await supabase.from('pm_products').select('*').order('code', { ascending: true })
       if (!error && data) {
         const loaded = data.map(rowToProduct)
         setProducts(loaded)
+        setShowList(true)  // 데이터 도착하면 즉시 목록 표시
         try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
         const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
         setExtraCats(prev => {
@@ -504,7 +516,8 @@ export default function ProductsPage() {
       cost_price: String(p.cost_price), cost_currency: p.cost_currency,
       status: p.status,
       options: p.options.map(o => ({
-        name: o.name, korean_name: o.korean_name || getKoreanColor(o.name),
+        name: o.name, size: o.size ?? 'FREE',
+        korean_name: o.korean_name || getKoreanColor(o.name),
         chinese_name: o.chinese_name || '',
         barcode: o.barcode, image: o.image,
         ordered: o.ordered, received: o.received, sold: o.sold,
@@ -523,7 +536,8 @@ export default function ProductsPage() {
     if (!editForm.code || !editForm.name || !cat) return
     setEditSaving(true)
     const options: ProductOption[] = editForm.options.filter(o => o.name).map(o => ({
-      name: o.name, korean_name: o.korean_name || getKoreanColor(o.name),
+      name: o.name, size: o.size ?? 'FREE',
+      korean_name: o.korean_name || getKoreanColor(o.name),
       chinese_name: o.chinese_name,
       barcode: o.barcode || genBarcode(editForm.code, o.name),
       image: o.image,
@@ -613,7 +627,7 @@ export default function ProductsPage() {
     setAddDbError('')
     setAddSubmitting(true)
     const options: ProductOption[] = form.options.filter(o => o.name.trim()).map(o => ({
-      name: o.name,
+      name: o.name, size: o.size ?? 'FREE',
       korean_name: o.korean_name || getKoreanColor(o.name),
       chinese_name: o.chinese_name,
       barcode: o.barcode || genBarcode(form.code, o.name),
@@ -977,6 +991,7 @@ export default function ProductsPage() {
           const image = rowImageMap[sheetRow] || rowUrlMap[sheetRow] || ''
           return {
             name: String(r['옵션코드'] || ''),
+            size: String(r['사이즈'] || 'FREE'),
             korean_name: String(r['한글명'] || '') || getKoreanColor(String(r['옵션코드'] || '')),
             chinese_name: String(r['중국명'] || ''),
             barcode: String(r['바코드'] || '') || genBarcode(code, String(r['옵션코드'] || '')),
@@ -1476,6 +1491,11 @@ export default function ProductsPage() {
                             <span style={{ display:'flex', flexDirection:'column', gap:1, overflow:'hidden' }}>
                               <span style={{ display:'flex', alignItems:'center', gap:4, overflow:'hidden' }}>
                                 <span style={{ fontSize:12, fontWeight:800, color: optZero ? '#94a3b8' : '#334155', flexShrink:0 }}>{opt.name}</span>
+                                {opt.size && opt.size !== 'FREE' && (
+                                  <span style={{ fontSize:10, fontWeight:800, color:'#854d0e', background:'#fef9c3', padding:'0px 5px', borderRadius:4, flexShrink:0 }}>
+                                    {opt.size}
+                                  </span>
+                                )}
                                 {(opt.korean_name || getKoreanColor(opt.name)) && (
                                   <span style={{ fontSize:11, fontWeight:700, color:'#2563eb', background:'#eff6ff', padding:'0px 5px', borderRadius:4, flexShrink:0 }}>
                                     {opt.korean_name || getKoreanColor(opt.name)}
@@ -1751,7 +1771,7 @@ export default function ProductsPage() {
                         onChange={e => { const file = e.target.files?.[0]; if(file) handleOptImage(i, file) }} />
                     </label>
                   </div>
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:8 }}>
                     <div>
                       <Label>옵션코드 (영문)</Label>
                       <Input placeholder="BE" value={opt.name}
@@ -1759,9 +1779,16 @@ export default function ProductsPage() {
                           const val = e.target.value
                           const auto = getKoreanColor(val)
                           const o=[...form.options]
-                          o[i]={...o[i], name:val, korean_name: auto || o[i].korean_name, barcode:genBarcode(form.code,val)}
+                          o[i]={...o[i], name:val, korean_name: auto || o[i].korean_name, barcode: o[i].barcode || genBarcode(form.code,val)}
                           setForm(f=>({...f,options:o}))
                         }}
+                      />
+                    </div>
+                    <div>
+                      <Label>사이즈</Label>
+                      <Input placeholder="FREE" value={opt.size ?? 'FREE'}
+                        style={{ background: (opt.size && opt.size !== 'FREE') ? '#fef9c3' : '#fafbfc' }}
+                        onChange={e => { const o=[...form.options];o[i]={...o[i],size:e.target.value};setForm(f=>({...f,options:o}))}}
                       />
                     </div>
                     <div>
@@ -1782,9 +1809,12 @@ export default function ProductsPage() {
                     </div>
                   </div>
                   <div>
-                    <Label>바코드 (자동)</Label>
-                    <Input readOnly value={opt.barcode || genBarcode(form.code, opt.name)}
-                      style={{ background:'#f8fafc', color:'#334155', fontFamily:'monospace', fontSize:12 }}
+                    <Label>바코드 (자동생성, 직접 수정 가능)</Label>
+                    <Input
+                      value={opt.barcode || genBarcode(form.code, opt.name)}
+                      placeholder={genBarcode(form.code, opt.name)}
+                      style={{ fontFamily:'monospace', fontSize:12 }}
+                      onChange={e => { const o=[...form.options];o[i]={...o[i],barcode:e.target.value};setForm(f=>({...f,options:o}))}}
                     />
                   </div>
                   <div style={{ paddingBottom:1 }}>
@@ -2050,16 +2080,23 @@ export default function ProductsPage() {
                         />
                       </label>
                     </div>
-                    {/* 옵션명 + 한글명 + 중국명 */}
-                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8 }}>
+                    {/* 옵션명 + 사이즈 + 한글명 + 중국명 */}
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:8 }}>
                       <div>
                         <Label>옵션코드 (영문)</Label>
                         <Input placeholder="BE" value={opt.name}
                           onChange={e => {
                             const nm = e.target.value
                             const auto = getKoreanColor(nm)
-                            setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, name:nm, korean_name: auto || o.korean_name, barcode:genBarcode(f.code, nm)} : o) }) : f)
+                            setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, name:nm, korean_name: auto || o.korean_name, barcode: o.barcode || genBarcode(f.code, nm)} : o) }) : f)
                           }}
+                        />
+                      </div>
+                      <div>
+                        <Label>사이즈</Label>
+                        <Input placeholder="FREE" value={opt.size ?? 'FREE'}
+                          style={{ background: (opt.size && opt.size !== 'FREE') ? '#fef9c3' : '#fafbfc' }}
+                          onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, size:e.target.value} : o) }) : f)}
                         />
                       </div>
                       <div>
@@ -2078,9 +2115,13 @@ export default function ProductsPage() {
                     </div>
                     {/* 바코드 */}
                     <div>
-                      <Label>바코드 (자동)</Label>
-                      <Input readOnly value={opt.barcode || genBarcode(editForm.code, opt.name)}
-                        style={{ background:'#f8fafc', color:'#334155', fontFamily:'monospace', fontSize:12 }}/>
+                      <Label>바코드 (자동생성, 직접 수정 가능)</Label>
+                      <Input
+                        value={opt.barcode || genBarcode(editForm.code, opt.name)}
+                        placeholder={genBarcode(editForm.code, opt.name)}
+                        style={{ fontFamily:'monospace', fontSize:12 }}
+                        onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, barcode:e.target.value} : o) }) : f)}
+                      />
                     </div>
                     {/* 삭제 */}
                     <div style={{ paddingBottom:1 }}>
@@ -2122,7 +2163,7 @@ export default function ProductsPage() {
                   </div>
                 </div>
               ))}
-              <button onClick={() => setEditForm(f => f ? ({ ...f, options:[...f.options,{name:'',korean_name:'',chinese_name:'',barcode:'',image:'',ordered:0,received:0,sold:0,current_stock:0,defective:0}] }) : f)}
+              <button onClick={() => setEditForm(f => f ? ({ ...f, options:[...f.options,{name:'',size:'FREE',korean_name:'',chinese_name:'',barcode:'',image:'',ordered:0,received:0,sold:0,current_stock:0,defective:0}] }) : f)}
                 style={{ fontSize:12,fontWeight:800,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
                 <Plus size={12}/>옵션 추가
               </button>

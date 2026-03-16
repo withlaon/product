@@ -51,6 +51,8 @@ export default function MappingPage() {
   const [searchQuery, setSearchQuery] = useState('')
   // 체크박스 선택
   const [checkedIdxs, setCheckedIdxs] = useState<Set<number>>(new Set())
+  // KPI 필터
+  const [statusFilter, setStatusFilter] = useState<'all' | 'matched' | 'unmatched'>('all')
 
   // 수동 매핑 모달
   const [manualTarget, setManualTarget] = useState<MappedRow | null>(null)
@@ -83,9 +85,10 @@ export default function MappingPage() {
 
   const rows = mappings[selectedMall] || []
   const filtered = rows.filter(row => {
-    if (!searchQuery) return true
     const q = searchQuery.toLowerCase()
-    return row.mall_product_name.toLowerCase().includes(q) || row.mall_option.toLowerCase().includes(q)
+    const mSearch = !searchQuery || row.mall_product_name.toLowerCase().includes(q) || row.mall_option.toLowerCase().includes(q)
+    const mStatus = statusFilter === 'all' || row.status === statusFilter
+    return mSearch && mStatus
   })
 
   const stats = (mallKey: string) => {
@@ -325,7 +328,7 @@ export default function MappingPage() {
               return (
                 <button
                   key={m.key}
-                  onClick={() => { setSelectedMall(m.key); setSearchQuery('') }}
+                  onClick={() => { setSelectedMall(m.key); setSearchQuery(''); setStatusFilter('all') }}
                   style={{
                     width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
                     borderRadius: 10, padding: '9px 10px', marginBottom: 3,
@@ -380,16 +383,28 @@ export default function MappingPage() {
               {/* 쇼핑몰명 + 통계 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
                 <h2 style={{ fontSize: 16, fontWeight: 900, color: '#1e293b' }}>{selectedMallName}</h2>
-                {[
-                  { label: '전체', value: stats(selectedMall).total, color: '#2563eb', bg: '#eff6ff' },
-                  { label: '매핑완료', value: stats(selectedMall).matched, color: '#059669', bg: '#ecfdf5' },
-                  { label: '미매핑', value: stats(selectedMall).unmatched, color: '#be123c', bg: '#fff1f2' },
-                ].map((k, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5, background: k.bg, padding: '5px 12px', borderRadius: 8 }}>
-                    <span style={{ fontSize: 11, fontWeight: 800, color: k.color }}>{k.label}</span>
-                    <span style={{ fontSize: 15, fontWeight: 900, color: k.color }}>{k.value}</span>
-                  </div>
-                ))}
+                {([
+                  { label: '전체',   value: stats(selectedMall).total,     color: '#2563eb', bg: '#eff6ff', activeBg: '#2563eb', key: 'all'       as const },
+                  { label: '매핑완료', value: stats(selectedMall).matched,  color: '#059669', bg: '#ecfdf5', activeBg: '#059669', key: 'matched'   as const },
+                  { label: '미매핑', value: stats(selectedMall).unmatched,  color: '#be123c', bg: '#fff1f2', activeBg: '#be123c', key: 'unmatched' as const },
+                ]).map((k) => {
+                  const isActive = statusFilter === k.key
+                  return (
+                    <button key={k.key}
+                      onClick={() => setStatusFilter(isActive && k.key !== 'all' ? 'all' : k.key)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5, border: 'none', cursor: 'pointer',
+                        background: isActive ? k.activeBg : k.bg,
+                        padding: '5px 12px', borderRadius: 8,
+                        transition: 'all 150ms',
+                        boxShadow: isActive ? `0 2px 8px ${k.activeBg}50` : 'none',
+                      }}
+                    >
+                      <span style={{ fontSize: 11, fontWeight: 800, color: isActive ? 'white' : k.color }}>{k.label}</span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: isActive ? 'white' : k.color }}>{k.value}</span>
+                    </button>
+                  )
+                })}
               </div>
 
               {/* 액션 바 */}
