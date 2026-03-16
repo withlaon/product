@@ -432,14 +432,7 @@ const MALL_CATS: Record<string, CatItem[]> = {
     {id:'CF011',name:'원피스'},{id:'CF012',name:'가방 > 숄더백'},
     {id:'CF013',name:'가방 > 크로스백'},{id:'CF014',name:'잡화 > 지갑'},
   ],
-  fashionplus: [
-    {id:'FP001',name:'아우터 > 코트'},{id:'FP002',name:'아우터 > 자켓'},
-    {id:'FP003',name:'아우터 > 패딩'},{id:'FP004',name:'상의 > 니트'},
-    {id:'FP005',name:'상의 > 블라우스'},{id:'FP006',name:'상의 > 티셔츠'},
-    {id:'FP007',name:'하의 > 팬츠'},{id:'FP008',name:'하의 > 스커트'},
-    {id:'FP009',name:'원피스/치마'},{id:'FP010',name:'가방/잡화 > 숄더백'},
-    {id:'FP011',name:'가방/잡화 > 크로스백'},{id:'FP012',name:'신발'},
-  ],
+  fashionplus: [],   // API 라우트(/api/mall-categories)에서 동적으로 불러옴
   halfclub: [
     {id:'HC001',name:'여성의류 > 원피스'},{id:'HC002',name:'여성의류 > 블라우스'},
     {id:'HC003',name:'여성의류 > 니트'},{id:'HC004',name:'여성의류 > 바지'},
@@ -611,6 +604,15 @@ export default function ChannelsPage() {
 
   useEffect(() => { if (typeof window !== 'undefined') { setChannels(loadChannels()); setMounted(true) } }, [])
 
+  // 카테고리 팝업 열릴 때 자동으로 전체 카테고리 로드
+  useEffect(() => {
+    if (catTarget) {
+      setCatQuery('')
+      loadCategories(catTarget, '')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [catTarget?.key])
+
   const update = (updated: ChannelData[]) => { setChannels(updated); saveChannels(updated) }
   const active = channels.filter(c => c.active)
 
@@ -625,18 +627,36 @@ export default function ChannelsPage() {
     setApiTarget(null)
   }
 
-  /* ── 카테고리 검색 ── */
-  const searchCategories = () => {
-    if (!catTarget) return
+  /* ── 카테고리 검색 (API 라우트 우선, 정적 데이터 fallback) ── */
+  const loadCategories = async (target: ChannelData, q: string) => {
     setCatLoading(true); setCatSearched(false)
-    const hasApi = !!(catTarget.api_key || catTarget.access_key)
-    setTimeout(() => {
-      const all = MALL_CATS[catTarget.key] || []
-      const q = catQuery.trim().toLowerCase()
-      setCatResults(q ? all.filter(c => c.name.toLowerCase().includes(q)) : all)
+    try {
+      const res = await fetch('/api/mall-categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          mall: target.key,
+          query: q,
+          credentials: {
+            login_id: target.login_id,
+            login_pw: target.login_pw,
+            api_key: target.api_key,   // 패션플러스: 거래처코드
+            seller_id: target.seller_id,
+          },
+        }),
+      })
+      const data = await res.json()
+      setCatResults(data.categories || [])
+    } catch {
+      // fetch 실패 시 브라우저 내 정적 데이터로 fallback
+      const all = MALL_CATS[target.key] || []
+      const lq = q.trim().toLowerCase()
+      setCatResults(lq ? all.filter(c => c.name.toLowerCase().includes(lq)) : all)
+    } finally {
       setCatLoading(false); setCatSearched(true)
-    }, hasApi ? 600 : 300)
+    }
   }
+  const searchCategories = () => { if (catTarget) loadCategories(catTarget, catQuery.trim()) }
   const selectCatResult = (item: CatItem) => {
     setCatAddMall(item.name); setCatAddId(item.id)
     if (!catAddName) setCatAddName(item.name.split('>').pop()?.trim() || item.name)
@@ -775,7 +795,7 @@ export default function ChannelsPage() {
                     style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px', background:'#f8fafc', color:'#334155', border:'1px solid #e2e8f0', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer' }}>
                     <Pencil size={11}/>수정
                   </button>
-                  <button onClick={() => { setCatTarget(ch); setCatQuery(''); setCatResults([]); setCatSearched(false); setCatAddName(''); setCatAddMall(''); setCatAddId(''); setCatEditId(null) }}
+                  <button onClick={() => { setCatAddName(''); setCatAddMall(''); setCatAddId(''); setCatEditId(null); setCatTarget(ch) }}
                     style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px', background:'#fdf4ff', color:'#7e22ce', border:'1px solid #e9d5ff', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer' }}>
                     <Tag size={11}/>카테고리 관리
                   </button>
@@ -892,8 +912,8 @@ export default function ChannelsPage() {
               <div style={{ background:'#f8fafc', borderRadius:12, padding:14 }}>
                 <p style={{ fontSize:12, fontWeight:900, color:'#475569', marginBottom:10 }}>
                   {catTarget.name} 카테고리 검색
-                  <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, marginLeft:6 }}>
-                    {catTarget.api_key ? '(API 연동 중)' : '(내장 데이터)'}
+                  <span style={{ fontSize:10.5, color: catTarget.api_key ? '#10b981' : '#94a3b8', fontWeight:600, marginLeft:6 }}>
+                    {catTarget.api_key ? '● API 연동됨' : '● 기본 데이터'}
                   </span>
                 </p>
                 <div style={{ display:'flex', gap:6, marginBottom:8 }}>
@@ -912,10 +932,11 @@ export default function ChannelsPage() {
                 {/* 검색 결과 */}
                 <div style={{ border:'1px solid #e2e8f0', borderRadius:8, background:'white', minHeight:200, maxHeight:260, overflowY:'auto' }}>
                   {catLoading ? (
-                    <div style={{ padding:20, textAlign:'center', color:'#94a3b8', fontSize:13 }}>🔍 카테고리 불러오는 중...</div>
-                  ) : !catSearched ? (
-                    <div style={{ padding:20, textAlign:'center', color:'#cbd5e1', fontSize:13 }}>검색 버튼을 클릭하면<br/>카테고리 목록이 표시됩니다</div>
-                  ) : catResults.length === 0 ? (
+                    <div style={{ padding:20, textAlign:'center', color:'#94a3b8', fontSize:13 }}>
+                      <div style={{ fontSize:20, marginBottom:8 }}>🔍</div>
+                      카테고리 불러오는 중...
+                    </div>
+                  ) : catResults.length === 0 && catSearched ? (
                     <div style={{ padding:20, textAlign:'center', color:'#94a3b8', fontSize:13 }}>검색 결과가 없습니다</div>
                   ) : (
                     catResults.map((item, i) => (
