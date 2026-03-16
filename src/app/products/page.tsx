@@ -170,18 +170,45 @@ function SupplierCell({ supplier }: { supplier: string }) {
   return <span style={{ fontSize:12.5, fontWeight:700, color:'#64748b' }}>{supplier}</span>
 }
 
+/* ─── 연동 채널 로드 (localStorage pm_mall_channels_v5) ─────── */
+function loadConnectedChannels(): { name: string; bg: string; color: string }[] {
+  const MALL_COLORS: Record<string, { bg: string; color: string }> = {
+    '쿠팡':    { bg:'#fff7ed', color:'#c2410c' },
+    '네이버':  { bg:'#f0fdf4', color:'#15803d' },
+    '11번가':  { bg:'#fff1f2', color:'#be123c' },
+    '에이블리':{ bg:'#fdf4ff', color:'#7e22ce' },
+    '지그재그':{ bg:'#eff6ff', color:'#2563eb' },
+    'G마켓':   { bg:'#fefce8', color:'#854d0e' },
+    '옥션':    { bg:'#f0fdf4', color:'#166534' },
+    '스마트스토어': { bg:'#f0fdf4', color:'#15803d' },
+  }
+  try {
+    const raw = localStorage.getItem('pm_mall_channels_v5')
+    if (!raw) return []
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return arr
+      .filter((c: { active?: boolean }) => c.active)
+      .map((c: { name: string }) => ({
+        name: c.name,
+        ...(MALL_COLORS[c.name] ?? { bg:'#f1f5f9', color:'#475569' }),
+      }))
+  } catch { return [] }
+}
+
 /* ─── 쇼핑몰 판매가 모달 ────────────────────────────────────── */
 function ChannelPriceModal({
   product, onClose, onSave,
 }: { product: Product; onClose: () => void; onSave: (prices: ChannelPrice[]) => void }) {
+  const channels = loadConnectedChannels()
   const [prices, setPrices] = useState<Record<string, string>>(
     () => Object.fromEntries(
-      CONNECTED_CHANNELS.map(ch => [ch.name, String(product.channel_prices.find(cp => cp.channel === ch.name)?.price ?? '')])
+      channels.map(ch => [ch.name, String(product.channel_prices.find(cp => cp.channel === ch.name)?.price ?? '')])
     )
   )
   const costKrw = product.cost_currency === 'CNY' ? Math.round(product.cost_price * CNY_TO_KRW) : product.cost_price
   const handleSave = () => {
-    const result: ChannelPrice[] = CONNECTED_CHANNELS
+    const result: ChannelPrice[] = channels
       .filter(ch => prices[ch.name] && Number(prices[ch.name]) > 0)
       .map(ch => ({ channel: ch.name, price: Number(prices[ch.name]) }))
     onSave(result)
@@ -192,41 +219,43 @@ function ChannelPriceModal({
         <p style={{ fontSize:11.5, fontWeight:700, color:'#64748b', marginBottom:10 }}>
           원가: {product.cost_currency==='CNY' ? `¥${product.cost_price} (≈ ${formatCurrency(costKrw)})` : formatCurrency(product.cost_price)}
         </p>
-        <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-          {CONNECTED_CHANNELS.map(ch => {
-            const price = Number(prices[ch.name]) || 0
-            const margin = costKrw > 0 && price > 0 ? (((price - costKrw) / price) * 100).toFixed(1) : null
-            const below  = price > 0 && price < costKrw
-            return (
-              <div key={ch.name} style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:13, fontWeight:800, background:ch.bg, color:ch.color, padding:'2px 10px', borderRadius:6 }}>
-                      {ch.emoji} {ch.name}
-                    </span>
-                    {below && <span style={{ fontSize:11, fontWeight:800, color:'#dc2626' }}>⚠️ 원가 미만</span>}
+        {channels.length === 0 ? (
+          <div style={{ padding:'20px', textAlign:'center', color:'#94a3b8', fontSize:13, fontWeight:700 }}>
+            연동된 쇼핑몰이 없습니다.<br/>
+            <a href="/channels" style={{ color:'#2563eb', fontWeight:800 }}>쇼핑몰 관리에서 연동</a>해 주세요.
+          </div>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+            {channels.map(ch => {
+              const price = Number(prices[ch.name]) || 0
+              const margin = costKrw > 0 && price > 0 ? (((price - costKrw) / price) * 100).toFixed(1) : null
+              const below  = price > 0 && price < costKrw
+              return (
+                <div key={ch.name} style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      <span style={{ fontSize:13, fontWeight:800, background:ch.bg, color:ch.color, padding:'2px 10px', borderRadius:6 }}>
+                        {ch.name}
+                      </span>
+                      {below && <span style={{ fontSize:11, fontWeight:800, color:'#dc2626' }}>⚠️ 원가 미만</span>}
+                    </div>
+                    {margin && <span style={{ fontSize:12.5, fontWeight:800, color: below ? '#dc2626' : '#059669' }}>마진 {margin}%</span>}
                   </div>
-                  {margin && <span style={{ fontSize:12.5, fontWeight:800, color: below ? '#dc2626' : '#059669' }}>마진 {margin}%</span>}
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <span style={{ fontSize:13, fontWeight:700, color:'#64748b', minWidth:14 }}>₩</span>
+                    <Input type="number" placeholder="0" value={prices[ch.name]}
+                      onChange={e => setPrices(prev => ({...prev, [ch.name]: e.target.value}))}
+                      style={{ fontSize:14, fontWeight:800 }} />
+                  </div>
                 </div>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <span style={{ fontSize:13, fontWeight:700, color:'#64748b', minWidth:14 }}>₩</span>
-                  <Input type="number" placeholder="0" value={prices[ch.name]}
-                    onChange={e => setPrices(prev => ({...prev, [ch.name]: e.target.value}))}
-                    style={{ fontSize:14, fontWeight:800 }} />
-                </div>
-              </div>
-            )
-          })}
-        </div>
+              )
+            })}
+          </div>
+        )}
       </div>
-      {DISCONNECTED_CHANNELS.length > 0 && (
-        <p style={{ fontSize:11.5, fontWeight:600, color:'#94a3b8', marginBottom:16, padding:'8px 12px', background:'#f8fafc', borderRadius:8 }}>
-          미연동 채널: {DISCONNECTED_CHANNELS.join(', ')} — <a href="/channels" style={{ color:'#2563eb', fontWeight:700 }}>채널 연동하기</a>
-        </p>
-      )}
       <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
         <Button variant="outline" onClick={onClose}>취소</Button>
-        <Button onClick={handleSave}>저장</Button>
+        {channels.length > 0 && <Button onClick={handleSave}>저장</Button>}
       </div>
     </Modal>
   )
@@ -295,9 +324,11 @@ export default function ProductsPage() {
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch]           = useState('')
   const [statusFilter, setStatusFilter] = useState('전체')
-  // 등록일 필터: 'all' | 'today' | '3' | '7' | 'custom'
-  const [dateFilter, setDateFilter]   = useState<'all'|'today'|'3'|'7'|'custom'>('all')
+  // 등록일 필터: 'all' | 'today' | '30' | '365' | 'custom'
+  const [dateFilter, setDateFilter]   = useState<'all'|'today'|'30'|'365'|'custom'>('all')
   const [dateCustom, setDateCustom]   = useState('')
+  // 목록 표시 여부: 버튼 클릭 or 검색 전까지 숨김
+  const [showList, setShowList]       = useState(false)
   const [isAdd, setIsAdd]             = useState(false)
   const [detail, setDetail]           = useState<Product | null>(null)
   const [isEdit, setIsEdit]           = useState<Product | null>(null)
@@ -322,7 +353,7 @@ export default function ProductsPage() {
   const [addErrors, setAddErrors] = useState<Set<string>>(new Set())
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addDbError, setAddDbError] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 })
   const handleOptImage  = useOptImageUpload(setForm)
@@ -524,10 +555,10 @@ export default function ProductsPage() {
     let dateFrom: Date | null = null
     if (dateFilter === 'today') {
       dateFrom = new Date(); dateFrom.setHours(0,0,0,0)
-    } else if (dateFilter === '3') {
-      dateFrom = new Date(); dateFrom.setDate(dateFrom.getDate() - 3); dateFrom.setHours(0,0,0,0)
-    } else if (dateFilter === '7') {
-      dateFrom = new Date(); dateFrom.setDate(dateFrom.getDate() - 7); dateFrom.setHours(0,0,0,0)
+    } else if (dateFilter === '30') {
+      dateFrom = new Date(); dateFrom.setDate(dateFrom.getDate() - 30); dateFrom.setHours(0,0,0,0)
+    } else if (dateFilter === '365') {
+      dateFrom = new Date(); dateFrom.setDate(dateFrom.getDate() - 365); dateFrom.setHours(0,0,0,0)
     } else if (dateFilter === 'custom' && dateCustom) {
       dateFrom = new Date(dateCustom); dateFrom.setHours(0,0,0,0)
     }
@@ -556,7 +587,7 @@ export default function ProductsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  const doSearch    = () => { setSearch(searchInput); setPage(1) }
+  const doSearch    = () => { setSearch(searchInput); setPage(1); setShowList(true) }
   const clearSearch = () => { setSearch(''); setSearchInput(''); setPage(1) }
 
   const handleAdd = async () => {
@@ -1083,13 +1114,6 @@ export default function ProductsPage() {
     },
   ]
 
-  if (loading) return (
-    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:300, gap:10, color:'#94a3b8' }}>
-      <div style={{ width:22, height:22, borderRadius:'50%', border:'3px solid #e2e8f0', borderTopColor:'#2563eb', animation:'spin-slow 0.7s linear infinite' }}/>
-      <span style={{ fontSize:13, fontWeight:700 }}>데이터를 불러오는 중...</span>
-    </div>
-  )
-
   return (
     <div className="pm-page space-y-4">
 
@@ -1099,7 +1123,7 @@ export default function ProductsPage() {
           const isActive = statusFilter === c.filterKey
           return (
             <button key={c.label}
-              onClick={() => setStatusFilter(isActive ? '전체' : c.filterKey)}
+              onClick={() => { setStatusFilter(isActive ? '전체' : c.filterKey); setShowList(true) }}
               className="pm-card p-4 flex items-center gap-3"
               style={{
                 cursor:'pointer', textAlign:'left', border:'none', width:'100%',
@@ -1151,7 +1175,7 @@ export default function ProductsPage() {
                   </button>
                 </div>
               ) : (
-                <button onClick={() => setActiveTab(cat)} style={{
+                <button onClick={() => { setActiveTab(cat); setShowList(true) }} style={{
                   padding: cat==='전체' ? '12px 14px' : '12px 10px 12px 16px',
                   fontSize:13, fontWeight:800,
                   color: activeTab===cat ? '#2563eb' : '#94a3b8',
@@ -1262,15 +1286,15 @@ export default function ProductsPage() {
           </Select>
           {/* 등록일 필터 */}
           <div style={{ display:'flex', alignItems:'center', gap:4, flexWrap:'wrap' }}>
-            {([['all','전체'],['today','오늘'],['3','최근 3일'],['7','최근 1주일']] as const).map(([val, label]) => (
-              <button key={val} onClick={() => { setDateFilter(val); setDateCustom('') }}
+            {([['today','오늘'],['30','최근 한달'],['365','최근 1년']] as const).map(([val, label]) => (
+              <button key={val} onClick={() => { setDateFilter(val); setDateCustom(''); setShowList(true) }}
                 style={{ padding:'5px 10px', borderRadius:7, border:'1.5px solid', fontSize:11.5, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap',
                   borderColor: dateFilter === val ? '#2563eb' : '#e2e8f0',
                   background: dateFilter === val ? '#eff6ff' : 'white',
                   color: dateFilter === val ? '#1d4ed8' : '#64748b',
                 }}>{label}</button>
             ))}
-            <button onClick={() => setDateFilter('custom')}
+            <button onClick={() => { setDateFilter('custom'); setShowList(true) }}
               style={{ padding:'5px 10px', borderRadius:7, border:'1.5px solid', fontSize:11.5, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap',
                 borderColor: dateFilter === 'custom' ? '#2563eb' : '#e2e8f0',
                 background: dateFilter === 'custom' ? '#eff6ff' : 'white',
@@ -1328,8 +1352,19 @@ export default function ProductsPage() {
         </div>
       </div>
 
+      {/* ── 목록 미표시 안내 ── */}
+      {!showList && (
+        <div className="pm-card" style={{ padding:'48px 24px', textAlign:'center' }}>
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
+            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            <p style={{ fontSize:15, fontWeight:800, color:'#94a3b8' }}>검색하거나 필터를 선택하면 상품 목록이 표시됩니다</p>
+            <p style={{ fontSize:12.5, fontWeight:600, color:'#cbd5e1' }}>상단 상태 버튼, 카테고리 탭, 날짜 필터, 검색어 입력 후 검색 버튼을 클릭하세요</p>
+          </div>
+        </div>
+      )}
+
       {/* ── 테이블 ── */}
-      <div className="pm-card overflow-hidden">
+      {showList && <div className="pm-card overflow-hidden">
         <div className="pm-table-wrap">
           <table className="pm-table" style={{ minWidth:1500 }}>
             <thead>
@@ -1571,10 +1606,10 @@ export default function ProductsPage() {
             </tbody>
           </table>
         </div>
-      </div>
+      </div>}
 
       {/* ── 하단 페이지네이션 ── */}
-      {totalPages > 1 && (
+      {showList && totalPages > 1 && (
         <div style={{ display:'flex', justifyContent:'center', gap:4, alignItems:'center', padding:'12px 0 4px' }}>
           <button disabled={page===1} onClick={() => setPage(p=>p-1)}
             className="pm-btn pm-btn-ghost pm-btn-sm"

@@ -16,6 +16,7 @@ interface MappedRow {
   matched_product_name: string | null
   matched_option: string | null
   matched_barcode: string | null
+  mall_price: number | null   // 쇼핑몰 판매가
   status: 'matched' | 'unmatched'
 }
 
@@ -25,7 +26,16 @@ interface PmProduct { id: string; code: string; name: string; category: string; 
 const MAPPING_KEY = 'pm_channel_mappings_v1'
 
 function loadMappings(): Record<string, MappedRow[]> {
-  try { const r = localStorage.getItem(MAPPING_KEY); return r ? JSON.parse(r) : {} } catch { return {} }
+  try {
+    const r = localStorage.getItem(MAPPING_KEY)
+    if (!r) return {}
+    const data = JSON.parse(r)
+    // mall_price 필드 없는 기존 데이터 마이그레이션
+    for (const key of Object.keys(data)) {
+      data[key] = data[key].map((row: MappedRow) => ({ ...row, mall_price: row.mall_price ?? null }))
+    }
+    return data
+  } catch { return {} }
 }
 function saveMappings(data: Record<string, MappedRow[]>) {
   localStorage.setItem(MAPPING_KEY, JSON.stringify(data))
@@ -39,6 +49,8 @@ export default function MappingPage() {
   const [mappings, setMappings] = useState<Record<string, MappedRow[]>>({})
   const [importing, setImporting] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  // 체크박스 선택
+  const [checkedIdxs, setCheckedIdxs] = useState<Set<number>>(new Set())
 
   // 수동 매핑 모달
   const [manualTarget, setManualTarget] = useState<MappedRow | null>(null)
@@ -46,6 +58,7 @@ export default function MappingPage() {
   const [manualSearch, setManualSearch] = useState('')
   const [manualSelProduct, setManualSelProduct] = useState('')
   const [manualSelOption, setManualSelOption] = useState('')
+  const [manualPrice, setManualPrice] = useState('')
 
   useEffect(() => {
     try {
@@ -118,10 +131,10 @@ export default function MappingPage() {
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new()
     const ws = XLSX.utils.aoa_to_sheet([
-      ['쇼핑몰상품ID', '쇼핑몰상품명', '쇼핑몰옵션명', '바코드'],
-      ['MALL_PROD_001', '예시상품명', '색상-사이즈', '1234567890123'],
+      ['쇼핑몰상품ID', '쇼핑몰상품명', '쇼핑몰옵션명', '바코드', '판매가'],
+      ['MALL_PROD_001', '예시상품명', '색상-사이즈', '1234567890123', '29900'],
     ])
-    ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 20 }, { wch: 18 }]
+    ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 20 }, { wch: 18 }, { wch: 12 }]
     XLSX.utils.book_append_sheet(wb, ws, '매핑업로드')
     XLSX.writeFile(wb, '매핑업로드.xlsx')
   }
@@ -140,13 +153,14 @@ export default function MappingPage() {
       const idxName = header.findIndex(h => h.includes('상품명') || h.includes('name'))
       const idxOpt  = header.findIndex(h => h.includes('옵션') || h.includes('option'))
       const idxBarcode = header.findIndex(h => h.includes('바코드') || h.includes('barcode') || h.includes('sku'))
+      const idxPrice = header.findIndex(h => h.includes('판매가') || h.includes('price') || h.includes('가격'))
 
       const newRows: MappedRow[] = raw.slice(1).filter(r => r.some(c => c !== '')).map(r => {
         const mallId   = idxId   >= 0 ? String(r[idxId]).trim()   : ''
         const mallName = idxName >= 0 ? String(r[idxName]).trim() : String(r[0] ?? '').trim()
         const mallOpt  = idxOpt  >= 0 ? String(r[idxOpt]).trim()  : String(r[1] ?? '').trim()
-        // 바코드 컬럼이 있으면 바코드 값을 mallId 대신 사용해 우선 매핑
         const barcodeVal = idxBarcode >= 0 ? String(r[idxBarcode]).trim() : ''
+        const priceVal = idxPrice >= 0 ? Number(String(r[idxPrice]).replace(/[^0-9.]/g,'')) || null : null
         const m = autoMatch(barcodeVal || mallId, mallName, mallOpt)
         return {
           mall_product_id: mallId,
@@ -156,17 +170,23 @@ export default function MappingPage() {
           matched_product_name: m?.pname || null,
           matched_option: m?.oname || null,
           matched_barcode: m?.barcode || null,
+          mall_price: priceVal,
           status: m ? 'matched' : 'unmatched',
         }
       })
       const updated = { ...mappings, [selectedMall]: newRows }
       setMappings(updated); saveMappings(updated)
 
-      // 자동 매핑된 상품에 쇼핑몰 등록현황 업데이트
+      // 자동 매핑된 상품에 쇼핑몰 등록현황 + 판매가 업데이트
       const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
       const matched = newRows.filter(r => r.status === 'matched' && r.matched_product_id)
       for (const r of matched) {
-        if (r.matched_product_id) updateRegisteredMalls(r.matched_product_id, mallName)
+        if (r.matched_product_id) {
+          updateRegisteredMalls(r.matched_product_id, mallName)
+          if (r.mall_price && r.mall_price > 0) {
+            updateChannelPrice(r.matched_product_id, mallName, r.mall_price)
+          }
+        }
       }
     } catch (err) { console.error(err) }
     finally { setImporting(false); if (fileRef.current) fileRef.current.value = '' }
@@ -175,6 +195,20 @@ export default function MappingPage() {
   const openManual = (row: MappedRow, idx: number) => {
     setManualTarget(row); setManualTargetIdx(idx)
     setManualSearch(''); setManualSelProduct(''); setManualSelOption('')
+    setManualPrice(row.mall_price ? String(row.mall_price) : '')
+  }
+
+  const updateChannelPrice = async (productId: string, mallName: string, price: number) => {
+    try {
+      const { data } = await supabase.from('pm_products').select('channel_prices').eq('id', productId).single()
+      if (!data) return
+      const current: { channel: string; price: number }[] = data.channel_prices ?? []
+      const exists = current.find(cp => cp.channel === mallName)
+      const updated = exists
+        ? current.map(cp => cp.channel === mallName ? { ...cp, price } : cp)
+        : [...current, { channel: mallName, price }]
+      await supabase.from('pm_products').update({ channel_prices: updated }).eq('id', productId)
+    } catch { /* 무시 */ }
   }
 
   const updateRegisteredMalls = async (productId: string, mallName: string) => {
@@ -192,6 +226,7 @@ export default function MappingPage() {
     if (!manualTarget || manualTargetIdx < 0 || !manualSelProduct) return
     const prod = products.find(p => p.id === manualSelProduct)
     const opt = prod?.options.find(o => o.name === manualSelOption)
+    const price = manualPrice ? Number(manualPrice) : null
     const newRows = [...rows]
     newRows[manualTargetIdx] = {
       ...newRows[manualTargetIdx],
@@ -199,28 +234,58 @@ export default function MappingPage() {
       matched_product_name: prod?.name || null,
       matched_option: opt?.name || null,
       matched_barcode: opt?.barcode || null,
+      mall_price: price,
       status: prod ? 'matched' : 'unmatched',
     }
     const updated = { ...mappings, [selectedMall]: newRows }
     setMappings(updated); saveMappings(updated); setManualTarget(null)
 
-    // 매핑된 상품에 쇼핑몰 등록현황 업데이트
+    // 매핑된 상품에 쇼핑몰 등록현황 + 판매가 업데이트
     if (prod) {
       const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
       updateRegisteredMalls(prod.id, mallName)
+      if (price && price > 0) updateChannelPrice(prod.id, mallName, price)
     }
   }
 
   const handleDeleteRow = (idx: number) => {
+    // 목록에서만 제거 (registered_malls, channel_prices 유지)
     const newRows = [...rows]; newRows.splice(idx, 1)
     const updated = { ...mappings, [selectedMall]: newRows }
     setMappings(updated); saveMappings(updated)
+    setCheckedIdxs(new Set())
+  }
+
+  const handleDeleteChecked = () => {
+    if (checkedIdxs.size === 0) return
+    if (!confirm(`선택한 ${checkedIdxs.size}개 항목을 목록에서 삭제하시겠습니까?\n(쇼핑몰 등록현황 및 판매가는 유지됩니다)`)) return
+    const newRows = rows.filter((_, i) => !checkedIdxs.has(i))
+    const updated = { ...mappings, [selectedMall]: newRows }
+    setMappings(updated); saveMappings(updated)
+    setCheckedIdxs(new Set())
   }
 
   const handleClearAll = () => {
     if (!confirm('현재 쇼핑몰의 매핑 데이터를 모두 삭제하시겠습니까?')) return
     const updated = { ...mappings }; delete updated[selectedMall]
     setMappings(updated); saveMappings(updated)
+    setCheckedIdxs(new Set())
+  }
+
+  const toggleCheck = (idx: number) => {
+    setCheckedIdxs(prev => {
+      const next = new Set(prev)
+      next.has(idx) ? next.delete(idx) : next.add(idx)
+      return next
+    })
+  }
+
+  const toggleCheckAll = () => {
+    if (checkedIdxs.size === filtered.length) {
+      setCheckedIdxs(new Set())
+    } else {
+      setCheckedIdxs(new Set(filtered.map((row) => rows.indexOf(row))))
+    }
   }
 
   const manualFiltered = products.filter(p => {
@@ -357,7 +422,15 @@ export default function MappingPage() {
                   엑셀 업로드
                 </button>
 
-                {rows.length > 0 && (
+                {checkedIdxs.size > 0 && (
+                  <button
+                    onClick={handleDeleteChecked}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#fff1f2', color: '#be123c', border: '1.5px solid #fecdd3', borderRadius: 8, padding: '7px 12px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
+                  >
+                    <Trash2 size={13} />선택 삭제 ({checkedIdxs.size})
+                  </button>
+                )}
+                {rows.length > 0 && checkedIdxs.size === 0 && (
                   <button
                     onClick={handleClearAll}
                     style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'white', color: '#be123c', border: '1.5px solid #fecdd3', borderRadius: 8, padding: '7px 12px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
@@ -390,20 +463,32 @@ export default function MappingPage() {
                     <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                       <thead>
                         <tr style={{ background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-                          {['#', '쇼핑몰 상품ID', '쇼핑몰 상품명', '쇼핑몰 옵션', '매핑 상품명', '매핑 옵션', '바코드', '상태', '관리'].map((h, i) => (
+                          <th style={{ padding: '9px 12px', width: 36 }}>
+                            <input type="checkbox"
+                              checked={filtered.length > 0 && checkedIdxs.size === filtered.length}
+                              onChange={toggleCheckAll}
+                              style={{ cursor:'pointer', width:14, height:14 }}
+                            />
+                          </th>
+                          {['#', '쇼핑몰 상품ID', '쇼핑몰 상품명', '쇼핑몰 옵션', '매핑 상품명', '매핑 옵션', '바코드', '판매가', '상태', '관리'].map((h, i) => (
                             <th key={i} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 10.5, fontWeight: 900, color: '#94a3b8', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody>
-                        {filtered.map((row, idx) => {
+                          {filtered.map((row, idx) => {
                           const realIdx = rows.indexOf(row)
+                          const isChecked = checkedIdxs.has(realIdx)
                           return (
                             <tr key={idx}
-                              style={{ borderBottom: '1px solid #f8fafc' }}
-                              onMouseEnter={e => (e.currentTarget.style.background = '#fafbfc')}
-                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                              style={{ borderBottom: '1px solid #f8fafc', background: isChecked ? '#eff6ff' : 'transparent' }}
+                              onMouseEnter={e => { if (!isChecked) e.currentTarget.style.background = '#fafbfc' }}
+                              onMouseLeave={e => { if (!isChecked) e.currentTarget.style.background = 'transparent' }}
                             >
+                              <td style={{ padding: '9px 12px' }}>
+                                <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(realIdx)}
+                                  style={{ cursor:'pointer', width:14, height:14 }} />
+                              </td>
                               <td style={{ padding: '9px 12px', fontSize: 11.5, color: '#94a3b8', fontWeight: 700 }}>{realIdx + 1}</td>
                               <td style={{ padding: '9px 12px', fontSize: 11.5, color: '#64748b', fontFamily: 'monospace' }}>{row.mall_product_id || '-'}</td>
                               <td style={{ padding: '9px 12px', fontSize: 12.5, fontWeight: 700, color: '#1e293b', maxWidth: 160 }}>
@@ -419,6 +504,13 @@ export default function MappingPage() {
                               </td>
                               <td style={{ padding: '9px 12px', fontSize: 12, color: row.matched_option ? '#64748b' : '#e2e8f0' }}>{row.matched_option || '-'}</td>
                               <td style={{ padding: '9px 12px', fontSize: 11, fontFamily: 'monospace', color: '#334155' }}>{row.matched_barcode || '-'}</td>
+                              <td style={{ padding: '9px 12px' }}>
+                                {row.mall_price ? (
+                                  <span style={{ fontSize: 12.5, fontWeight: 800, color: '#2563eb' }}>
+                                    {row.mall_price.toLocaleString()}원
+                                  </span>
+                                ) : <span style={{ color: '#e2e8f0' }}>-</span>}
+                              </td>
                               <td style={{ padding: '9px 12px' }}>
                                 {row.status === 'matched' ? (
                                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#ecfdf5', color: '#059669', fontSize: 10.5, fontWeight: 800, padding: '3px 7px', borderRadius: 6 }}>
@@ -516,6 +608,22 @@ export default function MappingPage() {
                 </div>
               )
             })()}
+
+            {/* 판매가 입력 */}
+            <div>
+              <p style={{ fontSize: 12, fontWeight: 800, color: '#334155', marginBottom: 6 }}>쇼핑몰 판매가 <span style={{ fontSize:11, fontWeight:600, color:'#94a3b8' }}>(선택)</span></p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '7px 12px' }}>
+                <span style={{ fontSize: 13, fontWeight: 700, color: '#64748b' }}>₩</span>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={manualPrice}
+                  onChange={e => setManualPrice(e.target.value)}
+                  style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 13, fontWeight: 700, color: '#1e293b', flex: 1 }}
+                />
+              </div>
+              <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 4, fontWeight: 600 }}>입력 시 상품관리 탭의 쇼핑몰판매가에도 자동 적용됩니다</p>
+            </div>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
               <button onClick={() => setManualTarget(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: 'white', fontSize: 13, fontWeight: 700, cursor: 'pointer', color: '#64748b' }}>취소</button>
