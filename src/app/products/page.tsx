@@ -60,6 +60,20 @@ const DEFAULT_CATS = ['전체'] // '전체' 탭은 항상 고정, 나머지는 e
 const INIT_EXTRA_CATS = ['가방', '의류', '잡화'] // 앱 최초 실행 시 기본 카테고리
 const CATS_STORAGE_KEY = 'pm_categories_v1'
 
+// 캐시 상수를 컴포넌트 바깥에 두어 useState 초기화 함수에서도 참조 가능
+const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
+const PRODUCTS_CACHE_TTL = 3 * 60 * 1000 // 3분
+
+function loadProductsFromCache(): Product[] {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
+    if (!raw) return []
+    const { ts, data: cached } = JSON.parse(raw)
+    if (Date.now() - ts < PRODUCTS_CACHE_TTL && Array.isArray(cached)) return cached
+  } catch {}
+  return []
+}
+
 function loadSavedCats(): string[] | null {
   try { const r = localStorage.getItem(CATS_STORAGE_KEY); return r ? JSON.parse(r) : null } catch { return null }
 }
@@ -318,7 +332,8 @@ function rowToProduct(row: any): Product {
 
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */
 export default function ProductsPage() {
-  const [products, setProducts]   = useState<Product[]>([])
+  // 캐시에서 즉시 초기화 → KPI 숫자가 첫 렌더부터 표시됨
+  const [products, setProducts]   = useState<Product[]>(() => loadProductsFromCache())
   const [extraCats, setExtraCats] = useState<string[]>(INIT_EXTRA_CATS)
   const [activeTab, setActiveTab]     = useState('전체')
   const [searchInput, setSearchInput] = useState('')
@@ -367,9 +382,6 @@ export default function ProductsPage() {
   const [editForm, setEditForm] = useState<EditFormState | null>(null)
 
   /* ── Supabase 로드 (캐시 우선 표시 후 백그라운드 갱신) ── */
-  const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
-  const PRODUCTS_CACHE_TTL = 3 * 60 * 1000 // 3분
-
   useEffect(() => {
     const load = async () => {
       // localStorage에 저장된 카테고리 먼저 복원
@@ -1505,26 +1517,17 @@ export default function ProductsPage() {
 
                     {/* 쇼핑몰별 판매가 */}
                     <td style={{ paddingTop:10, paddingBottom:10 }}>
-                      {p.channel_prices.length > 0 ? (
-                        <button onClick={() => setChannelPriceTarget(p)}
-                          style={{ display:'flex', flexDirection:'column', gap:4, cursor:'pointer', background:'none', border:'none', padding:0, textAlign:'left', width:'100%' }}>
-                          {p.channel_prices.map(cp => {
-                            const cs = CH_STYLE[cp.channel] ?? { bg:'#f8fafc', color:'#475569' }
-                            return (
-                              <div key={cp.channel} style={{ display:'flex', alignItems:'center', gap:5 }}>
-                                <span style={{ fontSize:10, fontWeight:800, background:cs.bg, color:cs.color, padding:'1px 6px', borderRadius:5, minWidth:44, textAlign:'center', flexShrink:0 }}>{cp.channel}</span>
-                                <span style={{ fontSize:12.5, fontWeight:800, color:'#334155' }}>{formatCurrency(cp.price)}</span>
-                              </div>
-                            )
-                          })}
-                          <span style={{ fontSize:10.5, fontWeight:700, color:'#94a3b8', marginTop:2 }}>✏️ 클릭하여 수정</span>
-                        </button>
-                      ) : (
-                        <button onClick={() => setChannelPriceTarget(p)}
-                          style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:12, fontWeight:800, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:8, padding:'6px 10px', cursor:'pointer' }}>
-                          <Store size={12}/>쇼핑몰판매가
-                        </button>
-                      )}
+                      <button onClick={() => setChannelPriceTarget(p)}
+                        style={{
+                          display:'inline-flex', alignItems:'center', gap:4,
+                          fontSize:12, fontWeight:800,
+                          color: p.channel_prices.length > 0 ? '#059669' : '#2563eb',
+                          background: p.channel_prices.length > 0 ? '#ecfdf5' : '#eff6ff',
+                          border:'none', borderRadius:8, padding:'6px 10px', cursor:'pointer',
+                        }}>
+                        <Store size={12}/>
+                        {p.channel_prices.length > 0 ? `판매가 ${p.channel_prices.length}건` : '쇼핑몰판매가'}
+                      </button>
                     </td>
 
                     {/* 쇼핑몰 등록현황 */}
