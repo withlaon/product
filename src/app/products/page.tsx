@@ -470,8 +470,17 @@ export default function ProductsPage() {
     }
     const { error } = await supabase.from('pm_products').update(payload).eq('id', isEdit.id)
     setEditSaving(false)
-    if (error) { console.error('수정 오류:', error); return }
-    setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
+    if (error) {
+      // integer 컬럼에 소숫점 저장 시 반올림 재시도
+      if (error.code === '22P02' || error.message?.includes('integer')) {
+        const intPayload = { ...payload, cost_price: Math.round(payload.cost_price) }
+        const { error: e2 } = await supabase.from('pm_products').update(intPayload).eq('id', isEdit.id)
+        if (e2) { console.error('수정 오류(int fallback):', e2); return }
+        setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...intPayload, channel_prices: p.channel_prices } : p))
+      } else { console.error('수정 오류:', error); return }
+    } else {
+      setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
+    }
     if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
       const updated = [...prev, cat]
       saveCats(updated)
@@ -552,6 +561,16 @@ export default function ProductsPage() {
     setAddSubmitting(false)
     if (error) {
       console.error('상품 등록 오류:', error)
+      // integer 컬럼에 소숫점 저장 시도 시 반올림 재시도
+      if (error.code === '22P02' || error.message?.includes('integer')) {
+        const intPayload = { ...payload, cost_price: Math.round(payload.cost_price) }
+        const { data: d2, error: e2 } = await supabase.from('pm_products').insert(intPayload).select().single()
+        if (e2) { setAddDbError(`등록 실패: ${e2.message}\n※ Supabase에서 cost_price 컬럼 타입을 numeric으로 변경해주세요.`); return }
+        const p = rowToProduct(d2)
+        setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
+        if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => { const u=[...prev,cat]; saveCats(u); return u })
+        setIsAdd(false); setForm(INIT_FORM); return
+      }
       // mall_categories/basic_info 컬럼 미존재 시 fallback
       if (error.message?.includes('mall_categories') || error.message?.includes('basic_info') || error.code === '42703') {
         const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload
@@ -905,26 +924,55 @@ export default function ProductsPage() {
 
       if (!payload.name) { errors.push(`${code}: 상품명 없음`); continue }
 
+      // cost_price가 소숫점인데 DB 컬럼이 integer인 경우를 위한 헬퍼
+      // 22P02(invalid input syntax for integer) 오류 시 반올림 후 재시도
+      const payloadIntCost = { ...payload, cost_price: Math.round(payload.cost_price) }
+
       const existing = products.find(p => p.code === code)
       if (existing) {
-        const { error } = await supabase.from('pm_products').update(payload).eq('id', existing.id)
+        let { error } = await supabase.from('pm_products').update(payload).eq('id', existing.id)
         if (error) {
-          if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
+          if (error.code === '22P02' || error.message?.includes('integer')) {
+            // DB 컬럼이 integer인 경우 반올림 재시도
+            const { error: e2 } = await supabase.from('pm_products').update(payloadIntCost).eq('id', existing.id)
+            if (e2) { errors.push(`${code}: ${e2.message}`); continue }
+            setProducts(prev => prev.map(p => p.code === code ? { ...p, ...payloadIntCost } : p))
+          } else if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
             const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload; void _mc; void _bi
             const { error: e2 } = await supabase.from('pm_products').update(fallback).eq('id', existing.id)
-            if (e2) { errors.push(`${code}: ${e2.message}`); continue }
+            if (e2) {
+              // 그래도 integer 오류면 반올림 재시도
+              if (e2.code === '22P02' || e2.message?.includes('integer')) {
+                const { mall_categories: _mc2, basic_info: _bi2, ...fallbackInt } = payloadIntCost; void _mc2; void _bi2
+                const { error: e3 } = await supabase.from('pm_products').update(fallbackInt).eq('id', existing.id)
+                if (e3) { errors.push(`${code}: ${e3.message}`); continue }
+              } else { errors.push(`${code}: ${e2.message}`); continue }
+            }
           } else { errors.push(`${code}: ${error.message}`); continue }
         }
         setProducts(prev => prev.map(p => p.code === code ? { ...p, ...payload } : p))
         updateCount++
       } else {
-        const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
+        let { data, error } = await supabase.from('pm_products').insert(payload).select().single()
         if (error) {
-          if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
-            const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload; void _mc; void _bi
-            const { data: d2, error: e2 } = await supabase.from('pm_products').insert(fallback).select().single()
+          if (error.code === '22P02' || error.message?.includes('integer')) {
+            // DB 컬럼이 integer인 경우 반올림 재시도
+            const { data: d2, error: e2 } = await supabase.from('pm_products').insert(payloadIntCost).select().single()
             if (e2) { errors.push(`${code}: ${e2.message}`); continue }
             setProducts(prev => [...prev, rowToProduct(d2)].sort((a,b) => a.code.localeCompare(b.code)))
+          } else if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
+            const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload; void _mc; void _bi
+            const { data: d2, error: e2 } = await supabase.from('pm_products').insert(fallback).select().single()
+            if (e2) {
+              if (e2.code === '22P02' || e2.message?.includes('integer')) {
+                const { mall_categories: _mc2, basic_info: _bi2, ...fallbackInt } = payloadIntCost; void _mc2; void _bi2
+                const { data: d3, error: e3 } = await supabase.from('pm_products').insert(fallbackInt).select().single()
+                if (e3) { errors.push(`${code}: ${e3.message}`); continue }
+                setProducts(prev => [...prev, rowToProduct(d3)].sort((a,b) => a.code.localeCompare(b.code)))
+              } else { errors.push(`${code}: ${e2.message}`); continue }
+            } else if (d2) {
+              setProducts(prev => [...prev, rowToProduct(d2)].sort((a,b) => a.code.localeCompare(b.code)))
+            }
           } else { errors.push(`${code}: ${error.message}`); continue }
         } else if (data) {
           setProducts(prev => [...prev, rowToProduct(data)].sort((a,b) => a.code.localeCompare(b.code)))

@@ -152,7 +152,7 @@ CREATE TABLE IF NOT EXISTS pm_products (
   name         TEXT        NOT NULL,
   category     TEXT        DEFAULT '',
   loca         TEXT        DEFAULT '',
-  cost_price   INTEGER     DEFAULT 0,
+  cost_price   NUMERIC(10,2) DEFAULT 0,
   cost_currency TEXT       DEFAULT 'CNY',
   status       TEXT        DEFAULT 'active',
   supplier     TEXT        DEFAULT '',
@@ -175,6 +175,10 @@ ALTER TABLE pm_products DISABLE ROW LEVEL SECURITY;
 ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS mall_categories JSONB DEFAULT '[]';
 ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS basic_info JSONB DEFAULT NULL;
 ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS abbr TEXT DEFAULT '';
+
+-- cost_price 컬럼 타입 변경: integer → numeric(10,2) (소숫점 원가 지원)
+-- 이미 numeric인 경우 자동으로 무시됩니다
+ALTER TABLE pm_products ALTER COLUMN cost_price TYPE NUMERIC(10,2) USING cost_price::numeric;
 
 -- ─── 발주/입고 관리 테이블 ──────────────────────────────────────
 -- pm_products와 연동하여 발주·입고 수량을 자동 반영합니다.
