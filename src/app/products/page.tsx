@@ -50,6 +50,7 @@ interface Product {
   mall_categories: MallCategory[]
   basic_info: BasicInfo | null
   status: ProductStatus; supplier: string
+  registered_malls: string[]   // 등록된 쇼핑몰 이름 목록
   created_at?: string
 }
 const DEF_BASIC_INFO: BasicInfo = { title:'', brand:'', origin:'', manufacturer:'', material:'', description:'', handling:'', notes:'' }
@@ -281,6 +282,7 @@ function rowToProduct(row: any): Product {
     channel_prices: (row.channel_prices ?? []) as ChannelPrice[],
     mall_categories: (row.mall_categories ?? []) as MallCategory[],
     basic_info: (row.basic_info ?? null) as BasicInfo | null,
+    registered_malls: (row.registered_malls ?? []) as string[],
     created_at: row.created_at ?? '',
   }
 }
@@ -584,6 +586,7 @@ export default function ProductsPage() {
       options, channel_prices: [],
       mall_categories: form.mall_categories.filter(m => m.channel && m.category),
       basic_info: null,
+      registered_malls: [],
     }
     const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
     setAddSubmitting(false)
@@ -957,6 +960,7 @@ export default function ProductsPage() {
         channel_prices: [] as ChannelPrice[],
         mall_categories: [] as MallCategory[],
         basic_info: null,
+        registered_malls: [] as string[],
       }
 
       if (!payload.name) { errors.push(`${code}: 상품명 없음`); continue }
@@ -1336,7 +1340,8 @@ export default function ProductsPage() {
                 <th style={{ minWidth:420 }}>옵션명 / 바코드 / 재고</th>
                 <th style={{ width:90, textAlign:'center' }}>LOCA</th>
                 <th style={{ width:110, textAlign:'right' }}>원가</th>
-                <th style={{ minWidth:160 }}>쇼핑몰별 판매가</th>
+                <th style={{ minWidth:160 }}>쇼핑몰판매가</th>
+                <th style={{ minWidth:120 }}>쇼핑몰 등록현황</th>
                 <th style={{ width:100, textAlign:'center' }}>상태</th>
                 <th style={{ width:100 }}>구매처</th>
                 <th style={{ width:132, textAlign:'center' }}>관리</th>
@@ -1345,7 +1350,7 @@ export default function ProductsPage() {
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
+                  <td colSpan={11} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
                       <Package size={36} style={{ opacity:0.25 }} />
                       <p style={{ fontSize:13.5, fontWeight:700 }}>등록된 상품이 없습니다</p>
@@ -1482,9 +1487,45 @@ export default function ProductsPage() {
                       ) : (
                         <button onClick={() => setChannelPriceTarget(p)}
                           style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:12, fontWeight:800, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:8, padding:'6px 10px', cursor:'pointer' }}>
-                          <Store size={12}/>판매가 등록
+                          <Store size={12}/>쇼핑몰판매가
                         </button>
                       )}
+                    </td>
+
+                    {/* 쇼핑몰 등록현황 */}
+                    <td style={{ paddingTop:10, paddingBottom:10 }}>
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                        {(p.registered_malls ?? []).length === 0 ? (
+                          <span style={{ fontSize:11, color:'#cbd5e1', fontWeight:600 }}>-</span>
+                        ) : (p.registered_malls ?? []).map((mall, mi) => {
+                          const abbr = mall.replace(/\s/g,'').slice(0,2)
+                          const colors: Record<string,{bg:string;color:string}> = {
+                            '쿠팡':    { bg:'#fff7ed', color:'#c2410c' },
+                            '네이버':  { bg:'#f0fdf4', color:'#15803d' },
+                            '11번가':  { bg:'#fff1f2', color:'#be123c' },
+                            '에이블리':{ bg:'#fdf4ff', color:'#7e22ce' },
+                            '지그재그':{ bg:'#eff6ff', color:'#2563eb' },
+                            'G마켓':   { bg:'#fefce8', color:'#854d0e' },
+                            '옥션':    { bg:'#f0fdf4', color:'#166534' },
+                          }
+                          const cs = colors[mall] ?? { bg:'#f1f5f9', color:'#475569' }
+                          return (
+                            <span
+                              key={mi}
+                              title={mall}
+                              style={{
+                                display:'inline-flex', alignItems:'center', justifyContent:'center',
+                                width:28, height:22, borderRadius:5, fontSize:10, fontWeight:900,
+                                background:cs.bg, color:cs.color,
+                                border:`1px solid ${cs.color}33`, cursor:'default',
+                                flexShrink:0,
+                              }}
+                            >
+                              {abbr}
+                            </span>
+                          )
+                        })}
+                      </div>
                     </td>
 
                     {/* 상태 — 클릭하면 인라인 드롭다운으로 변경 */}

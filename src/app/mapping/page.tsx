@@ -1,12 +1,12 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Upload, RefreshCw, Link2, Trash2, CheckCircle2, AlertCircle, FileSpreadsheet, X, Search, Store } from 'lucide-react'
+import { Upload, RefreshCw, Link2, Trash2, CheckCircle2, AlertCircle, FileSpreadsheet, X, Search, Store, Download } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { Modal } from '@/components/ui/modal'
 
-const CHANNEL_STORAGE_KEY = 'pm_mall_channels_v3'
+const CHANNEL_STORAGE_KEY = 'pm_mall_channels_v5'
 
 interface MappedRow {
   mall_product_id: string
@@ -80,21 +80,50 @@ export default function MappingPage() {
     return { total: r.length, matched: r.filter(x => x.status === 'matched').length, unmatched: r.filter(x => x.status === 'unmatched').length }
   }
 
-  function autoMatch(mallName: string, mallOption: string) {
+  function autoMatch(mallId: string, mallName: string, mallOption: string) {
+    const idLc = mallId.toLowerCase()
+    const nameLc = mallName.toLowerCase()
+    const optLc = mallOption.toLowerCase()
+
+    // 1순위: 바코드 직접 일치 (쇼핑몰 상품ID 또는 옵션에 바코드가 포함)
     for (const p of products) {
       for (const o of p.options) {
-        const bc = o.barcode?.toLowerCase() || ''
-        if (bc && (mallOption.toLowerCase().includes(bc) || mallName.toLowerCase().includes(bc))) {
+        const bc = o.barcode?.trim().toLowerCase() || ''
+        if (!bc) continue
+        if (idLc === bc || optLc === bc || idLc.includes(bc) || optLc.includes(bc)) {
           return { pid: p.id, pname: p.name, oname: o.name, barcode: o.barcode }
         }
-        if (p.code && mallName.toLowerCase().includes(p.code.toLowerCase())) {
-          if (o.name && mallOption.toLowerCase().includes(o.name.toLowerCase())) {
+      }
+    }
+    // 2순위: 상품코드 + 옵션명 일치
+    for (const p of products) {
+      if (!p.code) continue
+      const codeLc = p.code.toLowerCase()
+      if (nameLc.includes(codeLc) || idLc.includes(codeLc)) {
+        for (const o of p.options) {
+          if (o.name && optLc.includes(o.name.toLowerCase())) {
             return { pid: p.id, pname: p.name, oname: o.name, barcode: o.barcode }
           }
+        }
+        // 코드만 맞아도 옵션 하나면 매핑
+        if (p.options.length === 1) {
+          const o = p.options[0]
+          return { pid: p.id, pname: p.name, oname: o.name, barcode: o.barcode }
         }
       }
     }
     return null
+  }
+
+  const handleDownloadTemplate = () => {
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.aoa_to_sheet([
+      ['쇼핑몰상품ID', '쇼핑몰상품명', '쇼핑몰옵션명', '바코드'],
+      ['MALL_PROD_001', '예시상품명', '색상-사이즈', '1234567890123'],
+    ])
+    ws['!cols'] = [{ wch: 20 }, { wch: 30 }, { wch: 20 }, { wch: 18 }]
+    XLSX.utils.book_append_sheet(wb, ws, '매핑업로드')
+    XLSX.writeFile(wb, '매핑업로드.xlsx')
   }
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -107,15 +136,18 @@ export default function MappingPage() {
       const ws = wb.Sheets[wb.SheetNames[0]]
       const raw: string[][] = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' })
       const header = (raw[0] || []).map(h => String(h).trim().toLowerCase())
-      const idxId   = header.findIndex(h => h.includes('id') || h.includes('번호') || h.includes('코드'))
+      const idxId   = header.findIndex(h => h.includes('id') || h.includes('번호') || (h.includes('코드') && !h.includes('바코드')))
       const idxName = header.findIndex(h => h.includes('상품명') || h.includes('name'))
       const idxOpt  = header.findIndex(h => h.includes('옵션') || h.includes('option'))
+      const idxBarcode = header.findIndex(h => h.includes('바코드') || h.includes('barcode') || h.includes('sku'))
 
       const newRows: MappedRow[] = raw.slice(1).filter(r => r.some(c => c !== '')).map(r => {
         const mallId   = idxId   >= 0 ? String(r[idxId]).trim()   : ''
         const mallName = idxName >= 0 ? String(r[idxName]).trim() : String(r[0] ?? '').trim()
         const mallOpt  = idxOpt  >= 0 ? String(r[idxOpt]).trim()  : String(r[1] ?? '').trim()
-        const m = autoMatch(mallName, mallOpt)
+        // 바코드 컬럼이 있으면 바코드 값을 mallId 대신 사용해 우선 매핑
+        const barcodeVal = idxBarcode >= 0 ? String(r[idxBarcode]).trim() : ''
+        const m = autoMatch(barcodeVal || mallId, mallName, mallOpt)
         return {
           mall_product_id: mallId,
           mall_product_name: mallName,
@@ -129,6 +161,13 @@ export default function MappingPage() {
       })
       const updated = { ...mappings, [selectedMall]: newRows }
       setMappings(updated); saveMappings(updated)
+
+      // 자동 매핑된 상품에 쇼핑몰 등록현황 업데이트
+      const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
+      const matched = newRows.filter(r => r.status === 'matched' && r.matched_product_id)
+      for (const r of matched) {
+        if (r.matched_product_id) updateRegisteredMalls(r.matched_product_id, mallName)
+      }
     } catch (err) { console.error(err) }
     finally { setImporting(false); if (fileRef.current) fileRef.current.value = '' }
   }
@@ -136,6 +175,17 @@ export default function MappingPage() {
   const openManual = (row: MappedRow, idx: number) => {
     setManualTarget(row); setManualTargetIdx(idx)
     setManualSearch(''); setManualSelProduct(''); setManualSelOption('')
+  }
+
+  const updateRegisteredMalls = async (productId: string, mallName: string) => {
+    try {
+      const { data } = await supabase.from('pm_products').select('registered_malls').eq('id', productId).single()
+      if (!data) return
+      const current: string[] = data.registered_malls ?? []
+      if (!current.includes(mallName)) {
+        await supabase.from('pm_products').update({ registered_malls: [...current, mallName] }).eq('id', productId)
+      }
+    } catch { /* 무시 */ }
   }
 
   const handleManualSave = () => {
@@ -153,6 +203,12 @@ export default function MappingPage() {
     }
     const updated = { ...mappings, [selectedMall]: newRows }
     setMappings(updated); saveMappings(updated); setManualTarget(null)
+
+    // 매핑된 상품에 쇼핑몰 등록현황 업데이트
+    if (prod) {
+      const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
+      updateRegisteredMalls(prod.id, mallName)
+    }
   }
 
   const handleDeleteRow = (idx: number) => {
@@ -287,6 +343,13 @@ export default function MappingPage() {
 
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFileChange} />
                 <button
+                  onClick={handleDownloadTemplate}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'white', color: '#059669', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '7px 13px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
+                  title="매핑업로드 양식 다운로드"
+                >
+                  <Download size={13} />업로드 양식다운
+                </button>
+                <button
                   onClick={() => fileRef.current?.click()}
                   style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 12.5, fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
                 >
@@ -307,7 +370,7 @@ export default function MappingPage() {
               {/* 엑셀 안내 */}
               <div style={{ padding: '8px 12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, marginBottom: 14 }}>
                 <p style={{ fontSize: 11.5, fontWeight: 700, color: '#0369a1' }}>
-                  📋 엑셀 형식 안내: 첫 행 헤더에 <strong>상품ID/번호/코드</strong>, <strong>상품명</strong>, <strong>옵션명</strong> 컬럼을 포함해주세요. 바코드 또는 상품코드+옵션명으로 자동 매핑됩니다.
+                  📋 자동 매핑은 <strong>바코드</strong> 기준으로 동작합니다. 양식다운 버튼으로 템플릿을 다운받아 <strong>바코드</strong> 컬럼을 채워주세요. 매핑 안 된 항목은 <strong>수동매핑</strong> 버튼으로 직접 연결할 수 있습니다.
                 </p>
               </div>
             </div>

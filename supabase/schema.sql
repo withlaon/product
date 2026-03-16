@@ -180,6 +180,9 @@ ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS abbr TEXT DEFAULT '';
 -- 이미 numeric인 경우 자동으로 무시됩니다
 ALTER TABLE pm_products ALTER COLUMN cost_price TYPE NUMERIC(10,2) USING cost_price::numeric;
 
+-- 쇼핑몰 등록현황 컬럼 추가 (매핑 또는 상품전송 완료 시 쇼핑몰명 저장)
+ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS registered_malls JSONB DEFAULT '[]';
+
 -- ─── 발주/입고 관리 테이블 ──────────────────────────────────────
 -- pm_products와 연동하여 발주·입고 수량을 자동 반영합니다.
 
