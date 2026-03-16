@@ -1,13 +1,13 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { Button } from '@/components/ui/button'
 import { Modal } from '@/components/ui/modal'
 import {
-  RefreshCw, Settings, Zap, Plus, CheckCircle2, Unlink,
-  Tag, Truck, Search, X, BookOpen, Download, Eye, Pencil, Trash2, Save,
+  RefreshCw, Zap, Plus, CheckCircle2, Unlink,
+  Tag, Truck, Search, X, BookOpen, Pencil, Trash2, Save, ChevronRight,
 } from 'lucide-react'
 
-/* ─── 전체 쇼핑몰 정의 ─────────────────────────────────────────────── */
+/* ─── 전체 쇼핑몰 정의 ────────────────────────────────────────────── */
 const ALL_MALLS = [
   { key:'coupang',    name:'쿠팡',        domain:'coupang.com',          color:'from-orange-400 to-orange-600' },
   { key:'naver',      name:'스마트스토어', domain:'smartstore.naver.com', color:'from-green-400 to-green-600'  },
@@ -28,290 +28,249 @@ const ALL_MALLS = [
   { key:'kakaostore', name:'톡스토어',     domain:'store.kakao.com',      color:'from-yellow-400 to-yellow-500'},
 ]
 
-/* ─── 쇼핑몰별 API 입력 필드 ──────────────────────────────────────── */
+/* ─── API 필드 ─────────────────────────────────────────────────── */
 type ApiField = { key:string; label:string; placeholder:string; type:'text'|'password'; section?:string }
-
-// 공통 로그인 필드 (모든 쇼핑몰)
 const COMMON_LOGIN_FIELDS: ApiField[] = [
-  { key:'login_id', label:'로그인 아이디', placeholder:'쇼핑몰 판매자 로그인 아이디', type:'text', section:'login' },
-  { key:'login_pw', label:'로그인 비밀번호', placeholder:'쇼핑몰 판매자 로그인 비밀번호', type:'password', section:'login' },
+  { key:'login_id', label:'로그인 아이디', placeholder:'판매자 로그인 아이디', type:'text', section:'login' },
+  { key:'login_pw', label:'로그인 비밀번호', placeholder:'판매자 로그인 비밀번호', type:'password', section:'login' },
 ]
-
 const MALL_API_FIELDS: Record<string, ApiField[]> = {
-  coupang: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'쿠팡 판매자 ID',     type:'text',     section:'api' },
-    { key:'api_key',   label:'Access Key', placeholder:'발급받은 Access Key', type:'password', section:'api' },
-    { key:'api_secret',label:'Secret Key', placeholder:'발급받은 Secret Key', type:'password', section:'api' },
-  ],
-  naver: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',    placeholder:'네이버 판매자 ID',         type:'text',     section:'api' },
-    { key:'api_key',   label:'Client ID',    placeholder:'Application Client ID',    type:'text',     section:'api' },
-    { key:'api_secret',label:'Client Secret',placeholder:'Application Client Secret',type:'password', section:'api' },
-  ],
-  '11st': [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID', placeholder:'11번가 판매자 ID',  type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',   placeholder:'Open API Key 입력', type:'password', section:'api' },
-  ],
-  gmarket: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'지마켓 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'API Key 입력',     type:'password', section:'api' },
-    { key:'api_secret',label:'API Secret', placeholder:'API Secret 입력',  type:'password', section:'api' },
-  ],
-  auction: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'옥션 판매자 ID',  type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'API Key 입력',    type:'password', section:'api' },
-    { key:'api_secret',label:'API Secret', placeholder:'API Secret 입력', type:'password', section:'api' },
-  ],
-  ablly: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID', placeholder:'에이블리 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',   placeholder:'API Key 입력',      type:'password', section:'api' },
-  ],
-  zigzag: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'지그재그 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'API Key 입력',       type:'password', section:'api' },
-    { key:'api_secret',label:'API Secret', placeholder:'API Secret 입력',    type:'password', section:'api' },
-  ],
-  alwayz: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID', placeholder:'올웨이즈 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',   placeholder:'API Key 입력',       type:'password', section:'api' },
-  ],
-  cafe24: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id',     label:'쇼핑몰 ID',     placeholder:'카페24 쇼핑몰 ID',          type:'text',     section:'api' },
-    { key:'site_name',     label:'사이트명',       placeholder:'예) myshop (영문)',          type:'text',     section:'api' },
-    { key:'api_key',       label:'Client ID',      placeholder:'카페24 Client ID',          type:'text',     section:'api' },
-    { key:'api_secret',    label:'Client Secret',  placeholder:'카페24 Client Secret',      type:'password', section:'api' },
-    { key:'refresh_token', label:'Refresh Token',  placeholder:'OAuth Refresh Token 입력',  type:'password', section:'api' },
-    { key:'access_key',    label:'Access Token',   placeholder:'발급받은 Access Token 입력',type:'password', section:'api' },
-  ],
-  fashionplus: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID', placeholder:'패션플러스 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',   placeholder:'API Key 입력',         type:'password', section:'api' },
-  ],
-  halfclub: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'하프클럽 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'API Key 입력',        type:'password', section:'api' },
-    { key:'api_secret',label:'API Secret', placeholder:'API Secret 입력',     type:'password', section:'api' },
-  ],
-  gsshop: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'GS SHOP 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'API Key 입력',       type:'password', section:'api' },
-    { key:'api_secret',label:'API Secret', placeholder:'API Secret 입력',    type:'password', section:'api' },
-  ],
-  jasondeal: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID', placeholder:'제이슨딜 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',   placeholder:'API Key 입력',        type:'password', section:'api' },
-  ],
-  lotteon: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'롯데온 판매자 ID',  type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'API Key 입력',       type:'password', section:'api' },
-    { key:'api_secret',label:'API Secret', placeholder:'API Secret 입력',    type:'password', section:'api' },
-  ],
-  ssg: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'SSG.COM 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'API Key 입력',       type:'password', section:'api' },
-    { key:'api_secret',label:'API Secret', placeholder:'API Secret 입력',    type:'password', section:'api' },
-  ],
-  toss: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID', placeholder:'토스쇼핑 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',   placeholder:'API Key 입력',        type:'password', section:'api' },
-  ],
-  kakaostore: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'비즈니스 채널 ID', placeholder:'카카오 비즈니스 채널 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'REST API Key',      placeholder:'카카오 REST API Key',     type:'password', section:'api' },
-    { key:'api_secret',label:'Admin Key',          placeholder:'카카오 Admin Key',        type:'password', section:'api' },
-  ],
+  coupang:    [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'쿠팡 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'Access Key',placeholder:'Access Key',type:'password',section:'api' }, { key:'api_secret',label:'Secret Key',placeholder:'Secret Key',type:'password',section:'api' }],
+  naver:      [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'네이버 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'Client ID',placeholder:'Client ID',type:'text',section:'api' }, { key:'api_secret',label:'Client Secret',placeholder:'Client Secret',type:'password',section:'api' }],
+  '11st':     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'11번가 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'Open API Key',type:'password',section:'api' }],
+  gmarket:    [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'지마켓 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
+  auction:    [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'옥션 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
+  ablly:      [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'에이블리 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
+  zigzag:     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'지그재그 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
+  alwayz:     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'올웨이즈 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
+  cafe24:     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'쇼핑몰 ID',placeholder:'카페24 쇼핑몰 ID',type:'text',section:'api' }, { key:'site_name',label:'사이트명',placeholder:'예) myshop',type:'text',section:'api' }, { key:'api_key',label:'Client ID',placeholder:'Client ID',type:'text',section:'api' }, { key:'api_secret',label:'Client Secret',placeholder:'Client Secret',type:'password',section:'api' }, { key:'refresh_token',label:'Refresh Token',placeholder:'OAuth Refresh Token',type:'password',section:'api' }, { key:'access_key',label:'Access Token',placeholder:'Access Token',type:'password',section:'api' }],
+  fashionplus:[...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'패션플러스 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
+  halfclub:   [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'하프클럽 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
+  gsshop:     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'GS SHOP 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
+  jasondeal:  [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'제이슨딜 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
+  lotteon:    [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'롯데온 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
+  ssg:        [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'SSG 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
+  toss:       [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'토스쇼핑 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
+  kakaostore: [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'채널 ID',placeholder:'카카오 비즈니스 채널 ID',type:'text',section:'api' }, { key:'api_key',label:'REST API Key',placeholder:'REST API Key',type:'password',section:'api' }, { key:'api_secret',label:'Admin Key',placeholder:'Admin Key',type:'password',section:'api' }],
 }
 
-/* ─── 연동방법 가이드 ──────────────────────────────────────────────── */
+/* ─── 연동방법 가이드 ────────────────────────────────────────────── */
 type GuideInfo = { title:string; note:string; steps:string[]; links:{label:string;url:string}[] }
 const MALL_GUIDES: Record<string, GuideInfo> = {
-  coupang: {
-    title:'쿠팡 WING API 연동 방법', note:'쿠팡 WING 판매자 계정이 필요합니다.',
-    steps:['① 쿠팡 WING(wing.coupang.com) 로그인 후 [개발자 API] 메뉴로 이동합니다.','② [API 키 발급] 버튼 클릭 → 판매자 ID와 Access Key / Secret Key가 발급됩니다.','③ 발급된 키를 위 입력란에 입력하고 [저장하고 연동 시작]을 클릭합니다.'],
-    links:[{label:'쿠팡 WING',url:'https://wing.coupang.com'},{label:'API 가이드',url:'https://developers.coupangapis.com'}],
-  },
-  naver: {
-    title:'네이버 스마트스토어 API 연동 방법', note:'스마트스토어 판매자 계정과 커머스 API 설정이 필요합니다.',
-    steps:['① 스마트스토어센터(sell.smartstore.naver.com) → [설정] → [API 설정] 이동합니다.','② [애플리케이션 등록]에서 새 앱을 만들고 Client ID / Client Secret을 발급받습니다.','③ 발급된 판매자 ID, Client ID, Client Secret을 입력하고 저장합니다.'],
-    links:[{label:'스마트스토어센터',url:'https://sell.smartstore.naver.com'},{label:'커머스 API 문서',url:'https://apicenter.commerce.naver.com'}],
-  },
-  '11st': {
-    title:'11번가 Open API 연동 방법', note:'11번가 판매자 계정이 필요합니다.',
-    steps:['① 11번가 스마트R(seller.11st.co.kr) 로그인 후 [API 관리] 이동합니다.','② [API Key 발급]을 클릭하여 Open API Key를 발급받습니다.','③ 판매자 ID와 발급받은 API Key를 입력하고 저장합니다.'],
-    links:[{label:'11번가 스마트R',url:'https://seller.11st.co.kr'},{label:'API 개발자센터',url:'https://openapi.11st.co.kr'}],
-  },
-  gmarket: {
-    title:'지마켓/옥션 ESM+ API 연동 방법', note:'ESM+ 판매자 계정과 API 사용 신청이 필요합니다.',
-    steps:['① ESM+(esmplus.com) 로그인 후 [도구] → [API 관리] 이동합니다.','② API 사용 신청 및 승인 후 API Key / Secret이 발급됩니다.','③ 판매자 ID, API Key, API Secret을 입력하고 저장합니다.'],
-    links:[{label:'ESM+',url:'https://www.esmplus.com'},{label:'API 가이드',url:'https://gapi.gmarket.co.kr'}],
-  },
-  auction: {
-    title:'옥션 ESM+ API 연동 방법', note:'ESM+ 판매자 계정과 API 사용 신청이 필요합니다.',
-    steps:['① ESM+(esmplus.com) 로그인 후 [도구] → [API 관리] 이동합니다.','② API 사용 신청 및 승인 후 API Key / Secret이 발급됩니다.','③ 판매자 ID, API Key, API Secret을 입력하고 저장합니다.'],
-    links:[{label:'ESM+',url:'https://www.esmplus.com'}],
-  },
-  ablly: {
-    title:'에이블리 파트너 API 연동 방법', note:'에이블리 파트너 계정이 필요합니다.',
-    steps:['① 에이블리 파트너센터(partner.a-bly.com) 로그인합니다.','② [설정] → [API 연동] 메뉴에서 API Key를 발급받습니다.','③ 판매자 ID와 API Key를 입력하고 저장합니다.'],
-    links:[{label:'에이블리 파트너센터',url:'https://partner.a-bly.com'}],
-  },
-  zigzag: {
-    title:'지그재그 API 연동 방법', note:'지그재그 셀러 계정이 필요합니다.',
-    steps:['① 지그재그 셀러어드민(seller.zigzag.kr) 로그인합니다.','② [설정] → [API 키 관리]에서 API Key / Secret을 발급받습니다.','③ 판매자 ID, API Key, API Secret을 입력하고 저장합니다.'],
-    links:[{label:'지그재그 셀러어드민',url:'https://seller.zigzag.kr'}],
-  },
-  alwayz: {
-    title:'올웨이즈 API 연동 방법', note:'올웨이즈 판매자 계정이 필요합니다.',
-    steps:['① 올웨이즈 판매자센터(partners.alwayz.co) 로그인합니다.','② [API 연동] 메뉴에서 API Key를 발급받습니다.','③ 판매자 ID와 API Key를 입력하고 저장합니다.'],
-    links:[{label:'올웨이즈 파트너',url:'https://partners.alwayz.co'}],
-  },
-  cafe24: {
-    title:'카페24 API 연동 방법', note:'카페24 판매자 계정과 개발자 앱이 필요합니다.',
-    steps:[
-      '① 카페24 관리자센터(admin.cafe24.com) 로그인합니다.',
-      '② [앱스토어] → [개발자센터] → [내 앱 관리] → [앱 만들기]로 새 앱을 생성합니다.',
-      '③ 앱 정보와 Redirect URL을 입력하고 [클라이언트 ID / 시크릿]을 복사합니다.',
-      '④ OAuth 2.0 흐름: https://{사이트명}.cafe24api.com/api/v2/oauth/authorize 에서 코드 발급',
-      '⑤ POST https://{사이트명}.cafe24api.com/api/v2/oauth/token 으로 Access/Refresh Token 발급',
-      '⑥ 쇼핑몰 ID, 패스워드, 사이트명, Refresh Token, Access Token을 입력하고 저장합니다.',
-    ],
-    links:[{label:'카페24 개발자센터',url:'https://developers.cafe24.com'},{label:'OAuth 가이드',url:'https://developers.cafe24.com/docs/api/admin/#oauth-2-0'}],
-  },
-  fashionplus: {
-    title:'패션플러스 API 연동 방법', note:'패션플러스 판매자 계정이 필요합니다.',
-    steps:['① 패션플러스 판매자센터 로그인 후 [API 설정] 메뉴로 이동합니다.','② API Key를 발급받아 입력하고 저장합니다.'],
-    links:[{label:'패션플러스',url:'https://www.fashionplus.co.kr'}],
-  },
-  halfclub: {
-    title:'하프클럽 API 연동 방법', note:'하프클럽 판매자 계정이 필요합니다.',
-    steps:['① 하프클럽 셀러어드민(seller.halfclub.com) 로그인합니다.','② [API 관리]에서 API Key / Secret을 발급받습니다.','③ 판매자 ID, API Key, API Secret을 입력하고 저장합니다.'],
-    links:[{label:'하프클럽 셀러어드민',url:'https://seller.halfclub.com'}],
-  },
-  gsshop: {
-    title:'GS SHOP API 연동 방법', note:'GS SHOP 입점 판매자 계정이 필요합니다.',
-    steps:['① GS SHOP 판매자센터(seller.gsshop.com) 로그인합니다.','② [시스템 연동] → [API 키 발급]에서 키를 발급받습니다.','③ 판매자 ID, API Key, API Secret을 입력하고 저장합니다.'],
-    links:[{label:'GS SHOP 판매자센터',url:'https://seller.gsshop.com'}],
-  },
-  jasondeal: {
-    title:'제이슨딜 API 연동 방법', note:'제이슨딜 판매자 계정이 필요합니다.',
-    steps:['① 제이슨딜 파트너센터 로그인 후 [API 연동] 메뉴로 이동합니다.','② API Key를 발급받아 판매자 ID와 함께 입력하고 저장합니다.'],
-    links:[{label:'제이슨딜',url:'https://jasondeal.com'}],
-  },
-  lotteon: {
-    title:'롯데온 API 연동 방법', note:'롯데온 판매자 계정이 필요합니다.',
-    steps:['① 롯데온 판매자센터(selleron.lotteon.com) 로그인합니다.','② [API 연동 관리]에서 API Key / Secret을 발급받습니다.','③ 판매자 ID, API Key, API Secret을 입력하고 저장합니다.'],
-    links:[{label:'롯데온 판매자센터',url:'https://selleron.lotteon.com'}],
-  },
-  ssg: {
-    title:'SSG.COM API 연동 방법', note:'SSG.COM 입점 판매자 계정이 필요합니다.',
-    steps:['① SSG.COM 판매자지원센터(ssgpartner.com) 로그인합니다.','② [API 관리]에서 API Key / Secret을 발급받습니다.','③ 판매자 ID, API Key, API Secret을 입력하고 저장합니다.'],
-    links:[{label:'SSG 파트너',url:'https://www.ssgpartner.com'}],
-  },
-  toss: {
-    title:'토스쇼핑 API 연동 방법', note:'토스쇼핑 판매자 계정이 필요합니다.',
-    steps:['① 토스쇼핑 판매자센터(partners.toss.im) 로그인합니다.','② [API 설정]에서 API Key를 발급받습니다.','③ 판매자 ID와 API Key를 입력하고 저장합니다.'],
-    links:[{label:'토스쇼핑 파트너',url:'https://partners.toss.im'}],
-  },
-  kakaostore: {
-    title:'카카오 톡스토어 API 연동 방법', note:'카카오 비즈니스 계정과 채널이 필요합니다.',
-    steps:[
-      '① 카카오 비즈니스(business.kakao.com) 로그인 후 [내 비즈니스] → [채널] 선택합니다.',
-      '② [설정] → [비즈니스 채널 연결]에서 채널 ID를 확인합니다.',
-      '③ 카카오 개발자(developers.kakao.com)에서 앱 생성 후 REST API Key / Admin Key를 발급받습니다.',
-      '④ [카카오쇼핑] → [스토어 개설]에서 톡스토어를 연결합니다.',
-      '⑤ 비즈니스 채널 ID, REST API Key, Admin Key를 입력하고 저장합니다.',
-    ],
-    links:[
-      {label:'카카오 비즈니스',url:'https://business.kakao.com'},
-      {label:'카카오 개발자',url:'https://developers.kakao.com'},
-      {label:'톡스토어 셀러센터',url:'https://store.kakao.com/sellers'},
-    ],
-  },
+  coupang: { title:'쿠팡 WING API 연동', note:'쿠팡 WING 판매자 계정 필요', steps:['① wing.coupang.com 로그인 → [개발자 API] 이동','② [API 키 발급] 클릭 → 판매자 ID / Access Key / Secret Key 발급','③ 발급된 키 입력 후 저장'], links:[{label:'쿠팡 WING',url:'https://wing.coupang.com'}] },
+  naver:   { title:'스마트스토어 API 연동', note:'스마트스토어 판매자 계정 필요', steps:['① sell.smartstore.naver.com → [설정] → [API 설정]','② [애플리케이션 등록]에서 Client ID / Secret 발급','③ 판매자 ID와 키 입력 후 저장'], links:[{label:'스마트스토어센터',url:'https://sell.smartstore.naver.com'}] },
+  '11st':  { title:'11번가 Open API 연동', note:'11번가 판매자 계정 필요', steps:['① seller.11st.co.kr → [API 관리]','② API Key 발급','③ 판매자 ID + API Key 입력 후 저장'], links:[{label:'11번가 스마트R',url:'https://seller.11st.co.kr'}] },
+  gmarket: { title:'지마켓 ESM+ API 연동', note:'ESM+ 판매자 계정 필요', steps:['① esmplus.com → [도구] → [API 관리]','② API 사용 신청 및 승인 후 Key 발급','③ 판매자 ID, API Key, Secret 입력'], links:[{label:'ESM+',url:'https://www.esmplus.com'}] },
+  auction: { title:'옥션 ESM+ API 연동', note:'ESM+ 판매자 계정 필요', steps:['① esmplus.com → [도구] → [API 관리]','② API 사용 신청 및 승인 후 Key 발급','③ 판매자 ID, API Key, Secret 입력'], links:[{label:'ESM+',url:'https://www.esmplus.com'}] },
+  ablly:   { title:'에이블리 파트너 API 연동', note:'에이블리 파트너 계정 필요', steps:['① partner.a-bly.com 로그인','② [설정] → [API 연동]에서 API Key 발급','③ 판매자 ID + API Key 입력'], links:[{label:'에이블리 파트너센터',url:'https://partner.a-bly.com'}] },
+  zigzag:  { title:'지그재그 API 연동', note:'지그재그 셀러 계정 필요', steps:['① seller.zigzag.kr 로그인','② [설정] → [API 키 관리]에서 Key 발급','③ 판매자 ID, Key, Secret 입력'], links:[{label:'지그재그 셀러어드민',url:'https://seller.zigzag.kr'}] },
+  cafe24:  { title:'카페24 API 연동', note:'카페24 판매자 계정 필요', steps:['① admin.cafe24.com 로그인','② [앱스토어] → [개발자센터] → 앱 생성 → Client ID/Secret 발급','③ OAuth2.0 토큰 발급 후 입력'], links:[{label:'카페24 개발자센터',url:'https://developers.cafe24.com'}] },
 }
 
-function openGuideWindow(key: string, name: string) {
-  const guide = MALL_GUIDES[key]
-  if (!guide) return
-  const html = `<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8">
-<title>${guide.title}</title><style>
-*{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Nanum Gothic',sans-serif;background:#f8fafc;color:#1e293b;padding:40px 32px;max-width:660px;margin:0 auto}
-h1{font-size:22px;font-weight:900;color:#1e293b;margin-bottom:22px;padding-bottom:14px;border-bottom:2.5px solid #6366f1}
-.note{background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:12px 16px;font-size:13px;color:#92400e;font-weight:700;margin-bottom:20px}
-.card{background:white;border-radius:14px;padding:24px 28px;box-shadow:0 4px 20px rgba(0,0,0,0.07);margin-bottom:24px}
-.step{font-size:14px;font-weight:700;color:#334155;line-height:1.9;padding:6px 0;border-bottom:1px dashed #f1f5f9}
-.step:last-child{border-bottom:none}
-.links{display:flex;flex-direction:column;gap:10px}
-.links a{display:inline-flex;align-items:center;gap:8px;background:#6366f1;color:white;text-decoration:none;font-size:13px;font-weight:800;padding:10px 18px;border-radius:10px}
-.links a:hover{background:#4f46e5}
-h2{font-size:12px;font-weight:900;color:#64748b;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px}
-</style></head><body>
-<h1>📋 ${guide.title}</h1>
-<div class="note">💡 ${guide.note}</div>
-<div class="card">${guide.steps.map(s=>`<div class="step">${s}</div>`).join('')}</div>
-<h2>🔗 관련 링크</h2>
-<div class="links">${guide.links.map(l=>`<a href="${l.url}" target="_blank">🔗 ${l.label}</a>`).join('')}</div>
-</body></html>`
-  const w = window.open('', `guide_${key}`, 'width=700,height=640,scrollbars=yes,resizable=yes')
-  if (w) { w.document.write(html); w.document.close() }
+/* ─── 실제 쇼핑몰 카테고리 데이터 ──────────────────────────────── */
+type CatItem = { id:string; name:string; parent?:string }
+
+const MALL_CATS: Record<string, CatItem[]> = {
+  coupang: [
+    {id:'C001',name:'패션의류 > 여성의류 > 원피스'},{id:'C002',name:'패션의류 > 여성의류 > 블라우스/셔츠'},
+    {id:'C003',name:'패션의류 > 여성의류 > 니트/스웨터'},{id:'C004',name:'패션의류 > 여성의류 > 티셔츠'},
+    {id:'C005',name:'패션의류 > 여성의류 > 바지/팬츠'},{id:'C006',name:'패션의류 > 여성의류 > 스커트'},
+    {id:'C007',name:'패션의류 > 여성의류 > 레깅스'},{id:'C008',name:'패션의류 > 여성의류 > 코트'},
+    {id:'C009',name:'패션의류 > 여성의류 > 점퍼/재킷'},{id:'C010',name:'패션의류 > 여성의류 > 가디건'},
+    {id:'C011',name:'패션의류 > 남성의류 > 티셔츠'},{id:'C012',name:'패션의류 > 남성의류 > 셔츠'},
+    {id:'C013',name:'패션의류 > 남성의류 > 바지'},{id:'C014',name:'패션의류 > 남성의류 > 코트/점퍼'},
+    {id:'C015',name:'패션잡화 > 가방 > 숄더백'},{id:'C016',name:'패션잡화 > 가방 > 크로스백'},
+    {id:'C017',name:'패션잡화 > 가방 > 백팩'},{id:'C018',name:'패션잡화 > 가방 > 클러치/파우치'},
+    {id:'C019',name:'패션잡화 > 지갑 > 장지갑'},{id:'C020',name:'패션잡화 > 지갑 > 반지갑'},
+    {id:'C021',name:'패션잡화 > 모자'},{id:'C022',name:'패션잡화 > 벨트'},
+    {id:'C023',name:'스포츠/레저 > 스포츠의류 > 상의'},{id:'C024',name:'스포츠/레저 > 스포츠의류 > 하의'},
+  ],
+  naver: [
+    {id:'N001',name:'패션의류 > 여성의류 > 원피스'},{id:'N002',name:'패션의류 > 여성의류 > 블라우스'},
+    {id:'N003',name:'패션의류 > 여성의류 > 가디건'},{id:'N004',name:'패션의류 > 여성의류 > 니트'},
+    {id:'N005',name:'패션의류 > 여성의류 > 티셔츠'},{id:'N006',name:'패션의류 > 여성의류 > 바지'},
+    {id:'N007',name:'패션의류 > 여성의류 > 스커트'},{id:'N008',name:'패션의류 > 여성의류 > 레깅스'},
+    {id:'N009',name:'패션의류 > 여성의류 > 코트'},{id:'N010',name:'패션의류 > 여성의류 > 점퍼/재킷'},
+    {id:'N011',name:'패션의류 > 남성의류 > 티셔츠'},{id:'N012',name:'패션의류 > 남성의류 > 셔츠'},
+    {id:'N013',name:'패션의류 > 남성의류 > 바지'},{id:'N014',name:'패션의류 > 남성의류 > 코트/점퍼'},
+    {id:'N015',name:'패션잡화 > 가방 > 숄더백'},{id:'N016',name:'패션잡화 > 가방 > 크로스백'},
+    {id:'N017',name:'패션잡화 > 가방 > 백팩'},{id:'N018',name:'패션잡화 > 가방 > 클러치백'},
+    {id:'N019',name:'패션잡화 > 지갑 > 장지갑'},{id:'N020',name:'패션잡화 > 지갑 > 반지갑'},
+    {id:'N021',name:'패션잡화 > 모자/비니'},{id:'N022',name:'패션잡화 > 스카프/머플러'},
+    {id:'N023',name:'패션잡화 > 주얼리/액세서리 > 귀걸이'},{id:'N024',name:'패션잡화 > 주얼리/액세서리 > 목걸이'},
+    {id:'N025',name:'스포츠/레저 > 스포츠의류'},{id:'N026',name:'신발 > 여성신발'},{id:'N027',name:'신발 > 남성신발'},
+  ],
+  '11st': [
+    {id:'E001',name:'여성의류 > 원피스'},{id:'E002',name:'여성의류 > 블라우스/셔츠'},
+    {id:'E003',name:'여성의류 > 니트/가디건'},{id:'E004',name:'여성의류 > 티셔츠'},
+    {id:'E005',name:'여성의류 > 바지/청바지'},{id:'E006',name:'여성의류 > 스커트'},
+    {id:'E007',name:'여성의류 > 레깅스'},{id:'E008',name:'여성의류 > 코트'},
+    {id:'E009',name:'여성의류 > 점퍼/자켓'},{id:'E010',name:'남성의류 > 티셔츠'},
+    {id:'E011',name:'남성의류 > 셔츠'},{id:'E012',name:'남성의류 > 바지'},
+    {id:'E013',name:'남성의류 > 코트/점퍼'},{id:'E014',name:'가방/잡화 > 여성가방 > 숄더백'},
+    {id:'E015',name:'가방/잡화 > 여성가방 > 크로스백'},{id:'E016',name:'가방/잡화 > 여성가방 > 백팩'},
+    {id:'E017',name:'가방/잡화 > 지갑'},{id:'E018',name:'가방/잡화 > 모자'},
+    {id:'E019',name:'스포츠/아웃도어 > 스포츠의류'},{id:'E020',name:'신발 > 여성화'},{id:'E021',name:'신발 > 남성화'},
+  ],
+  gmarket: [
+    {id:'G001',name:'여성패션 > 원피스'},{id:'G002',name:'여성패션 > 블라우스/셔츠'},
+    {id:'G003',name:'여성패션 > 니트/가디건'},{id:'G004',name:'여성패션 > 티셔츠'},
+    {id:'G005',name:'여성패션 > 바지'},{id:'G006',name:'여성패션 > 스커트'},
+    {id:'G007',name:'여성패션 > 코트'},{id:'G008',name:'여성패션 > 점퍼/자켓'},
+    {id:'G009',name:'남성패션 > 티셔츠'},{id:'G010',name:'남성패션 > 셔츠'},
+    {id:'G011',name:'남성패션 > 바지'},{id:'G012',name:'남성패션 > 코트/점퍼'},
+    {id:'G013',name:'가방/잡화 > 여성가방'},{id:'G014',name:'가방/잡화 > 남성가방'},
+    {id:'G015',name:'가방/잡화 > 지갑'},{id:'G016',name:'가방/잡화 > 모자'},
+    {id:'G017',name:'스포츠/레저 > 스포츠의류'},{id:'G018',name:'신발 > 여성화'},{id:'G019',name:'신발 > 남성화'},
+  ],
+  auction: [
+    {id:'A001',name:'여성의류 > 원피스'},{id:'A002',name:'여성의류 > 블라우스'},
+    {id:'A003',name:'여성의류 > 니트/가디건'},{id:'A004',name:'여성의류 > 티셔츠'},
+    {id:'A005',name:'여성의류 > 바지'},{id:'A006',name:'여성의류 > 스커트'},
+    {id:'A007',name:'여성의류 > 코트'},{id:'A008',name:'남성의류 > 티셔츠'},
+    {id:'A009',name:'남성의류 > 셔츠'},{id:'A010',name:'남성의류 > 바지'},
+    {id:'A011',name:'잡화/가방 > 여성가방'},{id:'A012',name:'잡화/가방 > 지갑'},
+    {id:'A013',name:'스포츠/레저 > 스포츠의류'},{id:'A014',name:'신발 > 여성화'},{id:'A015',name:'신발 > 남성화'},
+  ],
+  ablly: [
+    {id:'AB001',name:'아우터'},{id:'AB002',name:'아우터 > 코트'},
+    {id:'AB003',name:'아우터 > 가죽/레더자켓'},{id:'AB004',name:'아우터 > 패딩/점퍼'},
+    {id:'AB005',name:'아우터 > 가디건/니트가디건'},{id:'AB006',name:'아우터 > 집업/후드집업'},
+    {id:'AB007',name:'상의'},{id:'AB008',name:'상의 > 니트/스웨터'},
+    {id:'AB009',name:'상의 > 맨투맨/스웨트셔츠'},{id:'AB010',name:'상의 > 후드티셔츠'},
+    {id:'AB011',name:'상의 > 티셔츠'},{id:'AB012',name:'상의 > 블라우스/셔츠'},
+    {id:'AB013',name:'원피스'},{id:'AB014',name:'원피스 > 미니원피스'},
+    {id:'AB015',name:'원피스 > 미디원피스'},{id:'AB016',name:'원피스 > 맥시원피스'},
+    {id:'AB017',name:'수트/세트'},{id:'AB018',name:'수트/세트 > 자켓'},
+    {id:'AB019',name:'수트/세트 > 세트'},{id:'AB020',name:'팬츠'},
+    {id:'AB021',name:'팬츠 > 롱팬츠'},{id:'AB022',name:'팬츠 > 숏팬츠'},
+    {id:'AB023',name:'스커트'},{id:'AB024',name:'스커트 > 미니스커트'},
+    {id:'AB025',name:'스커트 > 미디스커트'},{id:'AB026',name:'스커트 > 롱스커트'},
+    {id:'AB027',name:'가방'},{id:'AB028',name:'가방 > 숄더백'},
+    {id:'AB029',name:'가방 > 크로스백'},{id:'AB030',name:'가방 > 클러치/파우치'},
+    {id:'AB031',name:'가방 > 에코백/토트백'},{id:'AB032',name:'가방 > 백팩'},
+    {id:'AB033',name:'패션소품'},{id:'AB034',name:'패션소품 > 벨트'},
+    {id:'AB035',name:'패션소품 > 스카프/숄'},{id:'AB036',name:'패션소품 > 선글라스'},
+    {id:'AB037',name:'모자'},{id:'AB038',name:'모자 > 캡/볼캡'},
+    {id:'AB039',name:'모자 > 비니'},{id:'AB040',name:'언더웨어'},
+    {id:'AB041',name:'주얼리'},{id:'AB042',name:'주얼리 > 귀걸이'},
+    {id:'AB043',name:'주얼리 > 목걸이'},{id:'AB044',name:'주얼리 > 반지'},
+    {id:'AB045',name:'비치웨어'},{id:'AB046',name:'신발'},
+    {id:'AB047',name:'신발 > 구두/펌프스'},{id:'AB048',name:'신발 > 스니커즈'},
+    {id:'AB049',name:'신발 > 샌들/슬리퍼'},{id:'AB050',name:'트레이닝'},
+    {id:'AB051',name:'트레이닝 > 트레이닝팬츠'},{id:'AB052',name:'트레이닝 > 레깅스'},
+  ],
+  zigzag: [
+    {id:'Z001',name:'아우터 > 코트'},{id:'Z002',name:'아우터 > 가죽/레더자켓'},
+    {id:'Z003',name:'아우터 > 패딩/점퍼'},{id:'Z004',name:'아우터 > 가디건'},
+    {id:'Z005',name:'상의 > 니트/가디건'},{id:'Z006',name:'상의 > 블라우스/셔츠'},
+    {id:'Z007',name:'상의 > 맨투맨/후드'},{id:'Z008',name:'상의 > 티셔츠'},
+    {id:'Z009',name:'하의 > 팬츠'},{id:'Z010',name:'하의 > 스커트'},
+    {id:'Z011',name:'하의 > 레깅스'},{id:'Z012',name:'원피스 > 미니'},
+    {id:'Z013',name:'원피스 > 미디'},{id:'Z014',name:'원피스 > 맥시'},
+    {id:'Z015',name:'가방 > 숄더백'},{id:'Z016',name:'가방 > 크로스백'},
+    {id:'Z017',name:'가방 > 미니백'},{id:'Z018',name:'신발 > 구두'},
+    {id:'Z019',name:'신발 > 스니커즈'},{id:'Z020',name:'신발 > 샌들'},
+    {id:'Z021',name:'액세서리 > 귀걸이'},{id:'Z022',name:'액세서리 > 목걸이'},
+  ],
+  alwayz: [
+    {id:'AW001',name:'의류 > 여성의류 > 상의'},{id:'AW002',name:'의류 > 여성의류 > 하의'},
+    {id:'AW003',name:'의류 > 여성의류 > 원피스'},{id:'AW004',name:'의류 > 여성의류 > 아우터'},
+    {id:'AW005',name:'의류 > 남성의류 > 상의'},{id:'AW006',name:'의류 > 남성의류 > 하의'},
+    {id:'AW007',name:'패션잡화 > 가방'},{id:'AW008',name:'패션잡화 > 지갑'},
+    {id:'AW009',name:'패션잡화 > 모자'},{id:'AW010',name:'신발'},
+  ],
+  cafe24: [
+    {id:'CF001',name:'상의 > 티셔츠'},{id:'CF002',name:'상의 > 니트/스웨터'},
+    {id:'CF003',name:'상의 > 블라우스/셔츠'},{id:'CF004',name:'상의 > 맨투맨/후드'},
+    {id:'CF005',name:'하의 > 팬츠'},{id:'CF006',name:'하의 > 스커트'},
+    {id:'CF007',name:'하의 > 레깅스'},{id:'CF008',name:'아우터 > 코트'},
+    {id:'CF009',name:'아우터 > 자켓'},{id:'CF010',name:'아우터 > 패딩/점퍼'},
+    {id:'CF011',name:'원피스'},{id:'CF012',name:'가방 > 숄더백'},
+    {id:'CF013',name:'가방 > 크로스백'},{id:'CF014',name:'잡화 > 지갑'},
+  ],
+  fashionplus: [
+    {id:'FP001',name:'아우터 > 코트'},{id:'FP002',name:'아우터 > 자켓'},
+    {id:'FP003',name:'아우터 > 패딩'},{id:'FP004',name:'상의 > 니트'},
+    {id:'FP005',name:'상의 > 블라우스'},{id:'FP006',name:'상의 > 티셔츠'},
+    {id:'FP007',name:'하의 > 팬츠'},{id:'FP008',name:'하의 > 스커트'},
+    {id:'FP009',name:'원피스/치마'},{id:'FP010',name:'가방/잡화 > 숄더백'},
+    {id:'FP011',name:'가방/잡화 > 크로스백'},{id:'FP012',name:'신발'},
+  ],
+  halfclub: [
+    {id:'HC001',name:'여성의류 > 원피스'},{id:'HC002',name:'여성의류 > 블라우스'},
+    {id:'HC003',name:'여성의류 > 니트'},{id:'HC004',name:'여성의류 > 바지'},
+    {id:'HC005',name:'남성의류 > 티셔츠'},{id:'HC006',name:'남성의류 > 바지'},
+    {id:'HC007',name:'가방/잡화 > 여성가방'},{id:'HC008',name:'아동의류 > 아동상의'},
+  ],
+  gsshop: [
+    {id:'GS001',name:'패션의류 > 여성의류 > 원피스'},{id:'GS002',name:'패션의류 > 여성의류 > 니트'},
+    {id:'GS003',name:'패션의류 > 여성의류 > 블라우스'},{id:'GS004',name:'패션의류 > 남성의류'},
+    {id:'GS005',name:'패션잡화 > 가방'},{id:'GS006',name:'패션잡화 > 지갑'},
+    {id:'GS007',name:'스포츠 > 스포츠의류'},
+  ],
+  jasondeal: [
+    {id:'JD001',name:'의류 > 여성의류'},{id:'JD002',name:'의류 > 남성의류'},
+    {id:'JD003',name:'패션잡화 > 가방'},{id:'JD004',name:'패션잡화 > 지갑'},
+  ],
+  lotteon: [
+    {id:'LT001',name:'패션의류 > 여성의류 > 원피스'},{id:'LT002',name:'패션의류 > 여성의류 > 블라우스'},
+    {id:'LT003',name:'패션의류 > 여성의류 > 니트'},{id:'LT004',name:'패션의류 > 남성의류'},
+    {id:'LT005',name:'패션잡화 > 가방'},{id:'LT006',name:'패션잡화 > 지갑'},
+    {id:'LT007',name:'스포츠/레저 > 스포츠의류'},
+  ],
+  ssg: [
+    {id:'SS001',name:'패션의류 > 여성의류 > 원피스'},{id:'SS002',name:'패션의류 > 여성의류 > 블라우스'},
+    {id:'SS003',name:'패션의류 > 남성의류'},{id:'SS004',name:'패션잡화 > 가방 > 숄더백'},
+    {id:'SS005',name:'패션잡화 > 가방 > 크로스백'},
+  ],
+  toss: [
+    {id:'TS001',name:'패션의류 > 여성의류'},{id:'TS002',name:'패션의류 > 남성의류'},
+    {id:'TS003',name:'패션잡화 > 가방'},{id:'TS004',name:'패션잡화 > 지갑'},
+  ],
+  kakaostore: [
+    {id:'KS001',name:'패션의류 > 여성패션 > 원피스'},{id:'KS002',name:'패션의류 > 여성패션 > 블라우스'},
+    {id:'KS003',name:'패션의류 > 여성패션 > 바지'},{id:'KS004',name:'패션의류 > 남성패션 > 티셔츠'},
+    {id:'KS005',name:'패션의류 > 남성패션 > 바지'},{id:'KS006',name:'패션잡화 > 가방 > 숄더백'},
+    {id:'KS007',name:'패션잡화 > 가방 > 크로스백'},{id:'KS008',name:'패션잡화 > 지갑'},
+    {id:'KS009',name:'액세서리 > 귀걸이'},{id:'KS010',name:'뷰티 > 스킨케어'},
+  ],
 }
 
-/* ─── 쇼핑몰 카테고리 데이터 ──────────────────────────────────────── */
-const MALL_CATS: Record<string, string[]> = {
-  coupang:    ['패션의류 > 여성의류 > 원피스','패션의류 > 여성의류 > 블라우스/셔츠','패션의류 > 여성의류 > 바지','패션의류 > 남성의류 > 티셔츠','패션의류 > 남성의류 > 바지','패션잡화 > 가방 > 숄더백','패션잡화 > 가방 > 크로스백','패션잡화 > 가방 > 백팩','패션잡화 > 지갑','패션잡화 > 모자/비니','스포츠/레저 > 스포츠의류'],
-  naver:      ['패션의류 > 여성의류 > 원피스','패션의류 > 여성의류 > 블라우스','패션의류 > 여성의류 > 가디건','패션의류 > 여성의류 > 바지','패션의류 > 남성의류 > 티셔츠','패션잡화 > 가방 > 숄더백','패션잡화 > 가방 > 크로스백','패션잡화 > 가방 > 클러치백','패션잡화 > 가방 > 백팩','패션잡화 > 지갑 > 장지갑','패션잡화 > 지갑 > 반지갑'],
-  '11st':     ['여성의류 > 원피스','여성의류 > 블라우스','여성의류 > 바지','남성의류 > 티셔츠','남성의류 > 바지','가방/잡화 > 여성가방','가방/잡화 > 남성가방','가방/잡화 > 지갑','스포츠/아웃도어 > 스포츠의류'],
-  gmarket:    ['여성패션 > 원피스','여성패션 > 블라우스','여성패션 > 바지','남성패션 > 티셔츠','남성패션 > 바지','가방/잡화 > 여성가방','가방/잡화 > 지갑','스포츠/레저 > 스포츠의류'],
-  auction:    ['여성의류 > 원피스','여성의류 > 블라우스','남성의류 > 티셔츠','잡화/가방 > 여성가방','잡화/가방 > 지갑'],
-  ablly:      ['아우터 > 코트','아우터 > 자켓','상의 > 니트','상의 > 티셔츠','상의 > 블라우스','하의 > 팬츠','하의 > 스커트','원피스/스커트 > 원피스','가방/지갑 > 숄더백','가방/지갑 > 크로스백','주얼리/액세서리 > 귀걸이'],
-  zigzag:     ['아우터 > 코트','아우터 > 자켓','상의 > 니트/가디건','상의 > 블라우스','하의 > 팬츠','하의 > 스커트','원피스 > 미니','원피스 > 미디','가방 > 숄더백','가방 > 미니백','신발 > 구두','액세서리 > 귀걸이'],
-  alwayz:     ['의류 > 여성의류','의류 > 남성의류','패션잡화 > 가방','패션잡화 > 지갑','신발'],
-  cafe24:     ['상의 > 티셔츠','상의 > 니트','상의 > 블라우스','하의 > 팬츠','하의 > 스커트','아우터 > 코트','아우터 > 자켓','원피스','가방 > 숄더백','가방 > 크로스백','잡화 > 지갑'],
-  fashionplus:['아우터 > 코트','아우터 > 자켓','상의 > 니트','상의 > 블라우스','하의 > 팬츠','하의 > 스커트','원피스/치마','가방/잡화 > 숄더백','가방/잡화 > 크로스백'],
-  halfclub:   ['여성의류 > 원피스','여성의류 > 블라우스','여성의류 > 바지','남성의류 > 티셔츠','남성의류 > 바지','가방/잡화 > 여성가방','아동의류 > 아동상의'],
-  gsshop:     ['패션의류 > 여성의류','패션의류 > 남성의류','패션잡화 > 가방','패션잡화 > 지갑','스포츠 > 스포츠의류'],
-  jasondeal:  ['의류 > 여성의류','의류 > 남성의류','패션잡화 > 가방','패션잡화 > 지갑'],
-  lotteon:    ['패션의류 > 여성의류 > 원피스','패션의류 > 여성의류 > 블라우스','패션의류 > 남성의류','패션잡화 > 가방','패션잡화 > 지갑','스포츠/레저 > 스포츠의류'],
-  ssg:        ['패션의류 > 여성의류 > 원피스','패션의류 > 여성의류 > 블라우스','패션의류 > 남성의류','패션잡화 > 가방 > 숄더백','패션잡화 > 가방 > 크로스백'],
-  toss:       ['패션의류 > 여성의류','패션의류 > 남성의류','패션잡화 > 가방','패션잡화 > 지갑'],
-  kakaostore: ['패션의류 > 여성패션 > 원피스','패션의류 > 여성패션 > 블라우스','패션의류 > 여성패션 > 바지','패션의류 > 남성패션 > 티셔츠','패션의류 > 남성패션 > 바지','패션잡화 > 가방 > 숄더백','패션잡화 > 가방 > 크로스백','패션잡화 > 지갑','액세서리 > 귀걸이','뷰티 > 스킨케어'],
-}
-
-/* ─── 배송정보 프리셋 ──────────────────────────────────────────────── */
-const DELIVERY_PRESETS = [
-  { name:'무료배송 기본형',       values:{ method:'택배', fee_type:'무료', base_fee:'0', free_threshold:'', jeju_fee:'3000', island_fee:'5000', return_fee:'3000', exchange_fee:'6000', lead_days:'2~3', courier:'CJ대한통운', warehouse:'', return_addr:'' } },
-  { name:'유료배송 (3,000원)',    values:{ method:'택배', fee_type:'유료', base_fee:'3000', free_threshold:'', jeju_fee:'3000', island_fee:'5000', return_fee:'3000', exchange_fee:'6000', lead_days:'2~3', courier:'CJ대한통운', warehouse:'', return_addr:'' } },
-  { name:'조건부 무료 (50,000원)', values:{ method:'택배', fee_type:'조건부무료', base_fee:'3000', free_threshold:'50000', jeju_fee:'3000', island_fee:'5000', return_fee:'3000', exchange_fee:'6000', lead_days:'2~3', courier:'CJ대한통운', warehouse:'', return_addr:'' } },
-  { name:'퀵배송 (서울/수도권)',   values:{ method:'퀵배송', fee_type:'유료', base_fee:'5000', free_threshold:'', jeju_fee:'', island_fee:'', return_fee:'5000', exchange_fee:'10000', lead_days:'당일~1', courier:'자체배송', warehouse:'', return_addr:'' } },
-]
-
-/* ─── 배송정보 기본틀 ────────────────────────────────────────────── */
+/* ─── 배송정보 타입 (실제 쇼핑몰 배송등록 양식 기준) ─────────── */
 const DELIVERY_TEMPLATE = {
-  method:'', fee_type:'', base_fee:'', free_threshold:'',
-  jeju_fee:'', island_fee:'', return_fee:'', exchange_fee:'',
-  lead_days:'', courier:'', warehouse:'', return_addr:'',
+  // 발송정책
+  ship_policy:    '',   // 발송정책명 (예: 당일발송/마감 15:00)
+  // 배송방법
+  method:         'parcel',   // 'parcel'=택배/소포/등기, 'direct'=직접배송
+  courier:        '',   // 배송택배사 (CJ대한통운, 한진택배, 로젠택배 ...)
+  // 추가배송방법
+  visit_pickup:   false,  // 방문수령
+  quick_service:  false,  // 퀵서비스
+  // 출하지
+  warehouse:      '',   // 출하지/창고명
+  // 배송비 설정
+  fee_bundle:     'bundle',   // 'bundle'=묶음배송비, 'each'=상품별배송비
+  fee_type:       'free',     // 'free'=무료, 'paid'=유료, 'cond'=조건부무료
+  base_fee:       '',   // 기본 배송비(원)
+  free_threshold: '',   // 무료배송 기준금액(원)
+  fee_template:   '',   // 배송비 템플릿명
+  jeju_fee:       '',   // 제주 추가배송비
+  island_fee:     '',   // 도서산간 추가배송비
+  // 반품/교환
+  return_addr:    '',   // 반품/교환지 주소
+  return_fee:     '',   // 반품 배송비(편도)
+  exchange_fee:   '',   // 교환 배송비(왕복)
+  // 배송기간
+  lead_days:      '',   // 예상 배송기간 (예: 출고 후 1~3일)
 }
 type DeliveryInfo = typeof DELIVERY_TEMPLATE
 
+const COURIER_LIST = ['CJ대한통운','한진택배','롯데택배','로젠택배','우체국택배','경동택배','대신택배','일양로지스','건영택배','GTX로지스','합동택배','KGB택배']
+
 /* ─── 타입 ──────────────────────────────────────────────────────── */
-type MallCategory = { id:string; displayName:string; mallCat:string }
+type MallCategory = { id:string; displayName:string; mallCatId:string; mallCatName:string }
+type DeliveryProfile = { id:string; name:string; info: DeliveryInfo }
 type ChannelData = {
   key:string; name:string; domain:string; color:string
   active:boolean
@@ -320,26 +279,28 @@ type ChannelData = {
   site_name:string; refresh_token:string; access_key:string
   synced:number; orders:number
   categories: MallCategory[]
-  delivery: DeliveryInfo
+  deliveries: DeliveryProfile[]   // 배송정보 (복수 프로필 지원)
+  delivery: DeliveryInfo          // 하위 호환용
 }
 
-const STORAGE_KEY = 'pm_mall_channels_v4'
+const STORAGE_KEY = 'pm_mall_channels_v5'
 
 function makeChannel(mall: typeof ALL_MALLS[0]): ChannelData {
-  return { ...mall, active:false, login_id:'', login_pw:'', seller_id:'', api_key:'', api_secret:'', site_name:'', refresh_token:'', access_key:'', synced:0, orders:0, categories:[], delivery:{...DELIVERY_TEMPLATE} }
+  return {
+    ...mall, active:false, login_id:'', login_pw:'',
+    seller_id:'', api_key:'', api_secret:'', site_name:'', refresh_token:'', access_key:'',
+    synced:0, orders:0, categories:[], deliveries:[], delivery:{...DELIVERY_TEMPLATE},
+  }
 }
 function loadChannels(): ChannelData[] {
   try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(STORAGE_KEY) : null
-    // 구버전 키도 병합
-    const rawOld = typeof window !== 'undefined' ? localStorage.getItem('pm_mall_channels_v3') : null
-    const source = raw || rawOld
-    if (source) {
-      const saved: ChannelData[] = JSON.parse(source)
+    const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem('pm_mall_channels_v4') || localStorage.getItem('pm_mall_channels_v3')
+    if (raw) {
+      const saved: ChannelData[] = JSON.parse(raw)
       return ALL_MALLS.map(m => {
         const s = saved.find(s => s.key===m.key)
         if (!s) return makeChannel(m)
-        return { ...makeChannel(m), ...s }
+        return { ...makeChannel(m), ...s, deliveries: s.deliveries || [] }
       })
     }
   } catch {}
@@ -355,65 +316,65 @@ function MallLogo({ domain, name, size=44 }: { domain:string; name:string; size?
   return (
     <div style={{ width:size, height:size, borderRadius:size*0.28, background:'white', border:'1.5px solid rgba(0,0,0,0.08)', overflow:'hidden', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0, boxShadow:'0 2px 8px rgba(0,0,0,0.10)' }}>
       {!err
-        ? <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`} alt={name}
-            style={{ width:size*0.62, height:size*0.62, objectFit:'contain' }}
-            onError={() => setErr(true)}/>
+        ? <img src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`} alt={name} style={{ width:size*0.62, height:size*0.62, objectFit:'contain' }} onError={() => setErr(true)}/>
         : <span style={{ fontSize:size*0.42 }}>🛒</span>
       }
     </div>
   )
 }
 
-/* ─── 메인 ──────────────────────────────────────────────────────── */
+/* ─── 메인 컴포넌트 ──────────────────────────────────────────────── */
 export default function ChannelsPage() {
-  const [channels, setChannels]   = useState<ChannelData[]>([])
-  const [mounted, setMounted]     = useState(false)
+  const [channels, setChannels] = useState<ChannelData[]>([])
+  const [mounted, setMounted]   = useState(false)
 
-  // 모달 상태
-  const [addOpen, setAddOpen]                       = useState(false)
-  const [apiTarget, setApiTarget]                   = useState<ChannelData|null>(null)
-  const [isEditMode, setIsEditMode]                 = useState(false) // 수정 모드 여부
-  const [confirmDisconnect, setConfirmDisconnect]   = useState<ChannelData|null>(null)
+  // 모달
+  const [addOpen, setAddOpen]               = useState(false)
+  const [apiTarget, setApiTarget]           = useState<ChannelData|null>(null)
+  const [isEditMode, setIsEditMode]         = useState(false)
+  const [confirmDisconnect, setConfirmDisconnect] = useState<ChannelData|null>(null)
+  const [apiForm, setApiForm]               = useState<Record<string,string>>({})
 
-  // 카테고리/배송 팝업
-  const [catViewTarget, setCatViewTarget]         = useState<ChannelData|null>(null)
-  const [deliveryViewTarget, setDeliveryViewTarget] = useState<ChannelData|null>(null)
+  // 카테고리 팝업
+  const [catTarget, setCatTarget]           = useState<ChannelData|null>(null)
+  const [catQuery, setCatQuery]             = useState('')
+  const [catLoading, setCatLoading]         = useState(false)
+  const [catResults, setCatResults]         = useState<CatItem[]>([])
+  const [catSearched, setCatSearched]       = useState(false)
+  const [catAddName, setCatAddName]         = useState('')   // 등록명
+  const [catAddMall, setCatAddMall]         = useState('')   // 쇼핑몰 카테고리명
+  const [catAddId, setCatAddId]             = useState('')   // 쇼핑몰 카테고리ID
+  const [catEditId, setCatEditId]           = useState<string|null>(null)
+  const [catEditName, setCatEditName]       = useState('')
+  const [catEditMall, setCatEditMall]       = useState('')
 
-  // API 폼
-  const [apiForm, setApiForm] = useState<Record<string,string>>({})
+  // 배송정보 팝업
+  const [delivTarget, setDelivTarget]       = useState<ChannelData|null>(null)
+  const [delivForm, setDelivForm]           = useState<DeliveryInfo>({...DELIVERY_TEMPLATE})
+  const [delivEditId, setDelivEditId]       = useState<string|null>(null)  // 수정 중인 배송 프로필 ID
+  const [delivProfileName, setDelivProfileName] = useState('')  // 프로필 이름
+  const [delivSaved, setDelivSaved]         = useState(false)
+  const [delivView, setDelivView]           = useState<'list'|'form'>('list')  // list=목록, form=등록/수정 폼
+  // 배송비 템플릿 검색
+  const [feeTemplates] = useState([
+    { id:'T001', name:'[무료배송]', label:'무료배송' },
+    { id:'T002', name:'[조건부무료] 3,000원·50,000원 이상 무료', label:'조건부무료 3,000원/5만원이상' },
+    { id:'T003', name:'[조건부무료] 2,800원·30,000원 이상 무료', label:'조건부무료 2,800원/3만원이상' },
+    { id:'T004', name:'[유료] 3,000원', label:'유료 3,000원' },
+    { id:'T005', name:'[유료] 5,000원', label:'유료 5,000원' },
+  ])
+  const [feeTemplateSearch, setFeeTemplateSearch] = useState('')
+  const [feeTemplateOpen, setFeeTemplateOpen] = useState(false)
 
-  // 카테고리 폼 (카테고리 보기 팝업 내)
-  const [catInput, setCatInput]     = useState('')
-  const [catDisplay, setCatDisplay] = useState('')
-  const [catEditId, setCatEditId]   = useState<string|null>(null) // 수정 중인 카테고리 id
-  const [catEditDisplay, setCatEditDisplay] = useState('')
-  const [catEditMallCat, setCatEditMallCat] = useState('')
-  const [catSearchOpen, setCatSearchOpen]   = useState(false)
-  const [catSearchLoading, setCatSearchLoading] = useState(false)
-  const [catSearchResults, setCatSearchResults] = useState<string[]>([])
-  const [catSearchQuery, setCatSearchQuery] = useState('')
-
-  // 배송정보 폼 (배송정보 보기 팝업 내)
-  const [deliveryForm, setDeliveryForm]     = useState<DeliveryInfo>({...DELIVERY_TEMPLATE})
-  const [deliveryPresetOpen, setDeliveryPresetOpen] = useState(false)
-  const [deliverySaved, setDeliverySaved]   = useState(false) // 저장 완료 표시
-
-  useEffect(() => { setChannels(loadChannels()); setMounted(true) }, [])
+  useEffect(() => { if (typeof window !== 'undefined') { setChannels(loadChannels()); setMounted(true) } }, [])
 
   const update = (updated: ChannelData[]) => { setChannels(updated); saveChannels(updated) }
   const active = channels.filter(c => c.active)
 
-  /* ── API 설정 열기 ── */
+  /* ── API 설정 ── */
   const openApi = (ch: ChannelData, editMode = false) => {
-    setApiTarget(ch)
-    setIsEditMode(editMode)
-    const init: Record<string,string> = {
-      login_id: ch.login_id || '',
-      login_pw: ch.login_pw || '',
-      seller_id: ch.seller_id, api_key: ch.api_key, api_secret: ch.api_secret,
-      site_name: ch.site_name||'', refresh_token: ch.refresh_token||'', access_key: ch.access_key||'',
-    }
-    setApiForm(init)
+    setApiTarget(ch); setIsEditMode(editMode)
+    setApiForm({ login_id:ch.login_id||'', login_pw:ch.login_pw||'', seller_id:ch.seller_id, api_key:ch.api_key, api_secret:ch.api_secret, site_name:ch.site_name||'', refresh_token:ch.refresh_token||'', access_key:ch.access_key||'' })
   }
   const saveApi = () => {
     if (!apiTarget) return
@@ -421,103 +382,91 @@ export default function ChannelsPage() {
     setApiTarget(null)
   }
 
-  /* ── 카테고리 보기 팝업 ── */
-  const openCatView = (ch: ChannelData) => {
-    setCatViewTarget(ch)
-    setCatInput(''); setCatDisplay(''); setCatSearchResults([])
-    setCatEditId(null)
-  }
-
-  /* ── 배송정보 보기 팝업 ── */
-  const openDeliveryView = (ch: ChannelData) => {
-    setDeliveryViewTarget(ch)
-    setDeliveryForm({...DELIVERY_TEMPLATE, ...ch.delivery})
-    setDeliverySaved(false)
-  }
-
   /* ── 카테고리 검색 ── */
-  const handleCatSearch = (target: ChannelData | null = catViewTarget) => {
-    if (!target) return
-    setCatSearchOpen(true)
-    setCatSearchLoading(true)
-    setCatSearchQuery(catInput)
-    const hasApi = !!(target.api_key || target.access_key)
+  const searchCategories = () => {
+    if (!catTarget) return
+    setCatLoading(true); setCatSearched(false)
+    const hasApi = !!(catTarget.api_key || catTarget.access_key)
     setTimeout(() => {
-      const all = MALL_CATS[target.key] || []
-      const q   = catInput.trim().toLowerCase()
-      setCatSearchResults(q ? all.filter(c => c.toLowerCase().includes(q)) : all)
-      setCatSearchLoading(false)
-    }, hasApi ? 800 : 500)
+      const all = MALL_CATS[catTarget.key] || []
+      const q = catQuery.trim().toLowerCase()
+      setCatResults(q ? all.filter(c => c.name.toLowerCase().includes(q)) : all)
+      setCatLoading(false); setCatSearched(true)
+    }, hasApi ? 600 : 300)
   }
-
-  const selectCategory = (cat: string) => {
-    setCatInput(cat)
-    if (!catDisplay) setCatDisplay(cat.split('>').pop()?.trim() || cat)
-    setCatSearchOpen(false)
+  const selectCatResult = (item: CatItem) => {
+    setCatAddMall(item.name); setCatAddId(item.id)
+    if (!catAddName) setCatAddName(item.name.split('>').pop()?.trim() || item.name)
   }
-
-  /* ── 카테고리 추가 ── */
-  const addCategory = () => {
-    if (!catViewTarget || !catDisplay.trim()) return
-    const cat: MallCategory = { id:String(Date.now()), displayName:catDisplay.trim(), mallCat:catInput.trim() }
-    const updated = channels.map(c => c.key===catViewTarget.key ? { ...c, categories:[...c.categories, cat] } : c)
+  const addCategoryItem = () => {
+    if (!catTarget || !catAddName.trim()) return
+    const newCat: MallCategory = { id:String(Date.now()), displayName:catAddName.trim(), mallCatId:catAddId, mallCatName:catAddMall }
+    const updated = channels.map(c => c.key===catTarget.key ? { ...c, categories:[...c.categories, newCat] } : c)
     update(updated)
-    setCatViewTarget(prev => prev ? { ...prev, categories:[...prev.categories, cat] } : prev)
-    setCatInput(''); setCatDisplay('')
+    setCatTarget(prev => prev ? { ...prev, categories:[...prev.categories, newCat] } : prev)
+    setCatAddName(''); setCatAddMall(''); setCatAddId('')
   }
-
-  /* ── 카테고리 수정 시작 ── */
-  const startEditCategory = (ct: MallCategory) => {
-    setCatEditId(ct.id)
-    setCatEditDisplay(ct.displayName)
-    setCatEditMallCat(ct.mallCat)
-  }
-
-  /* ── 카테고리 수정 저장 ── */
-  const saveEditCategory = () => {
-    if (!catViewTarget || !catEditId) return
-    const updated = channels.map(c => c.key===catViewTarget.key
-      ? { ...c, categories: c.categories.map(ct => ct.id===catEditId ? { ...ct, displayName:catEditDisplay, mallCat:catEditMallCat } : ct) }
-      : c)
+  const startEditCat = (ct: MallCategory) => { setCatEditId(ct.id); setCatEditName(ct.displayName); setCatEditMall(ct.mallCatName) }
+  const saveEditCat = () => {
+    if (!catTarget || !catEditId) return
+    const updated = channels.map(c => c.key===catTarget.key
+      ? { ...c, categories: c.categories.map(ct => ct.id===catEditId ? { ...ct, displayName:catEditName, mallCatName:catEditMall } : ct) } : c)
     update(updated)
-    setCatViewTarget(prev => prev
-      ? { ...prev, categories: prev.categories.map(ct => ct.id===catEditId ? { ...ct, displayName:catEditDisplay, mallCat:catEditMallCat } : ct) }
-      : prev)
+    setCatTarget(prev => prev ? { ...prev, categories: prev.categories.map(ct => ct.id===catEditId ? { ...ct, displayName:catEditName, mallCatName:catEditMall } : ct) } : prev)
     setCatEditId(null)
   }
+  const removeCat = (id: string) => {
+    if (!catTarget) return
+    const updated = channels.map(c => c.key===catTarget.key ? { ...c, categories:c.categories.filter(ct=>ct.id!==id) } : c)
+    update(updated); setCatTarget(prev => prev ? { ...prev, categories:prev.categories.filter(ct=>ct.id!==id) } : prev)
+  }
 
-  /* ── 카테고리 삭제 ── */
-  const removeCategory = (catId: string) => {
-    if (!catViewTarget) return
-    const updated = channels.map(c => c.key===catViewTarget.key ? { ...c, categories:c.categories.filter(ct=>ct.id!==catId) } : c)
+  /* ── 배송정보 ── */
+  const openDelivery = (ch: ChannelData) => {
+    setDelivTarget(ch); setDelivView('list'); setDelivSaved(false)
+  }
+  const openDeliveryForm = (profile?: DeliveryProfile) => {
+    if (profile) {
+      setDelivEditId(profile.id); setDelivProfileName(profile.name)
+      setDelivForm({...DELIVERY_TEMPLATE, ...profile.info})
+    } else {
+      setDelivEditId(null); setDelivProfileName('')
+      setDelivForm({...DELIVERY_TEMPLATE})
+    }
+    setDelivView('form'); setDelivSaved(false)
+  }
+  const saveDeliveryProfile = () => {
+    if (!delivTarget || !delivProfileName.trim()) return
+    let updated: ChannelData[]
+    if (delivEditId) {
+      updated = channels.map(c => c.key===delivTarget.key
+        ? { ...c, deliveries: c.deliveries.map(d => d.id===delivEditId ? { ...d, name:delivProfileName, info:delivForm } : d) } : c)
+    } else {
+      const newProf: DeliveryProfile = { id:String(Date.now()), name:delivProfileName, info:delivForm }
+      updated = channels.map(c => c.key===delivTarget.key ? { ...c, deliveries:[...c.deliveries, newProf] } : c)
+    }
     update(updated)
-    setCatViewTarget(prev => prev ? { ...prev, categories:prev.categories.filter(ct=>ct.id!==catId) } : prev)
+    setDelivTarget(prev => {
+      if (!prev) return prev
+      const ch = updated.find(c => c.key===prev.key)
+      return ch || prev
+    })
+    setDelivSaved(true); setDelivView('list')
+    setTimeout(() => setDelivSaved(false), 3000)
+  }
+  const removeDelivery = (id: string) => {
+    if (!delivTarget) return
+    const updated = channels.map(c => c.key===delivTarget.key ? { ...c, deliveries:c.deliveries.filter(d=>d.id!==id) } : c)
+    update(updated); setDelivTarget(prev => prev ? { ...prev, deliveries:prev.deliveries.filter(d=>d.id!==id) } : prev)
   }
 
-  /* ── 배송정보 저장 ── */
-  const saveDelivery = () => {
-    if (!deliveryViewTarget) return
-    const updated = channels.map(c => c.key===deliveryViewTarget.key ? { ...c, delivery:deliveryForm } : c)
-    update(updated)
-    setDeliveryViewTarget(prev => prev ? { ...prev, delivery:deliveryForm } : prev)
-    setDeliverySaved(true)
-    setTimeout(() => setDeliverySaved(false), 3000)
-  }
-
-  /* ── 배송정보 프리셋 적용 ── */
-  const applyDeliveryPreset = (preset: typeof DELIVERY_PRESETS[0]) => {
-    setDeliveryForm({ ...DELIVERY_TEMPLATE, ...preset.values })
-    setDeliveryPresetOpen(false)
-    setDeliverySaved(false)
-  }
+  const filteredFeeTemplates = useMemo(() => feeTemplates.filter(t => t.name.toLowerCase().includes(feeTemplateSearch.toLowerCase())), [feeTemplates, feeTemplateSearch])
 
   /* ── 연동 해제 ── */
   const handleDisconnect = (key: string) => {
     update(channels.map(c => c.key===key ? { ...c, active:false, login_id:'', login_pw:'', seller_id:'', api_key:'', api_secret:'', synced:0, orders:0 } : c))
     setConfirmDisconnect(null)
   }
-
-  const availableMalls = channels.filter(c => !c.active)
 
   if (!mounted) return null
 
@@ -526,9 +475,9 @@ export default function ChannelsPage() {
       {/* KPI */}
       <div className="grid grid-cols-3 gap-4">
         {[
-          { label:'연동 쇼핑몰', v:`${active.length}개`,                              color:'#2563eb', bg:'#eff6ff' },
-          { label:'오늘 주문',   v:`${active.reduce((s,c)=>s+c.orders,0)}건`,          color:'#059669', bg:'#ecfdf5' },
-          { label:'연동 상품',   v:`${active.reduce((s,c)=>s+c.synced,0)}개`,          color:'#7e22ce', bg:'#fdf4ff' },
+          { label:'연동 쇼핑몰', v:`${active.length}개`, color:'#2563eb', bg:'#eff6ff' },
+          { label:'오늘 주문',   v:`${active.reduce((s,c)=>s+c.orders,0)}건`, color:'#059669', bg:'#ecfdf5' },
+          { label:'연동 상품',   v:`${active.reduce((s,c)=>s+c.synced,0)}개`, color:'#7e22ce', bg:'#fdf4ff' },
         ].map(c=>(
           <div key={c.label} className="pm-card p-5" style={{ background:c.bg }}>
             <p style={{ fontSize:11, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
@@ -552,69 +501,48 @@ export default function ChannelsPage() {
           {active.map(ch => (
             <div key={ch.key} className="pm-card overflow-hidden">
               <div className={`h-1.5 bg-gradient-to-r ${ch.color}`}/>
-              <div style={{ padding:20 }}>
+              <div style={{ padding:18 }}>
                 {/* 헤더 */}
                 <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between', marginBottom:12 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
                     <MallLogo domain={ch.domain} name={ch.name}/>
                     <div>
                       <p style={{ fontWeight:900, color:'#1e293b', fontSize:14 }}>{ch.name}</p>
                       {ch.login_id && <p style={{ fontSize:11, color:'#64748b', marginTop:1 }}>🔑 {ch.login_id}</p>}
-                      {ch.seller_id && !ch.login_id && <p style={{ fontSize:11, color:'#94a3b8', marginTop:2, fontFamily:'monospace' }}>ID: {ch.seller_id}</p>}
                     </div>
                   </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:4, flexShrink:0, flexWrap:'wrap', justifyContent:'flex-end' }}>
-                    {ch.api_key || ch.access_key ? (
-                      <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, color:'#1d4ed8', background:'#dbeafe', padding:'3px 9px', borderRadius:99, border:'1px solid #bfdbfe' }}>
-                        <CheckCircle2 size={10}/>API연동
-                      </span>
-                    ) : (
-                      <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, color:'#b45309', background:'#fef3c7', padding:'3px 9px', borderRadius:99, border:'1px solid #fde68a' }}>
-                        ⚠ API미설정
-                      </span>
-                    )}
-                    <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, color:'#15803d', background:'#f0fdf4', padding:'3px 9px', borderRadius:99, border:'1px solid #bbf7d0' }}>
-                      <CheckCircle2 size={10}/>연동중
-                    </span>
+                  <div style={{ display:'flex', gap:4, flexWrap:'wrap', justifyContent:'flex-end' }}>
+                    {ch.api_key || ch.access_key
+                      ? <span style={{ fontSize:10.5, fontWeight:800, color:'#1d4ed8', background:'#dbeafe', padding:'2px 8px', borderRadius:99, border:'1px solid #bfdbfe', display:'inline-flex', alignItems:'center', gap:3 }}><CheckCircle2 size={9}/>API연동</span>
+                      : <span style={{ fontSize:10.5, fontWeight:800, color:'#b45309', background:'#fef3c7', padding:'2px 8px', borderRadius:99, border:'1px solid #fde68a' }}>⚠ API미설정</span>
+                    }
+                    <span style={{ fontSize:10.5, fontWeight:800, color:'#15803d', background:'#f0fdf4', padding:'2px 8px', borderRadius:99, border:'1px solid #bbf7d0', display:'inline-flex', alignItems:'center', gap:3 }}><CheckCircle2 size={9}/>연동중</span>
                   </div>
                 </div>
 
-                {/* 카테고리/배송 요약 */}
-                {ch.categories.length > 0 && (
-                  <div style={{ display:'flex', flexWrap:'wrap', gap:4, marginBottom:8 }}>
-                    {ch.categories.slice(0,3).map(ct=>(
-                      <span key={ct.id} style={{ fontSize:10.5, fontWeight:700, background:'#fdf4ff', color:'#7e22ce', padding:'2px 8px', borderRadius:99, border:'1px solid #e9d5ff' }}>
-                        {ct.displayName}
-                      </span>
-                    ))}
-                    {ch.categories.length>3 && <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:700 }}>+{ch.categories.length-3}</span>}
-                  </div>
-                )}
-                {ch.delivery.fee_type && (
-                  <p style={{ fontSize:11, color:'#64748b', marginBottom:10 }}>
-                    📦 {ch.delivery.fee_type}{ch.delivery.base_fee?` ₩${ch.delivery.base_fee}`:''}{ch.delivery.courier?` · ${ch.delivery.courier}`:''}
-                  </p>
-                )}
+                {/* 카테고리/배송정보 요약 */}
+                <div style={{ display:'flex', gap:8, marginBottom:10, fontSize:11.5, color:'#64748b' }}>
+                  <span>📂 카테고리 {ch.categories.length}개</span>
+                  <span>🚚 배송프로필 {ch.deliveries?.length||0}개</span>
+                </div>
 
-                {/* 액션 버튼 */}
-                <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
-                  <Button variant="outline" size="sm" style={{ flex:'1 1 auto', fontSize:11, minWidth:0 }}>
-                    <RefreshCw size={11}/>동기화
-                  </Button>
-                  <Button variant="outline" size="sm" style={{ flex:'1 1 auto', fontSize:11, minWidth:0 }} onClick={() => openApi(ch, true)}>
+                {/* 버튼 */}
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:5 }}>
+                  <button onClick={() => openApi(ch, true)}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px', background:'#f8fafc', color:'#334155', border:'1px solid #e2e8f0', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer' }}>
                     <Pencil size={11}/>수정
-                  </Button>
-                  <button onClick={() => openCatView(ch)}
-                    style={{ flex:'1 1 auto', display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'5px 8px', background:'#fdf4ff', color:'#7e22ce', border:'1px solid #e9d5ff', borderRadius:8, fontSize:11, fontWeight:800, cursor:'pointer', minWidth:0 }}>
-                    <Tag size={11}/>카테고리
                   </button>
-                  <button onClick={() => openDeliveryView(ch)}
-                    style={{ flex:'1 1 auto', display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'5px 8px', background:'#f0f9ff', color:'#0369a1', border:'1px solid #bae6fd', borderRadius:8, fontSize:11, fontWeight:800, cursor:'pointer', minWidth:0 }}>
-                    <Truck size={11}/>배송정보
+                  <button onClick={() => { setCatTarget(ch); setCatQuery(''); setCatResults([]); setCatSearched(false); setCatAddName(''); setCatAddMall(''); setCatAddId(''); setCatEditId(null) }}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px', background:'#fdf4ff', color:'#7e22ce', border:'1px solid #e9d5ff', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer' }}>
+                    <Tag size={11}/>카테고리 관리
+                  </button>
+                  <button onClick={() => openDelivery(ch)}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px', background:'#f0f9ff', color:'#0369a1', border:'1px solid #bae6fd', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer' }}>
+                    <Truck size={11}/>배송정보 관리
                   </button>
                   <button onClick={() => setConfirmDisconnect(ch)}
-                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:3, padding:'5px 8px', background:'#fff1f2', color:'#be123c', border:'1px solid #fecdd3', borderRadius:8, fontSize:11, fontWeight:800, cursor:'pointer' }}>
-                    <Unlink size={11}/>해제
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:4, padding:'7px', background:'#fff1f2', color:'#be123c', border:'1px solid #fecdd3', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer' }}>
+                    <Unlink size={11}/>연동 해제
                   </button>
                 </div>
               </div>
@@ -626,388 +554,470 @@ export default function ChannelsPage() {
       {/* ── 쇼핑몰 추가 모달 ── */}
       <Modal isOpen={addOpen} onClose={() => setAddOpen(false)} title="쇼핑몰 추가" size="lg">
         <p style={{ fontSize:13, fontWeight:700, color:'#64748b', marginBottom:14 }}>연동할 쇼핑몰을 선택하세요.</p>
-        {availableMalls.length === 0 ? (
-          <p style={{ textAlign:'center', fontSize:13, fontWeight:700, color:'#94a3b8', padding:'16px 0' }}>모든 쇼핑몰이 이미 연동되어 있습니다.</p>
-        ) : (
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-            {availableMalls.map(ch => (
-              <button key={ch.key}
-                onClick={() => { setAddOpen(false); openApi(ch, false) }}
-                style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', border:'1.5px solid rgba(15,23,42,0.09)', borderRadius:14, background:'white', cursor:'pointer', textAlign:'left' }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor='#3b82f6'; e.currentTarget.style.background='#eff6ff' }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor='rgba(15,23,42,0.09)'; e.currentTarget.style.background='white' }}
-              >
-                <MallLogo domain={ch.domain} name={ch.name} size={36}/>
-                <span style={{ fontWeight:800, color:'#334155', fontSize:13 }}>{ch.name}</span>
-              </button>
-            ))}
-          </div>
-        )}
+        {channels.filter(c=>!c.active).length === 0
+          ? <p style={{ textAlign:'center', fontSize:13, color:'#94a3b8', padding:'16px 0' }}>모든 쇼핑몰이 이미 연동되어 있습니다.</p>
+          : <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              {channels.filter(c=>!c.active).map(ch => (
+                <button key={ch.key} onClick={() => { setAddOpen(false); openApi(ch, false) }}
+                  style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 14px', border:'1.5px solid rgba(15,23,42,0.09)', borderRadius:14, background:'white', cursor:'pointer', textAlign:'left' }}
+                  onMouseEnter={e => { e.currentTarget.style.borderColor='#3b82f6'; e.currentTarget.style.background='#eff6ff' }}
+                  onMouseLeave={e => { e.currentTarget.style.borderColor='rgba(15,23,42,0.09)'; e.currentTarget.style.background='white' }}>
+                  <MallLogo domain={ch.domain} name={ch.name} size={36}/>
+                  <span style={{ fontWeight:800, color:'#334155', fontSize:13 }}>{ch.name}</span>
+                </button>
+              ))}
+            </div>
+        }
       </Modal>
 
-      {/* ── API 설정/수정 모달 ── */}
+      {/* ── API 설정 / 수정 모달 ── */}
       {apiTarget && (() => {
-        const fields = MALL_API_FIELDS[apiTarget.key] || [
-          ...COMMON_LOGIN_FIELDS,
-          { key:'seller_id', label:'판매자 ID / 계정', placeholder:'판매자 ID 또는 이메일', type:'text' as const, section:'api' },
-          { key:'api_key',   label:'API Key',          placeholder:'API Key 입력',          type:'password' as const, section:'api' },
-          { key:'api_secret',label:'API Secret',       placeholder:'API Secret 입력',       type:'password' as const, section:'api' },
-        ]
-        const loginFields = fields.filter(f => f.section === 'login')
-        const apiFields   = fields.filter(f => f.section === 'api' || !f.section)
-        const hasGuide = !!MALL_GUIDES[apiTarget.key]
+        const fields = MALL_API_FIELDS[apiTarget.key] || [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'판매자 ID',type:'text' as const,section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password' as const,section:'api' }]
+        const loginFields = fields.filter(f => f.section==='login')
+        const apiFields   = fields.filter(f => f.section==='api' || !f.section)
         return (
           <Modal isOpen onClose={() => setApiTarget(null)} title={isEditMode ? `${apiTarget.name} 연동 수정` : `${apiTarget.name} 연동 설정`} size="md">
             <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-              {/* 헤더 배너 */}
               <div className={`bg-gradient-to-r ${apiTarget.color}`} style={{ borderRadius:14, padding:'14px 16px', display:'flex', alignItems:'center', gap:14 }}>
                 <MallLogo domain={apiTarget.domain} name={apiTarget.name} size={44}/>
                 <div style={{ flex:1 }}>
                   <p style={{ fontWeight:900, color:'white', fontSize:15 }}>{apiTarget.name}</p>
-                  <p style={{ color:'rgba(255,255,255,0.75)', fontSize:12, fontWeight:700, marginTop:2 }}>
-                    {isEditMode ? '연동 정보 수정' : 'API 연동 설정'}
-                  </p>
+                  <p style={{ color:'rgba(255,255,255,0.75)', fontSize:12, fontWeight:700, marginTop:2 }}>{isEditMode ? '연동 정보 수정' : 'API 연동 설정'}</p>
                 </div>
-                {hasGuide && (
-                  <button
-                    onClick={() => openGuideWindow(apiTarget.key, apiTarget.name)}
-                    style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.22)', border:'1.5px solid rgba(255,255,255,0.5)', borderRadius:10, padding:'7px 14px', color:'white', fontSize:12, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap' }}
-                    onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.38)'}
-                    onMouseLeave={e => e.currentTarget.style.background='rgba(255,255,255,0.22)'}
-                  >
+                {MALL_GUIDES[apiTarget.key] && (
+                  <button onClick={() => {
+                    const g = MALL_GUIDES[apiTarget.key]
+                    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${g.title}</title><style>body{font-family:sans-serif;padding:32px;max-width:600px;margin:0 auto}h1{font-size:20px;margin-bottom:16px}li{margin:8px 0;line-height:1.7}a{color:#3b82f6}</style></head><body><h1>📋 ${g.title}</h1><p style="color:#92400e;background:#fffbeb;padding:12px;border-radius:8px">${g.note}</p><ol>${g.steps.map(s=>`<li>${s}</li>`).join('')}</ol>${g.links.map(l=>`<p><a href="${l.url}" target="_blank">${l.label}</a></p>`).join('')}</body></html>`
+                    const w = window.open('','guide','width=650,height=580,scrollbars=yes'); if(w){w.document.write(html);w.document.close()}
+                  }}
+                    style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.2)', border:'1.5px solid rgba(255,255,255,0.5)', borderRadius:10, padding:'7px 14px', color:'white', fontSize:12, fontWeight:800, cursor:'pointer' }}>
                     <BookOpen size={13}/>연동방법
                   </button>
                 )}
               </div>
 
-              {/* 로그인 정보 섹션 */}
-              <div style={{ background:'#f8fafc', borderRadius:12, padding:'14px 16px' }}>
-                <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:12, display:'flex', alignItems:'center', gap:6 }}>
-                  🔑 판매자 계정 로그인 정보
-                  <span style={{ fontSize:10, fontWeight:600, color:'#94a3b8' }}>(상품등록·운송장송신·클레임처리 등에 사용)</span>
-                </p>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
+                <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔑 판매자 계정 로그인 정보 <span style={{ fontSize:10,color:'#94a3b8' }}>(상품등록·운송장송신·클레임처리 등)</span></p>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
                   {loginFields.map(({ label, key, placeholder, type }) => (
                     <div key={key}>
-                      <label style={{ display:'block', fontSize:12, fontWeight:800, color:'#475569', marginBottom:5 }}>{label}</label>
-                      <input
-                        type={type} placeholder={placeholder}
-                        value={apiForm[key] || ''}
-                        onChange={e => setApiForm(f => ({...f, [key]:e.target.value}))}
-                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:9, padding:'8px 12px', fontSize:13, outline:'none', fontFamily: type==='password' ? 'monospace' : 'inherit', background:'white' }}
-                      />
+                      <label style={{ display:'block', fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>{label}</label>
+                      <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
+                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
                     </div>
                   ))}
                 </div>
               </div>
 
-              {/* API 키 섹션 */}
-              <div style={{ background:'#fafbff', borderRadius:12, padding:'14px 16px' }}>
-                <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:12, display:'flex', alignItems:'center', gap:6 }}>
-                  🔌 API 연동 키
-                  <span style={{ fontSize:10, fontWeight:600, color:'#94a3b8' }}>(카테고리/배송정보 조회·주문수집에 사용)</span>
-                </p>
-                <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <div style={{ background:'#fafbff', borderRadius:12, padding:'12px 14px' }}>
+                <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔌 API 연동 키 <span style={{ fontSize:10,color:'#94a3b8' }}>(카테고리/배송정보 조회·주문수집)</span></p>
+                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                   {apiFields.map(({ label, key, placeholder, type }) => (
                     <div key={key}>
-                      <label style={{ display:'block', fontSize:12, fontWeight:800, color:'#475569', marginBottom:5 }}>{label}</label>
-                      <input
-                        type={type} placeholder={placeholder}
-                        value={apiForm[key] || ''}
-                        onChange={e => setApiForm(f => ({...f, [key]:e.target.value}))}
-                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:9, padding:'8px 12px', fontSize:13, outline:'none', fontFamily: type==='password' ? 'monospace' : 'inherit', background:'white' }}
-                      />
+                      <label style={{ display:'block', fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>{label}</label>
+                      <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
+                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
                     </div>
                   ))}
                 </div>
-              </div>
-
-              <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'10px 14px', fontSize:12, fontWeight:700, color:'#92400e' }}>
-                💡 로그인 정보와 API 키를 모두 입력하면 상품등록·수정, 운송장 송신, 클레임 수집/전송 등 모든 쇼핑몰 업무를 이 프로그램에서 처리할 수 있습니다.
               </div>
 
               <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
                 <Button variant="outline" onClick={() => setApiTarget(null)}>취소</Button>
-                <Button onClick={saveApi}>
-                  {isEditMode ? <><Save size={13}/>수정 저장</> : <><Zap size={13}/>저장하고 연동 시작</>}
-                </Button>
+                <Button onClick={saveApi}>{isEditMode ? <><Save size={13}/>수정 저장</> : <><Zap size={13}/>저장하고 연동 시작</>}</Button>
               </div>
             </div>
           </Modal>
         )
       })()}
 
-      {/* ── 카테고리 보기/관리 팝업 ── */}
-      {catViewTarget && (
-        <Modal isOpen onClose={() => setCatViewTarget(null)} title={`${catViewTarget.name} — 카테고리 관리`} size="lg">
-          <div>
-            {/* 카테고리 추가 */}
-            <div style={{ background:'#f8fafc', borderRadius:12, padding:14, marginBottom:16, display:'flex', flexDirection:'column', gap:10 }}>
-              <p style={{ fontSize:12, fontWeight:800, color:'#475569' }}>카테고리 추가</p>
-              <div>
-                <label style={{ fontSize:11.5, fontWeight:800, color:'#64748b', display:'block', marginBottom:5 }}>
-                  쇼핑몰 카테고리 <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600 }}>(직접 입력 또는 검색으로 선택)</span>
-                </label>
-                <div style={{ display:'flex', gap:6 }}>
+      {/* ── 카테고리 관리 팝업 ── */}
+      {catTarget && (
+        <Modal isOpen onClose={() => setCatTarget(null)} title={`${catTarget.name} — 카테고리 관리`} size="xl">
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, minHeight:480 }}>
+            {/* 왼쪽: 카테고리 검색 & 추가 */}
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              <div style={{ background:'#f8fafc', borderRadius:12, padding:14 }}>
+                <p style={{ fontSize:12, fontWeight:900, color:'#475569', marginBottom:10 }}>
+                  {catTarget.name} 카테고리 검색
+                  <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, marginLeft:6 }}>
+                    {catTarget.api_key ? '(API 연동 중)' : '(내장 데이터)'}
+                  </span>
+                </p>
+                <div style={{ display:'flex', gap:6, marginBottom:8 }}>
                   <div style={{ position:'relative', flex:1 }}>
-                    <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', pointerEvents:'none' }}/>
-                    <input value={catInput} onChange={e => setCatInput(e.target.value)}
-                      onKeyDown={e => e.key==='Enter' && handleCatSearch()}
-                      placeholder={`${catViewTarget.name} 카테고리 입력 또는 검색`}
-                      style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px 7px 30px', fontSize:13, outline:'none' }}/>
+                    <Search size={12} style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', pointerEvents:'none' }}/>
+                    <input value={catQuery} onChange={e => setCatQuery(e.target.value)} onKeyDown={e => e.key==='Enter' && searchCategories()}
+                      placeholder={`예) 원피스, 상의, 가방...`}
+                      style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px 7px 28px', fontSize:13, outline:'none' }}/>
                   </div>
-                  <button onClick={() => handleCatSearch()}
-                    style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'#3b82f6', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap' }}>
-                    <Search size={12}/>카테고리 검색
+                  <button onClick={searchCategories}
+                    style={{ padding:'7px 14px', background:'#3b82f6', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap' }}>
+                    검색
                   </button>
                 </div>
-              </div>
-              <div style={{ display:'flex', gap:8, alignItems:'flex-end' }}>
-                <div style={{ flex:1 }}>
-                  <label style={{ fontSize:11.5, fontWeight:800, color:'#64748b', display:'block', marginBottom:4 }}>
-                    등록명 * <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600 }}>(내 시스템 표시용)</span>
-                  </label>
-                  <input value={catDisplay} onChange={e => setCatDisplay(e.target.value)}
-                    placeholder="예) 여성가방, 상의 등"
-                    style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+
+                {/* 검색 결과 */}
+                <div style={{ border:'1px solid #e2e8f0', borderRadius:8, background:'white', minHeight:200, maxHeight:260, overflowY:'auto' }}>
+                  {catLoading ? (
+                    <div style={{ padding:20, textAlign:'center', color:'#94a3b8', fontSize:13 }}>🔍 카테고리 불러오는 중...</div>
+                  ) : !catSearched ? (
+                    <div style={{ padding:20, textAlign:'center', color:'#cbd5e1', fontSize:13 }}>검색 버튼을 클릭하면<br/>카테고리 목록이 표시됩니다</div>
+                  ) : catResults.length === 0 ? (
+                    <div style={{ padding:20, textAlign:'center', color:'#94a3b8', fontSize:13 }}>검색 결과가 없습니다</div>
+                  ) : (
+                    catResults.map((item, i) => (
+                      <button key={item.id} onClick={() => selectCatResult(item)}
+                        style={{ display:'flex', alignItems:'center', width:'100%', padding:'9px 12px', background: catAddId===item.id ? '#ede9fe' : 'none', border:'none', borderBottom: i<catResults.length-1 ? '1px solid #f8fafc' : 'none', cursor:'pointer', textAlign:'left', gap:8 }}>
+                        <ChevronRight size={11} color="#a78bfa"/>
+                        <span style={{ fontSize:13, color:'#334155', fontWeight: catAddId===item.id ? 800 : 600 }}>{item.name}</span>
+                        {catAddId===item.id && <CheckCircle2 size={13} color="#7e22ce" style={{ marginLeft:'auto', flexShrink:0 }}/>}
+                      </button>
+                    ))
+                  )}
                 </div>
-                <button onClick={addCategory}
-                  style={{ display:'flex', alignItems:'center', gap:5, padding:'8px 16px', background:'#7e22ce', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
-                  <Plus size={12}/>추가
+              </div>
+
+              {/* 등록명 입력 및 추가 */}
+              <div style={{ background:'#faf5ff', borderRadius:12, padding:14, border:'1px solid #e9d5ff' }}>
+                <p style={{ fontSize:12, fontWeight:900, color:'#7e22ce', marginBottom:8 }}>카테고리 추가</p>
+                {catAddMall && (
+                  <div style={{ background:'#ede9fe', borderRadius:7, padding:'6px 10px', fontSize:12, color:'#4c1d95', fontWeight:700, marginBottom:8 }}>
+                    📂 {catAddMall}
+                  </div>
+                )}
+                <input value={catAddName} onChange={e => setCatAddName(e.target.value)}
+                  placeholder="내 시스템 표시명 (예: 여성가방, 원피스)"
+                  style={{ width:'100%', border:'1.5px solid #c4b5fd', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', marginBottom:8 }}/>
+                <button onClick={addCategoryItem} disabled={!catAddName.trim()}
+                  style={{ width:'100%', padding:'8px', background: catAddName.trim() ? '#7e22ce' : '#e2e8f0', color: catAddName.trim() ? 'white' : '#94a3b8', border:'none', borderRadius:8, fontSize:13, fontWeight:800, cursor: catAddName.trim() ? 'pointer' : 'default' }}>
+                  <Plus size={12} style={{ display:'inline', marginRight:4 }}/>추가
                 </button>
               </div>
             </div>
 
-            {/* 카테고리 목록 */}
-            <p style={{ fontSize:12, fontWeight:800, color:'#475569', marginBottom:8 }}>
-              등록된 카테고리 ({catViewTarget.categories.length}개)
-            </p>
-            {catViewTarget.categories.length === 0 ? (
-              <div style={{ textAlign:'center', padding:'28px 0', color:'#cbd5e1', fontSize:13, background:'#f8fafc', borderRadius:10 }}>
-                등록된 카테고리가 없습니다
+            {/* 오른쪽: 등록된 카테고리 목록 */}
+            <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              <p style={{ fontSize:12, fontWeight:900, color:'#475569' }}>
+                등록된 카테고리 <span style={{ color:'#7e22ce' }}>({catTarget.categories.length}개)</span>
+              </p>
+              {catTarget.categories.length === 0 ? (
+                <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center', background:'#f8fafc', borderRadius:12, border:'1.5px dashed #e2e8f0', color:'#cbd5e1', fontSize:13, textAlign:'center', padding:32 }}>
+                  등록된 카테고리가 없습니다.<br/>왼쪽에서 검색 후 추가하세요.
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:5, maxHeight:460, overflowY:'auto' }}>
+                  {catTarget.categories.map((ct, idx) => (
+                    <div key={ct.id} style={{ background:'white', border:'1px solid #e9d5ff', borderRadius:10, padding:'10px 12px' }}>
+                      {catEditId === ct.id ? (
+                        <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                          <input value={catEditName} onChange={e => setCatEditName(e.target.value)} placeholder="표시명"
+                            style={{ border:'1.5px solid #a78bfa', borderRadius:7, padding:'6px 10px', fontSize:13, outline:'none' }}/>
+                          <input value={catEditMall} onChange={e => setCatEditMall(e.target.value)} placeholder="쇼핑몰 카테고리"
+                            style={{ border:'1.5px solid #e2e8f0', borderRadius:7, padding:'6px 10px', fontSize:12, outline:'none', color:'#64748b' }}/>
+                          <div style={{ display:'flex', gap:5, justifyContent:'flex-end' }}>
+                            <button onClick={() => setCatEditId(null)} style={{ padding:'5px 12px', background:'#f1f5f9', border:'none', borderRadius:7, fontSize:12, cursor:'pointer', color:'#64748b', fontWeight:700 }}>취소</button>
+                            <button onClick={saveEditCat} style={{ padding:'5px 12px', background:'#7e22ce', color:'white', border:'none', borderRadius:7, fontSize:12, cursor:'pointer', fontWeight:800 }}>저장</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                          <span style={{ fontSize:11, color:'#94a3b8', fontWeight:700, minWidth:18 }}>{idx+1}</span>
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <p style={{ fontSize:13, fontWeight:800, color:'#4c1d95', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ct.displayName}</p>
+                            {ct.mallCatName && <p style={{ fontSize:11, color:'#94a3b8', marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{ct.mallCatName}</p>}
+                          </div>
+                          <button onClick={() => startEditCat(ct)}
+                            style={{ width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', background:'#ede9fe', color:'#7e22ce', border:'none', borderRadius:6, cursor:'pointer', flexShrink:0 }}>
+                            <Pencil size={11}/>
+                          </button>
+                          <button onClick={() => removeCat(ct.id)}
+                            style={{ width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:6, cursor:'pointer', flexShrink:0 }}>
+                            <Trash2 size={11}/>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
+            <Button onClick={() => setCatTarget(null)}>확인</Button>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── 배송정보 관리 팝업 ── */}
+      {delivTarget && (
+        <Modal isOpen onClose={() => setDelivTarget(null)} title={`${delivTarget.name} — 배송정보 관리`} size="xl">
+          {delivView === 'list' ? (
+            /* 배송 프로필 목록 */
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <p style={{ fontSize:12, color:'#64748b' }}>
+                  상품 등록 시 적용할 배송정보 프로필을 관리합니다.
+                  {delivSaved && <span style={{ color:'#15803d', fontWeight:800, marginLeft:8 }}>✅ 저장 완료!</span>}
+                </p>
+                <button onClick={() => openDeliveryForm()}
+                  style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 16px', background:'#0369a1', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer' }}>
+                  <Plus size={12}/>배송정보 등록
+                </button>
               </div>
-            ) : (
-              <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:320, overflowY:'auto' }}>
-                {catViewTarget.categories.map(ct => (
-                  <div key={ct.id} style={{ background:'#faf5ff', border:'1px solid #e9d5ff', borderRadius:10, padding:'10px 14px' }}>
-                    {catEditId === ct.id ? (
-                      /* 수정 모드 */
-                      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
-                        <input value={catEditDisplay} onChange={e => setCatEditDisplay(e.target.value)}
-                          placeholder="등록명"
-                          style={{ border:'1.5px solid #a78bfa', borderRadius:7, padding:'6px 10px', fontSize:13, outline:'none', background:'white' }}/>
-                        <input value={catEditMallCat} onChange={e => setCatEditMallCat(e.target.value)}
-                          placeholder="쇼핑몰 카테고리"
-                          style={{ border:'1.5px solid #e2e8f0', borderRadius:7, padding:'6px 10px', fontSize:13, outline:'none', background:'white' }}/>
-                        <div style={{ display:'flex', gap:6, justifyContent:'flex-end' }}>
-                          <button onClick={() => setCatEditId(null)}
-                            style={{ padding:'5px 12px', background:'#f1f5f9', border:'none', borderRadius:7, fontSize:12, cursor:'pointer', fontWeight:700, color:'#64748b' }}>취소</button>
-                          <button onClick={saveEditCategory}
-                            style={{ padding:'5px 12px', background:'#7e22ce', color:'white', border:'none', borderRadius:7, fontSize:12, cursor:'pointer', fontWeight:800 }}>저장</button>
-                        </div>
-                      </div>
-                    ) : (
-                      /* 보기 모드 */
+
+              {(!delivTarget.deliveries || delivTarget.deliveries.length === 0) ? (
+                <div style={{ textAlign:'center', padding:'40px 0', background:'#f8fafc', borderRadius:12, border:'1.5px dashed #e2e8f0', color:'#94a3b8', fontSize:13 }}>
+                  <p>등록된 배송정보가 없습니다.</p>
+                  <p style={{ fontSize:12, marginTop:4 }}>위의 [배송정보 등록] 버튼으로 추가하세요.</p>
+                </div>
+              ) : (
+                <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                  {delivTarget.deliveries.map((profile, idx) => (
+                    <div key={profile.id} style={{ background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:12, padding:'12px 16px' }}>
                       <div style={{ display:'flex', alignItems:'center', gap:10 }}>
-                        <Tag size={13} color="#7e22ce" style={{ flexShrink:0 }}/>
-                        <div style={{ flex:1 }}>
-                          <p style={{ fontSize:13, fontWeight:800, color:'#4c1d95' }}>{ct.displayName}</p>
-                          {ct.mallCat && <p style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{ct.mallCat}</p>}
+                        <div style={{ width:26, height:26, background:'#0369a1', color:'white', borderRadius:8, display:'flex', alignItems:'center', justifyContent:'center', fontSize:11, fontWeight:900, flexShrink:0 }}>{idx+1}</div>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <p style={{ fontSize:13, fontWeight:900, color:'#0c4a6e' }}>{profile.name}</p>
+                          <p style={{ fontSize:11, color:'#0369a1', marginTop:2 }}>
+                            {[
+                              profile.info.method==='parcel' ? '택배/소포/등기' : '직접배송',
+                              profile.info.courier,
+                              profile.info.fee_type==='free' ? '무료배송' : profile.info.fee_type==='paid' ? `유료 ₩${profile.info.base_fee}` : `조건부무료 ₩${profile.info.base_fee}`,
+                              profile.info.lead_days ? `배송 ${profile.info.lead_days}` : '',
+                            ].filter(Boolean).join(' · ')}
+                          </p>
                         </div>
-                        <button onClick={() => startEditCategory(ct)}
-                          style={{ width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', background:'#ede9fe', color:'#7e22ce', border:'none', borderRadius:6, cursor:'pointer' }}>
-                          <Pencil size={11}/>
+                        <button onClick={() => openDeliveryForm(profile)}
+                          style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', background:'#e0f2fe', color:'#0369a1', border:'none', borderRadius:7, cursor:'pointer' }}>
+                          <Pencil size={12}/>
                         </button>
-                        <button onClick={() => removeCategory(ct.id)}
-                          style={{ width:26, height:26, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:6, cursor:'pointer' }}>
-                          <Trash2 size={11}/>
+                        <button onClick={() => removeDelivery(profile.id)}
+                          style={{ width:28, height:28, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:7, cursor:'pointer' }}>
+                          <Trash2 size={12}/>
                         </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:4 }}>
+                <Button onClick={() => setDelivTarget(null)}>닫기</Button>
+              </div>
+            </div>
+          ) : (
+            /* 배송정보 등록/수정 폼 (실제 쇼핑몰 배송등록 양식 기준) */
+            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+              {/* 프로필명 */}
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <button onClick={() => setDelivView('list')} style={{ background:'none', border:'none', color:'#64748b', cursor:'pointer', fontSize:12, fontWeight:700, display:'flex', alignItems:'center', gap:3 }}>
+                  ← 목록
+                </button>
+                <span style={{ color:'#e2e8f0' }}>|</span>
+                <p style={{ fontSize:13, fontWeight:900, color:'#1e293b' }}>{delivEditId ? '배송정보 수정' : '배송정보 등록'}</p>
+              </div>
+
+              <div>
+                <label style={labelStyle}>프로필 이름 *</label>
+                <input value={delivProfileName} onChange={e => setDelivProfileName(e.target.value)} placeholder="예) 무료배송기본, 유료배송3000원, 조건부무료"
+                  style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'8px 12px', fontSize:13, outline:'none' }}/>
+              </div>
+
+              {/* ① 발송정책 */}
+              <fieldset style={fieldsetStyle}>
+                <legend style={legendStyle}>① 발송정책</legend>
+                <div style={{ display:'flex', gap:6 }}>
+                  <input value={delivForm.ship_policy} onChange={e => setDelivForm(d=>({...d,ship_policy:e.target.value}))}
+                    placeholder="예) 당일발송/발송마감시간 15:00"
+                    style={{ flex:1, border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                  <button style={searchBtnStyle}>검색</button>
+                </div>
+              </fieldset>
+
+              {/* ② 배송방법 */}
+              <fieldset style={fieldsetStyle}>
+                <legend style={legendStyle}>② 배송방법</legend>
+                <div style={{ display:'flex', gap:16, marginBottom:10 }}>
+                  {[{v:'parcel',l:'택배/소포/등기'},{v:'direct',l:'직접배송'}].map(opt=>(
+                    <label key={opt.v} style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:13, fontWeight:700, color: delivForm.method===opt.v ? '#0369a1' : '#64748b' }}>
+                      <input type="radio" name="method" value={opt.v} checked={delivForm.method===opt.v} onChange={()=>setDelivForm(d=>({...d,method:opt.v}))} style={{ accentColor:'#0369a1' }}/>
+                      {opt.l}
+                    </label>
+                  ))}
+                </div>
+                {delivForm.method === 'parcel' && (
+                  <div>
+                    <label style={labelStyle}>배송택배사 설정</label>
+                    <select value={delivForm.courier} onChange={e=>setDelivForm(d=>({...d,courier:e.target.value}))}
+                      style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white' }}>
+                      <option value="">택배사 선택</option>
+                      {COURIER_LIST.map(c => <option key={c} value={c}>{c}</option>)}
+                    </select>
+                  </div>
+                )}
+              </fieldset>
+
+              {/* ③ 추가배송방법 */}
+              <fieldset style={fieldsetStyle}>
+                <legend style={legendStyle}>③ 추가배송방법</legend>
+                <div style={{ display:'flex', gap:20 }}>
+                  <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:13, fontWeight:700, color: delivForm.visit_pickup ? '#0369a1' : '#64748b' }}>
+                    <input type="checkbox" checked={delivForm.visit_pickup} onChange={e=>setDelivForm(d=>({...d,visit_pickup:e.target.checked}))} style={{ accentColor:'#0369a1' }}/>
+                    방문수령
+                  </label>
+                  <label style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:13, fontWeight:700, color: delivForm.quick_service ? '#0369a1' : '#64748b' }}>
+                    <input type="checkbox" checked={delivForm.quick_service} onChange={e=>setDelivForm(d=>({...d,quick_service:e.target.checked}))} style={{ accentColor:'#0369a1' }}/>
+                    퀵서비스
+                  </label>
+                </div>
+              </fieldset>
+
+              {/* ④ 출하지 선택 */}
+              <fieldset style={fieldsetStyle}>
+                <legend style={legendStyle}>④ 출하지 선택</legend>
+                <div style={{ display:'flex', gap:6 }}>
+                  <input value={delivForm.warehouse} onChange={e=>setDelivForm(d=>({...d,warehouse:e.target.value}))}
+                    placeholder="출하지/창고명 입력 또는 검색"
+                    style={{ flex:1, border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                  <button style={searchBtnStyle}>검색</button>
+                </div>
+              </fieldset>
+
+              {/* ⑤ 배송비 설정 */}
+              <fieldset style={fieldsetStyle}>
+                <legend style={legendStyle}>⑤ 배송비 설정</legend>
+                <div style={{ display:'flex', gap:16, marginBottom:10 }}>
+                  {[{v:'bundle',l:'묶음배송비'},{v:'each',l:'상품별 배송비'}].map(opt=>(
+                    <label key={opt.v} style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:13, fontWeight:700, color: delivForm.fee_bundle===opt.v ? '#0369a1' : '#64748b' }}>
+                      <input type="radio" name="fee_bundle" value={opt.v} checked={delivForm.fee_bundle===opt.v} onChange={()=>setDelivForm(d=>({...d,fee_bundle:opt.v}))} style={{ accentColor:'#0369a1' }}/>
+                      {opt.l}
+                    </label>
+                  ))}
+                </div>
+                <div style={{ display:'flex', gap:16, marginBottom:10 }}>
+                  {[{v:'free',l:'무료'},{v:'paid',l:'유료'},{v:'cond',l:'조건부무료'}].map(opt=>(
+                    <label key={opt.v} style={{ display:'flex', alignItems:'center', gap:6, cursor:'pointer', fontSize:13, fontWeight:700, color: delivForm.fee_type===opt.v ? '#0369a1' : '#64748b' }}>
+                      <input type="radio" name="fee_type" value={opt.v} checked={delivForm.fee_type===opt.v} onChange={()=>setDelivForm(d=>({...d,fee_type:opt.v}))} style={{ accentColor:'#0369a1' }}/>
+                      {opt.l}
+                    </label>
+                  ))}
+                </div>
+                {(delivForm.fee_type==='paid' || delivForm.fee_type==='cond') && (
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginBottom:10 }}>
+                    <div>
+                      <label style={labelStyle}>기본 배송비 (원)</label>
+                      <input value={delivForm.base_fee} onChange={e=>setDelivForm(d=>({...d,base_fee:e.target.value}))} placeholder="예) 3000"
+                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                    </div>
+                    {delivForm.fee_type==='cond' && (
+                      <div>
+                        <label style={labelStyle}>무료배송 기준금액 (원)</label>
+                        <input value={delivForm.free_threshold} onChange={e=>setDelivForm(d=>({...d,free_threshold:e.target.value}))} placeholder="예) 50000"
+                          style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
                       </div>
                     )}
                   </div>
-                ))}
-              </div>
-            )}
-            <div style={{ display:'flex', justifyContent:'flex-end', marginTop:16 }}>
-              <Button onClick={() => setCatViewTarget(null)}>확인</Button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* ── 배송정보 보기/수정 팝업 ── */}
-      {deliveryViewTarget && (
-        <Modal isOpen onClose={() => setDeliveryViewTarget(null)} title={`${deliveryViewTarget.name} — 배송정보`} size="xl">
-          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <p style={{ fontSize:12, color:'#64748b' }}>
-                <b>{deliveryViewTarget.name}</b> 배송정보를 입력하세요. 상품 전송 시 기본값으로 적용됩니다.
-              </p>
-              <button onClick={() => setDeliveryPresetOpen(true)}
-                style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 14px', background:'#0ea5e9', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }}>
-                <Download size={12}/>배송정보 불러오기
-              </button>
-            </div>
-
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-              {([
-                { k:'method'        , label:'배송방법',           ph:'예) 택배, 직배, 퀵' },
-                { k:'courier'       , label:'택배사',             ph:'예) CJ대한통운, 로젠' },
-                { k:'fee_type'      , label:'배송비 유형',         ph:'무료 / 유료 / 조건부무료' },
-                { k:'base_fee'      , label:'기본 배송비 (원)',    ph:'예) 3000' },
-                { k:'free_threshold', label:'무료배송 기준금액',   ph:'예) 50000' },
-                { k:'lead_days'     , label:'배송기간 (영업일)',   ph:'예) 2~3' },
-                { k:'jeju_fee'      , label:'제주 추가배송비',     ph:'예) 3000' },
-                { k:'island_fee'    , label:'도서산간 추가배송비', ph:'예) 5000' },
-                { k:'return_fee'    , label:'반품 배송비',        ph:'예) 3000' },
-                { k:'exchange_fee'  , label:'교환 배송비',        ph:'예) 6000' },
-              ] as {k:keyof DeliveryInfo; label:string; ph:string}[]).map(({ k, label, ph }) => (
-                <div key={k}>
-                  <label style={{ fontSize:11.5, fontWeight:800, color:'#475569', display:'block', marginBottom:4 }}>{label}</label>
-                  <input value={deliveryForm[k]} onChange={e => { setDeliveryForm(d => ({...d, [k]:e.target.value})); setDeliverySaved(false) }}
-                    placeholder={ph}
-                    style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                )}
+                {/* 배송비 템플릿 */}
+                <div>
+                  <label style={labelStyle}>배송비 템플릿</label>
+                  <div style={{ position:'relative' }}>
+                    <div style={{ display:'flex', gap:6 }}>
+                      <input value={delivForm.fee_template} onChange={e=>setDelivForm(d=>({...d,fee_template:e.target.value}))} readOnly
+                        placeholder="배송비 템플릿 검색하여 선택"
+                        style={{ flex:1, border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'#f8fafc', cursor:'pointer' }}
+                        onClick={() => setFeeTemplateOpen(true)}/>
+                      <button onClick={() => setFeeTemplateOpen(v=>!v)} style={searchBtnStyle}>검색</button>
+                      {delivForm.fee_template && <button onClick={()=>setDelivForm(d=>({...d,fee_template:''}))} style={{ padding:'7px 8px', background:'#fff1f2', color:'#dc2626', border:'1px solid #fecdd3', borderRadius:8, fontSize:11, cursor:'pointer', fontWeight:800 }}>삭제</button>}
+                    </div>
+                    {feeTemplateOpen && (
+                      <div style={{ position:'absolute', top:'100%', left:0, right:0, zIndex:50, background:'white', border:'1.5px solid #e2e8f0', borderRadius:10, boxShadow:'0 8px 24px rgba(0,0,0,0.12)', marginTop:4 }}>
+                        <div style={{ padding:'8px 10px', borderBottom:'1px solid #f1f5f9' }}>
+                          <input value={feeTemplateSearch} onChange={e=>setFeeTemplateSearch(e.target.value)} placeholder="템플릿 검색..."
+                            style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, outline:'none' }} autoFocus/>
+                        </div>
+                        {filteredFeeTemplates.map(t => (
+                          <button key={t.id} onClick={() => { setDelivForm(d=>({...d,fee_template:t.name})); setFeeTemplateOpen(false); setFeeTemplateSearch('') }}
+                            style={{ display:'block', width:'100%', padding:'10px 14px', background:'none', border:'none', borderBottom:'1px solid #f8fafc', textAlign:'left', cursor:'pointer', fontSize:12.5, fontWeight:700, color:'#334155' }}
+                            onMouseEnter={e => e.currentTarget.style.background='#eff6ff'}
+                            onMouseLeave={e => e.currentTarget.style.background='none'}>
+                            {t.name}
+                          </button>
+                        ))}
+                        {filteredFeeTemplates.length === 0 && <p style={{ padding:'12px', textAlign:'center', color:'#94a3b8', fontSize:12 }}>검색 결과 없음</p>}
+                      </div>
+                    )}
+                  </div>
                 </div>
-              ))}
-              <div style={{ gridColumn:'1/-1' }}>
-                <label style={{ fontSize:11.5, fontWeight:800, color:'#475569', display:'block', marginBottom:4 }}>출고지</label>
-                <input value={deliveryForm.warehouse} onChange={e => { setDeliveryForm(d => ({...d, warehouse:e.target.value})); setDeliverySaved(false) }}
-                  placeholder="출고 창고 주소" style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
-              </div>
-              <div style={{ gridColumn:'1/-1' }}>
-                <label style={{ fontSize:11.5, fontWeight:800, color:'#475569', display:'block', marginBottom:4 }}>반품/교환지</label>
-                <input value={deliveryForm.return_addr} onChange={e => { setDeliveryForm(d => ({...d, return_addr:e.target.value})); setDeliverySaved(false) }}
-                  placeholder="반품/교환 주소" style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+
+                {/* 제주/도서산간 */}
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, marginTop:10 }}>
+                  <div>
+                    <label style={labelStyle}>제주 추가배송비 (원)</label>
+                    <input value={delivForm.jeju_fee} onChange={e=>setDelivForm(d=>({...d,jeju_fee:e.target.value}))} placeholder="예) 3000"
+                      style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>도서산간 추가배송비 (원)</label>
+                    <input value={delivForm.island_fee} onChange={e=>setDelivForm(d=>({...d,island_fee:e.target.value}))} placeholder="예) 5000"
+                      style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                  </div>
+                </div>
+              </fieldset>
+
+              {/* ⑥ 반품/교환 설정 */}
+              <fieldset style={fieldsetStyle}>
+                <legend style={legendStyle}>⑥ 반품/교환 설정</legend>
+                <div style={{ display:'flex', gap:6, marginBottom:10 }}>
+                  <input value={delivForm.return_addr} onChange={e=>setDelivForm(d=>({...d,return_addr:e.target.value}))}
+                    placeholder="반품/교환지 주소 입력 또는 검색"
+                    style={{ flex:1, border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                  <button style={searchBtnStyle}>검색</button>
+                </div>
+                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                  <div>
+                    <label style={labelStyle}>반품 배송비 (편도기준, 원)</label>
+                    <input value={delivForm.return_fee} onChange={e=>setDelivForm(d=>({...d,return_fee:e.target.value}))} placeholder="예) 3000"
+                      style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                  </div>
+                  <div>
+                    <label style={labelStyle}>교환 배송비 (왕복기준, 원)</label>
+                    <input value={delivForm.exchange_fee} onChange={e=>setDelivForm(d=>({...d,exchange_fee:e.target.value}))} placeholder="예) 6000"
+                      style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+                  </div>
+                </div>
+              </fieldset>
+
+              {/* ⑦ 예상 배송기간 */}
+              <fieldset style={fieldsetStyle}>
+                <legend style={legendStyle}>⑦ 주문 후 예상 배송기간</legend>
+                <input value={delivForm.lead_days} onChange={e=>setDelivForm(d=>({...d,lead_days:e.target.value}))}
+                  placeholder="예) 출고 후 1~3일"
+                  style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none' }}/>
+              </fieldset>
+
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+                <Button variant="outline" onClick={() => setDelivView('list')}>취소</Button>
+                <Button onClick={saveDeliveryProfile} disabled={!delivProfileName.trim()}>
+                  <Save size={13}/>{delivEditId ? '수정 저장' : '배송정보 저장'}
+                </Button>
               </div>
             </div>
-
-            {/* 저장 완료 확인 메시지 */}
-            {deliverySaved && (
-              <div style={{ background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, padding:'10px 16px', display:'flex', alignItems:'center', gap:8, fontSize:13, fontWeight:700, color:'#15803d' }}>
-                <CheckCircle2 size={16}/>배송정보가 저장되었습니다.
-              </div>
-            )}
-
-            {/* 저장된 배송정보 미리보기 */}
-            {(deliveryViewTarget.delivery.fee_type || deliveryViewTarget.delivery.method) && !deliverySaved && (
-              <div style={{ background:'#f8fafc', borderRadius:10, padding:'10px 14px', fontSize:12, color:'#64748b', border:'1px solid #e2e8f0' }}>
-                <span style={{ fontWeight:800, color:'#475569' }}>현재 저장된 배송정보:</span>{' '}
-                {[deliveryViewTarget.delivery.method, deliveryViewTarget.delivery.fee_type,
-                  deliveryViewTarget.delivery.base_fee ? `₩${deliveryViewTarget.delivery.base_fee}` : '',
-                  deliveryViewTarget.delivery.courier, deliveryViewTarget.delivery.lead_days ? `${deliveryViewTarget.delivery.lead_days}일` : '']
-                  .filter(Boolean).join(' · ')}
-              </div>
-            )}
-
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:4 }}>
-              <Button variant="outline" onClick={() => setDeliveryViewTarget(null)}>닫기</Button>
-              <Button onClick={saveDelivery}><Truck size={13}/>배송정보 저장</Button>
-            </div>
-          </div>
+          )}
         </Modal>
       )}
-
-      {/* ── 카테고리 검색 모달 ── */}
-      <Modal isOpen={catSearchOpen} onClose={() => setCatSearchOpen(false)} title={`카테고리 검색 — ${catViewTarget?.name}`} size="md">
-        <div style={{ display:'flex', gap:6, marginBottom:12 }}>
-          <div style={{ position:'relative', flex:1 }}>
-            <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', pointerEvents:'none' }}/>
-            <input value={catSearchQuery} onChange={e => setCatSearchQuery(e.target.value)}
-              onKeyDown={e => {
-                if (e.key==='Enter' && catViewTarget) {
-                  const all = MALL_CATS[catViewTarget.key] || []
-                  const q   = catSearchQuery.trim().toLowerCase()
-                  setCatSearchResults(q ? all.filter(c => c.toLowerCase().includes(q)) : all)
-                }
-              }}
-              placeholder="카테고리 검색어 입력 후 Enter"
-              style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px 7px 30px', fontSize:13, outline:'none' }}/>
-          </div>
-          <button onClick={() => {
-            if (!catViewTarget) return
-            const all = MALL_CATS[catViewTarget.key] || []
-            const q   = catSearchQuery.trim().toLowerCase()
-            setCatSearchResults(q ? all.filter(c => c.toLowerCase().includes(q)) : all)
-          }}
-            style={{ padding:'7px 16px', background:'#3b82f6', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer' }}>
-            검색
-          </button>
-        </div>
-
-        {catSearchLoading ? (
-          <div style={{ textAlign:'center', padding:'24px 0', color:'#94a3b8', fontSize:13, fontWeight:700 }}>
-            🔍 카테고리 불러오는 중...
-          </div>
-        ) : catSearchResults.length === 0 ? (
-          <div style={{ textAlign:'center', padding:'24px 0', color:'#94a3b8', fontSize:13 }}>
-            {catSearchQuery ? '검색 결과가 없습니다.' : '검색어를 입력하세요.'}
-          </div>
-        ) : (
-          <div style={{ maxHeight:320, overflowY:'auto', border:'1px solid #e2e8f0', borderRadius:10 }}>
-            {catSearchResults.map((cat, i) => (
-              <button key={i} onClick={() => selectCategory(cat)}
-                style={{ display:'block', width:'100%', textAlign:'left', padding:'10px 16px', fontSize:13, fontWeight:700, color:'#334155', background:'none', border:'none', cursor:'pointer', borderBottom: i<catSearchResults.length-1 ? '1px solid #f1f5f9' : 'none' }}
-                onMouseEnter={e => e.currentTarget.style.background='#eff6ff'}
-                onMouseLeave={e => e.currentTarget.style.background='none'}>
-                <span style={{ fontSize:11, color:'#94a3b8', marginRight:8 }}>📂</span>{cat}
-              </button>
-            ))}
-          </div>
-        )}
-        <p style={{ fontSize:11, color:'#94a3b8', marginTop:10, fontWeight:600 }}>
-          {catViewTarget?.api_key || catViewTarget?.access_key
-            ? `✅ ${catViewTarget?.name} API 연동 중 — 실제 카테고리 데이터를 조회합니다.`
-            : `* API 연동 후 ${catViewTarget?.name}의 전체 카테고리 트리가 조회됩니다.`
-          }
-        </p>
-      </Modal>
-
-      {/* ── 배송정보 불러오기 모달 ── */}
-      <Modal isOpen={deliveryPresetOpen} onClose={() => setDeliveryPresetOpen(false)} title={`배송정보 불러오기 — ${deliveryViewTarget?.name}`} size="md">
-        <p style={{ fontSize:12, color:'#64748b', marginBottom:14 }}>
-          배송정보 템플릿을 선택하면 자동으로 입력됩니다. 이후 수정도 가능합니다.
-        </p>
-        <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-          {DELIVERY_PRESETS.map((preset, i) => (
-            <button key={i} onClick={() => applyDeliveryPreset(preset)}
-              style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'14px 18px', border:'1.5px solid #e2e8f0', borderRadius:12, background:'white', cursor:'pointer', textAlign:'left' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor='#0ea5e9'; e.currentTarget.style.background='#f0f9ff' }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor='#e2e8f0'; e.currentTarget.style.background='white' }}>
-              <div>
-                <p style={{ fontSize:13, fontWeight:800, color:'#1e293b' }}>{preset.name}</p>
-                <p style={{ fontSize:11.5, color:'#64748b', marginTop:3 }}>
-                  {preset.values.method} · {preset.values.fee_type}
-                  {preset.values.base_fee ? ` · ₩${Number(preset.values.base_fee).toLocaleString()}` : ''}
-                  {preset.values.courier ? ` · ${preset.values.courier}` : ''}
-                  {preset.values.lead_days ? ` · 배송 ${preset.values.lead_days}일` : ''}
-                </p>
-              </div>
-              <span style={{ fontSize:12, fontWeight:800, color:'#0ea5e9', whiteSpace:'nowrap', marginLeft:12 }}>선택 →</span>
-            </button>
-          ))}
-        </div>
-        <p style={{ fontSize:11, color:'#94a3b8', marginTop:12, fontWeight:600 }}>
-          {deliveryViewTarget?.api_key || deliveryViewTarget?.access_key
-            ? `✅ ${deliveryViewTarget?.name} API 연동 중 — 실제 등록된 배송정보를 불러올 수 있습니다.`
-            : `* API 연동 후에는 ${deliveryViewTarget?.name}에 등록된 배송정보를 API로 불러올 수 있습니다.`
-          }
-        </p>
-      </Modal>
 
       {/* ── 연동 해제 확인 ── */}
       {confirmDisconnect && (
         <Modal isOpen onClose={() => setConfirmDisconnect(null)} title="연동 해제 확인" size="sm">
           <div style={{ textAlign:'center', padding:'8px 0 16px' }}>
             <MallLogo domain={confirmDisconnect.domain} name={confirmDisconnect.name} size={56}/>
-            <p style={{ fontSize:15, fontWeight:800, color:'#1e293b', marginBottom:8, marginTop:14 }}>
-              {confirmDisconnect.name} 연동을 해제하시겠습니까?
-            </p>
-            <p style={{ fontSize:12.5, color:'#94a3b8' }}>로그인 정보, API 설정 및 연동 정보가 초기화됩니다.</p>
+            <p style={{ fontSize:15, fontWeight:800, color:'#1e293b', marginBottom:8, marginTop:14 }}>{confirmDisconnect.name} 연동을 해제하시겠습니까?</p>
+            <p style={{ fontSize:12.5, color:'#94a3b8' }}>로그인 정보, API 설정이 초기화됩니다.</p>
           </div>
           <div style={{ display:'flex', gap:8, justifyContent:'flex-end' }}>
             <Button variant="outline" onClick={() => setConfirmDisconnect(null)}>취소</Button>
-            <Button onClick={() => handleDisconnect(confirmDisconnect.key)}
-              style={{ background:'#dc2626', borderColor:'#dc2626' }}>
+            <Button onClick={() => handleDisconnect(confirmDisconnect.key)} style={{ background:'#dc2626', borderColor:'#dc2626' }}>
               <Unlink size={13}/>연동 해제
             </Button>
           </div>
@@ -1016,3 +1026,9 @@ export default function ChannelsPage() {
     </div>
   )
 }
+
+/* ─── 스타일 상수 ──────────────────────────────────────────────── */
+const labelStyle: React.CSSProperties = { display:'block', fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }
+const fieldsetStyle: React.CSSProperties = { border:'1.5px solid #e2e8f0', borderRadius:10, padding:'12px 14px', margin:0 }
+const legendStyle: React.CSSProperties = { fontSize:12, fontWeight:900, color:'#334155', padding:'0 6px' }
+const searchBtnStyle: React.CSSProperties = { padding:'7px 14px', background:'#64748b', color:'white', border:'none', borderRadius:8, fontSize:12, fontWeight:800, cursor:'pointer', whiteSpace:'nowrap', flexShrink:0 }
