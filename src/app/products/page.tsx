@@ -1779,7 +1779,10 @@ export default function ProductsPage() {
                           const val = e.target.value
                           const auto = getKoreanColor(val)
                           const o=[...form.options]
-                          o[i]={...o[i], name:val, korean_name: auto || o[i].korean_name, barcode: o[i].barcode || genBarcode(form.code,val)}
+                          // 바코드가 이전 자동생성값과 같으면 새 코드로 재생성, 아니면 수동수정 유지
+                          const prevAuto = genBarcode(form.code, o[i].name)
+                          const keepBarcode = o[i].barcode && o[i].barcode !== prevAuto
+                          o[i]={...o[i], name:val, korean_name: auto || o[i].korean_name, barcode: keepBarcode ? o[i].barcode : genBarcode(form.code,val)}
                           setForm(f=>({...f,options:o}))
                         }}
                       />
@@ -2088,7 +2091,15 @@ export default function ProductsPage() {
                           onChange={e => {
                             const nm = e.target.value
                             const auto = getKoreanColor(nm)
-                            setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, name:nm, korean_name: auto || o.korean_name, barcode: o.barcode || genBarcode(f.code, nm)} : o) }) : f)
+                            setEditForm(f => {
+                              if (!f) return f
+                              return { ...f, options: f.options.map((o, j) => {
+                                if (j !== i) return o
+                                const prevAuto = genBarcode(f.code, o.name)
+                                const keepBarcode = o.barcode && o.barcode !== prevAuto
+                                return { ...o, name: nm, korean_name: auto || o.korean_name, barcode: keepBarcode ? o.barcode : genBarcode(f.code, nm) }
+                              }) }
+                            })
                           }}
                         />
                       </div>

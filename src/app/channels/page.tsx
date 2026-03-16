@@ -35,36 +35,247 @@ const COMMON_LOGIN_FIELDS: ApiField[] = [
   { key:'login_pw', label:'로그인 비밀번호', placeholder:'판매자 로그인 비밀번호', type:'password', section:'login' },
 ]
 const MALL_API_FIELDS: Record<string, ApiField[]> = {
-  coupang:    [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'쿠팡 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'Access Key',placeholder:'Access Key',type:'password',section:'api' }, { key:'api_secret',label:'Secret Key',placeholder:'Secret Key',type:'password',section:'api' }],
-  naver:      [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'네이버 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'Client ID',placeholder:'Client ID',type:'text',section:'api' }, { key:'api_secret',label:'Client Secret',placeholder:'Client Secret',type:'password',section:'api' }],
-  '11st':     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'11번가 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'Open API Key',type:'password',section:'api' }],
-  gmarket:    [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'지마켓 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
-  auction:    [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'옥션 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
-  ablly:      [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'에이블리 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
-  zigzag:     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'지그재그 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
-  alwayz:     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'올웨이즈 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
-  cafe24:     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'쇼핑몰 ID',placeholder:'카페24 쇼핑몰 ID',type:'text',section:'api' }, { key:'site_name',label:'사이트명',placeholder:'예) myshop',type:'text',section:'api' }, { key:'api_key',label:'Client ID',placeholder:'Client ID',type:'text',section:'api' }, { key:'api_secret',label:'Client Secret',placeholder:'Client Secret',type:'password',section:'api' }, { key:'refresh_token',label:'Refresh Token',placeholder:'OAuth Refresh Token',type:'password',section:'api' }, { key:'access_key',label:'Access Token',placeholder:'Access Token',type:'password',section:'api' }],
-  fashionplus:[...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'패션플러스 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
-  halfclub:   [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'하프클럽 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
-  gsshop:     [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'GS SHOP 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
-  jasondeal:  [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'제이슨딜 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
-  lotteon:    [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'롯데온 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
-  ssg:        [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'SSG 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }, { key:'api_secret',label:'API Secret',placeholder:'API Secret',type:'password',section:'api' }],
-  toss:       [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'토스쇼핑 판매자 ID',type:'text',section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password',section:'api' }],
-  kakaostore: [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'채널 ID',placeholder:'카카오 비즈니스 채널 ID',type:'text',section:'api' }, { key:'api_key',label:'REST API Key',placeholder:'REST API Key',type:'password',section:'api' }, { key:'api_secret',label:'Admin Key',placeholder:'Admin Key',type:'password',section:'api' }],
+  // 쿠팡: 로그인 + 판매자코드 + Access Key + Secret Key
+  coupang: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'판매자 코드(Vendor ID)', placeholder:'A00xxxxxx', type:'text', section:'api' },
+    { key:'api_key',   label:'Access Key',             placeholder:'발급된 Access Key', type:'password', section:'api' },
+    { key:'api_secret',label:'Secret Key',             placeholder:'발급된 Secret Key', type:'password', section:'api' },
+  ],
+  // 스마트스토어: 로그인 + Application ID + Application Secret
+  naver: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'판매자 ID',          placeholder:'스마트스토어 판매자 ID', type:'text',     section:'api' },
+    { key:'api_key',   label:'Application ID',     placeholder:'앱 등록 후 발급된 ID',  type:'text',     section:'api' },
+    { key:'api_secret',label:'Application Secret', placeholder:'앱 Secret',            type:'password', section:'api' },
+  ],
+  // 11번가: 로그인 + Open API 인증키
+  '11st': [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'판매자 ID',        placeholder:'11번가 판매자 ID',    type:'text',     section:'api' },
+    { key:'api_key',   label:'Open API 인증키',  placeholder:'API 관리에서 발급',   type:'password', section:'api' },
+  ],
+  // ESM 지마켓: ESM+ 통합 아이디/비밀번호 + 지마켓 ID
+  gmarket: [
+    { key:'login_id', label:'ESM 통합 아이디',   placeholder:'ESM+ 로그인 아이디',  type:'text',     section:'login' },
+    { key:'login_pw', label:'ESM 통합 비밀번호', placeholder:'ESM+ 비밀번호',       type:'password', section:'login' },
+    { key:'seller_id',label:'지마켓 아이디',     placeholder:'지마켓 판매자 ID',    type:'text',     section:'api'   },
+  ],
+  // ESM 옥션: ESM+ 통합 아이디/비밀번호 + 옥션 ID
+  auction: [
+    { key:'login_id', label:'ESM 통합 아이디',   placeholder:'ESM+ 로그인 아이디',  type:'text',     section:'login' },
+    { key:'login_pw', label:'ESM 통합 비밀번호', placeholder:'ESM+ 비밀번호',       type:'password', section:'login' },
+    { key:'seller_id',label:'옥션 아이디',       placeholder:'옥션 판매자 ID',      type:'text',     section:'api'   },
+  ],
+  // 에이블리: 로그인 + API Key
+  ablly: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'판매자 ID',  placeholder:'에이블리 파트너 ID', type:'text',     section:'api' },
+    { key:'api_key',   label:'API Key',    placeholder:'파트너센터에서 발급', type:'password', section:'api' },
+  ],
+  // 지그재그: 로그인 + API Key + API Secret
+  zigzag: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'판매자 ID',  placeholder:'지그재그 판매자 ID', type:'text',     section:'api' },
+    { key:'api_key',   label:'API Key',    placeholder:'셀러어드민 API Key', type:'password', section:'api' },
+    { key:'api_secret',label:'API Secret', placeholder:'API Secret',        type:'password', section:'api' },
+  ],
+  // 올웨이즈: 로그인 + API Key
+  alwayz: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'판매자 ID',  placeholder:'올웨이즈 판매자 ID', type:'text',     section:'api' },
+    { key:'api_key',   label:'API Key',    placeholder:'셀러센터에서 발급',  type:'password', section:'api' },
+  ],
+  // 카페24 유튜브쇼핑: 쇼핑몰 ID + 로그인 + Client ID + Client Secret + Refresh Token
+  cafe24: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id',    label:'쇼핑몰 ID',      placeholder:'카페24 쇼핑몰 ID (예: myshop)', type:'text',     section:'api' },
+    { key:'api_key',      label:'Client ID',      placeholder:'개발자센터 앱 Client ID',       type:'text',     section:'api' },
+    { key:'api_secret',   label:'Client Secret',  placeholder:'Client Secret',               type:'password', section:'api' },
+    { key:'refresh_token',label:'Refresh Token',  placeholder:'OAuth2 Refresh Token',         type:'password', section:'api' },
+  ],
+  // 패션플러스: 로그인 only
+  fashionplus: [...COMMON_LOGIN_FIELDS],
+  // 하프클럽: 로그인 only
+  halfclub: [...COMMON_LOGIN_FIELDS],
+  // GS SHOP: 로그인 only
+  gsshop: [...COMMON_LOGIN_FIELDS],
+  // 제이슨딜/공구마켓/할인중독/심쿵할인: 로그인 only
+  jasondeal: [...COMMON_LOGIN_FIELDS],
+  // 롯데온: 로그인 only
+  lotteon: [...COMMON_LOGIN_FIELDS],
+  // 신세계몰 SSG: 로그인 only
+  ssg: [...COMMON_LOGIN_FIELDS],
+  // 토스쇼핑: 로그인 only
+  toss: [...COMMON_LOGIN_FIELDS],
+  // 카카오톡스토어: 채널 ID + REST API Key + Admin Key
+  kakaostore: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'카카오 비즈채널 ID', placeholder:'카카오 비즈니스 채널 ID', type:'text',     section:'api' },
+    { key:'api_key',   label:'REST API Key',       placeholder:'카카오 REST API Key',    type:'password', section:'api' },
+    { key:'api_secret',label:'Admin Key',           placeholder:'카카오 Admin Key',       type:'password', section:'api' },
+  ],
 }
 
 /* ─── 연동방법 가이드 ────────────────────────────────────────────── */
 type GuideInfo = { title:string; note:string; steps:string[]; links:{label:string;url:string}[] }
 const MALL_GUIDES: Record<string, GuideInfo> = {
-  coupang: { title:'쿠팡 WING API 연동', note:'쿠팡 WING 판매자 계정 필요', steps:['① wing.coupang.com 로그인 → [개발자 API] 이동','② [API 키 발급] 클릭 → 판매자 ID / Access Key / Secret Key 발급','③ 발급된 키 입력 후 저장'], links:[{label:'쿠팡 WING',url:'https://wing.coupang.com'}] },
-  naver:   { title:'스마트스토어 API 연동', note:'스마트스토어 판매자 계정 필요', steps:['① sell.smartstore.naver.com → [설정] → [API 설정]','② [애플리케이션 등록]에서 Client ID / Secret 발급','③ 판매자 ID와 키 입력 후 저장'], links:[{label:'스마트스토어센터',url:'https://sell.smartstore.naver.com'}] },
-  '11st':  { title:'11번가 Open API 연동', note:'11번가 판매자 계정 필요', steps:['① seller.11st.co.kr → [API 관리]','② API Key 발급','③ 판매자 ID + API Key 입력 후 저장'], links:[{label:'11번가 스마트R',url:'https://seller.11st.co.kr'}] },
-  gmarket: { title:'지마켓 ESM+ API 연동', note:'ESM+ 판매자 계정 필요', steps:['① esmplus.com → [도구] → [API 관리]','② API 사용 신청 및 승인 후 Key 발급','③ 판매자 ID, API Key, Secret 입력'], links:[{label:'ESM+',url:'https://www.esmplus.com'}] },
-  auction: { title:'옥션 ESM+ API 연동', note:'ESM+ 판매자 계정 필요', steps:['① esmplus.com → [도구] → [API 관리]','② API 사용 신청 및 승인 후 Key 발급','③ 판매자 ID, API Key, Secret 입력'], links:[{label:'ESM+',url:'https://www.esmplus.com'}] },
-  ablly:   { title:'에이블리 파트너 API 연동', note:'에이블리 파트너 계정 필요', steps:['① partner.a-bly.com 로그인','② [설정] → [API 연동]에서 API Key 발급','③ 판매자 ID + API Key 입력'], links:[{label:'에이블리 파트너센터',url:'https://partner.a-bly.com'}] },
-  zigzag:  { title:'지그재그 API 연동', note:'지그재그 셀러 계정 필요', steps:['① seller.zigzag.kr 로그인','② [설정] → [API 키 관리]에서 Key 발급','③ 판매자 ID, Key, Secret 입력'], links:[{label:'지그재그 셀러어드민',url:'https://seller.zigzag.kr'}] },
-  cafe24:  { title:'카페24 API 연동', note:'카페24 판매자 계정 필요', steps:['① admin.cafe24.com 로그인','② [앱스토어] → [개발자센터] → 앱 생성 → Client ID/Secret 발급','③ OAuth2.0 토큰 발급 후 입력'], links:[{label:'카페24 개발자센터',url:'https://developers.cafe24.com'}] },
+  coupang: {
+    title:'쿠팡 WING API 연동', note:'쿠팡 WING 판매자 계정 필요',
+    steps:[
+      '① wing.coupang.com 로그인',
+      '② 좌측 메뉴 [개발자 API] 클릭',
+      '③ [API Key 관리] → [신규 Key 발급] 클릭',
+      '④ 판매자 코드(Vendor ID) / Access Key / Secret Key 복사',
+      '⑤ 로그인 정보 + 발급된 Key 입력 후 저장',
+    ],
+    links:[{label:'쿠팡 WING',url:'https://wing.coupang.com'}],
+  },
+  naver: {
+    title:'스마트스토어 API 연동', note:'스마트스토어 판매자 계정 필요',
+    steps:[
+      '① sell.smartstore.naver.com 로그인',
+      '② [설정] → [API 설정] 이동',
+      '③ [애플리케이션 등록] → Application ID / Secret 발급',
+      '④ 로그인 정보 + Application ID + Secret 입력 후 저장',
+    ],
+    links:[{label:'스마트스토어센터',url:'https://sell.smartstore.naver.com'}],
+  },
+  '11st': {
+    title:'11번가 Open API 연동', note:'11번가 판매자 계정 필요',
+    steps:[
+      '① seller.11st.co.kr (스마트R) 로그인',
+      '② 상단 [마이페이지] → [API 관리] 이동',
+      '③ [Open API 인증키 발급] 클릭',
+      '④ 로그인 정보 + 발급된 API 인증키 입력 후 저장',
+    ],
+    links:[{label:'11번가 스마트R',url:'https://seller.11st.co.kr'}],
+  },
+  gmarket: {
+    title:'지마켓 ESM+ 연동', note:'ESM+ 통합 판매자 계정 필요',
+    steps:[
+      '① esmplus.com 로그인 (ESM 통합 아이디/비밀번호)',
+      '② [도구] → [데이터 서비스] → [API 사용 신청]',
+      '③ 사용 승인 후 지마켓 아이디 확인',
+      '④ ESM 통합 아이디/비밀번호 + 지마켓 ID 입력 후 저장',
+    ],
+    links:[{label:'ESM+',url:'https://www.esmplus.com'}],
+  },
+  auction: {
+    title:'옥션 ESM+ 연동', note:'ESM+ 통합 판매자 계정 필요',
+    steps:[
+      '① esmplus.com 로그인 (ESM 통합 아이디/비밀번호)',
+      '② [도구] → [데이터 서비스] → [API 사용 신청]',
+      '③ 사용 승인 후 옥션 아이디 확인',
+      '④ ESM 통합 아이디/비밀번호 + 옥션 ID 입력 후 저장',
+    ],
+    links:[{label:'ESM+',url:'https://www.esmplus.com'}],
+  },
+  ablly: {
+    title:'에이블리 파트너 API 연동', note:'에이블리 파트너센터 계정 필요',
+    steps:[
+      '① partner.a-bly.com 로그인',
+      '② [설정] → [API 연동] 메뉴 이동',
+      '③ [API Key 발급] 클릭 후 Key 복사',
+      '④ 로그인 정보 + 판매자 ID + API Key 입력 후 저장',
+    ],
+    links:[{label:'에이블리 파트너센터',url:'https://partner.a-bly.com'}],
+  },
+  zigzag: {
+    title:'지그재그 API 연동', note:'지그재그 셀러어드민 계정 필요',
+    steps:[
+      '① seller.zigzag.kr 로그인',
+      '② [설정] → [API 키 관리] 이동',
+      '③ [신규 API Key 발급] 클릭',
+      '④ 로그인 정보 + 판매자 ID + API Key + Secret 입력 후 저장',
+    ],
+    links:[{label:'지그재그 셀러어드민',url:'https://seller.zigzag.kr'}],
+  },
+  alwayz: {
+    title:'올웨이즈 API 연동', note:'올웨이즈 셀러센터 계정 필요',
+    steps:[
+      '① 올웨이즈 셀러센터 로그인',
+      '② [설정] → [API 관리] → API Key 발급',
+      '③ 로그인 정보 + 판매자 ID + API Key 입력 후 저장',
+    ],
+    links:[{label:'올웨이즈 셀러센터',url:'https://seller.alwayz.co'}],
+  },
+  cafe24: {
+    title:'카페24 유튜브쇼핑 API 연동', note:'카페24 쇼핑몰 + 개발자센터 계정 필요',
+    steps:[
+      '① developers.cafe24.com 로그인',
+      '② [앱 개발] → [앱 생성] → Client ID / Client Secret 발급',
+      '③ OAuth2.0 인증 완료 후 Refresh Token 발급',
+      '④ 쇼핑몰 ID + 로그인 정보 + Client ID/Secret + Refresh Token 입력 후 저장',
+    ],
+    links:[{label:'카페24 개발자센터',url:'https://developers.cafe24.com'}],
+  },
+  fashionplus: {
+    title:'패션플러스 연동', note:'패션플러스 판매자 계정 필요',
+    steps:[
+      '① fashionplus.co.kr 판매자 로그인',
+      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    ],
+    links:[{label:'패션플러스',url:'https://www.fashionplus.co.kr'}],
+  },
+  halfclub: {
+    title:'하프클럽 연동', note:'하프클럽 판매자 계정 필요',
+    steps:[
+      '① halfclub.com 판매자 로그인',
+      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    ],
+    links:[{label:'하프클럽',url:'https://www.halfclub.com'}],
+  },
+  gsshop: {
+    title:'GS SHOP 연동', note:'GS SHOP 판매자 계정 필요',
+    steps:[
+      '① seller.gsshop.com 로그인',
+      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    ],
+    links:[{label:'GS SHOP 셀러포털',url:'https://seller.gsshop.com'}],
+  },
+  ssg: {
+    title:'신세계몰 SSG.COM 연동', note:'신세계 판매자 계정 필요',
+    steps:[
+      '① ssgmall.com/seller 로그인',
+      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    ],
+    links:[{label:'SSG.COM 셀러포털',url:'https://ssgmall.com'}],
+  },
+  lotteon: {
+    title:'롯데온 연동', note:'롯데온 판매자 계정 필요',
+    steps:[
+      '① lotteon.com 판매자 로그인',
+      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    ],
+    links:[{label:'롯데온 셀러',url:'https://www.lotteon.com'}],
+  },
+  jasondeal: {
+    title:'제이슨딜(공구마켓/할인중독/심쿵할인) 연동', note:'제이슨딜 판매자 계정 필요',
+    steps:[
+      '① 공구마켓/할인중독/심쿵할인 판매자 로그인',
+      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    ],
+    links:[{label:'제이슨딜',url:'https://www.jasondeal.com'}],
+  },
+  toss: {
+    title:'토스쇼핑 연동', note:'토스쇼핑 판매자 계정 필요',
+    steps:[
+      '① shop.toss.im 판매자 로그인',
+      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    ],
+    links:[{label:'토스쇼핑',url:'https://shop.toss.im'}],
+  },
+  kakaostore: {
+    title:'카카오톡스토어(톡스토어) API 연동', note:'카카오 비즈니스 계정 필요',
+    steps:[
+      '① business.kakao.com 로그인',
+      '② [카카오톡 채널] → 채널 생성 후 채널 ID 확인',
+      '③ [내 애플리케이션] → REST API Key / Admin Key 발급',
+      '④ 채널 ID + REST API Key + Admin Key 입력 후 저장',
+    ],
+    links:[{label:'카카오 비즈니스',url:'https://business.kakao.com'}],
+  },
 }
 
 /* ─── 실제 쇼핑몰 카테고리 데이터 ──────────────────────────────── */
