@@ -1,9 +1,13 @@
 /**
  * 네이버 스마트스토어 커넥터
  * API: https://api.commerce.naver.com
- * 인증: OAuth2 Client Credentials (Application ID / Secret)
+ * 인증: OAuth2 Client Credentials
+ *
+ * client_secret = Base64( HMAC-SHA256( "{clientId}_{timestamp(ms)}", clientSecretKey ) )
+ * 네이버 커머스 API 공식 스펙에 따라 서명된 값을 사용해야 합니다.
  */
 
+import { createHmac } from 'crypto'
 import { BaseMarketplace } from '@/marketplaces/base/base.marketplace'
 import type {
   UnifiedProduct,
@@ -21,16 +25,41 @@ export class SmartstoreConnector extends BaseMarketplace {
   readonly mallKey  = 'smartstore'
   readonly mallName = '스마트스토어'
 
+  /**
+   * 네이버 커머스 API 서명 생성
+   * client_secret = Base64(HMAC-SHA256("{clientId}_{timestamp}", clientSecretKey))
+   */
+  private buildClientSecret(clientId: string, clientSecretKey: string): { timestamp: string; clientSecret: string } {
+    const timestamp    = String(Date.now())
+    const message      = `${clientId}_${timestamp}`
+    const clientSecret = createHmac('sha256', clientSecretKey)
+      .update(message)
+      .digest('base64')
+    return { timestamp, clientSecret }
+  }
+
   private async getAccessToken(): Promise<string> {
     const { api_key, api_secret } = this.credentials
     if (!api_key || !api_secret) throw new Error('스마트스토어 인증 정보 누락 (Application ID / Secret)')
+
+    const { timestamp, clientSecret } = this.buildClientSecret(api_key, api_secret)
+
     const res = await this.fetch(`${BASE_URL}/v1/oauth2/token`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body   : new URLSearchParams({ grant_type: 'client_credentials', client_id: api_key, client_secret: api_secret }),
+      body   : new URLSearchParams({
+        grant_type   : 'client_credentials',
+        client_id    : api_key,
+        timestamp,
+        client_secret: clientSecret,
+        type         : 'SELF',
+      }),
       signal : AbortSignal.timeout(8000),
     })
-    if (!res.ok) throw new Error(`스마트스토어 토큰 발급 실패: ${res.status}`)
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '')
+      throw new Error(`스마트스토어 토큰 발급 실패: ${res.status} ${detail}`)
+    }
     const data = await res.json()
     return data.access_token as string
   }
