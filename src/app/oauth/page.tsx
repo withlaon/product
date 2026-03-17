@@ -71,39 +71,54 @@ function OAuthCallbackInner() {
 
       setMall(mallKey)
 
-      /* ── 현재 사용자 확인 ── */
-      const { data: { session } } = await supabase.auth.getSession()
-      const userId = session?.user?.id ?? null
+      /* ── 코드 만료 방지: 세션/DB 조회와 토큰 교환을 병렬 실행 ── */
+      // Cafe24 인증 코드는 수십 초 내 만료 → 최대한 빨리 교환 시작
+      const sessionPromise = supabase.auth.getSession()
 
-      /* ── 저장된 자격증명 불러오기 (client_id / client_secret 조회) ── */
-      let savedClientId     = ''
-      let savedClientSecret = ''
-      if (userId && mallKey) {
-        const { data: cred } = await supabase
-          .from('pm_mall_credentials')
-          .select('credentials')
-          .eq('user_id', userId)
-          .eq('mall_key', mallKey)
-          .maybeSingle()
-        savedClientId     = cred?.credentials?.api_key    ?? ''
-        savedClientSecret = cred?.credentials?.api_secret ?? ''
-        if (!shopId) shopId = cred?.credentials?.seller_id ?? ''
-      }
-      // 우선순위: state 추출값 → DB 저장값
-      const resolvedClientId     = clientId        || savedClientId
-      const resolvedClientSecret = stateClientSecret || savedClientSecret
-
-      /* ── 토큰 교환 API 호출 ── */
+      /* ── 토큰 교환 API 호출 (state에서 이미 credentials 확보 시 즉시 실행) ── */
       try {
-        // 카페24는 전용 엔드포인트 우선 사용 (환경변수로 처리)
         const apiUrl = mallKey === 'cafe24' ? '/api/cafe24/token' : '/api/oauth'
+
+        // Cafe24: state에 client_id/secret이 있으면 DB 조회 기다리지 않고 바로 교환
+        // userId는 선택적(DB 저장용) — 없어도 토큰 교환 가능
+        let userId: string | null = null
+        let resolvedClientId     = clientId
+        let resolvedClientSecret = stateClientSecret
+
+        if (mallKey === 'cafe24' && resolvedClientId && resolvedClientSecret) {
+          // 빠른 경로: state에 모든 credentials 있음 → 세션 대기 없이 즉시 교환
+          const sess = await Promise.race([
+            sessionPromise,
+            new Promise<null>(r => setTimeout(() => r(null), 500)), // 0.5초만 대기
+          ])
+          if (sess && typeof sess === 'object' && 'data' in sess) {
+            userId = (sess as Awaited<typeof sessionPromise>).data.session?.user?.id ?? null
+          }
+        } else {
+          // 일반 경로: 세션 + DB 조회 후 교환
+          const { data: { session } } = await sessionPromise
+          userId = session?.user?.id ?? null
+
+          if (userId && mallKey) {
+            const { data: cred } = await supabase
+              .from('pm_mall_credentials')
+              .select('credentials')
+              .eq('user_id', userId)
+              .eq('mall_key', mallKey)
+              .maybeSingle()
+            if (!resolvedClientId)     resolvedClientId     = cred?.credentials?.api_key    ?? ''
+            if (!resolvedClientSecret) resolvedClientSecret = cred?.credentials?.api_secret ?? ''
+            if (!shopId)               shopId               = cred?.credentials?.seller_id  ?? ''
+          }
+        }
+
         const apiBody = mallKey === 'cafe24'
           ? JSON.stringify({
               code,
               mall_id      : shopId || mallKey,
               user_id      : userId,
-              client_id    : resolvedClientId,       // state → DB → env var 순 폴백
-              client_secret: resolvedClientSecret,   // state → DB → env var 순 폴백
+              client_id    : resolvedClientId,
+              client_secret: resolvedClientSecret,
             })
           : JSON.stringify({
               code,
