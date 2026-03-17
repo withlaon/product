@@ -296,14 +296,15 @@ export default function OrdersPage() {
       }))
 
       // Supabase에서 abbr로 상품 검색
-      let matched: {id:string;name:string;options:{name:string;barcode:string}[]} | null = null
+      type ProdMatch = { id: string; name: string; options: { name: string; barcode: string }[] }
+      let matched: ProdMatch | null = null
       try {
         const { data } = await supabase.from('pm_products')
           .select('id,name,options')
           .eq('abbr', row.abbr)
           .limit(1)
           .maybeSingle()
-        if (data) matched = data as typeof matched
+        if (data) matched = data as unknown as ProdMatch
       } catch {}
       // abbr로 못 찾으면 name으로 재시도
       if (!matched) {
@@ -313,7 +314,7 @@ export default function OrdersPage() {
             .ilike('name', `%${row.name}%`)
             .limit(1)
             .maybeSingle()
-          if (data) matched = data as typeof matched
+          if (data) matched = data as unknown as ProdMatch
         } catch {}
       }
 
