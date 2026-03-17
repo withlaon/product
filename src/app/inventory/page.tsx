@@ -98,6 +98,11 @@ export default function InventoryPage() {
   const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set())
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
 
+  /* ── KPI 클릭 필터 ── */
+  type KpiKey = 'all' | 'low' | 'zero' | 'defective' | 'month_in'
+  const [activeKpi, setActiveKpi] = useState<KpiKey | null>(null)
+  const [kpiSearch, setKpiSearch] = useState('')
+
   /* ── 모달 상태 ── */
   const [outModal,    setOutModal]    = useState(false)
   const [defectModal, setDefectModal] = useState(false)
@@ -498,21 +503,98 @@ export default function InventoryPage() {
     <div className="pm-page space-y-5">
 
       {/* KPI */}
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
-        {[
-          { label:'전체 품목',  v:`${products.length}개`,                    bg:'#eff6ff', color:'#1d4ed8' },
-          { label:'총 재고량',  v:`${totalStock.toLocaleString()}개`,         bg:'#faf5ff', color:'#7e22ce' },
-          { label:'재고 부족',  v:`${lowItems}개`,                            bg:'#fffbeb', color:'#d97706' },
-          { label:'품절',       v:`${zeroItems}개`,                           bg:'#fff1f2', color:'#be123c' },
-          { label:'불량 누계',  v:`${totalDef.toLocaleString()}개`,           bg:'#fff7ed', color:'#c2410c' },
-          { label:`${thisMonth.slice(5)}월 입고`, v:`${thisMonthIn.toLocaleString()}개`, bg:'#f0fdf4', color:'#15803d' },
-        ].map(c => (
-          <div key={c.label} className="pm-card p-4" style={{ background: c.bg }}>
-            <p style={{ fontSize:10.5, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
-            <p style={{ fontSize:22, fontWeight:900, color: c.color, marginTop:2, lineHeight:1 }}>{c.v}</p>
+      {(() => {
+        const kpiItems: { key: KpiKey; label: string; v: string; sub: string; bg: string; color: string }[] = [
+          { key:'all',      label:'전체 품목',  v:`${products.length}`,            sub:'개 상품',  bg:'#eff6ff', color:'#1d4ed8' },
+          { key:'low',      label:'재고 부족',  v:`${lowItems}`,                   sub:'개 옵션',  bg:'#fffbeb', color:'#d97706' },
+          { key:'zero',     label:'품절',       v:`${zeroItems}`,                  sub:'개 옵션',  bg:'#fff1f2', color:'#be123c' },
+          { key:'defective',label:'불량 누계',  v:`${totalDef.toLocaleString()}`,  sub:'개',       bg:'#fff7ed', color:'#c2410c' },
+          { key:'month_in', label:`${thisMonth.slice(5)}월 입고`, v:`${thisMonthIn.toLocaleString()}`, sub:'개', bg:'#f0fdf4', color:'#15803d' },
+        ]
+        return (
+          <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+            {kpiItems.map(c => {
+              const isActive = activeKpi === c.key
+              return (
+                <button key={c.key}
+                  onClick={() => { setActiveKpi(isActive ? null : c.key); setKpiSearch('') }}
+                  className="pm-card p-4 text-left"
+                  style={{ background: isActive ? c.color : c.bg, border: isActive ? `2px solid ${c.color}` : '1.5px solid rgba(15,23,42,0.07)', cursor:'pointer', transition:'all 150ms' }}>
+                  <p style={{ fontSize:10.5, fontWeight:800, color: isActive ? 'rgba(255,255,255,0.75)' : '#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
+                  <p style={{ fontSize:22, fontWeight:900, color: isActive ? 'white' : c.color, marginTop:2, lineHeight:1 }}>
+                    {c.v}<span style={{ fontSize:12, fontWeight:600, marginLeft:2 }}>{c.sub}</span>
+                  </p>
+                  {isActive && <p style={{ fontSize:10, color:'rgba(255,255,255,0.8)', marginTop:3 }}>클릭하여 닫기</p>}
+                </button>
+              )
+            })}
           </div>
-        ))}
-      </div>
+        )
+      })()}
+
+      {/* KPI 클릭 시 상품 목록 패널 */}
+      {activeKpi && (() => {
+        const allOpts2 = products.flatMap(p =>
+          p.options.map(o => ({ prod: p, opt: o, stock: getStock(o) }))
+        )
+        let filtered2 = allOpts2
+        if (activeKpi === 'low')      filtered2 = allOpts2.filter(r => r.stock > 0 && r.stock <= 2)
+        if (activeKpi === 'zero')     filtered2 = allOpts2.filter(r => r.stock === 0)
+        if (activeKpi === 'defective') filtered2 = allOpts2.filter(r => (r.opt.defective ?? 0) > 0)
+        if (activeKpi === 'month_in')  filtered2 = allOpts2.filter(r => (r.opt.received ?? 0) > 0)
+        // 검색
+        const q = kpiSearch.trim().toLowerCase()
+        if (q) filtered2 = filtered2.filter(r =>
+          r.prod.name.toLowerCase().includes(q) || r.prod.code.toLowerCase().includes(q) ||
+          r.opt.name.toLowerCase().includes(q) || (r.opt.barcode ?? '').includes(q)
+        )
+        const label = { all:'전체 품목', low:'재고 부족', zero:'품절', defective:'불량 누계', month_in:`${thisMonth.slice(5)}월 입고` }[activeKpi]
+        return (
+          <div className="pm-card overflow-hidden">
+            <div style={{ padding:'12px 16px', borderBottom:'1px solid rgba(15,23,42,0.07)', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
+              <p style={{ fontSize:13.5, fontWeight:900, color:'#1e293b' }}>{label} 상품 목록</p>
+              <div style={{ position:'relative', flex:'1 1 200px' }}>
+                <Search size={12} style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', pointerEvents:'none' }}/>
+                <input value={kpiSearch} onChange={e => setKpiSearch(e.target.value)}
+                  placeholder="상품명, 코드, 옵션, 바코드 검색..."
+                  style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'6px 10px 6px 28px', fontSize:12.5, outline:'none', boxSizing:'border-box' }}/>
+              </div>
+              <span style={{ fontSize:12, color:'#94a3b8' }}>{filtered2.length}건</span>
+              <button onClick={() => setActiveKpi(null)}
+                style={{ marginLeft:'auto', fontSize:11.5, fontWeight:700, color:'#64748b', background:'#f1f5f9', border:'none', borderRadius:7, padding:'4px 10px', cursor:'pointer' }}>닫기</button>
+            </div>
+            <div style={{ maxHeight:340, overflowY:'auto' }}>
+              {filtered2.length === 0 ? (
+                <div style={{ padding:'2rem', textAlign:'center', color:'#94a3b8', fontSize:13 }}>해당 항목이 없습니다</div>
+              ) : (
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
+                  <thead>
+                    <tr style={{ background:'#f8fafc', position:'sticky', top:0 }}>
+                      {['상품명','코드','옵션','바코드','현재고','불량','발주','입고'].map(h => (
+                        <th key={h} style={{ padding:'7px 10px', fontWeight:800, color:'#64748b', fontSize:11, textAlign: h==='현재고'||h==='불량'||h==='발주'||h==='입고' ? 'center' : 'left', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered2.map(({ prod, opt, stock }, i) => (
+                      <tr key={i} style={{ borderBottom:'1px solid #f8fafc' }}>
+                        <td style={{ padding:'7px 10px', fontWeight:700, color:'#1e293b', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{prod.name}</td>
+                        <td style={{ padding:'7px 10px', fontFamily:'monospace', fontSize:11.5, color:'#475569' }}>{prod.code}</td>
+                        <td style={{ padding:'7px 10px', color:'#64748b' }}>{opt.name}</td>
+                        <td style={{ padding:'7px 10px', fontFamily:'monospace', fontSize:11, color:'#94a3b8' }}>{opt.barcode || '-'}</td>
+                        <td style={{ padding:'7px 10px', textAlign:'center', fontWeight:900, color: stock === 0 ? '#dc2626' : stock <= 2 ? '#d97706' : '#15803d' }}>{stock}</td>
+                        <td style={{ padding:'7px 10px', textAlign:'center', color:'#c2410c', fontWeight:800 }}>{opt.defective ?? 0}</td>
+                        <td style={{ padding:'7px 10px', textAlign:'center', color:'#2563eb', fontWeight:700 }}>{opt.ordered ?? 0}</td>
+                        <td style={{ padding:'7px 10px', textAlign:'center', color:'#0ea5e9', fontWeight:700 }}>{opt.received ?? 0}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* 액션 버튼 */}
       <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>

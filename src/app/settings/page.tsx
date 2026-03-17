@@ -1,5 +1,5 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -10,6 +10,33 @@ const TABS = [
   { id:'account',       label:'계정 관리', icon:User },
   { id:'notifications', label:'알림 설정', icon:Bell },
 ]
+
+const LS_COMPANY = 'pm_settings_company'
+const LS_ACCOUNT = 'pm_settings_account'
+const LS_NOTIFS  = 'pm_settings_notifs'
+
+const DEFAULT_COMPANY = { name:'', reg_no:'', ceo:'', address:'', tel:'', email:'', courier:'CJ대한통운' }
+const DEFAULT_ACCOUNT = { name:'', email:'' }
+const DEFAULT_NOTIFS = [
+  { id:'stock',    label:'재고 부족 알림',   desc:'최소 재고 이하로 떨어질 때',        on:true  },
+  { id:'order',    label:'신규 주문 알림',   desc:'새 주문이 들어올 때',              on:true  },
+  { id:'cs',       label:'새 CS 접수 알림', desc:'새 고객 문의가 접수될 때',         on:true  },
+  { id:'cs_urg',   label:'긴급 CS 알림',    desc:'긴급 CS가 접수될 때 즉시 알림',    on:true  },
+  { id:'delay',    label:'배송 지연 알림',   desc:'배송이 지연될 때',                on:false },
+  { id:'report',   label:'일일 리포트',      desc:'매일 오전 9시 영업 현황 요약',     on:false },
+  { id:'purchase', label:'발주 입고 알림',   desc:'발주 입고 완료 시 알림',           on:true  },
+]
+
+/* ── localStorage 헬퍼 ── */
+function lsGet<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key)
+    return v ? (JSON.parse(v) as T) : fallback
+  } catch { return fallback }
+}
+function lsSet(key: string, value: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(value)) } catch {}
+}
 
 /* ─── 토글 ──────────────────────────────────────────────────── */
 function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
@@ -42,7 +69,7 @@ function Field({ label, children }: { label:string; children:React.ReactNode }) 
 /* ─── 저장 완료 피드백 ──────────────────────────────────────── */
 function useSaved() {
   const [saved, setSaved] = useState(false)
-  const trigger = () => { setSaved(true); setTimeout(() => setSaved(false), 2000) }
+  const trigger = () => { setSaved(true); setTimeout(() => setSaved(false), 2500) }
   return { saved, trigger }
 }
 
@@ -59,18 +86,34 @@ function Card({ title, children }: { title:string; children:React.ReactNode }) {
 /* ─── 메인 ──────────────────────────────────────────────────── */
 export default function SettingsPage() {
   const [tab, setTab] = useState('company')
+  const [hydrated, setHydrated] = useState(false)
 
   /* 회사 정보 */
-  const [company, setCompany] = useState({
-    name:'', reg_no:'', ceo:'', address:'', tel:'', email:'', courier:'CJ대한통운',
-  })
+  const [company, setCompany] = useState(DEFAULT_COMPANY)
   const companySaved = useSaved()
 
   /* 계정 관리 */
-  const [account, setAccount] = useState({ name:'', email:'' })
+  const [account, setAccount] = useState(DEFAULT_ACCOUNT)
   const [pw, setPw] = useState({ current:'', next:'', confirm:'' })
   const [pwErr, setPwErr] = useState('')
   const accountSaved = useSaved()
+
+  /* 알림 설정 */
+  const [notifs, setNotifs] = useState(DEFAULT_NOTIFS)
+  const notifSaved = useSaved()
+
+  /* ── localStorage에서 초기값 로드 ── */
+  useEffect(() => {
+    setCompany(lsGet(LS_COMPANY, DEFAULT_COMPANY))
+    setAccount(lsGet(LS_ACCOUNT, DEFAULT_ACCOUNT))
+    setNotifs(lsGet(LS_NOTIFS, DEFAULT_NOTIFS))
+    setHydrated(true)
+  }, [])
+
+  const handleCompanySave = () => {
+    lsSet(LS_COMPANY, company)
+    companySaved.trigger()
+  }
 
   const handlePwSave = () => {
     if (!pw.current) { setPwErr('현재 비밀번호를 입력하세요.'); return }
@@ -78,22 +121,24 @@ export default function SettingsPage() {
     if (pw.next !== pw.confirm) { setPwErr('새 비밀번호가 일치하지 않습니다.'); return }
     setPwErr('')
     setPw({ current:'', next:'', confirm:'' })
+    lsSet(LS_ACCOUNT, account)
     accountSaved.trigger()
   }
 
-  /* 알림 설정 */
-  const [notifs, setNotifs] = useState([
-    { id:'stock',   label:'재고 부족 알림',   desc:'최소 재고 이하로 떨어질 때',          on:true  },
-    { id:'order',   label:'신규 주문 알림',   desc:'새 주문이 들어올 때',                on:true  },
-    { id:'cs',      label:'새 CS 접수 알림', desc:'새 고객 문의가 접수될 때',           on:true  },
-    { id:'cs_urg',  label:'긴급 CS 알림',    desc:'긴급 CS가 접수될 때 즉시 알림',      on:true  },
-    { id:'delay',   label:'배송 지연 알림',   desc:'배송이 지연될 때',                  on:false },
-    { id:'report',  label:'일일 리포트',      desc:'매일 오전 9시 영업 현황 요약',       on:false },
-    { id:'purchase',label:'발주 입고 알림',   desc:'발주 입고 완료 시 알림',             on:true  },
-  ])
-  const notifSaved = useSaved()
+  const handleAccountSave = () => {
+    lsSet(LS_ACCOUNT, account)
+    accountSaved.trigger()
+  }
+
+  const handleNotifSave = () => {
+    lsSet(LS_NOTIFS, notifs)
+    notifSaved.trigger()
+  }
+
   const toggleNotif = (id: string) =>
     setNotifs(prev => prev.map(n => n.id === id ? { ...n, on: !n.on } : n))
+
+  if (!hydrated) return null
 
   return (
     <div className="pm-page" style={{ display:'flex', gap:20, alignItems:'flex-start' }}>
@@ -165,7 +210,7 @@ export default function SettingsPage() {
                 </Select>
               </Field>
               <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <Button onClick={() => companySaved.trigger()}>
+                <Button onClick={handleCompanySave}>
                   <Save size={14}/>저장
                 </Button>
                 {companySaved.saved && (
@@ -201,6 +246,17 @@ export default function SettingsPage() {
                   onChange={e => setAccount(a => ({...a, email:e.target.value}))}/>
               </Field>
 
+              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                <Button onClick={handleAccountSave}>
+                  <Save size={14}/>이름/이메일 저장
+                </Button>
+                {accountSaved.saved && (
+                  <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12.5, fontWeight:700, color:'#15803d' }}>
+                    <CheckCircle2 size={14}/>저장되었습니다
+                  </span>
+                )}
+              </div>
+
               {/* 비밀번호 변경 */}
               <div style={{ paddingTop:14, borderTop:'1px solid #f1f5f9' }}>
                 <p style={{ fontSize:12.5, fontWeight:800, color:'#334155', marginBottom:12 }}>비밀번호 변경</p>
@@ -213,17 +269,11 @@ export default function SettingsPage() {
                     value={pw.confirm} onChange={e => setPw(p => ({...p, confirm:e.target.value}))}/>
                   {pwErr && <p style={{ fontSize:12, fontWeight:700, color:'#dc2626' }}>{pwErr}</p>}
                 </div>
-              </div>
-
-              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                <Button onClick={handlePwSave}>
-                  <Save size={14}/>저장
-                </Button>
-                {accountSaved.saved && (
-                  <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize:12.5, fontWeight:700, color:'#15803d' }}>
-                    <CheckCircle2 size={14}/>저장되었습니다
-                  </span>
-                )}
+                <div style={{ marginTop:10 }}>
+                  <Button onClick={handlePwSave}>
+                    <Save size={14}/>비밀번호 변경
+                  </Button>
+                </div>
               </div>
             </div>
           </Card>
@@ -243,7 +293,7 @@ export default function SettingsPage() {
                 </div>
               ))}
               <div style={{ display:'flex', alignItems:'center', gap:12, marginTop:4 }}>
-                <Button onClick={() => notifSaved.trigger()}>
+                <Button onClick={handleNotifSave}>
                   <Save size={14}/>저장
                 </Button>
                 {notifSaved.saved && (

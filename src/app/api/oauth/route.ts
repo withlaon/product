@@ -13,14 +13,17 @@ interface OAuthConfig {
   extraParams?: Record<string, string>
 }
 
-function getMallConfig(mall: string, clientId: string, clientSecret: string, redirectUri: string): OAuthConfig | null {
+function getMallConfig(mall: string, clientId: string, clientSecret: string, redirectUri: string, shopId?: string): OAuthConfig | null {
   switch (mall) {
-    case 'cafe24':
+    case 'cafe24': {
+      // 카페24: tokenUrl 서브도메인은 shopId(mall_id), client_id는 앱 ID
+      const mallId = shopId || clientId
       return {
-        tokenUrl  : `https://${clientId}.cafe24api.com/api/v2/oauth/token`,
+        tokenUrl  : `https://${mallId}.cafe24api.com/api/v2/oauth/token`,
         grantType : 'authorization_code',
         extraParams: { client_id: clientId, client_secret: clientSecret, redirect_uri: redirectUri },
       }
+    }
     case 'naver':
       return {
         tokenUrl  : 'https://api.commerce.naver.com/external/v1/oauth2/token',
@@ -104,8 +107,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'code, mall 파라미터가 필요합니다.' }, { status: 400 })
     }
 
+    // 카페24는 환경변수로 fallback (client_id, client_secret 미전달 시)
+    const resolvedClientId = clientId
+      || (mall === 'cafe24' ? (process.env.CAFE24_CLIENT_ID ?? '') : '')
+    const resolvedSecret   = client_secret
+      || (mall === 'cafe24' ? (process.env.CAFE24_CLIENT_SECRET ?? '') : '')
+
     const redirectUri = `${req.headers.get('origin') ?? ''}/oauth`
-    const config      = getMallConfig(mall, clientId, client_secret ?? '', redirectUri)
+    const config      = getMallConfig(mall, resolvedClientId, resolvedSecret, redirectUri, shopId)
 
     if (!config) {
       return NextResponse.json({ error: `OAuth 미지원 쇼핑몰: ${mall}` }, { status: 400 })
@@ -122,7 +131,7 @@ export async function POST(req: NextRequest) {
       method : 'POST',
       headers: {
         'Content-Type' : 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(`${clientId}:${client_secret}`).toString('base64')}`,
+        'Authorization': `Basic ${Buffer.from(`${resolvedClientId}:${resolvedSecret}`).toString('base64')}`,
       },
       body: params.toString(),
     })
@@ -138,9 +147,9 @@ export async function POST(req: NextRequest) {
     /* ── Supabase에 토큰 저장 (pm_mall_credentials 테이블) ── */
     if (user_id) {
       const credentials = {
-        seller_id    : shopId || clientId,
-        api_key      : clientId,
-        api_secret   : client_secret ?? '',
+        seller_id    : shopId || resolvedClientId,
+        api_key      : resolvedClientId,
+        api_secret   : resolvedSecret,
         access_token,
         refresh_token: refresh_token ?? '',
         token_expires_at: expires_in

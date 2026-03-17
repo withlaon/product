@@ -48,20 +48,22 @@ function OAuthCallbackInner() {
       }
 
       /* ── state 디코딩 ── */
-      let mallKey    = ''
+      // URL에 mall= 파라미터가 직접 있으면 최우선 사용 (e.g. redirect_uri에 ?mall=cafe24 포함)
+      let mallKey    = searchParams.get('mall') ?? ''
       let clientId   = ''
       let shopId     = ''
 
       if (state) {
         try {
+          // base64url JSON 파싱 시도 (우리 시스템이 생성한 state)
           const decoded = JSON.parse(atob(state.replace(/-/g, '+').replace(/_/g, '/')))
-          mallKey  = decoded.mall      ?? ''
+          if (!mallKey) mallKey = decoded.mall ?? ''
           clientId = decoded.client_id ?? ''
           shopId   = decoded.shop_id   ?? ''
         } catch {
-          setStatus('error')
-          setMessage('state 파라미터를 파싱하는 중 오류가 발생했습니다.')
-          return
+          // 파싱 실패 → state가 단순 문자열 (예: 카페24의 mall_id)
+          shopId = state
+          if (!mallKey) mallKey = 'cafe24'  // state가 plain string이면 카페24로 처리
         }
       }
 
@@ -86,18 +88,24 @@ function OAuthCallbackInner() {
 
       /* ── 토큰 교환 API 호출 ── */
       try {
-        const res = await fetch('/api/oauth', {
+        // 카페24는 전용 엔드포인트 우선 사용 (환경변수로 처리)
+        const apiUrl = mallKey === 'cafe24' ? '/api/cafe24/token' : '/api/oauth'
+        const apiBody = mallKey === 'cafe24'
+          ? JSON.stringify({ code, mall_id: shopId || mallKey, user_id: userId })
+          : JSON.stringify({
+              code,
+              state,
+              mall     : mallKey,
+              client_id: clientId,
+              client_secret: clientSecret,
+              shop_id  : shopId,
+              user_id  : userId,
+            })
+
+        const res = await fetch(apiUrl, {
           method : 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body   : JSON.stringify({
-            code,
-            state,
-            mall     : mallKey,
-            client_id: clientId,
-            client_secret: clientSecret,
-            shop_id  : shopId,
-            user_id  : userId,
-          }),
+          body   : apiBody,
         })
         const data = await res.json()
 
