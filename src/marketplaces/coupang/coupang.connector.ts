@@ -30,7 +30,8 @@ export class CoupangConnector extends BaseMarketplace {
     const { api_key, api_secret } = this.credentials
     if (!api_key || !api_secret) throw new Error('쿠팡 인증 정보 누락 (AccessKey / SecretKey)')
 
-    const datetime  = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0, 15) + 'Z'
+    // yyyyMMddTHHmmssZ 형식 — 16자리 (예: 20260317T094700Z)
+    const datetime  = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0, 16)
     const message   = datetime + method + path
     const signature = createHmac('sha256', api_secret).update(message).digest('hex')
 

@@ -1,6 +1,6 @@
-fix: 에이블리 Store ID 필드 추가 및 Partner ID 명칭 정정
+fix: 쿠팡 HMAC 날짜 버그, Cafe24 코드만료, 패션플러스 404, oauthPending 버그 수정
 
-- channels: ablly 폼에 Store ID(site_name) 필드 추가, 판매자 ID → Partner ID로 수정
-- channels: 에이블리 가이드 설명 개선 (Partner ID ≠ Store ID 명확히 구분)
-- ably.connector: Partner ID / Store ID / API Token 모두 활용하도록 업데이트
-- ably.connector: Authorization 헤더를 Bearer 방식으로 변경, X-Partner-Id/X-Store-Id 헤더 추가
+- coupang: HMAC datetime slice(0,15)+Z → slice(0,16) 수정 (16자리 올바른 포맷)
+- oauth/page: Cafe24 코드 교환 즉시 실행 (세션 조회 await 제거, 백그라운드 처리)
+- marketplaces/route: fashionplus를 LIMITED_API_MALLS에 추가 (SCM 방식, 공개 API 없음)
+- channels: oauthPending이 일반 쇼핑몰 저장 버튼에도 표시되는 버그 수정

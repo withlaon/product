@@ -71,29 +71,25 @@ function OAuthCallbackInner() {
 
       setMall(mallKey)
 
-      /* ── 코드 만료 방지: 세션/DB 조회와 토큰 교환을 병렬 실행 ── */
-      // Cafe24 인증 코드는 수십 초 내 만료 → 최대한 빨리 교환 시작
-      const sessionPromise = supabase.auth.getSession()
+      /* ── 코드 만료 방지: 토큰 교환을 최우선으로 실행 ── */
+      // Cafe24 인증 코드는 수십 초 내 만료 → 어떤 await도 없이 즉시 교환
+      const sessionPromise = supabase.auth.getSession() // 백그라운드에서 시작만
 
-      /* ── 토큰 교환 API 호출 (state에서 이미 credentials 확보 시 즉시 실행) ── */
+      /* ── 토큰 교환 API 호출 ── */
       try {
         const apiUrl = mallKey === 'cafe24' ? '/api/cafe24/token' : '/api/oauth'
 
-        // Cafe24: state에 client_id/secret이 있으면 DB 조회 기다리지 않고 바로 교환
-        // userId는 선택적(DB 저장용) — 없어도 토큰 교환 가능
         let userId: string | null = null
         let resolvedClientId     = clientId
         let resolvedClientSecret = stateClientSecret
 
         if (mallKey === 'cafe24' && resolvedClientId && resolvedClientSecret) {
-          // 빠른 경로: state에 모든 credentials 있음 → 세션 대기 없이 즉시 교환
-          const sess = await Promise.race([
-            sessionPromise,
-            new Promise<null>(r => setTimeout(() => r(null), 500)), // 0.5초만 대기
-          ])
-          if (sess && typeof sess === 'object' && 'data' in sess) {
-            userId = (sess as Awaited<typeof sessionPromise>).data.session?.user?.id ?? null
-          }
+          // ★ 빠른 경로: state에 credentials 있음 → 세션 조회 없이 즉시 교환
+          // userId는 없어도 됨 (토큰 교환 성공 후 postMessage로 전달)
+          // 세션 조회는 비동기로만 시작, 결과를 기다리지 않음
+          void sessionPromise.then(({ data: { session } }) => {
+            userId = session?.user?.id ?? null
+          })
         } else {
           // 일반 경로: 세션 + DB 조회 후 교환
           const { data: { session } } = await sessionPromise

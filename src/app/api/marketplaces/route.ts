@@ -45,6 +45,7 @@ export async function POST(req: NextRequest) {
         ssg        : 'api_key',
         halfclub   : 'api_key',
         gsshop     : 'api_key',
+        fashionplus: 'login_id',  // SCM 방식, 공개 REST API 없음
       }
       if (mall in LIMITED_API_MALLS) {
         const tokenKey = LIMITED_API_MALLS[mall]
