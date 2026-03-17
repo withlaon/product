@@ -33,6 +33,31 @@ export async function POST(req: NextRequest) {
 
     if (action === 'test_connection') {
       const now = new Date()
+
+      /* ── API 문서가 제한적인 쇼핑몰: 토큰 형식만 검증 ── */
+      const LIMITED_API_MALLS: Record<string, string> = {
+        ablly      : 'api_key',
+        ably       : 'api_key',
+        always     : 'api_key',
+        alwayz     : 'api_key',
+        tosshopping: 'api_key',
+        lotteon    : 'api_key',
+        ssg        : 'api_key',
+        halfclub   : 'api_key',
+        gsshop     : 'api_key',
+      }
+      if (mall in LIMITED_API_MALLS) {
+        const tokenKey = LIMITED_API_MALLS[mall]
+        const token    = credentials[tokenKey]
+        if (!token || token.length < 8) {
+          return NextResponse.json({ success: false, mall, message: 'API Token이 입력되지 않았거나 너무 짧습니다.' })
+        }
+        return NextResponse.json({
+          success: true, mall,
+          message: 'API Token이 저장되었습니다. (해당 쇼핑몰 API는 공개 문서가 제한적이어서 실시간 검증은 생략됩니다)',
+        })
+      }
+
       let adapter
       try {
         adapter = createAdapter(mall, credentials)
@@ -51,14 +76,14 @@ export async function POST(req: NextRequest) {
       } catch (e) {
         const raw = e instanceof Error ? e.message : String(e)
 
-        // 인증 오류(401/403) → 실패, API 키 확인 필요
+        // 인증 오류(401/403) → 실패
         if (raw.includes('401') || raw.includes('403')) {
           return NextResponse.json({
             success: false, mall,
             message: `인증 실패 (${raw.includes('401') ? '401' : '403'}) — API 키 / 비밀번호를 확인해주세요.`,
           })
         }
-        // 404 → 엔드포인트는 존재하지만 데이터 없음 or 경로 오류
+        // 404 → 엔드포인트 오류
         if (raw.includes('404')) {
           return NextResponse.json({
             success: false, mall,
