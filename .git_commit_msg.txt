@@ -1,6 +1,8 @@
-fix: 지그재그 연동 올바르게 수정 Access Key + Secret Key 둘다 필수
+fix: save modal stays open during test, show result before closing
 
-- 폼 필드: SCM 로그인 ID/PW(필수) + Access Key(필수) + Secret Key(필수) + SHOP ID(선택) + 수수료(선택)
-- 커넥터: X-SECRET-KEY 헤더 추가
-- 가이드: Access Key와 Secret Key 확인 경로 상세 안내
-- 이전에 잘못 제거했던 로그인 필드와 Secret Key 필드 복원
+- saveApi: non-OAuth malls now await test before closing modal
+- Success: modal auto-closes after 1.5s with success message shown
+- Failure: modal stays open so user can read error and fix inputs
+- runTestConnection: returns boolean for caller to use
+- zigzag: added to LIMITED_API_MALLS (partner-api.zigzag.kr is restricted)
+- zigzag test: validates Access Key + Secret Key format instead of live API call

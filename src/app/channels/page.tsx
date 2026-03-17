@@ -1658,6 +1658,20 @@ export default function ChannelsPage() {
                           {testMsg[apiTarget.key]}
                         </p>
                       )}
+                      {/* 카페24 invalid_grant 발생 시 재인증 안내 강조 */}
+                      {testStatus[apiTarget.key] === 'fail'
+                        && apiTarget.key === 'cafe24'
+                        && (testMsg[apiTarget.key] || '').includes('invalid_grant') && (
+                        <div style={{ marginTop:8, background:'#fff7ed', border:'1.5px solid #fed7aa', borderRadius:8, padding:'8px 10px' }}>
+                          <p style={{ fontSize:11.5, fontWeight:800, color:'#92400e', marginBottom:4 }}>⚡ 빠른 해결 방법</p>
+                          <p style={{ fontSize:11, color:'#92400e', lineHeight:1.7 }}>
+                            ① 카페24 개발자센터 → [내 앱] → 기본정보<br/>
+                            ② <b>Client Secret Key</b> 값 복사<br/>
+                            ③ 아래 [Client Secret] 입력란에 새 값 붙여넣기<br/>
+                            ④ <b>[OAuth 재인증]</b> 버튼 클릭 → 카페24 로그인 → 권한 승인
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}

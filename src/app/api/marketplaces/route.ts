@@ -98,9 +98,16 @@ export async function POST(req: NextRequest) {
           })
           if (!tokenRes.ok) {
             const detail = await tokenRes.text().catch(() => '')
-            const msg = tokenRes.status === 401
-              ? 'Client ID / Secret 인증 실패 (401) — 카페24 개발자센터에서 자격증명을 확인하세요.'
-              : `토큰 갱신 실패 (${tokenRes.status}) — ${detail}`
+            let msg = `토큰 갱신 실패 (${tokenRes.status})`
+            if (tokenRes.status === 401) {
+              msg = 'Client ID / Secret 인증 실패 (401)\n→ 카페24 개발자센터에서 Client Secret이 재발급되지 않았는지 확인하세요.\n→ 재발급된 경우 프로그램의 Client Secret을 새 값으로 변경 후 [OAuth 재인증] 버튼을 클릭하세요.'
+            } else if (tokenRes.status === 400) {
+              if (detail.includes('invalid_grant') || detail.includes('Invalid refresh_token')) {
+                msg = 'Refresh Token이 만료되었거나 무효화되었습니다 (invalid_grant)\n\n원인: 카페24 개발자센터에서 Client Secret이 재발급되면 기존 토큰 전체가 무효화됩니다.\n\n해결 방법:\n① 카페24 개발자센터 → 내 앱 → 기본정보에서 새 Client Secret Key 복사\n② 이 화면의 [Client Secret] 필드에 새 값 입력 후 [설정 저장]\n③ [OAuth 재인증 (Refresh Token 재발급)] 버튼 클릭\n④ 카페24 로그인 → 권한 승인 완료'
+              } else {
+                msg = `토큰 갱신 실패 (400) — ${detail}`
+              }
+            }
             return NextResponse.json({ success: false, mall, message: msg })
           }
           const { access_token } = await tokenRes.json()
