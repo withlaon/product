@@ -60,29 +60,48 @@ function applyMapping(order: Order, m: MappingStore): Order {
   return { ...order, items, mapped_status: allMapped ? 'mapped' : 'new' }
 }
 
-/* ── Sample order generator ── */
-function makeSampleOrders(channelName: string, count = 3): Order[] {
-  const NAMES   = ['김민준','이서연','박지훈','최수아','정예준','윤지아','강민서','오하은']
-  const PRODS   = ['스웨이드 백','가벼운 캔버스 가방','심플 베이직 가방','딜라이트 캔버스백','작고 가벼운 백팩']
-  const OPTIONS = ['블랙/FREE','화이트/FREE','베이지/FREE','네이비/FREE','아이보리/FREE']
-  const SKUS    = ['BE','BK','WH','BR','IV','GR']
-  return Array.from({ length: count }, (_, i) => {
-    const now = new Date(); now.setMinutes(now.getMinutes() - i * 7)
-    return {
-      id: `${channelName}_${Date.now()}_${i}`,
-      order_number: `ORD-${Date.now()}-${String(i).padStart(3,'0')}`,
-      channel: channelName, channel_order_id: `CH-${Math.floor(Math.random()*900000+100000)}`,
-      customer_name: NAMES[Math.floor(Math.random()*NAMES.length)],
-      customer_phone: `010-${Math.floor(Math.random()*9000+1000)}-${Math.floor(Math.random()*9000+1000)}`,
-      shipping_address: `서울시 강남구 테헤란로 ${Math.floor(Math.random()*400+1)}`,
-      status: 'pending', mapped_status: 'new' as const,
-      total_amount: Math.floor(Math.random()*80000+15000), shipping_fee: 3000,
-      tracking_number: null, carrier: null,
-      created_at: now.toISOString(),
-      items: [{ name: PRODS[Math.floor(Math.random()*PRODS.length)], option_name: OPTIONS[Math.floor(Math.random()*OPTIONS.length)], sku: SKUS[Math.floor(Math.random()*SKUS.length)], quantity: Math.floor(Math.random()*2)+1, price: Math.floor(Math.random()*50000+10000) }],
-      is_claim: false,
-    }
-  })
+/* ── 채널 credentials 로드 (pm_mall_channels_v5 기준) ── */
+type ChannelCredentials = { key: string; name: string; credentials: Record<string, string> }
+function loadChannelCredentials(): ChannelCredentials[] {
+  try {
+    const raw = localStorage.getItem('pm_mall_channels_v5')
+      || localStorage.getItem('pm_mall_channels_v4')
+      || localStorage.getItem('pm_mall_channels_v3')
+    if (!raw) return []
+    const arr: Record<string, string>[] = JSON.parse(raw)
+    return arr
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      .filter((c: any) => c.active === true || c.active === 'true')
+      .map(c => ({
+        key : c.key,
+        name: c.name,
+        credentials: {
+          api_key      : c.api_key       || '',
+          api_secret   : c.api_secret    || '',
+          seller_id    : c.seller_id     || '',
+          login_id     : c.login_id      || '',
+          login_pw     : c.login_pw      || '',
+          site_name    : c.site_name     || '',
+          refresh_token: c.refresh_token || '',
+          access_key   : c.access_key    || '',
+          mall_id      : c.mall_id       || c.site_name || '',
+          trader_code  : c.trader_code   || '',
+        },
+      }))
+  } catch { return [] }
+}
+
+/** 수집 기간 → ISO date string 변환 */
+function buildDateRange(range: '1'|'3'|'5'|'7'|'custom', custom?: string): { start: string; end: string } {
+  const today = new Date()
+  const end   = today.toISOString().slice(0, 10)
+  if (range === 'custom' && custom) {
+    return { start: custom, end }
+  }
+  const days = Number(range)
+  const from = new Date(today)
+  from.setDate(from.getDate() - days)
+  return { start: from.toISOString().slice(0, 10), end }
 }
 
 function Label({ children }: { children: React.ReactNode }) {
@@ -106,6 +125,8 @@ export default function OrdersPage() {
   const [collectDone,    setCollectDone]    = useState(false)
   const [collectRange,   setCollectRange]   = useState<'1'|'3'|'5'|'7'|'custom'>('1')
   const [collectCustom,  setCollectCustom]  = useState('')
+  const [collectResult,  setCollectResult]  = useState<{ added: number; skipped: number } | null>(null)
+  const [collectErrors,  setCollectErrors]  = useState<{ mall: string; error: string }[]>([])
 
   /* auto collect modal */
   const [autoModal,    setAutoModal]    = useState(false)
@@ -155,22 +176,36 @@ export default function OrdersPage() {
     } catch {}
   }, [])
 
-  /* auto collect */
-  const runCollect = useCallback((malls: string[]) => {
+  /* auto collect – 실제 API 호출 (1일치 신규주문) */
+  const runCollect = useCallback(async (mallKeys: string[]) => {
+    if (!mallKeys.length) return
+    const allCreds = loadChannelCredentials()
+    const malls = mallKeys
+      .map(key => allCreds.find(c => c.key === key))
+      .filter(Boolean) as ChannelCredentials[]
     if (!malls.length) return
-    const newOrd: Order[] = []
-    malls.forEach(key => {
-      const mall = connectedMalls.find(m => m.key === key)
-      if (mall) newOrd.push(...makeSampleOrders(mall.name, 2))
-    })
-    setOrders(prev => {
-      const m = loadMapping()
-      const applied = newOrd.map(o => applyMapping(o, m))
-      const merged = [...applied, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      saveOrders(merged)
-      if (newOrd.some(o => o.is_claim || o.status === 'cancelled')) localStorage.setItem(CS_NEW_KEY, 'true')
-      return merged
-    })
+    const { start, end } = buildDateRange('1')
+    try {
+      const res = await fetch('/api/orders/collect', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({ malls, start_date: start, end_date: end }),
+      })
+      if (!res.ok) return
+      const json = await res.json()
+      if (!json.success) return
+      const raw: Order[] = json.orders || []
+      setOrders(prev => {
+        const m = loadMapping()
+        const applied = raw.map(o => applyMapping(o, m))
+        const existSet = new Set(prev.map(o => o.order_number))
+        const deduped  = applied.filter(o => !existSet.has(o.order_number))
+        const merged   = [...deduped, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        saveOrders(merged)
+        if (deduped.some(o => o.is_claim || o.status === 'cancelled')) localStorage.setItem(CS_NEW_KEY, 'true')
+        return merged
+      })
+    } catch {}
   }, [connectedMalls])
 
   useEffect(() => {
@@ -186,28 +221,59 @@ export default function OrdersPage() {
     return () => { if (autoTimerRef.current) clearInterval(autoTimerRef.current) }
   }, [autoEnabled, autoInterval, autoUnit, autoMalls, mounted, runCollect])
 
-  /* manual collect */
-  const handleCollect = () => {
+  /* manual collect – 실제 API 호출 */
+  const handleCollect = async () => {
     if (!collectSel.size) return
     setCollecting(true)
-    setTimeout(() => {
-      const newOrd: Order[] = []
-      collectSel.forEach(key => {
-        const mall = connectedMalls.find(m=>m.key===key)
-        if (mall) newOrd.push(...makeSampleOrders(mall.name))
+    setCollectErrors([])
+    setCollectResult(null)
+    try {
+      const allCreds = loadChannelCredentials()
+      const malls = Array.from(collectSel)
+        .map(key => allCreds.find(c => c.key === key))
+        .filter(Boolean) as ChannelCredentials[]
+
+      const { start, end } = buildDateRange(collectRange, collectCustom)
+
+      const res = await fetch('/api/orders/collect', {
+        method : 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body   : JSON.stringify({ malls, start_date: start, end_date: end }),
       })
+      const json = await res.json()
+      if (!json.success) throw new Error(json.message || '수집 실패')
+
+      const raw: Order[] = json.orders || []
+      const errs: { mall: string; error: string }[] = json.errors || []
+      setCollectErrors(errs)
+
       const m = loadMapping()
-      const applied = newOrd.map(o => applyMapping(o, m))
+      const applied = raw.map(o => applyMapping(o, m))
+      let added = 0
       setOrders(prev => {
-        const existing = new Set(prev.map(o=>o.order_number))
-        const deduped = applied.filter(o=>!existing.has(o.order_number))
-        const merged = [...deduped,...prev].sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime())
+        const existSet = new Set(prev.map(o => o.order_number))
+        const deduped  = applied.filter(o => !existSet.has(o.order_number))
+        added = deduped.length
+        const merged   = [...deduped, ...prev].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
         saveOrders(merged)
-        if (deduped.some(o=>o.is_claim || o.status==='cancelled')) localStorage.setItem(CS_NEW_KEY,'true')
+        if (deduped.some(o => o.is_claim || o.status === 'cancelled')) localStorage.setItem(CS_NEW_KEY, 'true')
         return merged
       })
-      setCollecting(false); setCollectDone(true)
-    }, 1200)
+      setCollectResult({ added, skipped: raw.length - added })
+      setCollectDone(true)
+    } catch (e: unknown) {
+      setCollectErrors([{ mall: '전체', error: e instanceof Error ? e.message : String(e) }])
+    } finally {
+      setCollecting(false)
+    }
+  }
+
+  /* 주문 전체 초기화 */
+  const handleClearOrders = () => {
+    if (!confirm('수집된 주문을 모두 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.')) return
+    saveOrders([])
+    setOrders([])
+    setSelectedIds(new Set())
   }
 
   /* 배송준비 → 배송/송장등록 탭 이동 */
@@ -553,6 +619,14 @@ export default function OrdersPage() {
             <Package size={13}/>배송준비 {selectedIds.size>0 && `(${selectedIds.size})`}
           </button>
 
+          {/* 주문 초기화 */}
+          {orders.length > 0 && (
+            <button onClick={handleClearOrders}
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'7px 13px', borderRadius:10, border:'1.5px solid #fca5a5', background:'#fff5f5', color:'#dc2626', fontSize:12, fontWeight:800, cursor:'pointer' }}>
+              🗑 초기화
+            </button>
+          )}
+
           <div style={{ flex:1 }}/>
 
           {/* 검색 & 채널 필터 */}
@@ -726,9 +800,24 @@ export default function OrdersPage() {
               ))}
             </div>
           )}
-          {collectDone && <div style={{ padding:'10px 14px', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, fontSize:12.5, fontWeight:800, color:'#15803d' }}>✅ 주문 수집 완료!</div>}
+          {/* 수집 결과 */}
+          {collectDone && collectResult && (
+            <div style={{ padding:'12px 14px', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, fontSize:12.5, fontWeight:800, color:'#15803d' }}>
+              ✅ 수집 완료 — 신규 {collectResult.added}건 추가 {collectResult.skipped > 0 ? `(중복 ${collectResult.skipped}건 제외)` : ''}
+            </div>
+          )}
+          {/* 에러 */}
+          {collectErrors.length > 0 && (
+            <div style={{ padding:'10px 14px', background:'#fff5f5', border:'1px solid #fca5a5', borderRadius:10, display:'flex', flexDirection:'column', gap:4 }}>
+              {collectErrors.map((e, i) => (
+                <p key={i} style={{ fontSize:12, fontWeight:700, color:'#dc2626' }}>
+                  ⚠ {e.mall}: {e.error}
+                </p>
+              ))}
+            </div>
+          )}
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
-            <Button variant="outline" onClick={()=>setCollectModal(false)}>닫기</Button>
+            <Button variant="outline" onClick={()=>{ setCollectModal(false); setCollectDone(false); setCollectResult(null); setCollectErrors([]) }}>닫기</Button>
             <Button onClick={handleCollect} disabled={!collectSel.size||collecting||collectDone}>
               {collecting ? <><RefreshCw size={13} style={{ animation:'spin 0.7s linear infinite' }}/>수집 중...</> : <><Play size={13}/>수집 시작</>}
             </Button>
