@@ -22,11 +22,9 @@ const ALL_MALLS = [
   { key:'fashionplus',name:'패션플러스',   domain:'fashionplus.co.kr',    color:'from-rose-400 to-rose-600'    },
   { key:'halfclub',   name:'하프클럽',     domain:'halfclub.com',         color:'from-amber-400 to-amber-600'  },
   { key:'gsshop',     name:'GS SHOP',      domain:'gsshop.com',           color:'from-lime-400 to-lime-600'    },
-  { key:'jasondeal',  name:'제이슨딜',     domain:'jasondeal.com',        color:'from-cyan-400 to-cyan-600'    },
   { key:'lotteon',    name:'롯데온',       domain:'lotteon.com',          color:'from-red-500 to-red-700'      },
   { key:'ssg',        name:'SSG.COM',      domain:'ssg.com',              color:'from-orange-500 to-red-500'   },
   { key:'toss',       name:'토스쇼핑',     domain:'shop.toss.im',         color:'from-blue-500 to-indigo-600'  },
-  { key:'kakaostore', name:'톡스토어',     domain:'store.kakao.com',      color:'from-yellow-400 to-yellow-500'},
 ]
 
 /* ─── API 필드 ─────────────────────────────────────────────────── */
@@ -122,8 +120,6 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'seller_id', label:'SHOP ID',           placeholder:'내부 구분용 쇼핑몰 ID (선택)',  type:'text',     section:'api',   required:false },
     { key:'api_key',   label:'출고예정일 (일)',   placeholder:'예: 1  (주문 수집 필수 설정)',   type:'text',     section:'api',   required:true  },
   ],
-  // 제이슨딜/공구마켓/할인중독/심쿵할인: 로그인 only
-  jasondeal: [...COMMON_LOGIN_FIELDS],
   // 롯데온: Partner ID + API Key + Secret Key
   // 롯데온: 쇼핑몰ID/PW + 거래처번호 + 인증키 필수 / 하위거래처번호 + 수수료 선택
   // IP 등록: SCM [판매자정보 > Open API 관리] → 1단계 서버 IP 등록(직접입력)
@@ -153,13 +149,6 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_key',    label:'Access Key',             placeholder:'셀러센터에서 발급된 Access Key (예: mvie8jyw20em3mr82)', type:'text',    section:'api',   required:true  },
     { key:'access_key', label:'Access Token',           placeholder:'자동 발급 또는 수동 입력 (선택)',                       type:'password', section:'api',   required:false },
     { key:'site_name',  label:'수수료(주문) %',         placeholder:'예: 9  (공급가 미제공 시 수수료율로 계산)',             type:'text',     section:'api',   required:false },
-  ],
-  // 카카오톡스토어: 채널 ID + REST API Key + Admin Key
-  kakaostore: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'카카오 비즈채널 ID', placeholder:'카카오 비즈니스 채널 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'REST API Key',       placeholder:'카카오 REST API Key',    type:'password', section:'api' },
-    { key:'api_secret',label:'Admin Key',           placeholder:'카카오 Admin Key',       type:'password', section:'api' },
   ],
 }
 
@@ -570,19 +559,6 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
       { label:'롯데ON 판매자센터 (SCM)', url:'https://sellers.lotteon.com' },
     ],
   },
-  jasondeal: {
-    title:'제이슨딜(공구마켓/할인중독/심쿵할인) 연동', authType:'ID/PW',
-    note:'제이슨딜 판매자 계정으로 로그인합니다.',
-    required:[
-      { label:'로그인 ID', desc:'판매자 로그인 아이디', badge:'required' },
-      { label:'비밀번호', desc:'판매자 비밀번호', badge:'required' },
-    ],
-    steps:[
-      '① 공구마켓/할인중독/심쿵할인 판매자 로그인',
-      '② 로그인 아이디 / 비밀번호 입력 후 저장',
-    ],
-    links:[{ label:'제이슨딜', url:'https://www.jasondeal.com' }],
-  },
   toss: {
     title:'토스쇼핑 API 연동 (자체개발 방식)', authType:'쇼핑몰 ID/PW + Secret Key + Access Key',
     note:'토스쇼핑 셀러센터에서 Secret Key와 Access Key를 발급받아 입력합니다. API 사용 시 서버 IP 등록이 필요합니다.',
@@ -613,22 +589,6 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[
       { label:'토스쇼핑 셀러센터', url:'https://shop.toss.im' },
     ],
-  },
-  kakaostore: {
-    title:'카카오톡스토어(톡스토어) API 연동', authType:'REST API Key + Admin Key',
-    note:'카카오 비즈니스 계정이 필요합니다.',
-    required:[
-      { label:'카카오 비즈채널 ID', desc:'카카오 비즈니스 채널 ID', badge:'required' },
-      { label:'REST API Key', desc:'카카오 REST API Key', badge:'required' },
-      { label:'Admin Key', desc:'카카오 Admin Key', badge:'required' },
-    ],
-    steps:[
-      '① business.kakao.com 로그인',
-      '② [카카오톡 채널] → 채널 생성 후 채널 ID 확인',
-      '③ [내 애플리케이션] → REST API Key / Admin Key 발급',
-      '④ 채널 ID + REST API Key + Admin Key 입력 후 저장',
-    ],
-    links:[{ label:'카카오 비즈니스', url:'https://business.kakao.com' }],
   },
 }
 
@@ -767,10 +727,6 @@ const MALL_CATS: Record<string, CatItem[]> = {
     {id:'GS005',name:'패션잡화 > 가방'},{id:'GS006',name:'패션잡화 > 지갑'},
     {id:'GS007',name:'스포츠 > 스포츠의류'},
   ],
-  jasondeal: [
-    {id:'JD001',name:'의류 > 여성의류'},{id:'JD002',name:'의류 > 남성의류'},
-    {id:'JD003',name:'패션잡화 > 가방'},{id:'JD004',name:'패션잡화 > 지갑'},
-  ],
   lotteon: [
     {id:'LT001',name:'패션의류 > 여성의류 > 원피스'},{id:'LT002',name:'패션의류 > 여성의류 > 블라우스'},
     {id:'LT003',name:'패션의류 > 여성의류 > 니트'},{id:'LT004',name:'패션의류 > 남성의류'},
@@ -785,13 +741,6 @@ const MALL_CATS: Record<string, CatItem[]> = {
   toss: [
     {id:'TS001',name:'패션의류 > 여성의류'},{id:'TS002',name:'패션의류 > 남성의류'},
     {id:'TS003',name:'패션잡화 > 가방'},{id:'TS004',name:'패션잡화 > 지갑'},
-  ],
-  kakaostore: [
-    {id:'KS001',name:'패션의류 > 여성패션 > 원피스'},{id:'KS002',name:'패션의류 > 여성패션 > 블라우스'},
-    {id:'KS003',name:'패션의류 > 여성패션 > 바지'},{id:'KS004',name:'패션의류 > 남성패션 > 티셔츠'},
-    {id:'KS005',name:'패션의류 > 남성패션 > 바지'},{id:'KS006',name:'패션잡화 > 가방 > 숄더백'},
-    {id:'KS007',name:'패션잡화 > 가방 > 크로스백'},{id:'KS008',name:'패션잡화 > 지갑'},
-    {id:'KS009',name:'액세서리 > 귀걸이'},{id:'KS010',name:'뷰티 > 스킨케어'},
   ],
 }
 

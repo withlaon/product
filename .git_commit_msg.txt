@@ -1,7 +1,5 @@
-fix: toss shopping connection updated to self-development OpenAPI key method
+fix: toss shopping fields corrected - Secret Key + Access Key required
 
-- Required: login ID/PW + OpenAPI key (from self-dev key issuance)
-- Optional: Store ID
-- Added blue IP registration block in modal with key issuance steps
-- IP input format note: multiple IPs via newline or comma
-- Guide updated with 2-step process: IP reg -> key issuance -> program input
+- Required: login ID/PW + Secret Key + Access Key (all 4 mandatory)
+- Optional: Access Token (auto-issued, expires), commission rate %
+- Connection test validates both Secret Key and Access Key
