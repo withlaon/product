@@ -1,5 +1,6 @@
-fix: cafe24 invalid_grant error handling with re-auth guide
+fix: separate saveCredentialsOnly and startOAuth for OAuth malls
 
-- API route: detailed invalid_grant message with step-by-step re-auth guide
-- UI: orange warning box appears when invalid_grant detected, showing 4-step fix
-- Cause: Client Secret regeneration invalidates all existing refresh tokens
+- saveCredentialsOnly(): saves form data only, no OAuth popup (Settings Save button)
+- startOAuth(): saves + opens OAuth popup (OAuth Re-auth button)
+- Both buttons now work independently - clicking Settings Save no longer triggers OAuth
+- Fixes bug where Settings Save was triggering OAuth flow and causing expired code errors

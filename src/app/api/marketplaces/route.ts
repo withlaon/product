@@ -43,8 +43,8 @@ export async function POST(req: NextRequest) {
         tosshopping: { key: 'api_key',   label: 'API Key' },
         lotteon    : { key: 'api_key',   label: 'API Key' },
         ssg        : { key: 'api_key',   label: 'API Key' },
-        halfclub   : { key: 'api_key',   label: 'API Key' },
-        gsshop     : { key: 'api_key',   label: 'API Key' },
+        halfclub   : { key: 'api_key',   label: 'API 인증키' },
+        gsshop     : { key: 'login_id',  label: '쇼핑몰ID' },
         fashionplus: { key: 'login_id',  label: 'SCM 로그인 ID' },
         // 지그재그(카카오스타일): partner-api.zigzag.kr 는 공식 파트너만 접근 가능 — 자격증명 형식 검증으로 대체
         zigzag     : { key: 'api_key',   label: 'Access Key' },
@@ -57,6 +57,17 @@ export async function POST(req: NextRequest) {
         const token = credentials[tokenKey]
         if (!token || (token as string).length < 4) {
           return NextResponse.json({ success: false, mall, message: `${tokenLabel}이 입력되지 않았습니다.` })
+        }
+        // 하프클럽: API 인증키 + 협력사코드 둘 다 확인
+        if (mall === 'halfclub') {
+          const partnerCode = credentials.seller_id
+          if (!partnerCode || (partnerCode as string).length < 2) {
+            return NextResponse.json({ success: false, mall, message: '협력사코드가 입력되지 않았습니다. SCM [G.협력사관리 → G101 → 협력사 정보] 에서 확인하세요.' })
+          }
+          return NextResponse.json({
+            success: true, mall,
+            message: `하프클럽 자격증명 저장 완료 ✓ (협력사코드: ${partnerCode} · API 인증키 확인됨)`,
+          })
         }
         // 지그재그: Access Key + Secret Key 둘 다 있는지 추가 검증
         if (mall === 'zigzag') {
