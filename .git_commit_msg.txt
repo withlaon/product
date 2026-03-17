@@ -1,6 +1,19 @@
-feat: 쿠팡 연동 모달에 서버 IP 확인 및 화이트리스트 안내 UI 추가
+fix: 카페24 OAuth Edge Runtime 전환 + 스마트스토어 직접연동 + 연동테스트 버튼
 
-- 쿠팡 설정 모달에 서버 IP 확인 버튼 및 단계별 안내 블록 추가
-- /api/server-ip 호출 후 IP를 코드 블록으로 표시 + 클립보드 복사 버튼
-- IP 등록 방법 Wing 단계별 안내 및 Vercel 동적 IP 주의사항 표시
-- Wing 바로가기 링크 포함
+카페24:
+- oauth/page.tsx Edge Runtime으로 전환 Cold Start 완전 제거
+- 인증코드 만료 문제 근본 해결 수십ms 이내 토큰 교환
+- Buffer 대신 atob btoa 사용 Edge 호환
+- Refresh Token 있을 때 연동 테스트 버튼 표시
+- test_connection에서 refresh_token으로 access_token 갱신 후 테스트
+
+스마트스토어:
+- OAUTH_MALLS에서 제거 OAuth 로그인 불필요
+- Client Credentials 방식으로 변경 Application ID + Secret 만으로 연동
+- 폼 필드 간소화 로그인 필드 제거
+- IP 등록 안내 블록 추가 API호출IP 등록 방법
+- 가이드 전면 개편
+- index.ts에 naver 키 alias 추가
+
+공통:
+- 비OAuth 쇼핑몰 버튼 레이블 저장 및 연동 테스트로 변경

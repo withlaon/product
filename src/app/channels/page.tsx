@@ -50,12 +50,9 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_secret',label:'Application Secret', placeholder:'Application Secret Key',             type:'password', section:'api', required:true },
   ],
   // 11번가: SCM 로그인ID/PW + SHOP ID(선택) + API 인증키(Open API KEY)
-  // ※ SCM [Open API] Seller API 정보의 호스팅여부를 '사방넷'으로 설정해야 연동 가능
+  // 11번가: IP 직접 입력 방식 — API KEY만으로 연동 (로그인 불필요)
   '11st': [
-    { key:'login_id',  label:'쇼핑몰ID (SCM 로그인 ID)', placeholder:'SCM 로그인 아이디',           type:'text',     section:'login' },
-    { key:'login_pw',  label:'PASSWORD (SCM 비밀번호)',   placeholder:'SCM 비밀번호',               type:'password', section:'login' },
-    { key:'seller_id', label:'SHOP ID',                  placeholder:'내부 구분용 (선택사항)',       type:'text',     section:'api' },
-    { key:'api_key',   label:'API 인증키 (Open API KEY)', placeholder:'11번가 Open API CENTER에서 승인완료된 KEY', type:'password', section:'api' },
+    { key:'api_key', label:'API 인증키 (OPEN API KEY)', placeholder:'승인완료 상태의 API KEY 붙여넣기', type:'text', section:'api', required:true },
   ],
   // ESM 지마켓: 지마켓 전용 ID/PW (ESM PLUS 마스터 통합 ID 아님!)
   // ※ ESM PLUS '2단계 인증' 해제 필요, 셀링툴 관리에서 '사방넷' 설정 필요
@@ -223,25 +220,29 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     ],
   },
   '11st': {
-    title:'11번가 Open API 연동', authType:'API Key',
-    note:'11번가 Open API CENTER에서 서비스 등록 후 승인완료 상태의 Key를 사용해야 합니다.',
-    warning:'⚠ SCM [Open API] Seller API 정보의 호스팅여부를 반드시 "사방넷"으로 설정해야 연동 가능합니다.',
+    title:'11번가 Open API 연동 (IP 직접 입력)', authType:'API Key + IP 직접 입력',
+    note:'API KEY만으로 직접 연동됩니다. 기존에 셀링툴(사방넷 등)을 사용 중이라면, Open API CENTER에서 "IP 직접 입력"으로 전환해야 이 프로그램으로 연동할 수 있습니다.',
+    warning:'⚠ IP 직접 입력을 사용하지 않으면 API 호출이 차단됩니다 — 셀링툴(사방넷)에서 IP 직접 입력 방식으로 전환 필수',
     required:[
-      { label:'SCM 로그인 ID', desc:'11번가 SCM(스마트R) 로그인 아이디', badge:'required' },
-      { label:'SCM 비밀번호', desc:'11번가 SCM 비밀번호', badge:'required' },
-      { label:'API 인증키 (Open API KEY)', desc:'Open API CENTER에서 승인완료된 KEY', badge:'required' },
-      { label:'SHOP ID', desc:'내부 구분용 (선택사항)', badge:'optional' },
+      { label:'API 인증키 (OPEN API KEY)', desc:'Open API CENTER에서 승인완료 상태의 KEY', badge:'required' },
     ],
     steps:[
-      '① seller.11st.co.kr (SCM) 로그인',
-      '② 하단 [11번가 Open API CENTER] 클릭 → [서비스 등록·확인] 탭 이동',
-      '③ 서비스 등록 후 상태가 "승인완료"인 OPEN API KEY 복사',
-      '④ [Seller API 정보 수정] → 호스팅여부를 반드시 "사방넷"으로 설정 후 저장',
-      '⑤ 프로그램에 SCM 로그인 ID/PW + 승인완료된 API 인증키 입력 후 저장',
+      '━━ 기존 사방넷 → IP 직접 입력 전환 방법 ━━',
+      '① openapi.11st.co.kr 접속 → [API 관리] 클릭',
+      '② [접속권한] 섹션에서 "IP 직접 입력" → ○ 사용 선택',
+      '③ IP 입력란에 서버 IP 붙여넣기 (아래 [서버 IP 확인] 버튼으로 확인)',
+      '④ 셀링툴 업체(사방넷 등)는 그대로 두거나 X 버튼으로 제거 가능',
+      '⑤ [수정하기] 버튼 클릭 → IP 등록 완료',
+      '━━ API KEY 확인 ━━',
+      '⑥ [API KEY 관리] 섹션 → 승인완료 상태의 KEY 복사',
+      '⑦ 키가 없으면: [서비스 등록] → 서비스명/설명 입력 → 등록 → 승인 대기',
+      '━━ 프로그램 연동 ━━',
+      '⑧ 프로그램에 API 인증키 입력 후 [저장 및 연동 테스트] 클릭',
     ],
     links:[
-      { label:'11번가 SCM(스마트R)', url:'https://seller.11st.co.kr' },
       { label:'11번가 Open API CENTER', url:'https://openapi.11st.co.kr' },
+      { label:'11번가 SCM(스마트R)', url:'https://seller.11st.co.kr' },
+      { label:'내 공인 IP 확인', url:'https://www.whatismyip.com' },
     ],
   },
   gmarket: {
@@ -1358,6 +1359,68 @@ export default function ChannelsPage() {
                     <a href="https://apicenter.commerce.naver.com" target="_blank" rel="noreferrer"
                       style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#15803d', textDecoration:'none', fontWeight:600 }}>
                       <ExternalLink size={11}/>네이버 커머스 API센터 바로가기
+                    </a>
+                  </div>
+                )}
+
+                {/* 11번가 전용: IP 직접 입력 안내 */}
+                {apiTarget?.key === '11st' && (
+                  <div style={{
+                    background: '#fff7ed', border: '1.5px solid #fed7aa',
+                    borderRadius: 10, padding: '12px 14px',
+                  }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+                      <Server size={14} style={{ color:'#c2410c', flexShrink:0 }}/>
+                      <span style={{ fontSize:12.5, fontWeight:700, color:'#c2410c' }}>
+                        IP 직접 입력 등록 필수 (사방넷에서 전환)
+                      </span>
+                    </div>
+                    <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.6, marginBottom:10 }}>
+                      현재 셀링툴(사방넷)로 설정된 경우 이 프로그램에서 API 호출이 차단됩니다.
+                      Open API CENTER에서 &quot;IP 직접 입력&quot; → &quot;사용&quot;으로 전환 후 서버 IP를 등록하세요.
+                    </p>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <button
+                        onClick={fetchServerIp}
+                        disabled={serverIpState === 'loading'}
+                        style={{
+                          display:'flex', alignItems:'center', gap:5,
+                          padding:'5px 12px', borderRadius:6, fontSize:12,
+                          fontWeight:700, cursor: serverIpState === 'loading' ? 'not-allowed' : 'pointer',
+                          background: serverIpState === 'done' ? '#c2410c' : 'white',
+                          color:      serverIpState === 'done' ? 'white'    : '#c2410c',
+                          border:'1.5px solid #c2410c', transition:'all .15s',
+                        }}>
+                        {serverIpState === 'loading'
+                          ? <><RefreshCw size={12} style={{ animation:'spin 1s linear infinite' }}/>확인 중...</>
+                          : <><Server size={12}/>서버 IP 확인</>
+                        }
+                      </button>
+                      {serverIpState === 'done' && serverIp && (
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <code style={{ background:'#431407', color:'#fed7aa', padding:'4px 10px', borderRadius:5, fontSize:13, fontWeight:700, fontFamily:'monospace' }}>{serverIp}</code>
+                          <button onClick={() => navigator.clipboard.writeText(serverIp)}
+                            style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', borderRadius:5, fontSize:11, fontWeight:600, cursor:'pointer', background:'white', color:'#c2410c', border:'1px solid #fed7aa' }}>
+                            <Copy size={11}/>복사
+                          </button>
+                        </div>
+                      )}
+                      {serverIpState === 'error' && <span style={{ fontSize:12, color:'#dc2626' }}>IP 확인 실패</span>}
+                    </div>
+                    {serverIpState === 'done' && (
+                      <div style={{ marginTop:10, padding:'8px 10px', background:'#ffedd5', borderRadius:7, fontSize:11.5, color:'#431407', lineHeight:1.8 }}>
+                        <strong>사방넷 → IP 직접 입력 전환:</strong><br/>
+                        ① openapi.11st.co.kr → [API 관리] 탭 클릭<br/>
+                        ② [접속권한] → &quot;IP 직접 입력&quot; → <strong>사용</strong> 선택<br/>
+                        ③ 위 IP 주소 입력 후 [수정하기] 클릭<br/>
+                        <span style={{ color:'#7c3aed', fontWeight:600 }}>
+                          ⚠ 사방넷은 유지해도 되며, IP를 추가 등록하는 방식으로도 사용 가능합니다.
+                        </span>
+                      </div>
+                    )}
+                    <a href="https://openapi.11st.co.kr" target="_blank" rel="noreferrer"
+                      style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#c2410c', textDecoration:'none', fontWeight:600 }}>
+                      <ExternalLink size={11}/>11번가 Open API CENTER 바로가기
                     </a>
                   </div>
                 )}
