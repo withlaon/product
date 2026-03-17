@@ -75,8 +75,9 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
   // 에이블리: 로그인 + API Token
   ablly: [
     ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'에이블리 파트너 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Token',  placeholder:'파트너센터에서 발급', type:'password', section:'api' },
+    { key:'seller_id', label:'Partner ID',  placeholder:'에이블리 파트너 ID (예: p_xxxxxxxx)',  type:'text',     section:'api', required:true  },
+    { key:'site_name', label:'Store ID',    placeholder:'스토어 ID (예: s_xxxxxxxx)',           type:'text',     section:'api', required:true  },
+    { key:'api_key',   label:'API Token',   placeholder:'파트너센터 승인 후 발급되는 Access Token', type:'password', section:'api', required:true  },
   ],
   // 지그재그: 로그인 + API Key + API Secret
   zigzag: [
@@ -272,19 +273,20 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{ label:'ESM PLUS', url:'https://www.esmplus.com' }],
   },
   ablly: {
-    title:'에이블리 파트너 API 연동', authType:'API Token (파트너 승인 방식)',
-    note:'에이블리는 파트너 승인 후 API Token이 발급됩니다. 자동 발급이 아니라 수동 심사 방식입니다.',
-    warning:'⚠ 에이블리 옵션 구조는 일반 쇼핑몰과 다릅니다. 옵션상품(SKU) 단위로 업로드됩니다.',
+    title:'에이블리 파트너 API 연동', authType:'Partner ID + Store ID + API Token',
+    note:'이미 API Token이 있다면 바로 입력하면 됩니다. Partner ID / Store ID / API Token은 에이블리 파트너센터 [설정 → API 연동]에서 확인할 수 있습니다.',
+    warning:'📌 Partner ID ≠ Store ID: Partner ID는 파트너 계정 ID, Store ID는 입점한 스토어의 ID입니다. 서로 다른 값이니 각각 확인 후 입력하세요.',
     required:[
-      { label:'Partner ID', desc:'에이블리 파트너 ID', badge:'required' },
-      { label:'Store ID', desc:'스토어 ID', badge:'required' },
-      { label:'API Token', desc:'파트너센터 승인 후 발급되는 Access Token', badge:'required' },
+      { label:'Partner ID', desc:'파트너센터 계정 ID (p_로 시작하는 경우 많음)', badge:'required' },
+      { label:'Store ID',   desc:'내 스토어 ID (s_로 시작, 파트너센터 → 스토어 정보에서 확인)', badge:'required' },
+      { label:'API Token',  desc:'파트너센터 [설정 → API 연동]에서 발급된 Access Token', badge:'required' },
     ],
     steps:[
-      '① partner.a-bly.com 로그인 후 [설정] → [파트너 연동] → [API 연동 신청]',
-      '② 에이블리 담당자 승인 대기 (자동 발급 아님, 수동 심사)',
-      '③ 승인 완료 후 Partner ID / API Token 발급',
-      '④ 프로그램에 Partner ID + Store ID + API Token 입력 후 저장',
+      '① partner.a-bly.com 로그인',
+      '② 우측 상단 [설정] → [스토어 정보]에서 Store ID 확인',
+      '③ [설정] → [파트너 연동] → [API 연동]에서 Partner ID · API Token 확인',
+      '④ 아직 API Token이 없다면: [API 연동 신청] 후 에이블리 담당자 수동 심사 (1~3일)',
+      '⑤ 발급 완료 후 왼쪽 폼에 Partner ID + Store ID + API Token 입력 후 저장',
     ],
     links:[{ label:'에이블리 파트너센터', url:'https://partner.a-bly.com' }],
   },
