@@ -1,5 +1,1 @@
-fix: toss shopping fields corrected - Secret Key + Access Key required
-
-- Required: login ID/PW + Secret Key + Access Key (all 4 mandatory)
-- Optional: Access Token (auto-issued, expires), commission rate %
-- Connection test validates both Secret Key and Access Key
+remove jasondeal and kakaostore from marketplace list

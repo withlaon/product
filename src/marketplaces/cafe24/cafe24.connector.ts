@@ -39,7 +39,7 @@ export class Cafe24Connector extends BaseMarketplace {
   }
 
   async createProduct(product: UnifiedProduct): Promise<{ mall_product_id: string }> {
-    const res = await fetch(`${this.baseUrl}/products`, {
+    const res = await this.fetch(`${this.baseUrl}/products`, {
       method : 'POST',
       headers: this.authHeader(),
       body   : JSON.stringify({
@@ -63,7 +63,7 @@ export class Cafe24Connector extends BaseMarketplace {
     if (product.name)       body.product_name = product.name
     if (product.sale_price) body.price = product.sale_price
     if (product.stock)      body.stock_quantity = product.stock
-    const res = await fetch(`${this.baseUrl}/products/${mallProductId}`, {
+    const res = await this.fetch(`${this.baseUrl}/products/${mallProductId}`, {
       method : 'PUT',
       headers: this.authHeader(),
       body   : JSON.stringify({ request: body }),
@@ -73,7 +73,7 @@ export class Cafe24Connector extends BaseMarketplace {
   }
 
   async deleteProduct(mallProductId: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/products/${mallProductId}`, {
+    const res = await this.fetch(`${this.baseUrl}/products/${mallProductId}`, {
       method : 'DELETE',
       headers: this.authHeader(),
       signal : AbortSignal.timeout(10000),
@@ -119,7 +119,7 @@ export class Cafe24Connector extends BaseMarketplace {
   }
 
   async uploadInvoice(params: InvoiceParams): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/orders/${params.order_id}/shipments`, {
+    const res = await this.fetch(`${this.baseUrl}/orders/${params.order_id}/shipments`, {
       method : 'POST',
       headers: this.authHeader(),
       body   : JSON.stringify({
@@ -160,7 +160,7 @@ export class Cafe24Connector extends BaseMarketplace {
   }
 
   async cancelOrder(orderId: string, reason?: string): Promise<void> {
-    const res = await fetch(`${this.baseUrl}/orders/${orderId}/cancels`, {
+    const res = await this.fetch(`${this.baseUrl}/orders/${orderId}/cancels`, {
       method : 'POST',
       headers: this.authHeader(),
       body   : JSON.stringify({ request: { reason: reason || '' } }),

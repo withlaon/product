@@ -83,7 +83,7 @@ export class CoupangConnector extends BaseMarketplace {
         images       : product.images.map(url => ({ cdnPath: url })),
       })),
     }
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'POST',
       headers: this.buildAuthHeader('POST', path),
       body   : JSON.stringify(body),
@@ -99,7 +99,7 @@ export class CoupangConnector extends BaseMarketplace {
     const body: Record<string, unknown> = {}
     if (product.name)       body.sellerProductName = product.name
     if (product.sale_price) body.salePrice = product.sale_price
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'PUT',
       headers: this.buildAuthHeader('PUT', path),
       body   : JSON.stringify(body),
@@ -110,7 +110,7 @@ export class CoupangConnector extends BaseMarketplace {
 
   async deleteProduct(mallProductId: string): Promise<void> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/products/${mallProductId}`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'DELETE',
       headers: this.buildAuthHeader('DELETE', path),
       signal : AbortSignal.timeout(10000),
@@ -120,7 +120,7 @@ export class CoupangConnector extends BaseMarketplace {
 
   async updateStock(mallProductId: string, stock: number): Promise<void> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/products/${mallProductId}/quantity`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'PUT',
       headers: this.buildAuthHeader('PUT', path),
       body   : JSON.stringify({ quantity: stock }),
@@ -131,7 +131,7 @@ export class CoupangConnector extends BaseMarketplace {
 
   async updatePrice(mallProductId: string, price: number): Promise<void> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/products/${mallProductId}/price`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'PUT',
       headers: this.buildAuthHeader('PUT', path),
       body   : JSON.stringify({ salePrice: price }),
@@ -146,7 +146,7 @@ export class CoupangConnector extends BaseMarketplace {
     const to   = this.fmtDate(params.end_date   || '', true)
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/ordersheets`
       + `?createdAtFrom=${from}&createdAtTo=${to}&maxPerPage=${params.limit || 100}`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       headers: this.buildAuthHeader('GET', path),
       signal : AbortSignal.timeout(15000),
     })
@@ -185,7 +185,7 @@ export class CoupangConnector extends BaseMarketplace {
   /* ─── 송장 전송 ─────────────────────────────────────────────── */
   async uploadInvoice(params: InvoiceParams): Promise<void> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/orders/${params.order_id}/shipments`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'PUT',
       headers: this.buildAuthHeader('PUT', path),
       body   : JSON.stringify({
@@ -201,7 +201,7 @@ export class CoupangConnector extends BaseMarketplace {
   async getClaims(params: ClaimQueryParams): Promise<UnifiedClaim[]> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/returns`
       + `?createdAtFrom=${params.start_date || ''}&createdAtTo=${params.end_date || ''}&status=RETURN_REQUEST`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       headers: this.buildAuthHeader('GET', path),
       signal : AbortSignal.timeout(10000),
     })
@@ -233,7 +233,7 @@ export class CoupangConnector extends BaseMarketplace {
 
   async cancelOrder(orderId: string, reason?: string): Promise<void> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/cancels/${orderId}/approve`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'PUT',
       headers: this.buildAuthHeader('PUT', path),
       body   : JSON.stringify({ cancelReason: reason || '' }),
@@ -244,7 +244,7 @@ export class CoupangConnector extends BaseMarketplace {
 
   async approveReturn(claimId: string): Promise<void> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/returns/${claimId}/approve`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'PUT',
       headers: this.buildAuthHeader('PUT', path),
       body   : JSON.stringify({}),
@@ -255,7 +255,7 @@ export class CoupangConnector extends BaseMarketplace {
 
   async approveExchange(claimId: string): Promise<void> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/exchanges/${claimId}/approve`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'PUT',
       headers: this.buildAuthHeader('PUT', path),
       body   : JSON.stringify({}),
@@ -266,7 +266,7 @@ export class CoupangConnector extends BaseMarketplace {
 
   async rejectClaim(claimId: string, reason?: string): Promise<void> {
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/returns/${claimId}/reject`
-    const res = await fetch(`${BASE_URL}${path}`, {
+    const res = await this.fetch(`${BASE_URL}${path}`, {
       method : 'PUT',
       headers: this.buildAuthHeader('PUT', path),
       body   : JSON.stringify({ rejectReason: reason || '' }),

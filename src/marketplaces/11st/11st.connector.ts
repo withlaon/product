@@ -50,7 +50,7 @@ export class ElevenStConnector extends BaseMarketplace {
       `<brandNm>${product.brand || ''}</brandNm>`,
       '</product>',
     ].join('')
-    const res = await fetch(this.buildUrl('ProductService', 'insertProduct'), {
+    const res = await this.fetch(this.buildUrl('ProductService', 'insertProduct'), {
       method : 'POST',
       headers: { 'Content-Type': 'application/xml' },
       body,
@@ -68,7 +68,7 @@ export class ElevenStConnector extends BaseMarketplace {
     if (product.sale_price) fields.push(`<selPrc>${product.sale_price}</selPrc>`)
     if (product.stock)      fields.push(`<qty>${product.stock}</qty>`)
     const body = `<product>${fields.join('')}</product>`
-    const res = await fetch(this.buildUrl('ProductService', 'updateProduct'), {
+    const res = await this.fetch(this.buildUrl('ProductService', 'updateProduct'), {
       method : 'POST',
       headers: { 'Content-Type': 'application/xml' },
       body,
@@ -79,7 +79,7 @@ export class ElevenStConnector extends BaseMarketplace {
 
   async deleteProduct(mallProductId: string): Promise<void> {
     const body = `<product><prdNo>${mallProductId}</prdNo><prdStatCd>3</prdStatCd></product>`
-    const res = await fetch(this.buildUrl('ProductService', 'updateProductStatus'), {
+    const res = await this.fetch(this.buildUrl('ProductService', 'updateProductStatus'), {
       method : 'POST',
       headers: { 'Content-Type': 'application/xml' },
       body,
@@ -101,7 +101,7 @@ export class ElevenStConnector extends BaseMarketplace {
     const startDate = (params.start_date || '').replace(/-/g, '')
     const endDate   = (params.end_date   || '').replace(/-/g, '')
     const url = this.buildUrl('OrderService', 'getOrderList', `&orderStatus=BF&startDate=${startDate}&endDate=${endDate}`)
-    const res = await fetch(url, { signal: AbortSignal.timeout(15000) })
+    const res = await this.fetch(url, { signal: AbortSignal.timeout(15000) })
     if (!res.ok) throw new Error(`11번가 주문 조회 오류: ${res.status}`)
     const text = await res.text()
 
@@ -152,7 +152,7 @@ export class ElevenStConnector extends BaseMarketplace {
       `<invcNo>${params.invoice_no}</invcNo>`,
       '</order>',
     ].join('')
-    const res = await fetch(this.buildUrl('OrderService', 'updateDeliveryInfo'), {
+    const res = await this.fetch(this.buildUrl('OrderService', 'updateDeliveryInfo'), {
       method : 'POST',
       headers: { 'Content-Type': 'application/xml' },
       body,
@@ -166,7 +166,7 @@ export class ElevenStConnector extends BaseMarketplace {
     const startDate = (params.start_date || '').replace(/-/g, '')
     const endDate   = (params.end_date   || '').replace(/-/g, '')
     const url = this.buildUrl('ClaimService', 'getClaimList', `&startDate=${startDate}&endDate=${endDate}`)
-    const res = await fetch(url, { signal: AbortSignal.timeout(10000) })
+    const res = await this.fetch(url, { signal: AbortSignal.timeout(10000) })
     if (!res.ok) throw new Error(`11번가 클레임 조회 오류: ${res.status}`)
     const text = await res.text()
 
@@ -208,7 +208,7 @@ export class ElevenStConnector extends BaseMarketplace {
 
   async cancelOrder(orderId: string): Promise<void> {
     const body = `<order><ordNo>${orderId}</ordNo></order>`
-    const res = await fetch(this.buildUrl('OrderService', 'cancelOrder'), {
+    const res = await this.fetch(this.buildUrl('OrderService', 'cancelOrder'), {
       method : 'POST',
       headers: { 'Content-Type': 'application/xml' },
       body,

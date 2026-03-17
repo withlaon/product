@@ -35,7 +35,7 @@ export class FashionplusConnector extends BaseMarketplace {
   }
 
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
-    const res = await fetch(`${BASE_URL}/orders`, {
+    const res = await this.fetch(`${BASE_URL}/orders`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Trader-Code': this.traderCode },
       body   : JSON.stringify({ ...this.authBody(), startDate: params.start_date, endDate: params.end_date }),
@@ -67,7 +67,7 @@ export class FashionplusConnector extends BaseMarketplace {
   }
 
   async uploadInvoice(params: InvoiceParams): Promise<void> {
-    const res = await fetch(`${BASE_URL}/shipping/invoice`, {
+    const res = await this.fetch(`${BASE_URL}/shipping/invoice`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Trader-Code': this.traderCode },
       body   : JSON.stringify({
@@ -82,7 +82,7 @@ export class FashionplusConnector extends BaseMarketplace {
   }
 
   async getClaims(params: ClaimQueryParams): Promise<UnifiedClaim[]> {
-    const res = await fetch(`${BASE_URL}/claims`, {
+    const res = await this.fetch(`${BASE_URL}/claims`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Trader-Code': this.traderCode },
       body   : JSON.stringify({ ...this.authBody(), startDate: params.start_date, endDate: params.end_date }),
@@ -113,7 +113,7 @@ export class FashionplusConnector extends BaseMarketplace {
 
   /* 배송 프로필 조회 (패션플러스 특수 기능) */
   async getShippingProfiles(): Promise<ShippingProfile[]> {
-    const res = await fetch(`${BASE_URL}/shipping/profiles`, {
+    const res = await this.fetch(`${BASE_URL}/shipping/profiles`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/json', 'X-Trader-Code': this.traderCode },
       body   : JSON.stringify(this.authBody()),

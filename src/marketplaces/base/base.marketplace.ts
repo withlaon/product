@@ -1,6 +1,8 @@
 /**
  * 모든 쇼핑몰 커넥터의 기반 추상 클래스
  * 미구현 메서드는 NotImplementedError를 throw합니다.
+ *
+ * 모든 외부 API 호출은 proxyFetch를 통해 Fixie 고정 IP로 발신됩니다.
  */
 
 import type {
@@ -14,6 +16,7 @@ import type {
   ClaimQueryParams,
   InvoiceParams,
 } from '@/adapters/marketplace.adapter'
+import { proxyFetch } from '@/lib/proxy-fetch'
 
 export class NotImplementedError extends Error {
   constructor(mallName: string, method: string) {
@@ -27,6 +30,9 @@ export abstract class BaseMarketplace implements IMarketplaceAdapter {
   abstract readonly mallName : string
 
   protected credentials: Credentials = {}
+
+  /** Fixie 고정 IP를 통한 fetch (FIXIE_URL 미설정 시 기본 fetch) */
+  protected fetch = proxyFetch
 
   connect(credentials: Credentials): void {
     this.credentials = credentials

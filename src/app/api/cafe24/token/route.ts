@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { proxyFetch } from '@/lib/proxy-fetch'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -53,7 +54,7 @@ export async function POST(req: NextRequest) {
 
     /* ── 카페24 토큰 교환 요청 ── */
     // Cafe24 공식 스펙: client_id/client_secret은 Authorization Basic 헤더에만 포함
-    const tokenRes = await fetch(`https://${mall_id}.cafe24api.com/api/v2/oauth/token`, {
+    const tokenRes = await proxyFetch(`https://${mall_id}.cafe24api.com/api/v2/oauth/token`, {
       method : 'POST',
       headers: {
         'Content-Type' : 'application/x-www-form-urlencoded',

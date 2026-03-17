@@ -60,7 +60,7 @@ export class AlwaysConnector extends BaseMarketplace {
   }
 
   async uploadInvoice(params: InvoiceParams): Promise<void> {
-    const res = await fetch(`${BASE_URL}/orders/${params.order_id}/shipping`, {
+    const res = await this.fetch(`${BASE_URL}/orders/${params.order_id}/shipping`, {
       method : 'POST',
       headers: this.authHeader(),
       body   : JSON.stringify({

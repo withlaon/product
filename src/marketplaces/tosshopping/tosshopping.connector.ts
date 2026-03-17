@@ -60,7 +60,7 @@ export class TossshoppingConnector extends BaseMarketplace {
   }
 
   async uploadInvoice(params: InvoiceParams): Promise<void> {
-    const res = await fetch(`${BASE_URL}/orders/${params.order_id}/shipment`, {
+    const res = await this.fetch(`${BASE_URL}/orders/${params.order_id}/shipment`, {
       method : 'POST',
       headers: this.authHeader(),
       body   : JSON.stringify({

@@ -24,7 +24,7 @@ export class SmartstoreConnector extends BaseMarketplace {
   private async getAccessToken(): Promise<string> {
     const { api_key, api_secret } = this.credentials
     if (!api_key || !api_secret) throw new Error('스마트스토어 인증 정보 누락 (Application ID / Secret)')
-    const res = await fetch(`${BASE_URL}/v1/oauth2/token`, {
+    const res = await this.fetch(`${BASE_URL}/v1/oauth2/token`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body   : new URLSearchParams({ grant_type: 'client_credentials', client_id: api_key, client_secret: api_secret }),
@@ -59,7 +59,7 @@ export class SmartstoreConnector extends BaseMarketplace {
         leafCategoryId: product.category_id,
       },
     }
-    const res = await fetch(`${BASE_URL}/v2/products`, {
+    const res = await this.fetch(`${BASE_URL}/v2/products`, {
       method : 'POST',
       headers: this.authHeader(token),
       body   : JSON.stringify(body),
@@ -76,7 +76,7 @@ export class SmartstoreConnector extends BaseMarketplace {
     if (product.name)       (body.originProduct as Record<string, unknown>).name = product.name
     if (product.sale_price) (body.originProduct as Record<string, unknown>).salePrice = product.sale_price
     if (product.stock)      (body.originProduct as Record<string, unknown>).stockQuantity = product.stock
-    const res = await fetch(`${BASE_URL}/v2/products/${mallProductId}`, {
+    const res = await this.fetch(`${BASE_URL}/v2/products/${mallProductId}`, {
       method : 'PUT',
       headers: this.authHeader(token),
       body   : JSON.stringify(body),
@@ -87,7 +87,7 @@ export class SmartstoreConnector extends BaseMarketplace {
 
   async deleteProduct(mallProductId: string): Promise<void> {
     const token = await this.getAccessToken()
-    const res = await fetch(`${BASE_URL}/v2/products/${mallProductId}`, {
+    const res = await this.fetch(`${BASE_URL}/v2/products/${mallProductId}`, {
       method : 'PUT',
       headers: this.authHeader(token),
       body   : JSON.stringify({ originProduct: { statusType: 'WITHDRAWAL' } }),
@@ -98,7 +98,7 @@ export class SmartstoreConnector extends BaseMarketplace {
 
   async updateStock(mallProductId: string, stock: number): Promise<void> {
     const token = await this.getAccessToken()
-    const res = await fetch(`${BASE_URL}/v2/products/${mallProductId}`, {
+    const res = await this.fetch(`${BASE_URL}/v2/products/${mallProductId}`, {
       method : 'PUT',
       headers: this.authHeader(token),
       body   : JSON.stringify({ originProduct: { stockQuantity: stock } }),
@@ -109,7 +109,7 @@ export class SmartstoreConnector extends BaseMarketplace {
 
   async updatePrice(mallProductId: string, price: number): Promise<void> {
     const token = await this.getAccessToken()
-    const res = await fetch(`${BASE_URL}/v2/products/${mallProductId}`, {
+    const res = await this.fetch(`${BASE_URL}/v2/products/${mallProductId}`, {
       method : 'PUT',
       headers: this.authHeader(token),
       body   : JSON.stringify({ originProduct: { salePrice: price } }),
@@ -163,7 +163,7 @@ export class SmartstoreConnector extends BaseMarketplace {
   /* ─── 송장 전송 ─────────────────────────────────────────────── */
   async uploadInvoice(params: InvoiceParams): Promise<void> {
     const token = await this.getAccessToken()
-    const res = await fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/dispatch`, {
+    const res = await this.fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/dispatch`, {
       method : 'POST',
       headers: this.authHeader(token),
       body   : JSON.stringify({
@@ -227,7 +227,7 @@ export class SmartstoreConnector extends BaseMarketplace {
 
   async cancelOrder(orderId: string, reason?: string): Promise<void> {
     const token = await this.getAccessToken()
-    const res = await fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/cancel`, {
+    const res = await this.fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/cancel`, {
       method : 'POST',
       headers: this.authHeader(token),
       body   : JSON.stringify({ productOrderIds: [orderId], cancelReason: reason || 'SELLER_REASON' }),
@@ -238,7 +238,7 @@ export class SmartstoreConnector extends BaseMarketplace {
 
   async approveReturn(claimId: string): Promise<void> {
     const token = await this.getAccessToken()
-    const res = await fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/${claimId}/return/receive`, {
+    const res = await this.fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/${claimId}/return/receive`, {
       method : 'POST',
       headers: this.authHeader(token),
       body   : JSON.stringify({}),
@@ -249,7 +249,7 @@ export class SmartstoreConnector extends BaseMarketplace {
 
   async approveExchange(claimId: string): Promise<void> {
     const token = await this.getAccessToken()
-    const res = await fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/${claimId}/exchange/receive`, {
+    const res = await this.fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/${claimId}/exchange/receive`, {
       method : 'POST',
       headers: this.authHeader(token),
       body   : JSON.stringify({}),
@@ -260,7 +260,7 @@ export class SmartstoreConnector extends BaseMarketplace {
 
   async rejectClaim(claimId: string, reason?: string): Promise<void> {
     const token = await this.getAccessToken()
-    const res = await fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/${claimId}/claim/reject`, {
+    const res = await this.fetch(`${BASE_URL}/v1/pay-order/seller/product-orders/${claimId}/claim/reject`, {
       method : 'POST',
       headers: this.authHeader(token),
       body   : JSON.stringify({ rejectReason: reason || '' }),

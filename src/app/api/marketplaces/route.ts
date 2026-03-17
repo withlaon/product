@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { MARKETPLACE_LIST, createAdapter } from '@/marketplaces'
 import type { Credentials } from '@/adapters/marketplace.adapter'
 import { format, subDays } from 'date-fns'
+import { proxyFetch } from '@/lib/proxy-fetch'
 
 export const runtime = 'nodejs'
 
@@ -141,7 +142,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({ success: false, mall, message: 'Client ID / Client Secret / 쇼핑몰 ID를 모두 입력해 주세요.' })
         }
         try {
-          const tokenRes = await fetch(`https://${shopId}.cafe24api.com/api/v2/oauth/token`, {
+          const tokenRes = await proxyFetch(`https://${shopId}.cafe24api.com/api/v2/oauth/token`, {
             method : 'POST',
             headers: {
               'Content-Type' : 'application/x-www-form-urlencoded',
