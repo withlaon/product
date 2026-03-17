@@ -1,12 +1,10 @@
 /**
  * 에이블리 커넥터
  * API: https://api.a-bly.com/openapi
- * 인증: Partner ID + Store ID + API Token (Authorization 헤더)
+ * 인증: API Token 단독 (Authorization 헤더)
  *
  * credentials 매핑:
- *   api_key   → API Token (Access Token)
- *   seller_id → Partner ID
- *   site_name → Store ID
+ *   api_key → API Token (ABLY Sellers 기본 정보 페이지에서 발급)
  */
 
 import { BaseMarketplace } from '@/marketplaces/base/base.marketplace'
@@ -26,31 +24,20 @@ export class AblyConnector extends BaseMarketplace {
 
   private get apiToken(): string {
     const key = this.credentials.api_key
-    if (!key) throw new Error('에이블리 API Token 누락 (api_key)')
+    if (!key) throw new Error('에이블리 API Token 누락 — my.a-bly.com 기본 정보 페이지에서 발급')
     return key
-  }
-
-  private get partnerId(): string {
-    return this.credentials.seller_id || ''
-  }
-
-  private get storeId(): string {
-    return this.credentials.site_name || ''
   }
 
   private authHeader() {
     return {
       'Authorization': `Bearer ${this.apiToken}`,
       'Content-Type' : 'application/json',
-      ...(this.partnerId ? { 'X-Partner-Id': this.partnerId } : {}),
-      ...(this.storeId   ? { 'X-Store-Id'  : this.storeId   } : {}),
     }
   }
 
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
-    const storeSegment = this.storeId ? `/stores/${this.storeId}` : ''
     const res = await fetch(
-      `${BASE_URL}${storeSegment}/orders?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}`,
+      `${BASE_URL}/orders?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(15000) }
     )
     if (!res.ok) throw new Error(`에이블리 주문 조회 오류: ${res.status}`)
@@ -79,8 +66,7 @@ export class AblyConnector extends BaseMarketplace {
   }
 
   async uploadInvoice(params: InvoiceParams): Promise<void> {
-    const storeSegment = this.storeId ? `/stores/${this.storeId}` : ''
-    const res = await fetch(`${BASE_URL}${storeSegment}/orders/${params.order_id}/delivery`, {
+    const res = await fetch(`${BASE_URL}/orders/${params.order_id}/delivery`, {
       method : 'POST',
       headers: this.authHeader(),
       body   : JSON.stringify({
@@ -93,9 +79,8 @@ export class AblyConnector extends BaseMarketplace {
   }
 
   async getClaims(params: ClaimQueryParams): Promise<UnifiedClaim[]> {
-    const storeSegment = this.storeId ? `/stores/${this.storeId}` : ''
     const res = await fetch(
-      `${BASE_URL}${storeSegment}/claims?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}`,
+      `${BASE_URL}/claims?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(10000) }
     )
     if (!res.ok) throw new Error(`에이블리 클레임 조회 오류: ${res.status}`)
