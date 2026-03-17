@@ -46,6 +46,8 @@ export async function POST(req: NextRequest) {
         halfclub   : { key: 'api_key',   label: 'API Key' },
         gsshop     : { key: 'api_key',   label: 'API Key' },
         fashionplus: { key: 'login_id',  label: 'SCM 로그인 ID' },
+        // 지그재그(카카오스타일): partner-api.zigzag.kr 는 공식 파트너만 접근 가능 — 자격증명 형식 검증으로 대체
+        zigzag     : { key: 'api_key',   label: 'Access Key' },
         // ESM(옥션/지마켓): 공식 파트너 셀링툴만 API 사용 가능 — 로그인 ID 저장
         gmarket    : { key: 'login_id',  label: 'ESM PLUS ID' },
         auction    : { key: 'login_id',  label: 'ESM PLUS ID' },
@@ -55,6 +57,17 @@ export async function POST(req: NextRequest) {
         const token = credentials[tokenKey]
         if (!token || (token as string).length < 4) {
           return NextResponse.json({ success: false, mall, message: `${tokenLabel}이 입력되지 않았습니다.` })
+        }
+        // 지그재그: Access Key + Secret Key 둘 다 있는지 추가 검증
+        if (mall === 'zigzag') {
+          const secretKey = credentials.api_secret
+          if (!secretKey || (secretKey as string).length < 8) {
+            return NextResponse.json({ success: false, mall, message: 'Secret Key가 입력되지 않았습니다. 카카오스타일 파트너센터 [API 인증키 관리]에서 확인하세요.' })
+          }
+          return NextResponse.json({
+            success: true, mall,
+            message: `지그재그 자격증명 저장 완료 ✓ (Access Key + Secret Key 확인됨)\n실제 API 연동은 카카오스타일 공식 파트너 심사 후 활성화됩니다.`,
+          })
         }
         const isEsm = mall === 'gmarket' || mall === 'auction'
         return NextResponse.json({

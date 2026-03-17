@@ -933,44 +933,39 @@ export default function ChannelsPage() {
 
   const saveApi = async () => {
     if (!apiTarget) return
+    const savedKey  = apiTarget.key
+    const savedForm = { ...apiForm }
+
     // 공통: 입력값 저장
-    update(channels.map(c => c.key===apiTarget.key ? { ...c, ...apiForm, active:true } : c))
+    update(channels.map(c => c.key === savedKey ? { ...c, ...apiForm, active:true } : c))
 
     // OAuth 쇼핑몰: Client ID + Shop ID 있으면 팝업 실행
-    if (OAUTH_MALLS.includes(apiTarget.key)) {
-      const shopId   = apiForm.seller_id?.trim()
-      const clientId = apiForm.api_key?.trim()
+    if (OAUTH_MALLS.includes(savedKey)) {
+      const shopId   = savedForm.seller_id?.trim()
+      const clientId = savedForm.api_key?.trim()
       if (!shopId || !clientId) {
         setApiTarget(null)
         return
       }
-      // OAuth 인증 URL 생성
-      // redirect_uri는 카페24 개발자센터에 등록된 것과 정확히 일치해야 함 (쿼리스트링 없이)
-      const redirectUri   = `${window.location.origin}/oauth`
-      const clientSecret  = apiForm.api_secret?.trim() || ''
-      // state에 client_secret 포함 (서버에서 토큰 교환 시 폴백으로 사용)
-      const state = btoa(JSON.stringify({ mall: apiTarget.key, client_id: clientId, client_secret: clientSecret, shop_id: shopId }))
+      const redirectUri  = `${window.location.origin}/oauth`
+      const clientSecret = savedForm.api_secret?.trim() || ''
+      const state = btoa(JSON.stringify({ mall: savedKey, client_id: clientId, client_secret: clientSecret, shop_id: shopId }))
         .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'')
       let authUrl = ''
-      if (apiTarget.key === 'cafe24') {
+      if (savedKey === 'cafe24') {
         authUrl = `https://${shopId}.cafe24api.com/api/v2/oauth/authorize`
           + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
           + `&redirect_uri=${encodeURIComponent(redirectUri)}`
           + `&scope=mall.read_product,mall.write_product,mall.read_order,mall.write_order,mall.read_category,mall.write_category,mall.read_customer,mall.write_customer,mall.read_shipping,mall.write_shipping`
           + `&state=${state}`
-      } else if (apiTarget.key === 'naver') {
+      } else if (savedKey === 'naver') {
         authUrl = `https://api.commerce.naver.com/external/v1/oauth2/authorize`
-          + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
-          + `&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`
-      } else if (apiTarget.key === 'zigzag') {
-        authUrl = `https://api.zigzag.kr/api/v1/oauth/authorize`
           + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
           + `&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`
       }
       if (authUrl) {
         setOauthPending(true)
         const popup = window.open(authUrl, 'oauth_popup', 'width=600,height=700,left=300,top=100')
-        // 팝업이 닫히면 pending 해제
         const checkClosed = setInterval(() => {
           if (popup?.closed) { clearInterval(checkClosed); setOauthPending(false) }
         }, 1000)
@@ -978,16 +973,18 @@ export default function ChannelsPage() {
       setApiTarget(null)
       return
     }
-    setApiTarget(null)
 
-    // 비-OAuth 쇼핑몰은 저장 즉시 자동 연결 테스트
-    if (!OAUTH_MALLS.includes(apiTarget.key)) {
-      runTestConnection(apiTarget.key, apiForm)
+    // 비-OAuth: 모달 열어둔 채로 바로 테스트 진행 → 성공 시 자동 닫기 / 실패 시 모달 유지
+    const ok = await runTestConnection(savedKey, savedForm)
+    if (ok) {
+      // 성공: 1.5초 뒤 자동 닫기
+      setTimeout(() => setApiTarget(null), 1500)
     }
+    // 실패: 모달 유지 → 사용자가 오류 메시지 확인 후 수동으로 닫기
   }
 
-  /* ── 연동 테스트 ── */
-  const runTestConnection = async (mallKey: string, form: Record<string,string>) => {
+  /* ── 연동 테스트 (결과를 boolean으로 반환) ── */
+  const runTestConnection = async (mallKey: string, form: Record<string,string>): Promise<boolean> => {
     setTestStatus(prev => ({ ...prev, [mallKey]: 'testing' }))
     setTestMsg(prev => ({ ...prev, [mallKey]: '' }))
     try {
@@ -1016,16 +1013,19 @@ export default function ChannelsPage() {
         // 성공 시 채널 상태 업데이트
         setChannels(prev => prev.map(c => c.key === mallKey ? { ...c, testOk: true } : c))
         saveChannels(channels.map(c => c.key === mallKey ? { ...c, testOk: true } : c))
+        return true
       } else {
         setTestStatus(prev => ({ ...prev, [mallKey]: 'fail' }))
         setTestMsg(prev => ({ ...prev, [mallKey]: data.message || '연결 실패' }))
         setChannels(prev => prev.map(c => c.key === mallKey ? { ...c, testOk: false } : c))
         saveChannels(channels.map(c => c.key === mallKey ? { ...c, testOk: false } : c))
+        return false
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : '알 수 없는 오류'
       setTestStatus(prev => ({ ...prev, [mallKey]: 'fail' }))
       setTestMsg(prev => ({ ...prev, [mallKey]: msg }))
+      return false
     }
   }
 
@@ -1634,27 +1634,27 @@ export default function ChannelsPage() {
                 {/* 연동 테스트 결과 */}
                 {apiTarget && testStatus[apiTarget.key] && testStatus[apiTarget.key] !== 'idle' && (
                   <div style={{
-                    borderRadius: 10, padding: '10px 14px',
-                    display: 'flex', alignItems: 'flex-start', gap: 8,
+                    borderRadius: 10, padding: '12px 14px',
+                    display: 'flex', alignItems: 'flex-start', gap: 10,
                     background: testStatus[apiTarget.key] === 'testing' ? '#f8fafc'
                       : testStatus[apiTarget.key] === 'ok' ? '#f0fdf4' : '#fef2f2',
                     border: `1.5px solid ${testStatus[apiTarget.key] === 'testing' ? '#e2e8f0'
                       : testStatus[apiTarget.key] === 'ok' ? '#bbf7d0' : '#fecaca'}`,
                   }}>
                     {testStatus[apiTarget.key] === 'testing' && (
-                      <div style={{ width:16, height:16, borderRadius:'50%', border:'2.5px solid #cbd5e1', borderTopColor:'#6366f1', animation:'spin 0.8s linear infinite', flexShrink:0, marginTop:1 }}/>
+                      <div style={{ width:18, height:18, borderRadius:'50%', border:'2.5px solid #cbd5e1', borderTopColor:'#6366f1', animation:'spin 0.8s linear infinite', flexShrink:0, marginTop:1 }}/>
                     )}
-                    {testStatus[apiTarget.key] === 'ok' && <CheckCircle2 size={16} style={{ color:'#15803d', flexShrink:0, marginTop:1 }}/>}
-                    {testStatus[apiTarget.key] === 'fail' && <XCircle size={16} style={{ color:'#dc2626', flexShrink:0, marginTop:1 }}/>}
-                    <div>
-                      <p style={{ fontSize:12.5, fontWeight:800,
+                    {testStatus[apiTarget.key] === 'ok' && <CheckCircle2 size={18} style={{ color:'#15803d', flexShrink:0, marginTop:1 }}/>}
+                    {testStatus[apiTarget.key] === 'fail' && <XCircle size={18} style={{ color:'#dc2626', flexShrink:0, marginTop:1 }}/>}
+                    <div style={{ flex:1 }}>
+                      <p style={{ fontSize:13, fontWeight:800,
                         color: testStatus[apiTarget.key] === 'testing' ? '#475569'
                           : testStatus[apiTarget.key] === 'ok' ? '#15803d' : '#dc2626' }}>
                         {testStatus[apiTarget.key] === 'testing' ? 'API 연결 테스트 중...'
-                          : testStatus[apiTarget.key] === 'ok' ? '✅ 연동 성공' : '❌ 연동 실패'}
+                          : testStatus[apiTarget.key] === 'ok' ? '✅ 연동 성공 — 잠시 후 자동으로 닫힙니다' : '❌ 연동 실패 — 오류 내용을 확인 후 수정해주세요'}
                       </p>
                       {testMsg[apiTarget.key] && (
-                        <p style={{ fontSize:11.5, color:'#64748b', marginTop:2, lineHeight:1.5 }}>
+                        <p style={{ fontSize:11.5, color: testStatus[apiTarget.key] === 'fail' ? '#b91c1c' : '#475569', marginTop:3, lineHeight:1.6, whiteSpace:'pre-line' }}>
                           {testMsg[apiTarget.key]}
                         </p>
                       )}

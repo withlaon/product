@@ -1,12 +1,6 @@
-feat: 지그재그 Access Key 방식으로 전환 + 모든 입력란 보이기/숨기기 토글 추가
+fix: 지그재그 연동 올바르게 수정 Access Key + Secret Key 둘다 필수
 
-지그재그:
-- Partner ID, API Secret 제거 -> Access Key 하나만 입력
-- 카카오스타일 파트너센터 API 인증키 관리 위치 가이드 상세 추가
-- OAUTH_MALLS에서 zigzag 제거 (OAuth 불필요)
-
-입력란 보이기/숨기기:
-- 모든 password 필드에 Eye/EyeOff 토글 버튼 추가
-- 로그인 필드와 API 키 필드 모두 적용
-- 이미 연동된 쇼핑몰 수정 모달 열 때도 적용
-- 모달 열 때마다 모든 필드 숨김 초기화
+- 폼 필드: SCM 로그인 ID/PW(필수) + Access Key(필수) + Secret Key(필수) + SHOP ID(선택) + 수수료(선택)
+- 커넥터: X-SECRET-KEY 헤더 추가
+- 가이드: Access Key와 Secret Key 확인 경로 상세 안내
+- 이전에 잘못 제거했던 로그인 필드와 Secret Key 필드 복원
