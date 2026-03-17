@@ -1,7 +1,9 @@
-feat: 11번가 IP 3종 입력 안내 완전 개편
+feat: 카페24 OAuth 가이드 완전 개편 + 단계별 상세 안내
 
-- 개발서버 IP, 개발자 PC, 상용서버 IP 3종 입력 항목별 상세 안내
-- 서버 IP 확인 후 개발서버/상용서버 자동 표시
-- 개발자 PC는 whatismyip.com 링크로 직접 확인 안내
-- Vercel 사용 시 개발서버 = 상용서버 동일 입력 안내
-- 가이드 STEP 구조로 전면 개편
+- 5단계 상세 안내 앱생성 권한설정 URI설정 키복사 OAuth인증
+- Redirect URI 주의사항 https://withlaon.vercel.app/oauth 명시
+- scope 목록 상세 나열 invalid_scope 오류 예방
+- 자주 발생하는 오류 목록 및 해결법 추가
+- Refresh Token 자동발급 배지 추가
+- 가이드 패널 STEP 구분선 렌더링 개선
+- 오류 항목 빨간색 강조 표시

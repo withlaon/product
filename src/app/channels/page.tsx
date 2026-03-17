@@ -5,7 +5,7 @@ import { Modal } from '@/components/ui/modal'
 import {
   RefreshCw, Zap, Plus, CheckCircle2, Unlink,
   Tag, Truck, Search, X, BookOpen, Pencil, Trash2, Save, ChevronRight,
-  Wifi, XCircle, Server, Copy, ExternalLink,
+  Wifi, XCircle, Server, Copy, ExternalLink, Eye, EyeOff,
 } from 'lucide-react'
 
 /* ─── 전체 쇼핑몰 정의 ────────────────────────────────────────────── */
@@ -73,11 +73,9 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_key', label:'API Token', placeholder:'my.a-bly.com → 기본 정보 → API Token 복사', type:'password', section:'api', required:true },
   ],
   // 지그재그: 로그인 + API Key + API Secret
+  // 지그재그: Access Key(인증키) 하나만 — 카카오스타일 파트너센터 [내 스토어 정보 관리 > API 인증키 관리]
   zigzag: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'지그재그 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'셀러어드민 API Key', type:'password', section:'api' },
-    { key:'api_secret',label:'API Secret', placeholder:'API Secret',        type:'password', section:'api' },
+    { key:'api_key', label:'API 인증키 (Access Key)', placeholder:'카카오스타일 파트너센터 → API 인증키 관리 → 인증 상태 키', type:'text', section:'api', required:true },
   ],
   // 올웨이즈: 로그인 + API Key
   alwayz: [
@@ -316,22 +314,27 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{ label:'ABLY Sellers 셀러센터', url:'https://my.a-bly.com/dashboard' }],
   },
   zigzag: {
-    title:'지그재그(카카오스타일) API 연동', authType:'API Key + Secret',
-    note:'지그재그는 카카오스타일 파트너 API입니다. 파트너센터에서 API 연동 신청 후 승인을 받아야 합니다.',
+    title:'지그재그(카카오스타일) API 연동', authType:'Access Key (API 인증키)',
+    note:'카카오스타일 파트너센터에서 API 인증키(Access Key)를 복사해 입력하면 됩니다. Partner ID · API Secret 같은 별도 항목은 없습니다.',
     warning:'⚠ 이미지 비율 엄격(정사각형 2000px 권장) · 카테고리 매우 세분화됨',
     required:[
-      { label:'Partner ID', desc:'지그재그 파트너 ID', badge:'required' },
-      { label:'Shop ID', desc:'스토어 Shop ID', badge:'required' },
-      { label:'API Key', desc:'개발자센터에서 발급된 API Key', badge:'required' },
-      { label:'API Secret', desc:'API Secret Key', badge:'required' },
+      { label:'API 인증키 (Access Key)', desc:'카카오스타일 파트너센터 → 내 스토어 정보 관리 → API 인증키 관리 → "인증" 상태 키 복사', badge:'required' },
     ],
     steps:[
+      '━━ API 인증키 위치 ━━',
       '① partner.zigzag.kr 접속 후 로그인',
-      '② [개발자센터] → [API 연동 신청] 클릭',
-      '③ 승인 후 Partner ID / API Key / Secret Key 발급 확인',
-      '④ 프로그램에 Partner ID + Shop ID + API Key + Secret 입력 후 저장',
+      '② 좌측 메뉴 [내 스토어 정보 관리] → [API 인증키 관리] 클릭',
+      '③ 인증키 목록에서 상태가 "인증"인 Access Key UUID 복사',
+      '    (예: 4969a9a5-4568-47a0-b29a-3d71bceee08f)',
+      '━━ 인증키가 없는 경우 ━━',
+      '④ [API 인증키 발급] 버튼 클릭 → 새 키 발급',
+      '⑤ 발급된 키의 상태가 "인증"이 되면 복사 가능',
+      '━━ 프로그램 연동 ━━',
+      '⑥ 프로그램에 Access Key 붙여넣기 후 [저장 및 연동 테스트] 클릭',
     ],
-    links:[{ label:'지그재그 파트너센터', url:'https://partner.zigzag.kr' }],
+    links:[
+      { label:'카카오스타일 파트너센터', url:'https://partner.zigzag.kr' },
+    ],
   },
   alwayz: {
     title:'올웨이즈 API 연동', authType:'API Key + Secret',
@@ -851,6 +854,11 @@ export default function ChannelsPage() {
   const [serverIp,      setServerIp]      = useState<string>('')
   const [serverIpState, setServerIpState] = useState<'idle'|'loading'|'done'|'error'>('idle')
 
+  /* ── 비밀번호 필드 보이기/숨기기 ── */
+  const [showFields, setShowFields] = useState<Record<string, boolean>>({})
+  const toggleFieldVisibility = (key: string) =>
+    setShowFields(prev => ({ ...prev, [key]: !prev[key] }))
+
   const fetchServerIp = async () => {
     setServerIpState('loading')
     try {
@@ -902,10 +910,12 @@ export default function ChannelsPage() {
   const openApi = (ch: ChannelData, editMode = false) => {
     setApiTarget(ch); setIsEditMode(editMode); setGuideOpen(false)
     setApiForm({ login_id:ch.login_id||'', login_pw:ch.login_pw||'', seller_id:ch.seller_id, api_key:ch.api_key, api_secret:ch.api_secret, site_name:ch.site_name||'', refresh_token:ch.refresh_token||'', access_key:ch.access_key||'' })
+    setShowFields({})  // 모달 열 때마다 모든 필드 숨김 초기화
   }
   /* OAuth 지원 쇼핑몰 */
   // naver(스마트스토어)는 client_credentials 방식 — OAuth 사용자 로그인 불필요
-  const OAUTH_MALLS = ['cafe24', 'zigzag']
+  // zigzag: Access Key 방식으로 변경 — OAuth 로그인 불필요
+  const OAUTH_MALLS = ['cafe24']
 
   const saveApi = async () => {
     if (!apiTarget) return
@@ -1262,17 +1272,34 @@ export default function ChannelsPage() {
                   <div style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
                     <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔑 판매자 계정 로그인 정보</p>
                     <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                      {loginFields.map(({ label, key, placeholder, type, required }) => (
+                      {loginFields.map(({ label, key, placeholder, type, required }) => {
+                        const isPw      = type === 'password'
+                        const isVisible = showFields[`login_${key}`]
+                        return (
                         <div key={key}>
                           <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>
                             {required && <span style={{ color:'#ef4444', fontSize:10 }}>●</span>}
                             {label}
                             {required && <span style={{ background:'#fee2e2', color:'#dc2626', fontSize:9.5, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>필수</span>}
                           </label>
-                          <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
-                            style={{ width:'100%', border:`1.5px solid ${required && !apiForm[key] ? '#fca5a5' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
+                          <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+                            <input
+                              type={isPw ? (isVisible ? 'text' : 'password') : type}
+                              placeholder={placeholder}
+                              value={apiForm[key]||''}
+                              onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
+                              style={{ width:'100%', border:`1.5px solid ${required && !apiForm[key] ? '#fca5a5' : '#e2e8f0'}`, borderRadius:8, padding:`7px ${isPw ? '34px' : '10px'} 7px 10px`, fontSize:13, outline:'none', background:'white', fontFamily:isPw?'monospace':'inherit' }}
+                            />
+                            {isPw && (
+                              <button type="button" onClick={() => toggleFieldVisibility(`login_${key}`)}
+                                style={{ position:'absolute', right:8, background:'none', border:'none', cursor:'pointer', padding:2, color:'#94a3b8', display:'flex', alignItems:'center' }}>
+                                {isVisible ? <EyeOff size={15}/> : <Eye size={15}/>}
+                              </button>
+                            )}
+                          </div>
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 )}
@@ -1299,8 +1326,9 @@ export default function ChannelsPage() {
                     )}
                     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
                       {apiFields.map(({ label, key, placeholder, type, required }) => {
-                        // Refresh Token: OAuth 쇼핑몰은 읽기전용 + 자동입력 표시
                         const isOAuthToken = key === 'refresh_token' && apiTarget && OAUTH_MALLS.includes(apiTarget.key)
+                        const isPw         = type === 'password'
+                        const isVisible    = showFields[`api_${key}`]
                         return (
                         <div key={key}>
                           <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>
@@ -1310,20 +1338,31 @@ export default function ChannelsPage() {
                             {required === false && <span style={{ background:'#f1f5f9', color:'#64748b', fontSize:9.5, fontWeight:600, padding:'1px 5px', borderRadius:4 }}>선택</span>}
                             {isOAuthToken && <span style={{ background:'#f0fdf4', color:'#15803d', fontSize:9.5, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>OAuth 자동발급</span>}
                           </label>
-                          <input
-                            type={type}
-                            placeholder={isOAuthToken ? (apiForm[key] ? '✅ 발급완료' : '연동 시작 후 자동 입력됨') : placeholder}
-                            value={apiForm[key]||''}
-                            onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
-                            readOnly={isOAuthToken && !apiForm[key]}
-                            style={{
-                              width:'100%',
-                              border:`1.5px solid ${required && !apiForm[key] && !isOAuthToken ? '#fca5a5' : isOAuthToken && apiForm[key] ? '#bbf7d0' : '#e2e8f0'}`,
-                              borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none',
-                              background: isOAuthToken ? (apiForm[key] ? '#f0fdf4' : '#f8fafc') : 'white',
-                              fontFamily:type==='password'?'monospace':'inherit',
-                              color: isOAuthToken && !apiForm[key] ? '#94a3b8' : 'inherit',
-                            }}/>
+                          <div style={{ position:'relative', display:'flex', alignItems:'center' }}>
+                            <input
+                              type={isPw ? (isVisible ? 'text' : 'password') : type}
+                              placeholder={isOAuthToken ? (apiForm[key] ? '✅ 발급완료' : '연동 시작 후 자동 입력됨') : placeholder}
+                              value={apiForm[key]||''}
+                              onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
+                              readOnly={isOAuthToken && !apiForm[key]}
+                              style={{
+                                width:'100%',
+                                border:`1.5px solid ${required && !apiForm[key] && !isOAuthToken ? '#fca5a5' : isOAuthToken && apiForm[key] ? '#bbf7d0' : '#e2e8f0'}`,
+                                borderRadius:8,
+                                padding:`7px ${isPw ? '34px' : '10px'} 7px 10px`,
+                                fontSize:13, outline:'none',
+                                background: isOAuthToken ? (apiForm[key] ? '#f0fdf4' : '#f8fafc') : 'white',
+                                fontFamily: isPw ? 'monospace' : 'inherit',
+                                color: isOAuthToken && !apiForm[key] ? '#94a3b8' : 'inherit',
+                              }}
+                            />
+                            {isPw && (
+                              <button type="button" onClick={() => toggleFieldVisibility(`api_${key}`)}
+                                style={{ position:'absolute', right:8, background:'none', border:'none', cursor:'pointer', padding:2, color: isVisible ? '#6366f1' : '#94a3b8', display:'flex', alignItems:'center' }}>
+                                {isVisible ? <EyeOff size={15}/> : <Eye size={15}/>}
+                              </button>
+                            )}
+                          </div>
                         </div>
                         )
                       })}
