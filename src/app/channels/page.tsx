@@ -221,28 +221,30 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
   },
   '11st': {
     title:'11번가 Open API 연동 (IP 직접 입력)', authType:'API Key + IP 직접 입력',
-    note:'API KEY만으로 직접 연동됩니다. 기존에 셀링툴(사방넷 등)을 사용 중이라면, Open API CENTER에서 "IP 직접 입력"으로 전환해야 이 프로그램으로 연동할 수 있습니다.',
-    warning:'⚠ IP 직접 입력을 사용하지 않으면 API 호출이 차단됩니다 — 셀링툴(사방넷)에서 IP 직접 입력 방식으로 전환 필수',
+    note:'API KEY만으로 직접 연동됩니다. Open API CENTER에서 "IP 직접 입력 → 사용"으로 전환하고 개발서버 IP와 상용서버 IP를 모두 등록해야 API 호출이 가능합니다.',
+    warning:'⚠ IP 미등록 시 API 호출 완전 차단 — 개발서버 IP · 상용서버 IP 두 곳 모두 등록 필수',
     required:[
       { label:'API 인증키 (OPEN API KEY)', desc:'Open API CENTER에서 승인완료 상태의 KEY', badge:'required' },
     ],
     steps:[
-      '━━ 기존 사방넷 → IP 직접 입력 전환 방법 ━━',
-      '① openapi.11st.co.kr 접속 → [API 관리] 클릭',
-      '② [접속권한] 섹션에서 "IP 직접 입력" → ○ 사용 선택',
-      '③ IP 입력란에 서버 IP 붙여넣기 (아래 [서버 IP 확인] 버튼으로 확인)',
-      '④ 셀링툴 업체(사방넷 등)는 그대로 두거나 X 버튼으로 제거 가능',
-      '⑤ [수정하기] 버튼 클릭 → IP 등록 완료',
-      '━━ API KEY 확인 ━━',
-      '⑥ [API KEY 관리] 섹션 → 승인완료 상태의 KEY 복사',
-      '⑦ 키가 없으면: [서비스 등록] → 서비스명/설명 입력 → 등록 → 승인 대기',
-      '━━ 프로그램 연동 ━━',
+      '━━ STEP 1. IP 직접 입력 전환 ━━',
+      '① openapi.11st.co.kr → [API 관리] 클릭',
+      '② [접속권한] → "IP 직접 입력" → ● 사용 선택',
+      '━━ STEP 2. IP 3종 입력 ━━',
+      '③ 개발서버 IP: 프로그램의 [서버 IP 확인] 버튼 클릭 → 복사 후 붙여넣기',
+      '④ 개발자 PC: 내 PC의 공인 IP (whatismyip.com 에서 확인, 테스트 시 필요)',
+      '⑤ 상용서버 IP: 운영 서버 IP (여러 개면 세미콜론으로 구분, 예: 1.2.3.4;5.6.7.8)',
+      '    → Vercel 사용 시: 개발서버 IP와 동일하게 입력 (배포 서버 = 개발서버)',
+      '⑥ [수정하기] 클릭 → 저장 완료',
+      '━━ STEP 3. API KEY 복사 ━━',
+      '⑦ 상단 [API KEY 관리] 섹션 → KEY 복사 (복사하기 버튼)',
+      '━━ STEP 4. 프로그램 연동 ━━',
       '⑧ 프로그램에 API 인증키 입력 후 [저장 및 연동 테스트] 클릭',
     ],
     links:[
       { label:'11번가 Open API CENTER', url:'https://openapi.11st.co.kr' },
+      { label:'내 공인 IP 확인 (개발자 PC)', url:'https://www.whatismyip.com' },
       { label:'11번가 SCM(스마트R)', url:'https://seller.11st.co.kr' },
-      { label:'내 공인 IP 확인', url:'https://www.whatismyip.com' },
     ],
   },
   gmarket: {
@@ -1363,37 +1365,35 @@ export default function ChannelsPage() {
                   </div>
                 )}
 
-                {/* 11번가 전용: IP 직접 입력 안내 */}
+                {/* 11번가 전용: IP 직접 입력 3종 안내 */}
                 {apiTarget?.key === '11st' && (
-                  <div style={{
-                    background: '#fff7ed', border: '1.5px solid #fed7aa',
-                    borderRadius: 10, padding: '12px 14px',
-                  }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+                  <div style={{ background:'#fff7ed', border:'1.5px solid #fed7aa', borderRadius:10, padding:'12px 14px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
                       <Server size={14} style={{ color:'#c2410c', flexShrink:0 }}/>
                       <span style={{ fontSize:12.5, fontWeight:700, color:'#c2410c' }}>
-                        IP 직접 입력 등록 필수 (사방넷에서 전환)
+                        IP 직접 입력 등록 (3종 모두 입력)
                       </span>
                     </div>
                     <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.6, marginBottom:10 }}>
-                      현재 셀링툴(사방넷)로 설정된 경우 이 프로그램에서 API 호출이 차단됩니다.
-                      Open API CENTER에서 &quot;IP 직접 입력&quot; → &quot;사용&quot;으로 전환 후 서버 IP를 등록하세요.
+                      Open API CENTER → [접속권한] → IP 직접 입력 <strong>사용</strong> 선택 후 아래 3개 항목을 입력하세요.
                     </p>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+
+                    {/* 서버 IP 확인 버튼 */}
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:10 }}>
                       <button
                         onClick={fetchServerIp}
                         disabled={serverIpState === 'loading'}
                         style={{
                           display:'flex', alignItems:'center', gap:5,
-                          padding:'5px 12px', borderRadius:6, fontSize:12,
-                          fontWeight:700, cursor: serverIpState === 'loading' ? 'not-allowed' : 'pointer',
+                          padding:'5px 12px', borderRadius:6, fontSize:12, fontWeight:700,
+                          cursor: serverIpState === 'loading' ? 'not-allowed' : 'pointer',
                           background: serverIpState === 'done' ? '#c2410c' : 'white',
                           color:      serverIpState === 'done' ? 'white'    : '#c2410c',
                           border:'1.5px solid #c2410c', transition:'all .15s',
                         }}>
                         {serverIpState === 'loading'
                           ? <><RefreshCw size={12} style={{ animation:'spin 1s linear infinite' }}/>확인 중...</>
-                          : <><Server size={12}/>서버 IP 확인</>
+                          : <><Server size={12}/>서버(Vercel) IP 확인</>
                         }
                       </button>
                       {serverIpState === 'done' && serverIp && (
@@ -1405,23 +1405,56 @@ export default function ChannelsPage() {
                           </button>
                         </div>
                       )}
-                      {serverIpState === 'error' && <span style={{ fontSize:12, color:'#dc2626' }}>IP 확인 실패</span>}
+                      {serverIpState === 'error' && <span style={{ fontSize:12, color:'#dc2626' }}>IP 확인 실패 — 배포 후 재시도</span>}
                     </div>
-                    {serverIpState === 'done' && (
-                      <div style={{ marginTop:10, padding:'8px 10px', background:'#ffedd5', borderRadius:7, fontSize:11.5, color:'#431407', lineHeight:1.8 }}>
-                        <strong>사방넷 → IP 직접 입력 전환:</strong><br/>
-                        ① openapi.11st.co.kr → [API 관리] 탭 클릭<br/>
-                        ② [접속권한] → &quot;IP 직접 입력&quot; → <strong>사용</strong> 선택<br/>
-                        ③ 위 IP 주소 입력 후 [수정하기] 클릭<br/>
-                        <span style={{ color:'#7c3aed', fontWeight:600 }}>
-                          ⚠ 사방넷은 유지해도 되며, IP를 추가 등록하는 방식으로도 사용 가능합니다.
-                        </span>
-                      </div>
-                    )}
-                    <a href="https://openapi.11st.co.kr" target="_blank" rel="noreferrer"
-                      style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#c2410c', textDecoration:'none', fontWeight:600 }}>
-                      <ExternalLink size={11}/>11번가 Open API CENTER 바로가기
-                    </a>
+
+                    {/* 3종 IP 입력 안내 표 */}
+                    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                      {[
+                        {
+                          label: '🖥 개발서버 IP',
+                          desc : '위 [서버 IP 확인] 버튼으로 확인한 Vercel 서버 IP',
+                          value: serverIpState === 'done' ? serverIp : '→ 위 버튼 클릭 후 복사',
+                          bold : serverIpState === 'done',
+                        },
+                        {
+                          label: '💻 개발자 PC',
+                          desc : '내 컴퓨터의 공인 IP — 테스트 시 PC에서 API 호출할 때 필요',
+                          value: 'whatismyip.com 에서 확인',
+                          bold : false,
+                        },
+                        {
+                          label: '🌐 상용서버 IP',
+                          desc : '운영 서버 IP (Vercel 사용 시 개발서버 IP와 동일하게 입력, 여러 개면 세미콜론 ; 으로 구분)',
+                          value: serverIpState === 'done' ? `${serverIp} (개발서버와 동일)` : '→ 위 버튼 클릭 후 복사',
+                          bold : serverIpState === 'done',
+                        },
+                      ].map(row => (
+                        <div key={row.label} style={{ background:'white', border:'1px solid #fed7aa', borderRadius:7, padding:'8px 10px' }}>
+                          <div style={{ display:'flex', alignItems:'baseline', gap:6, marginBottom:2 }}>
+                            <span style={{ fontSize:12, fontWeight:700, color:'#c2410c', whiteSpace:'nowrap' }}>{row.label}</span>
+                            <span style={{ fontSize:11, color:'#64748b' }}>{row.desc}</span>
+                          </div>
+                          <span style={{ fontSize:12, fontWeight: row.bold ? 700 : 400, color: row.bold ? '#431407' : '#94a3b8', fontFamily:'monospace' }}>{row.value}</span>
+                        </div>
+                      ))}
+                    </div>
+
+                    <div style={{ marginTop:10, padding:'7px 10px', background:'#ffedd5', borderRadius:7, fontSize:11.5, color:'#431407', lineHeight:1.7 }}>
+                      <strong>입력 후 [수정하기] 클릭 → 저장 완료</strong><br/>
+                      <span style={{ color:'#7c3aed', fontWeight:600 }}>⚠ Vercel 무료 플랜은 배포 시 IP가 변경될 수 있습니다. IP 차단 오류 시 위 버튼으로 새 IP 확인 후 재등록하세요.</span>
+                    </div>
+
+                    <div style={{ display:'flex', gap:10, marginTop:8 }}>
+                      <a href="https://openapi.11st.co.kr" target="_blank" rel="noreferrer"
+                        style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11.5, color:'#c2410c', textDecoration:'none', fontWeight:600 }}>
+                        <ExternalLink size={11}/>Open API CENTER
+                      </a>
+                      <a href="https://www.whatismyip.com" target="_blank" rel="noreferrer"
+                        style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11.5, color:'#c2410c', textDecoration:'none', fontWeight:600 }}>
+                        <ExternalLink size={11}/>내 PC IP 확인
+                      </a>
+                    </div>
                   </div>
                 )}
 
