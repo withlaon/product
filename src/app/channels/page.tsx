@@ -1185,19 +1185,38 @@ export default function ChannelsPage() {
                   </div>
                 )}
 
-                <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+                <div style={{ display:'flex', justifyContent:'flex-end', gap:8, flexWrap:'wrap' }}>
                   <Button variant="outline" onClick={() => { setApiTarget(null); setGuideOpen(false) }}>취소</Button>
-                  <Button onClick={saveApi} disabled={oauthPending}
-                    style={{ opacity: oauthPending ? 0.7 : 1 }}>
-                    {oauthPending
-                      ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }}/>카페24 인증 대기 중...</>
-                      : isEditMode
-                        ? <><Save size={13}/>수정 저장</>
+
+                  {/* 수정 모드 + OAuth 쇼핑몰: 저장 버튼 + 재인증 버튼 분리 */}
+                  {isEditMode && apiTarget && OAUTH_MALLS.includes(apiTarget.key) ? (
+                    <>
+                      <Button variant="outline" onClick={saveApi}
+                        style={{ borderColor:'#7e22ce', color:'#7e22ce' }}>
+                        <Save size={13}/>설정 저장
+                      </Button>
+                      <Button onClick={async () => {
+                        // 설정 저장 후 OAuth 팝업 실행
+                        await saveApi()
+                      }} disabled={oauthPending}
+                        style={{ background:'#2563eb', borderColor:'#2563eb', opacity: oauthPending ? 0.7 : 1 }}>
+                        {oauthPending
+                          ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }}/>인증 대기 중...</>
+                          : <><Zap size={13}/>OAuth 재인증 (Refresh Token 재발급)</>
+                        }
+                      </Button>
+                    </>
+                  ) : (
+                    <Button onClick={saveApi} disabled={oauthPending}
+                      style={{ opacity: oauthPending ? 0.7 : 1 }}>
+                      {oauthPending
+                        ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }}/>인증 대기 중...</>
                         : apiTarget && OAUTH_MALLS.includes(apiTarget.key)
                           ? <><Zap size={13}/>저장하고 OAuth 인증 시작</>
                           : <><Zap size={13}/>저장하고 연동 시작</>
-                    }
-                  </Button>
+                      }
+                    </Button>
+                  )}
                 </div>
               </div>
 
