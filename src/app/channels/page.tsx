@@ -786,7 +786,28 @@ export default function ChannelsPage() {
   const [feeTemplateSearch, setFeeTemplateSearch] = useState('')
   const [feeTemplateOpen, setFeeTemplateOpen] = useState(false)
 
+  /* ── OAuth 팝업 상태 ── */
+  const [oauthPending, setOauthPending]   = useState(false)
+  const [oauthSuccess, setOauthSuccess]   = useState(false)
+
   useEffect(() => { if (typeof window !== 'undefined') { setChannels(loadChannels()); setMounted(true) } }, [])
+
+  /* ── OAuth postMessage 수신 (팝업 → 부모 창) ── */
+  useEffect(() => {
+    const handler = (e: MessageEvent) => {
+      if (e.data?.type === 'OAUTH_SUCCESS') {
+        setOauthPending(false)
+        setOauthSuccess(true)
+        // Refresh Token을 apiForm에 반영 (Supabase에 이미 저장됨)
+        if (e.data?.refresh_token) {
+          setApiForm(f => ({ ...f, refresh_token: e.data.refresh_token }))
+        }
+        setTimeout(() => setOauthSuccess(false), 4000)
+      }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [])
 
   // 카테고리 팝업 열릴 때 자동으로 전체 카테고리 로드
   useEffect(() => {
@@ -805,9 +826,53 @@ export default function ChannelsPage() {
     setApiTarget(ch); setIsEditMode(editMode); setGuideOpen(false)
     setApiForm({ login_id:ch.login_id||'', login_pw:ch.login_pw||'', seller_id:ch.seller_id, api_key:ch.api_key, api_secret:ch.api_secret, site_name:ch.site_name||'', refresh_token:ch.refresh_token||'', access_key:ch.access_key||'' })
   }
-  const saveApi = () => {
+  /* OAuth 지원 쇼핑몰 */
+  const OAUTH_MALLS = ['cafe24', 'naver', 'zigzag']
+
+  const saveApi = async () => {
     if (!apiTarget) return
+    // 공통: 입력값 저장
     update(channels.map(c => c.key===apiTarget.key ? { ...c, ...apiForm, active:true } : c))
+
+    // OAuth 쇼핑몰: Client ID + Shop ID 있으면 팝업 실행
+    if (OAUTH_MALLS.includes(apiTarget.key)) {
+      const shopId   = apiForm.seller_id?.trim()
+      const clientId = apiForm.api_key?.trim()
+      if (!shopId || !clientId) {
+        setApiTarget(null)
+        return
+      }
+      // OAuth 인증 URL 생성
+      const redirectUri = `${window.location.origin}/oauth?mall=${apiTarget.key}`
+      const state = btoa(JSON.stringify({ mall: apiTarget.key, client_id: clientId, shop_id: shopId }))
+        .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'')
+      let authUrl = ''
+      if (apiTarget.key === 'cafe24') {
+        authUrl = `https://${shopId}.cafe24api.com/api/v2/oauth/authorize`
+          + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
+          + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+          + `&scope=mall.read_product,mall.write_product,mall.read_order,mall.write_order,mall.read_store,mall.read_customer`
+          + `&state=${state}`
+      } else if (apiTarget.key === 'naver') {
+        authUrl = `https://api.commerce.naver.com/external/v1/oauth2/authorize`
+          + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
+          + `&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`
+      } else if (apiTarget.key === 'zigzag') {
+        authUrl = `https://api.zigzag.kr/api/v1/oauth/authorize`
+          + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
+          + `&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`
+      }
+      if (authUrl) {
+        setOauthPending(true)
+        const popup = window.open(authUrl, 'oauth_popup', 'width=600,height=700,left=300,top=100')
+        // 팝업이 닫히면 pending 해제
+        const checkClosed = setInterval(() => {
+          if (popup?.closed) { clearInterval(checkClosed); setOauthPending(false) }
+        }, 1000)
+      }
+      setApiTarget(null)
+      return
+    }
     setApiTarget(null)
   }
 
@@ -1065,30 +1130,73 @@ export default function ChannelsPage() {
                   </div>
                 )}
 
+                {/* OAuth 완료 알림 */}
+                {oauthSuccess && (
+                  <div style={{ background:'#f0fdf4', border:'1.5px solid #bbf7d0', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:8 }}>
+                    <CheckCircle2 size={15} style={{ color:'#15803d', flexShrink:0 }}/>
+                    <p style={{ fontSize:12.5, fontWeight:700, color:'#15803d' }}>OAuth 인증 완료! Refresh Token이 자동 저장되었습니다.</p>
+                  </div>
+                )}
+
                 {/* API 키 필드 */}
                 {apiFields.length > 0 && (
                   <div style={{ background:'#fafbff', borderRadius:12, padding:'12px 14px' }}>
                     <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔌 API 연동 키</p>
+                    {/* OAuth 쇼핑몰 안내 */}
+                    {apiTarget && OAUTH_MALLS.includes(apiTarget.key) && (
+                      <div style={{ background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:8, padding:'8px 12px', marginBottom:10, fontSize:11.5, color:'#2563eb', fontWeight:600, lineHeight:1.6 }}>
+                        💡 <strong>쇼핑몰 ID</strong>와 <strong>Client ID / Client Secret</strong>을 입력 후<br/>
+                        &quot;저장하고 연동 시작&quot;을 클릭하면 카페24 로그인 팝업이 열립니다.<br/>
+                        로그인 및 권한 승인 완료 시 <strong>Refresh Token이 자동 발급</strong>됩니다.
+                      </div>
+                    )}
                     <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                      {apiFields.map(({ label, key, placeholder, type, required }) => (
+                      {apiFields.map(({ label, key, placeholder, type, required }) => {
+                        // Refresh Token: OAuth 쇼핑몰은 읽기전용 + 자동입력 표시
+                        const isOAuthToken = key === 'refresh_token' && apiTarget && OAUTH_MALLS.includes(apiTarget.key)
+                        return (
                         <div key={key}>
                           <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>
                             {required && <span style={{ color:'#ef4444', fontSize:10 }}>●</span>}
                             {label}
                             {required === true  && <span style={{ background:'#fee2e2', color:'#dc2626', fontSize:9.5, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>필수</span>}
                             {required === false && <span style={{ background:'#f1f5f9', color:'#64748b', fontSize:9.5, fontWeight:600, padding:'1px 5px', borderRadius:4 }}>선택</span>}
+                            {isOAuthToken && <span style={{ background:'#f0fdf4', color:'#15803d', fontSize:9.5, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>OAuth 자동발급</span>}
                           </label>
-                          <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
-                            style={{ width:'100%', border:`1.5px solid ${required && !apiForm[key] ? '#fca5a5' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
+                          <input
+                            type={type}
+                            placeholder={isOAuthToken ? (apiForm[key] ? '✅ 발급완료' : '연동 시작 후 자동 입력됨') : placeholder}
+                            value={apiForm[key]||''}
+                            onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
+                            readOnly={isOAuthToken && !apiForm[key]}
+                            style={{
+                              width:'100%',
+                              border:`1.5px solid ${required && !apiForm[key] && !isOAuthToken ? '#fca5a5' : isOAuthToken && apiForm[key] ? '#bbf7d0' : '#e2e8f0'}`,
+                              borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none',
+                              background: isOAuthToken ? (apiForm[key] ? '#f0fdf4' : '#f8fafc') : 'white',
+                              fontFamily:type==='password'?'monospace':'inherit',
+                              color: isOAuthToken && !apiForm[key] ? '#94a3b8' : 'inherit',
+                            }}/>
                         </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </div>
                 )}
 
                 <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
                   <Button variant="outline" onClick={() => { setApiTarget(null); setGuideOpen(false) }}>취소</Button>
-                  <Button onClick={saveApi}>{isEditMode ? <><Save size={13}/>수정 저장</> : <><Zap size={13}/>저장하고 연동 시작</>}</Button>
+                  <Button onClick={saveApi} disabled={oauthPending}
+                    style={{ opacity: oauthPending ? 0.7 : 1 }}>
+                    {oauthPending
+                      ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }}/>카페24 인증 대기 중...</>
+                      : isEditMode
+                        ? <><Save size={13}/>수정 저장</>
+                        : apiTarget && OAUTH_MALLS.includes(apiTarget.key)
+                          ? <><Zap size={13}/>저장하고 OAuth 인증 시작</>
+                          : <><Zap size={13}/>저장하고 연동 시작</>
+                    }
+                  </Button>
                 </div>
               </div>
 

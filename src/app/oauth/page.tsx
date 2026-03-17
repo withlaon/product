@@ -120,7 +120,11 @@ function OAuthCallbackInner() {
 
         /* ── 부모 창에 완료 메시지 전달 (팝업으로 열린 경우) ── */
         if (window.opener) {
-          window.opener.postMessage({ type: 'OAUTH_SUCCESS', mall: mallKey }, '*')
+          window.opener.postMessage({
+            type: 'OAUTH_SUCCESS',
+            mall: mallKey,
+            refresh_token: data?.refresh_token ?? '',
+          }, '*')
         }
 
         /* ── 카운트다운 후 자동 이동 ── */
