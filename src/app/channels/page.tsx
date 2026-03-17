@@ -145,13 +145,14 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'site_name', label:'백화점 여부',        placeholder:'신세계백화점 입점 시 Y 입력, 아닌 경우 공란',           type:'text',     section:'api',   required:false },
   ],
   // 토스쇼핑: Partner Key + Secret Key + Store ID
-  // 토스쇼핑: 자체개발 방식 — 쇼핑몰ID/PW + OpenAPI 키 필수 / Store ID 선택
-  // IP 등록: 셀러센터 [자체개발] → [키발급] → OpenAPI 키 발급 시 IP 입력 (줄바꿈/콤마 구분)
+  // 토스쇼핑: 쇼핑몰ID/PW + Secret Key + Access Key 필수 / Access Token + 수수료 선택
   toss: [
-    { key:'login_id',  label:'쇼핑몰ID',      placeholder:'토스쇼핑 셀러센터 로그인 ID',                       type:'text',     section:'login', required:true  },
-    { key:'login_pw',  label:'PASSWORD',       placeholder:'셀러센터 비밀번호',                                 type:'password', section:'login', required:true  },
-    { key:'api_key',   label:'OpenAPI 키',     placeholder:'셀러센터 [자체개발 → 키발급] 에서 발급된 OpenAPI 키', type:'password', section:'api',   required:true  },
-    { key:'seller_id', label:'Store ID',       placeholder:'토스쇼핑 스토어 ID (선택)',                          type:'text',     section:'api',   required:false },
+    { key:'login_id',   label:'쇼핑몰ID',              placeholder:'토스쇼핑 셀러센터 로그인 ID (예: toss_biz_member_…)',   type:'text',     section:'login', required:true  },
+    { key:'login_pw',   label:'PASSWORD',               placeholder:'셀러센터 비밀번호',                                   type:'password', section:'login', required:true  },
+    { key:'api_secret', label:'Secret Key',             placeholder:'셀러센터에서 발급된 Secret Key',                       type:'password', section:'api',   required:true  },
+    { key:'api_key',    label:'Access Key',             placeholder:'셀러센터에서 발급된 Access Key (예: mvie8jyw20em3mr82)', type:'text',    section:'api',   required:true  },
+    { key:'access_key', label:'Access Token',           placeholder:'자동 발급 또는 수동 입력 (선택)',                       type:'password', section:'api',   required:false },
+    { key:'site_name',  label:'수수료(주문) %',         placeholder:'예: 9  (공급가 미제공 시 수수료율로 계산)',             type:'text',     section:'api',   required:false },
   ],
   // 카카오톡스토어: 채널 ID + REST API Key + Admin Key
   kakaostore: [
@@ -583,28 +584,30 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{ label:'제이슨딜', url:'https://www.jasondeal.com' }],
   },
   toss: {
-    title:'토스쇼핑 OpenAPI 연동 (자체개발 방식)', authType:'쇼핑몰 ID/PW + OpenAPI 키',
-    note:'토스쇼핑 셀러센터에서 [자체개발] → [키발급]으로 OpenAPI 키를 발급합니다. 키 발급 시 이 프로그램의 서버 IP를 먼저 등록해야 합니다.',
-    warning:'⚠ IP 주소를 등록하지 않으면 API 호출이 차단됩니다 · 여러 IP는 줄바꿈 또는 콤마로 구분 입력',
+    title:'토스쇼핑 API 연동 (자체개발 방식)', authType:'쇼핑몰 ID/PW + Secret Key + Access Key',
+    note:'토스쇼핑 셀러센터에서 Secret Key와 Access Key를 발급받아 입력합니다. API 사용 시 서버 IP 등록이 필요합니다.',
+    warning:'⚠ Access Token은 만료 기간이 있으므로 주기적으로 갱신 필요 · IP 미등록 시 API 호출 차단',
     required:[
-      { label:'쇼핑몰ID', desc:'토스쇼핑 셀러센터 로그인 ID', badge:'required' },
-      { label:'PASSWORD', desc:'셀러센터 비밀번호', badge:'required' },
-      { label:'OpenAPI 키', desc:'셀러센터 → 자체개발 → [키발급] 클릭 → IP 등록 후 발급되는 OpenAPI 키', badge:'required' },
-      { label:'Store ID', desc:'토스쇼핑 스토어 ID (선택사항)', badge:'optional' },
+      { label:'쇼핑몰ID',   desc:'토스쇼핑 셀러센터 로그인 ID (예: toss_biz_member_…)', badge:'required' },
+      { label:'PASSWORD',   desc:'셀러센터 비밀번호', badge:'required' },
+      { label:'Secret Key', desc:'셀러센터 [자체개발] → [키발급] 에서 발급된 Secret Key', badge:'required' },
+      { label:'Access Key', desc:'셀러센터 [자체개발] → [키발급] 에서 발급된 Access Key (예: mvie8jyw20em3mr82)', badge:'required' },
+      { label:'Access Token', desc:'API 호출 시 자동 발급 또는 수동 입력 (만료 시 재발급 필요)', badge:'optional' },
+      { label:'수수료(주문) %', desc:'공급가 미제공 시 수집 주문금액 × 수수료율로 공급가 계산 (예: 9)', badge:'optional' },
     ],
     steps:[
-      '━━ STEP 1: 자체개발 OpenAPI 키 발급 ━━',
+      '━━ STEP 1: Secret Key + Access Key 발급 ━━',
       '① shop.toss.im 셀러센터 접속 후 로그인',
-      '② 좌측 메뉴 또는 설정에서 [자체개발] 선택',
-      '③ [키발급] 버튼 클릭 → OpenAPI 키 발급 화면 열림',
-      '④ "API를 사용할 IP 주소를 입력해주세요" 란에',
+      '② [자체개발] 메뉴 → [키발급] 클릭',
+      '③ "API를 사용할 IP 주소를 입력해주세요" 란에',
       '   아래 [서버 IP 확인] 버튼으로 확인한 Vercel IP 입력',
-      '   (여러 IP는 줄바꿈 또는 콤마로 구분 가능)',
-      '⑤ 입력 완료 후 [발급] 또는 [확인] 클릭',
-      '⑥ 발급된 OpenAPI 키 복사',
+      '   (여러 IP: 줄바꿈 또는 콤마로 구분)',
+      '④ [발급] 클릭 → Secret Key + Access Key 발급',
+      '⑤ Secret Key / Access Key 각각 복사',
       '━━ STEP 2: 프로그램 연동 ━━',
-      '⑦ 쇼핑몰ID / PASSWORD 입력',
-      '⑧ OpenAPI 키 붙여넣기',
+      '⑥ 쇼핑몰ID / PASSWORD 입력',
+      '⑦ Secret Key + Access Key 입력',
+      '⑧ 수수료율 입력 (공급가 자동 계산 필요 시)',
       '⑨ [저장 및 연동 테스트] 클릭',
     ],
     links:[

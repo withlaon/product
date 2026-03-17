@@ -40,8 +40,8 @@ export async function POST(req: NextRequest) {
         ably       : { key: 'api_key',   label: 'API Token' },
         always     : { key: 'login_id',  label: '쇼핑몰ID' },
         alwayz     : { key: 'login_id',  label: '쇼핑몰ID' },
-        tosshopping: { key: 'api_key',   label: 'OpenAPI 키' },
-        toss       : { key: 'api_key',   label: 'OpenAPI 키' },
+        tosshopping: { key: 'api_key',    label: 'Access Key' },
+        toss       : { key: 'api_secret', label: 'Secret Key' },
         lotteon    : { key: 'api_key',   label: '인증키' },
         ssg        : { key: 'api_key',   label: 'API 인증키' },
         halfclub   : { key: 'api_key',   label: 'API 인증키' },
@@ -59,15 +59,19 @@ export async function POST(req: NextRequest) {
         if (!token || (token as string).length < 4) {
           return NextResponse.json({ success: false, mall, message: `${tokenLabel}이 입력되지 않았습니다.` })
         }
-        // 토스쇼핑: OpenAPI 키 검증
+        // 토스쇼핑: Secret Key + Access Key 모두 검증
         if (mall === 'toss') {
-          const apiKey = credentials.api_key as string
-          if (!apiKey || apiKey.length < 8) {
-            return NextResponse.json({ success: false, mall, message: 'OpenAPI 키가 입력되지 않았습니다. 셀러센터 [자체개발 → 키발급]에서 서버 IP 등록 후 발급하세요.' })
+          const secretKey = credentials.api_secret as string
+          const accessKey = credentials.api_key as string
+          if (!secretKey || secretKey.length < 4) {
+            return NextResponse.json({ success: false, mall, message: 'Secret Key가 입력되지 않았습니다. 셀러센터 [자체개발 → 키발급]에서 발급하세요.' })
+          }
+          if (!accessKey || accessKey.length < 4) {
+            return NextResponse.json({ success: false, mall, message: 'Access Key가 입력되지 않았습니다. 셀러센터 [자체개발 → 키발급]에서 발급하세요.' })
           }
           return NextResponse.json({
             success: true, mall,
-            message: `토스쇼핑 자격증명 저장 완료 ✓ (OpenAPI 키 확인됨)\n서버 IP가 키 발급 시 등록된 IP와 일치해야 정상 연동됩니다.`,
+            message: `토스쇼핑 자격증명 저장 완료 ✓ (Secret Key + Access Key 확인됨)\n서버 IP가 키 발급 시 등록된 IP와 일치해야 정상 연동됩니다.`,
           })
         }
         // SSG: API 인증키 UUID 형식 검증

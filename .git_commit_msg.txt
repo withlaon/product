@@ -1,7 +1,7 @@
-fix: SSG connection form and guide updated with IP direct-input method
+fix: toss shopping connection updated to self-development OpenAPI key method
 
-- Required: login ID/PW + API auth key (UUID)
-- Optional: SHOP ID, department store flag (Y/blank)
-- Added purple IP registration block for both ops and test server IPs
-- Guide: 3-step process with single direct-input IP registration
-- Removed: Partner ID / API Key / Secret Key fields
+- Required: login ID/PW + OpenAPI key (from self-dev key issuance)
+- Optional: Store ID
+- Added blue IP registration block in modal with key issuance steps
+- IP input format note: multiple IPs via newline or comma
+- Guide updated with 2-step process: IP reg -> key issuance -> program input
