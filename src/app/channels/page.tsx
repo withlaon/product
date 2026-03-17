@@ -107,18 +107,45 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_secret',label:'수수료(주문) (%)',          placeholder:'예: 25  (선택사항)',                       type:'text',     section:'api',   required:false },
     { key:'seller_id', label:'브랜드코드',                placeholder:'브랜드관리자 로그인 시 브랜드코드 (선택사항)', type:'text',   section:'api',   required:false },
   ],
-  // 하프클럽: 로그인 only
-  halfclub: [...COMMON_LOGIN_FIELDS],
-  // GS SHOP: 로그인 only
-  gsshop: [...COMMON_LOGIN_FIELDS],
+  // 하프클럽: Seller ID + API Key + FTP (패션플러스 계열)
+  halfclub: [
+    { key:'login_id',  label:'쇼핑몰ID (SCM 로그인 ID)', placeholder:'하프클럽 SCM 로그인 ID',     type:'text',     section:'login', required:true },
+    { key:'login_pw',  label:'PASSWORD (SCM 비밀번호)',   placeholder:'SCM 비밀번호',             type:'password', section:'login', required:true },
+    { key:'seller_id', label:'Seller ID (판매자코드)',    placeholder:'하프클럽 판매자코드',       type:'text',     section:'api',   required:true },
+    { key:'api_key',   label:'API Key',                  placeholder:'판매자센터에서 발급',       type:'password', section:'api',   required:true },
+    { key:'api_secret',label:'FTP ID',                  placeholder:'FTP 업로드용 계정 ID',      type:'text',     section:'api',   required:false },
+    { key:'access_key',label:'FTP Password',             placeholder:'FTP 업로드용 비밀번호',    type:'password', section:'api',   required:false },
+  ],
+  // GS SHOP: Vendor ID + API Key + Secret Key
+  gsshop: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'Vendor ID (판매자코드)', placeholder:'GS샵 Vendor ID',         type:'text',     section:'api', required:true  },
+    { key:'api_key',   label:'API Key',               placeholder:'파트너센터에서 발급',      type:'password', section:'api', required:true  },
+    { key:'api_secret',label:'Secret Key',            placeholder:'파트너센터에서 발급',      type:'password', section:'api', required:true  },
+  ],
   // 제이슨딜/공구마켓/할인중독/심쿵할인: 로그인 only
   jasondeal: [...COMMON_LOGIN_FIELDS],
-  // 롯데온: 로그인 only
-  lotteon: [...COMMON_LOGIN_FIELDS],
-  // 신세계몰 SSG: 로그인 only
-  ssg: [...COMMON_LOGIN_FIELDS],
-  // 토스쇼핑: 로그인 only
-  toss: [...COMMON_LOGIN_FIELDS],
+  // 롯데온: Partner ID + API Key + Secret Key
+  lotteon: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'Partner ID (파트너코드)', placeholder:'롯데온 Partner ID',      type:'text',     section:'api', required:true  },
+    { key:'api_key',   label:'API Key',                placeholder:'파트너센터에서 발급',     type:'password', section:'api', required:true  },
+    { key:'api_secret',label:'Secret Key',             placeholder:'파트너센터에서 발급',     type:'password', section:'api', required:true  },
+  ],
+  // 신세계몰 SSG: Partner ID + API Key + Secret Key
+  ssg: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id', label:'Partner ID (파트너코드)', placeholder:'SSG 파트너 ID',          type:'text',     section:'api', required:true  },
+    { key:'api_key',   label:'API Key',                placeholder:'파트너센터에서 발급',     type:'password', section:'api', required:true  },
+    { key:'api_secret',label:'Secret Key',             placeholder:'파트너센터에서 발급',     type:'password', section:'api', required:true  },
+  ],
+  // 토스쇼핑: Partner Key + Secret Key + Store ID
+  toss: [
+    ...COMMON_LOGIN_FIELDS,
+    { key:'seller_id',    label:'Store ID',      placeholder:'토스쇼핑 스토어 ID',          type:'text',     section:'api', required:true  },
+    { key:'api_key',      label:'Partner Key',   placeholder:'파트너센터 승인 후 발급',     type:'password', section:'api', required:true  },
+    { key:'api_secret',   label:'Secret Key',    placeholder:'파트너센터 승인 후 발급',     type:'password', section:'api', required:true  },
+  ],
   // 카카오톡스토어: 채널 ID + REST API Key + Admin Key
   kakaostore: [
     ...COMMON_LOGIN_FIELDS,
@@ -128,185 +155,339 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
   ],
 }
 
-/* ─── 연동방법 가이드 ────────────────────────────────────────────── */
-type GuideInfo = { title:string; note:string; steps:string[]; links:{label:string;url:string}[] }
+/* ─── 연동방법 가이드 (강화 버전) ─────────────────────────────── */
+type GuideRequiredInfo = { label: string; desc: string; example?: string; badge?: 'required'|'optional' }
+type GuideInfo = {
+  title    : string
+  authType : string
+  note     : string
+  warning? : string
+  required : GuideRequiredInfo[]
+  steps    : string[]
+  links    : { label:string; url:string }[]
+}
 const MALL_GUIDES: Record<string, GuideInfo> = {
   coupang: {
-    title:'쿠팡 WING API 연동', note:'쿠팡 WING 판매자 계정 필요',
-    steps:[
-      '① wing.coupang.com 로그인',
-      '② 좌측 메뉴 [개발자 API] 클릭',
-      '③ [API Key 관리] → [신규 Key 발급] 클릭',
-      '④ 판매자 코드(Vendor ID) / Access Key / Secret Key 복사',
-      '⑤ 로그인 정보 + 발급된 Key 입력 후 저장',
+    title:'쿠팡 WING API 연동', authType:'HMAC SHA256',
+    note:'쿠팡 WING 판매자 계정이 필요합니다. API Key 발급 후 최소 30분 ~ 최대 4시간 후 반영됩니다.',
+    warning:'API 키 발급 후 바로 연동 테스트 시 실패할 수 있습니다. 최소 30분 후 다시 시도하세요.',
+    required:[
+      { label:'판매자 ID (Vendor ID)', desc:'쿠팡 WING의 업체코드 (A로 시작)', example:'A00123456', badge:'required' },
+      { label:'Access Key', desc:'OPEN API 발급된 Access Key', badge:'required' },
+      { label:'Secret Key', desc:'OPEN API 발급된 Secret Key', badge:'required' },
+      { label:'로그인 ID/PW', desc:'WING 판매자 로그인 계정', badge:'required' },
     ],
-    links:[{label:'쿠팡 WING',url:'https://wing.coupang.com'}],
+    steps:[
+      '① wing.coupang.com 접속 후 로그인',
+      '② 상단 메뉴 [판매자정보] → [추가 판매정보] 클릭',
+      '③ 좌측 [OPEN API] 클릭 → [확인] 버튼 클릭',
+      '④ 연동 업체 선택 화면에서 [자체 개발] 선택',
+      '⑤ Vendor ID / Access Key / Secret Key 확인 및 복사',
+      '⑥ 프로그램에 로그인 ID/PW + Vendor ID + Access Key + Secret Key 입력 후 저장',
+    ],
+    links:[
+      { label:'쿠팡 WING', url:'https://wing.coupang.com' },
+      { label:'쿠팡 Open API 문서', url:'https://developers.coupangcorp.com' },
+    ],
   },
   naver: {
-    title:'스마트스토어 API 연동', note:'스마트스토어 판매자 계정 필요',
-    steps:[
-      '① sell.smartstore.naver.com 로그인',
-      '② [설정] → [API 설정] 이동',
-      '③ [애플리케이션 등록] → Application ID / Secret 발급',
-      '④ 로그인 정보 + Application ID + Secret 입력 후 저장',
+    title:'스마트스토어(네이버 커머스) API 연동', authType:'OAuth 2.0 Bearer Token',
+    note:'네이버 커머스 API 센터에서 애플리케이션을 등록해야 합니다.',
+    required:[
+      { label:'Application ID (Client ID)', desc:'앱 등록 후 발급되는 애플리케이션 ID', badge:'required' },
+      { label:'Application Secret', desc:'앱 등록 후 발급되는 시크릿 키', badge:'required' },
+      { label:'스토어 ID', desc:'스마트스토어 판매자 ID', badge:'required' },
+      { label:'로그인 ID/PW', desc:'스마트스토어센터 로그인 계정', badge:'required' },
     ],
-    links:[{label:'스마트스토어센터',url:'https://sell.smartstore.naver.com'}],
+    steps:[
+      '① apicenter.commerce.naver.com 접속 → [내 애플리케이션] → [애플리케이션 등록]',
+      '② 애플리케이션 이름 입력, 사용 API 선택: 상품 / 주문 / 배송 / 정산 모두 체크',
+      '③ 등록 완료 후 Client ID (Application ID) / Client Secret 확인·복사',
+      '④ sell.smartstore.naver.com에서 스토어 ID 확인',
+      '⑤ 프로그램에 로그인 ID/PW + 스토어 ID + Application ID + Secret 입력 후 저장',
+    ],
+    links:[
+      { label:'스마트스토어센터', url:'https://sell.smartstore.naver.com' },
+      { label:'네이버 커머스 API센터', url:'https://apicenter.commerce.naver.com' },
+    ],
   },
   '11st': {
-    title:'11번가 Open API 연동',
-    note:'⚠ SCM [Open API] Seller API 정보의 호스팅여부를 반드시 "사방넷"으로 설정해야 연동 가능',
+    title:'11번가 Open API 연동', authType:'API Key',
+    note:'11번가 Open API CENTER에서 서비스 등록 후 승인완료 상태의 Key를 사용해야 합니다.',
+    warning:'⚠ SCM [Open API] Seller API 정보의 호스팅여부를 반드시 "사방넷"으로 설정해야 연동 가능합니다.',
+    required:[
+      { label:'SCM 로그인 ID', desc:'11번가 SCM(스마트R) 로그인 아이디', badge:'required' },
+      { label:'SCM 비밀번호', desc:'11번가 SCM 비밀번호', badge:'required' },
+      { label:'API 인증키 (Open API KEY)', desc:'Open API CENTER에서 승인완료된 KEY', badge:'required' },
+      { label:'SHOP ID', desc:'내부 구분용 (선택사항)', badge:'optional' },
+    ],
     steps:[
       '① seller.11st.co.kr (SCM) 로그인',
       '② 하단 [11번가 Open API CENTER] 클릭 → [서비스 등록·확인] 탭 이동',
       '③ 서비스 등록 후 상태가 "승인완료"인 OPEN API KEY 복사',
-      '④ [Seller API 정보 수정] → 호스팅여부를 "사방넷"으로 설정 후 저장',
-      '⑤ SCM 로그인 ID / PW + 승인완료된 API 인증키 입력 후 저장',
+      '④ [Seller API 정보 수정] → 호스팅여부를 반드시 "사방넷"으로 설정 후 저장',
+      '⑤ 프로그램에 SCM 로그인 ID/PW + 승인완료된 API 인증키 입력 후 저장',
     ],
     links:[
-      {label:'11번가 SCM(스마트R)',url:'https://seller.11st.co.kr'},
-      {label:'11번가 Open API CENTER',url:'https://openapi.11st.co.kr'},
+      { label:'11번가 SCM(스마트R)', url:'https://seller.11st.co.kr' },
+      { label:'11번가 Open API CENTER', url:'https://openapi.11st.co.kr' },
     ],
   },
   gmarket: {
-    title:'지마켓 ESM 연동',
-    note:'⚠ 지마켓 전용 ID/PW 사용 (ESM PLUS 마스터 통합 ID로는 연동 불가!) · PW에 + 기호 사용 금지',
-    steps:[
-      '① 사전준비: ESM PLUS에서 "2단계 인증" 반드시 해제',
-      '   → SCM [판매자정보 > 보안관리] 2단계 인증관리에서 상태 "해제"로 설정',
-      '② SCM [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함" 설정',
-      '③ 셀링툴 업체 선택 → 상품/주문 모두 "사방넷" 선택 후 저장',
-      '④ 지마켓 전용 로그인 ID / PW 입력 후 저장 (ESM PLUS 마스터 ID 아님)',
+    title:'G마켓 ESM 연동', authType:'ESM+ ID/PW 인증',
+    note:'G마켓 전용 계정을 사용합니다. ESM PLUS 마스터 통합 ID로는 연동이 불가합니다.',
+    warning:'⚠ 비밀번호에 + 기호 사용 금지 · ESM PLUS 2단계 인증을 반드시 해제해야 합니다.',
+    required:[
+      { label:'G마켓 전용 ID', desc:'G마켓 전용 로그인 ID (ESM PLUS 마스터 ID 아님)', badge:'required' },
+      { label:'G마켓 전용 PW', desc:'+ 기호 사용 금지', badge:'required' },
+      { label:'SHOP ID', desc:'내부 구분용 (선택사항)', badge:'optional' },
     ],
-    links:[{label:'ESM PLUS',url:'https://www.esmplus.com'}],
+    steps:[
+      '① ESM PLUS (esmplus.com) 접속 후 [판매자정보 > 보안관리]',
+      '② 2단계 인증관리 상태 "해제"로 변경 (필수!)',
+      '③ [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함"',
+      '④ 셀링툴 업체 선택 → 상품/주문 모두 "사방넷" 선택 후 저장',
+      '⑤ 프로그램에 G마켓 전용 ID/PW 입력 후 저장 (ESM PLUS 마스터 ID 아님!)',
+    ],
+    links:[{ label:'ESM PLUS', url:'https://www.esmplus.com' }],
   },
   auction: {
-    title:'옥션 ESM 연동',
-    note:'⚠ 옥션 전용 ID/PW 사용 (ESM PLUS 마스터 통합 ID로는 연동 불가!) · PW에 + 기호 사용 금지 · ID는 소문자만 입력',
-    steps:[
-      '① 사전준비: ESM PLUS에서 "2단계 인증" 반드시 해제',
-      '   → SCM [판매자정보 > 보안관리] 2단계 인증관리에서 상태 "해제"로 설정',
-      '② SCM [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함" 설정',
-      '③ 셀링툴 업체 선택 → 상품/주문 모두 "사방넷" 선택 후 저장',
-      '④ 보안관리 → 2단계 인증 "적용안함" 설정 후 저장',
-      '⑤ 옥션 전용 로그인 ID(소문자) / PW 입력 후 저장 (ESM PLUS 마스터 ID 아님)',
+    title:'옥션 ESM 연동', authType:'ESM+ ID/PW 인증',
+    note:'옥션 전용 계정을 사용합니다. G마켓과 같은 ESM API를 공유합니다.',
+    warning:'⚠ ID는 소문자만 입력 · 비밀번호에 + 기호 사용 금지 · ESM PLUS 2단계 인증 해제 필수',
+    required:[
+      { label:'옥션 전용 ID', desc:'옥션 전용 로그인 ID (소문자만, ESM PLUS 마스터 ID 아님)', badge:'required' },
+      { label:'옥션 전용 PW', desc:'+ 기호 사용 금지', badge:'required' },
+      { label:'API Key', desc:'ESM PLUS에서 발급된 API Key', badge:'required' },
+      { label:'SHOP ID', desc:'내부 구분용 (선택사항)', badge:'optional' },
     ],
-    links:[{label:'ESM PLUS',url:'https://www.esmplus.com'}],
+    steps:[
+      '① ESM PLUS (esmplus.com) [판매자정보 > 보안관리] → 2단계 인증 "적용안함" 설정',
+      '② [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함"',
+      '③ 상품/주문 모두 "사방넷" 선택 후 저장',
+      '④ [판매자정보 > API 관리] → API Key 발급 또는 확인·복사',
+      '⑤ 프로그램에 옥션 전용 ID(소문자)/PW + API Key 입력 후 저장',
+    ],
+    links:[{ label:'ESM PLUS', url:'https://www.esmplus.com' }],
   },
   ablly: {
-    title:'에이블리 파트너 API 연동', note:'에이블리 파트너센터 계정 필요',
-    steps:[
-      '① partner.a-bly.com 로그인',
-      '② [설정] → [API 연동] 메뉴 이동',
-      '③ [API Key 발급] 클릭 후 Key 복사',
-      '④ 로그인 정보 + 판매자 ID + API Key 입력 후 저장',
+    title:'에이블리 파트너 API 연동', authType:'API Key (파트너 승인 방식)',
+    note:'에이블리는 파트너 승인 후 API Key가 발급됩니다. 자동 발급이 아니라 수동 심사 방식입니다.',
+    warning:'⚠ 에이블리 옵션 구조는 일반 쇼핑몰과 다릅니다. 옵션상품(SKU) 단위로 업로드됩니다.',
+    required:[
+      { label:'Partner ID', desc:'에이블리 파트너 ID', badge:'required' },
+      { label:'Store ID', desc:'스토어 ID', badge:'required' },
+      { label:'API Key (Access Token)', desc:'파트너센터 승인 후 발급', badge:'required' },
     ],
-    links:[{label:'에이블리 파트너센터',url:'https://partner.a-bly.com'}],
+    steps:[
+      '① partner.a-bly.com 로그인 후 [설정] → [파트너 연동] → [API 연동 신청]',
+      '② 에이블리 담당자 승인 대기 (자동 발급 아님, 수동 심사)',
+      '③ 승인 완료 후 Partner ID / API Key / Access Token 발급',
+      '④ 프로그램에 Partner ID + Store ID + API Key 입력 후 저장',
+    ],
+    links:[{ label:'에이블리 파트너센터', url:'https://partner.a-bly.com' }],
   },
   zigzag: {
-    title:'지그재그 API 연동', note:'지그재그 셀러어드민 계정 필요',
-    steps:[
-      '① seller.zigzag.kr 로그인',
-      '② [설정] → [API 키 관리] 이동',
-      '③ [신규 API Key 발급] 클릭',
-      '④ 로그인 정보 + 판매자 ID + API Key + Secret 입력 후 저장',
+    title:'지그재그(카카오스타일) API 연동', authType:'API Key + Secret',
+    note:'지그재그는 카카오스타일 파트너 API입니다. 파트너센터에서 API 연동 신청 후 승인을 받아야 합니다.',
+    warning:'⚠ 이미지 비율 엄격(정사각형 2000px 권장) · 카테고리 매우 세분화됨',
+    required:[
+      { label:'Partner ID', desc:'지그재그 파트너 ID', badge:'required' },
+      { label:'Shop ID', desc:'스토어 Shop ID', badge:'required' },
+      { label:'API Key', desc:'개발자센터에서 발급된 API Key', badge:'required' },
+      { label:'API Secret', desc:'API Secret Key', badge:'required' },
     ],
-    links:[{label:'지그재그 셀러어드민',url:'https://seller.zigzag.kr'}],
+    steps:[
+      '① partner.zigzag.kr 접속 후 로그인',
+      '② [개발자센터] → [API 연동 신청] 클릭',
+      '③ 승인 후 Partner ID / API Key / Secret Key 발급 확인',
+      '④ 프로그램에 Partner ID + Shop ID + API Key + Secret 입력 후 저장',
+    ],
+    links:[{ label:'지그재그 파트너센터', url:'https://partner.zigzag.kr' }],
   },
   alwayz: {
-    title:'올웨이즈 API 연동', note:'올웨이즈 셀러센터 계정 필요',
-    steps:[
-      '① 올웨이즈 셀러센터 로그인',
-      '② [설정] → [API 관리] → API Key 발급',
-      '③ 로그인 정보 + 판매자 ID + API Key 입력 후 저장',
+    title:'올웨이즈 API 연동', authType:'API Key + Secret',
+    note:'올웨이즈는 공동구매 플랫폼으로 API가 제한적입니다. 파트너센터에서 승인 후 발급됩니다.',
+    warning:'⚠ 공동구매 가격 구조 — 할인율 필수, 재고 필수 입력',
+    required:[
+      { label:'Partner ID', desc:'올웨이즈 파트너 ID', badge:'required' },
+      { label:'API Key', desc:'파트너센터 승인 후 발급', badge:'required' },
+      { label:'Secret Key', desc:'API Secret Key', badge:'required' },
     ],
-    links:[{label:'올웨이즈 셀러센터',url:'https://seller.alwayz.co'}],
+    steps:[
+      '① partner.alwayz.co.kr 접속 후 로그인',
+      '② [개발자 연동] → [API 신청] 클릭',
+      '③ 승인 후 API Key / Secret Key 발급 확인',
+      '④ 프로그램에 Partner ID + API Key + Secret Key 입력 후 저장',
+    ],
+    links:[{ label:'올웨이즈 파트너센터', url:'https://partner.alwayz.co.kr' }],
   },
   cafe24: {
-    title:'카페24 유튜브쇼핑 API 연동', note:'카페24 쇼핑몰 + 개발자센터 계정 필요',
-    steps:[
-      '① developers.cafe24.com 로그인',
-      '② [앱 개발] → [앱 생성] → Client ID / Client Secret 발급',
-      '③ OAuth2.0 인증 완료 후 Refresh Token 발급',
-      '④ 쇼핑몰 ID + 로그인 정보 + Client ID/Secret + Refresh Token 입력 후 저장',
+    title:'카페24 OAuth API 연동', authType:'OAuth 2.0',
+    note:'카페24 개발자센터에서 앱을 생성하고 OAuth 인증을 완료해야 합니다.',
+    required:[
+      { label:'Mall ID', desc:'카페24 쇼핑몰 ID (예: myshop)', example:'myshop', badge:'required' },
+      { label:'Client ID', desc:'개발자센터 앱 Client ID', badge:'required' },
+      { label:'Client Secret', desc:'개발자센터 앱 Client Secret', badge:'required' },
+      { label:'Refresh Token', desc:'OAuth2 인증 후 발급되는 Refresh Token', badge:'required' },
     ],
-    links:[{label:'카페24 개발자센터',url:'https://developers.cafe24.com'}],
+    steps:[
+      '① developers.cafe24.com 로그인 → [앱 개발] → [앱 생성]',
+      '② 권한 선택: 상품 / 주문 / 고객 / 배송 모두 체크',
+      '③ Redirect URI 설정 (예: https://yourdomain.com/oauth)',
+      '④ Client ID / Client Secret 확인·복사',
+      '⑤ OAuth 인증 URL로 이동 → 로그인 후 Access Token / Refresh Token 발급',
+      '⑥ 프로그램에 Mall ID + Client ID + Client Secret + Refresh Token 입력 후 저장',
+    ],
+    links:[
+      { label:'카페24 개발자센터', url:'https://developers.cafe24.com' },
+    ],
   },
   fashionplus: {
-    title:'패션플러스 SCM 연동',
-    note:'⚠ 거래처코드가 반드시 필요합니다 — 거래처코드 입력 시 API로 자동 연동됩니다',
+    title:'패션플러스 SCM 연동', authType:'거래처코드 + ID/PW',
+    note:'거래처코드가 반드시 필요합니다. 거래처코드 입력 시 API로 자동 연동됩니다.',
+    warning:'⚠ 이미지는 FTP 업로드 후 API로 상품 등록하는 2단계 구조입니다.',
+    required:[
+      { label:'SCM 로그인 ID', desc:'패션플러스 SCM 로그인 아이디', badge:'required' },
+      { label:'SCM 비밀번호', desc:'SCM 비밀번호', badge:'required' },
+      { label:'거래처코드', desc:'SCM [사용자정보]에서 확인 (예: 134873)', example:'134873', badge:'required' },
+      { label:'수수료(%)', desc:'주문 수수료 — 공급가 계산에 적용', badge:'optional' },
+      { label:'브랜드코드', desc:'브랜드관리자 로그인 시에만 해당', badge:'optional' },
+    ],
     steps:[
-      '━━━ [거래처코드 확인 방법] ━━━',
+      '━━━ 거래처코드 확인 방법 ━━━',
       '① fashionplus.co.kr → 상단 메뉴 [공지/기본정보] 클릭',
       '② 드롭다운에서 [사용자정보] 선택',
-      '③ "1. 거래처 기본 정보" 섹션에서 거래처코드 확인·복사',
-      '   (예시: 134873)',
-      '━━━ [연동 설정] ━━━',
+      '③ "1. 거래처 기본 정보" 섹션에서 거래처코드 확인·복사 (예: 134873)',
+      '━━━ 연동 설정 ━━━',
       '④ SCM 로그인 ID / PW 입력 (★필수)',
       '⑤ 확인한 거래처코드 입력 (★필수)',
-      '⑥ 수수료(주문) 입력 (선택 — 입력 시 해당 수수료를 공급가에 적용)',
-      '⑦ 브랜드코드 입력 (선택 — 브랜드관리자로 로그인하는 경우만)',
-      '   확인 경로: 브랜드관리자 로그인 → 상품관리 → 상품등록 → 브랜드선택',
-      '⑧ 저장 클릭',
+      '⑥ 수수료(주문) 입력 (선택)',
+      '⑦ 저장 클릭',
     ],
-    links:[{label:'패션플러스 SCM',url:'https://scm.fashionplus.co.kr'}],
+    links:[{ label:'패션플러스 SCM', url:'https://scm.fashionplus.co.kr' }],
   },
   halfclub: {
-    title:'하프클럽 연동', note:'하프클럽 판매자 계정 필요',
-    steps:[
-      '① halfclub.com 판매자 로그인',
-      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    title:'하프클럽 API 연동', authType:'Seller ID + API Key + FTP',
+    note:'패션플러스와 같은 계열입니다. 상품 등록 XML 방식 + 이미지 FTP 업로드 구조입니다.',
+    warning:'⚠ 상품 등록 시 XML 방식 사용, 이미지는 FTP 업로드 후 연동됩니다.',
+    required:[
+      { label:'SCM 로그인 ID', desc:'하프클럽 SCM 로그인 아이디', badge:'required' },
+      { label:'SCM 비밀번호', desc:'SCM 비밀번호', badge:'required' },
+      { label:'Seller ID (판매자코드)', desc:'하프클럽 판매자코드', badge:'required' },
+      { label:'API Key', desc:'판매자센터에서 발급된 API Key', badge:'required' },
+      { label:'FTP ID', desc:'이미지 업로드용 FTP 계정 ID', badge:'optional' },
+      { label:'FTP Password', desc:'FTP 비밀번호', badge:'optional' },
     ],
-    links:[{label:'하프클럽',url:'https://www.halfclub.com'}],
+    steps:[
+      '① seller.halfclub.com 접속 후 로그인',
+      '② [연동관리] → [API 연동] → 연동 신청',
+      '③ 승인 후 Seller ID / API Key 발급 확인',
+      '④ FTP 계정 정보 확인 (이미지 업로드용)',
+      '⑤ 프로그램에 SCM 로그인 + Seller ID + API Key + FTP 정보 입력 후 저장',
+    ],
+    links:[{ label:'하프클럽 판매자센터', url:'https://seller.halfclub.com' }],
   },
   gsshop: {
-    title:'GS SHOP 연동', note:'GS SHOP 판매자 계정 필요',
-    steps:[
-      '① seller.gsshop.com 로그인',
-      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    title:'GS SHOP 파트너 API 연동', authType:'Vendor ID + API Key + Secret',
+    note:'GS샵 파트너센터에서 API 연동을 신청해야 합니다. 상품 등록 후 심사가 필요합니다.',
+    warning:'⚠ GS샵은 상품 등록 후 심사 과정이 있습니다.',
+    required:[
+      { label:'로그인 ID/PW', desc:'GS샵 판매자 로그인 계정', badge:'required' },
+      { label:'Vendor ID', desc:'GS샵 판매자(벤더) 코드', badge:'required' },
+      { label:'API Key', desc:'파트너센터에서 발급된 API Key', badge:'required' },
+      { label:'Secret Key', desc:'파트너센터에서 발급된 Secret Key', badge:'required' },
     ],
-    links:[{label:'GS SHOP 셀러포털',url:'https://seller.gsshop.com'}],
+    steps:[
+      '① partner.gsshop.com 접속 후 로그인',
+      '② [개발자 API] → [연동 신청] 클릭',
+      '③ 승인 후 Vendor ID / API Key / Secret Key 확인·복사',
+      '④ 프로그램에 로그인 ID/PW + Vendor ID + API Key + Secret Key 입력 후 저장',
+    ],
+    links:[{ label:'GS샵 파트너센터', url:'https://partner.gsshop.com' }],
   },
   ssg: {
-    title:'신세계몰 SSG.COM 연동', note:'신세계 판매자 계정 필요',
-    steps:[
-      '① ssgmall.com/seller 로그인',
-      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    title:'SSG닷컴(신세계몰) API 연동', authType:'Partner ID + API Key + Secret',
+    note:'SSG 파트너센터에서 API 연동을 신청해야 합니다. 상품 브랜드 인증이 필요합니다.',
+    warning:'⚠ SSG닷컴은 상품 승인 필수 및 브랜드 인증이 필요합니다.',
+    required:[
+      { label:'로그인 ID/PW', desc:'SSG 판매자 로그인 계정', badge:'required' },
+      { label:'Partner ID', desc:'SSG 파트너 코드', badge:'required' },
+      { label:'API Key', desc:'파트너센터에서 발급된 API Key', badge:'required' },
+      { label:'Secret Key', desc:'API Secret Key', badge:'required' },
     ],
-    links:[{label:'SSG.COM 셀러포털',url:'https://ssgmall.com'}],
+    steps:[
+      '① partner.ssg.com 접속 후 로그인',
+      '② [API 연동] → [신청] 클릭',
+      '③ 승인 후 Partner ID / API Key / Secret Key 확인·복사',
+      '④ 프로그램에 로그인 ID/PW + Partner ID + API Key + Secret Key 입력 후 저장',
+    ],
+    links:[{ label:'SSG 파트너센터', url:'https://partner.ssg.com' }],
   },
   lotteon: {
-    title:'롯데온 연동', note:'롯데온 판매자 계정 필요',
-    steps:[
-      '① lotteon.com 판매자 로그인',
-      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    title:'롯데온 파트너 API 연동', authType:'Partner ID + API Key + Secret',
+    note:'롯데온 파트너센터에서 API 연동을 신청해야 합니다.',
+    warning:'⚠ 롯데온은 상품 승인이 필요하며 카테고리 제한이 많습니다.',
+    required:[
+      { label:'로그인 ID/PW', desc:'롯데온 판매자 로그인 계정', badge:'required' },
+      { label:'Partner ID', desc:'롯데온 파트너 코드', badge:'required' },
+      { label:'API Key', desc:'파트너센터에서 발급된 API Key', badge:'required' },
+      { label:'Secret Key', desc:'API Secret Key', badge:'required' },
     ],
-    links:[{label:'롯데온 셀러',url:'https://www.lotteon.com'}],
+    steps:[
+      '① partners.lotteon.com 접속 후 로그인',
+      '② [개발자 API] → [연동 신청] 클릭',
+      '③ 승인 후 Partner ID / API Key / Secret Key 확인·복사',
+      '④ 프로그램에 로그인 ID/PW + Partner ID + API Key + Secret Key 입력 후 저장',
+    ],
+    links:[{ label:'롯데온 파트너센터', url:'https://partners.lotteon.com' }],
   },
   jasondeal: {
-    title:'제이슨딜(공구마켓/할인중독/심쿵할인) 연동', note:'제이슨딜 판매자 계정 필요',
+    title:'제이슨딜(공구마켓/할인중독/심쿵할인) 연동', authType:'ID/PW',
+    note:'제이슨딜 판매자 계정으로 로그인합니다.',
+    required:[
+      { label:'로그인 ID', desc:'판매자 로그인 아이디', badge:'required' },
+      { label:'비밀번호', desc:'판매자 비밀번호', badge:'required' },
+    ],
     steps:[
       '① 공구마켓/할인중독/심쿵할인 판매자 로그인',
       '② 로그인 아이디 / 비밀번호 입력 후 저장',
     ],
-    links:[{label:'제이슨딜',url:'https://www.jasondeal.com'}],
+    links:[{ label:'제이슨딜', url:'https://www.jasondeal.com' }],
   },
   toss: {
-    title:'토스쇼핑 연동', note:'토스쇼핑 판매자 계정 필요',
-    steps:[
-      '① shop.toss.im 판매자 로그인',
-      '② 로그인 아이디 / 비밀번호 입력 후 저장',
+    title:'토스쇼핑 파트너 API 연동', authType:'Partner Key + Secret + Store ID',
+    note:'토스 파트너센터에서 API 연동 신청 후 승인을 받아야 합니다.',
+    warning:'⚠ 모바일 중심 플랫폼 — 이미지 품질과 리뷰 영향이 큽니다.',
+    required:[
+      { label:'로그인 ID/PW', desc:'토스쇼핑 판매자 로그인 계정', badge:'required' },
+      { label:'Store ID', desc:'토스쇼핑 스토어 ID', badge:'required' },
+      { label:'Partner Key', desc:'파트너센터 승인 후 발급', badge:'required' },
+      { label:'Secret Key', desc:'파트너센터 승인 후 발급', badge:'required' },
     ],
-    links:[{label:'토스쇼핑',url:'https://shop.toss.im'}],
+    steps:[
+      '① partners.toss.im 접속 후 로그인',
+      '② [API 연동 신청] 클릭 → 승인 대기',
+      '③ 승인 후 Partner Key / Secret Key 발급 확인',
+      '④ 프로그램에 로그인 ID/PW + Store ID + Partner Key + Secret Key 입력 후 저장',
+    ],
+    links:[{ label:'토스 파트너센터', url:'https://partners.toss.im' }],
   },
   kakaostore: {
-    title:'카카오톡스토어(톡스토어) API 연동', note:'카카오 비즈니스 계정 필요',
+    title:'카카오톡스토어(톡스토어) API 연동', authType:'REST API Key + Admin Key',
+    note:'카카오 비즈니스 계정이 필요합니다.',
+    required:[
+      { label:'카카오 비즈채널 ID', desc:'카카오 비즈니스 채널 ID', badge:'required' },
+      { label:'REST API Key', desc:'카카오 REST API Key', badge:'required' },
+      { label:'Admin Key', desc:'카카오 Admin Key', badge:'required' },
+    ],
     steps:[
       '① business.kakao.com 로그인',
       '② [카카오톡 채널] → 채널 생성 후 채널 ID 확인',
       '③ [내 애플리케이션] → REST API Key / Admin Key 발급',
       '④ 채널 ID + REST API Key + Admin Key 입력 후 저장',
     ],
-    links:[{label:'카카오 비즈니스',url:'https://business.kakao.com'}],
+    links:[{ label:'카카오 비즈니스', url:'https://business.kakao.com' }],
   },
 }
 
@@ -571,6 +752,9 @@ export default function ChannelsPage() {
   const [confirmDisconnect, setConfirmDisconnect] = useState<ChannelData|null>(null)
   const [apiForm, setApiForm]               = useState<Record<string,string>>({})
 
+  // 연동 가이드 패널
+  const [guideOpen, setGuideOpen]           = useState(false)
+
   // 카테고리 팝업
   const [catTarget, setCatTarget]           = useState<ChannelData|null>(null)
   const [catQuery, setCatQuery]             = useState('')
@@ -618,7 +802,7 @@ export default function ChannelsPage() {
 
   /* ── API 설정 ── */
   const openApi = (ch: ChannelData, editMode = false) => {
-    setApiTarget(ch); setIsEditMode(editMode)
+    setApiTarget(ch); setIsEditMode(editMode); setGuideOpen(false)
     setApiForm({ login_id:ch.login_id||'', login_pw:ch.login_pw||'', seller_id:ch.seller_id, api_key:ch.api_key, api_secret:ch.api_secret, site_name:ch.site_name||'', refresh_token:ch.refresh_token||'', access_key:ch.access_key||'' })
   }
   const saveApi = () => {
@@ -835,69 +1019,139 @@ export default function ChannelsPage() {
 
       {/* ── API 설정 / 수정 모달 ── */}
       {apiTarget && (() => {
-        const fields = MALL_API_FIELDS[apiTarget.key] || [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'판매자 ID',type:'text' as const,section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password' as const,section:'api' }]
+        const fields      = MALL_API_FIELDS[apiTarget.key] || [...COMMON_LOGIN_FIELDS, { key:'seller_id',label:'판매자 ID',placeholder:'판매자 ID',type:'text' as const,section:'api' }, { key:'api_key',label:'API Key',placeholder:'API Key',type:'password' as const,section:'api' }]
         const loginFields = fields.filter(f => f.section==='login')
         const apiFields   = fields.filter(f => f.section==='api' || !f.section)
+        const guide       = MALL_GUIDES[apiTarget.key]
         return (
-          <Modal isOpen onClose={() => setApiTarget(null)} title={isEditMode ? `${apiTarget.name} 연동 수정` : `${apiTarget.name} 연동 설정`} size="md">
-            <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-              <div className={`bg-gradient-to-r ${apiTarget.color}`} style={{ borderRadius:14, padding:'14px 16px', display:'flex', alignItems:'center', gap:14 }}>
-                <MallLogo domain={apiTarget.domain} name={apiTarget.name} size={44}/>
-                <div style={{ flex:1 }}>
-                  <p style={{ fontWeight:900, color:'white', fontSize:15 }}>{apiTarget.name}</p>
-                  <p style={{ color:'rgba(255,255,255,0.75)', fontSize:12, fontWeight:700, marginTop:2 }}>{isEditMode ? '연동 정보 수정' : 'API 연동 설정'}</p>
+          <Modal isOpen onClose={() => { setApiTarget(null); setGuideOpen(false) }} title={isEditMode ? `${apiTarget.name} 연동 수정` : `${apiTarget.name} 연동 설정`} size={guideOpen ? 'xl' : 'md'}>
+            <div style={{ display:'flex', gap:16 }}>
+
+              {/* ── 왼쪽: 입력 폼 ── */}
+              <div style={{ flex:1, minWidth:0, display:'flex', flexDirection:'column', gap:12 }}>
+
+                {/* 헤더 배너 */}
+                <div className={`bg-gradient-to-r ${apiTarget.color}`} style={{ borderRadius:14, padding:'12px 16px', display:'flex', alignItems:'center', gap:12 }}>
+                  <MallLogo domain={apiTarget.domain} name={apiTarget.name} size={42}/>
+                  <div style={{ flex:1 }}>
+                    <p style={{ fontWeight:900, color:'white', fontSize:15 }}>{apiTarget.name}</p>
+                    {guide && <p style={{ color:'rgba(255,255,255,0.8)', fontSize:11, fontWeight:600, marginTop:2 }}>{guide.authType}</p>}
+                  </div>
+                  {guide && (
+                    <button onClick={() => setGuideOpen(o => !o)}
+                      style={{ display:'flex', alignItems:'center', gap:6, background: guideOpen ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.2)', border:'1.5px solid rgba(255,255,255,0.5)', borderRadius:10, padding:'7px 14px', color: guideOpen ? '#1e293b' : 'white', fontSize:12, fontWeight:800, cursor:'pointer', flexShrink:0 }}>
+                      <BookOpen size={13}/>{guideOpen ? '가이드 닫기' : '연동방법 보기'}
+                    </button>
+                  )}
                 </div>
-                {MALL_GUIDES[apiTarget.key] && (
-                  <button onClick={() => {
-                    const g = MALL_GUIDES[apiTarget.key]
-                    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>${g.title}</title><style>body{font-family:sans-serif;padding:32px;max-width:600px;margin:0 auto}h1{font-size:20px;margin-bottom:16px}li{margin:8px 0;line-height:1.7}a{color:#3b82f6}</style></head><body><h1>📋 ${g.title}</h1><p style="color:#92400e;background:#fffbeb;padding:12px;border-radius:8px">${g.note}</p><ol>${g.steps.map(s=>`<li>${s}</li>`).join('')}</ol>${g.links.map(l=>`<p><a href="${l.url}" target="_blank">${l.label}</a></p>`).join('')}</body></html>`
-                    const w = window.open('','guide','width=650,height=580,scrollbars=yes'); if(w){w.document.write(html);w.document.close()}
-                  }}
-                    style={{ display:'flex', alignItems:'center', gap:6, background:'rgba(255,255,255,0.2)', border:'1.5px solid rgba(255,255,255,0.5)', borderRadius:10, padding:'7px 14px', color:'white', fontSize:12, fontWeight:800, cursor:'pointer' }}>
-                    <BookOpen size={13}/>연동방법
-                  </button>
+
+                {/* 로그인 필드 */}
+                {loginFields.length > 0 && (
+                  <div style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
+                    <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔑 판매자 계정 로그인 정보</p>
+                    <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                      {loginFields.map(({ label, key, placeholder, type, required }) => (
+                        <div key={key}>
+                          <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>
+                            {required && <span style={{ color:'#ef4444', fontSize:10 }}>●</span>}
+                            {label}
+                            {required && <span style={{ background:'#fee2e2', color:'#dc2626', fontSize:9.5, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>필수</span>}
+                          </label>
+                          <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
+                            style={{ width:'100%', border:`1.5px solid ${required && !apiForm[key] ? '#fca5a5' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 )}
-              </div>
 
-              <div style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
-                <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔑 판매자 계정 로그인 정보 <span style={{ fontSize:10,color:'#94a3b8' }}>(상품등록·운송장송신·클레임처리 등)</span></p>
-                <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-                  {loginFields.map(({ label, key, placeholder, type, required }) => (
-                    <div key={key}>
-                      <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>
-                        {required && <span style={{ color:'#ef4444', fontSize:10, lineHeight:1 }}>●</span>}
-                        {label}
-                        {required && <span style={{ color:'#ef4444', fontSize:10, fontWeight:700 }}>필수</span>}
-                      </label>
-                      <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
-                        style={{ width:'100%', border:`1.5px solid ${required && !apiForm[key] ? '#fca5a5' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
+                {/* API 키 필드 */}
+                {apiFields.length > 0 && (
+                  <div style={{ background:'#fafbff', borderRadius:12, padding:'12px 14px' }}>
+                    <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔌 API 연동 키</p>
+                    <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
+                      {apiFields.map(({ label, key, placeholder, type, required }) => (
+                        <div key={key}>
+                          <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>
+                            {required && <span style={{ color:'#ef4444', fontSize:10 }}>●</span>}
+                            {label}
+                            {required === true  && <span style={{ background:'#fee2e2', color:'#dc2626', fontSize:9.5, fontWeight:700, padding:'1px 5px', borderRadius:4 }}>필수</span>}
+                            {required === false && <span style={{ background:'#f1f5f9', color:'#64748b', fontSize:9.5, fontWeight:600, padding:'1px 5px', borderRadius:4 }}>선택</span>}
+                          </label>
+                          <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
+                            style={{ width:'100%', border:`1.5px solid ${required && !apiForm[key] ? '#fca5a5' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </div>
+                )}
+
+                <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+                  <Button variant="outline" onClick={() => { setApiTarget(null); setGuideOpen(false) }}>취소</Button>
+                  <Button onClick={saveApi}>{isEditMode ? <><Save size={13}/>수정 저장</> : <><Zap size={13}/>저장하고 연동 시작</>}</Button>
                 </div>
               </div>
 
-              <div style={{ background:'#fafbff', borderRadius:12, padding:'12px 14px' }}>
-                <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>🔌 API 연동 키 <span style={{ fontSize:10,color:'#94a3b8' }}>(카테고리/배송정보 조회·주문수집)</span></p>
-                <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-                  {apiFields.map(({ label, key, placeholder, type, required }) => (
-                    <div key={key}>
-                      <label style={{ display:'flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:4 }}>
-                        {required && <span style={{ color:'#ef4444', fontSize:10, lineHeight:1 }}>●</span>}
-                        {label}
-                        {required && <span style={{ color:'#ef4444', fontSize:10, fontWeight:700 }}>필수</span>}
-                        {required === false && <span style={{ color:'#94a3b8', fontSize:10, fontWeight:600 }}>선택</span>}
-                      </label>
-                      <input type={type} placeholder={placeholder} value={apiForm[key]||''} onChange={e => setApiForm(f=>({...f,[key]:e.target.value}))}
-                        style={{ width:'100%', border:`1.5px solid ${required && !apiForm[key] ? '#fca5a5' : '#e2e8f0'}`, borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white', fontFamily:type==='password'?'monospace':'inherit' }}/>
-                    </div>
-                  ))}
-                </div>
-              </div>
+              {/* ── 오른쪽: 연동 가이드 패널 ── */}
+              {guideOpen && guide && (
+                <div style={{ width:320, flexShrink:0, display:'flex', flexDirection:'column', gap:10, borderLeft:'1.5px solid #e2e8f0', paddingLeft:16 }}>
+                  <div>
+                    <p style={{ fontSize:13, fontWeight:900, color:'#1e293b', marginBottom:4 }}>📋 {guide.title}</p>
+                    <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.6 }}>{guide.note}</p>
+                  </div>
 
-              <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
-                <Button variant="outline" onClick={() => setApiTarget(null)}>취소</Button>
-                <Button onClick={saveApi}>{isEditMode ? <><Save size={13}/>수정 저장</> : <><Zap size={13}/>저장하고 연동 시작</>}</Button>
-              </div>
+                  {guide.warning && (
+                    <div style={{ background:'#fff7ed', border:'1.5px solid #fed7aa', borderRadius:10, padding:'10px 12px', display:'flex', gap:8 }}>
+                      <span style={{ fontSize:14, flexShrink:0, marginTop:1 }}>⚠️</span>
+                      <p style={{ fontSize:11.5, color:'#92400e', lineHeight:1.6, fontWeight:600 }}>{guide.warning}</p>
+                    </div>
+                  )}
+
+                  {/* 필요한 정보 */}
+                  <div style={{ background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:10, padding:'10px 12px' }}>
+                    <p style={{ fontSize:11.5, fontWeight:900, color:'#0369a1', marginBottom:8 }}>📌 필요한 정보</p>
+                    <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+                      {guide.required.map((info, i) => (
+                        <div key={i} style={{ display:'flex', flexDirection:'column', gap:2 }}>
+                          <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                            <span style={{
+                              fontSize:9.5, fontWeight:700, padding:'1px 6px', borderRadius:4,
+                              background: info.badge === 'required' ? '#fee2e2' : '#f1f5f9',
+                              color: info.badge === 'required' ? '#dc2626' : '#64748b',
+                            }}>{info.badge === 'required' ? '필수' : '선택'}</span>
+                            <span style={{ fontSize:12, fontWeight:800, color:'#1e293b' }}>{info.label}</span>
+                          </div>
+                          <p style={{ fontSize:11, color:'#475569', marginLeft:36, lineHeight:1.5 }}>{info.desc}</p>
+                          {info.example && <p style={{ fontSize:10.5, color:'#7c3aed', marginLeft:36, fontFamily:'monospace', background:'#faf5ff', padding:'2px 6px', borderRadius:4, display:'inline-block', width:'fit-content' }}>예: {info.example}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 발급 절차 */}
+                  <div>
+                    <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:8 }}>🚀 API 발급 절차</p>
+                    <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
+                      {guide.steps.map((step, i) => (
+                        <div key={i} style={{ fontSize:11.5, color: step.startsWith('━━━') ? '#7c3aed' : '#374151', lineHeight:1.6, fontWeight: step.startsWith('━━━') ? 800 : 500, padding: step.startsWith('━━━') ? '4px 0' : '0' }}>
+                          {step}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 바로가기 링크 */}
+                  <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+                    {guide.links.map((link, i) => (
+                      <a key={i} href={link.url} target="_blank" rel="noopener noreferrer"
+                        style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 12px', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:8, color:'#2563eb', fontSize:12, fontWeight:700, textDecoration:'none' }}>
+                        🔗 {link.label}
+                        <span style={{ marginLeft:'auto', fontSize:10, color:'#93c5fd' }}>↗</span>
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </Modal>
         )

@@ -1,0 +1,28 @@
+feat(marketplace): 멀티 쇼핑몰 어댑터 아키텍처 구축 및 연동 가이드 강화
+
+어댑터 패턴 기반 멀티 쇼핑몰 통합 구조 신규 구축
+- IMarketplaceAdapter 인터페이스 + 통합 모델(UnifiedProduct/Order/Claim)
+- BaseMarketplace 추상 클래스(NotImplementedError 포함)
+- 15개 쇼핑몰 커넥터: 스마트스토어, 쿠팡, 11번가, G마켓, 옥션, Cafe24,
+  지그재그, 에이블리, 올웨이즈, 토스쇼핑, 롯데온, SSG, 하프클럽, 패션플러스, GS샵
+- 마켓플레이스 레지스트리(createAdapter 팩토리 함수)
+- 서비스 레이어: ProductService, OrderService, ShippingService, CsService
+- API 라우트 4종 어댑터 구조로 교체
+- 주문 자동 수집 Job API(/api/jobs/order-collect)
+- 마켓플레이스 목록/연결 테스트 API(/api/marketplaces)
+
+채널 연동 가이드 UI 강화
+- GuideInfo 타입 확장: authType, required[], warning 추가
+- 인라인 가이드 패널(모달 내 좌우 분할 레이아웃)
+- 필요한 정보 섹션: 필수/선택 배지 + 설명 + 예시값
+- 롯데온/SSG/토스쇼핑/하프클럽/GS샵 API 필드 추가
+
+셀러툴 수준 DB 스키마 v2 추가(supabase/schema_v2_sellertool.sql)
+- master_products/master_skus: 통합 상품 및 SKU 재고 관리
+- option_groups: 색상/사이즈 옵션 그룹 구조
+- category_mappings: 마스터 카테고리와 쇼핑몰 카테고리 매핑 테이블
+- marketplace_products/marketplace_skus: 쇼핑몰별 상품/SKU 연결
+- unified_orders + order_status_mappings: 표준화 주문 및 상태 변환
+- inventory_history/inventory_sync_log: 재고 이력 추적
+- pricing_rules, shipping_policies, product_transfer_logs
+- 주문 상태 변경 시 자동 재고 차감/복구 트리거
