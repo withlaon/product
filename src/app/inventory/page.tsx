@@ -1,12 +1,14 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
+import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import { supabase } from '@/lib/supabase'
 import {
   ArrowDownCircle, ArrowUpCircle, Search, AlertTriangle,
-  Plus, Package, RefreshCw, ShieldAlert, ClipboardList, Edit2, ChevronDown, ChevronRight,
+  Plus, Package, RefreshCw, ShieldAlert, ClipboardList,
+  Edit2, ChevronDown, ChevronRight, Download, Upload, X, CalendarDays,
 } from 'lucide-react'
 
 /* ─── 타입 ──────────────────────────────────────────────────── */
@@ -17,11 +19,11 @@ interface TxRecord {
   option_name: string; barcode: string
   qty: number; note: string
 }
-const TX_STYLE: Record<TxType, { label:string; bg:string; color:string; dot:string }> = {
-  in:       { label:'입고',   bg:'#f0fdf4', color:'#15803d', dot:'#22c55e' },
-  out:      { label:'출고',   bg:'#fff1f2', color:'#be123c', dot:'#ef4444' },
-  defective:{ label:'불량',   bg:'#fff7ed', color:'#c2410c', dot:'#f97316' },
-  adjust:   { label:'재고조정',bg:'#eff6ff', color:'#1d4ed8', dot:'#3b82f6' },
+const TX_STYLE: Record<TxType, { label:string; bg:string; color:string; dot:string; icon:string }> = {
+  in       : { label:'입고',     bg:'#f0fdf4', color:'#15803d', dot:'#22c55e', icon:'⬇️' },
+  out      : { label:'출고',     bg:'#fff1f2', color:'#be123c', dot:'#ef4444', icon:'⬆️' },
+  defective: { label:'불량',     bg:'#fff7ed', color:'#c2410c', dot:'#f97316', icon:'⚠️' },
+  adjust   : { label:'재고수정', bg:'#eff6ff', color:'#1d4ed8', dot:'#3b82f6', icon:'✏️' },
 }
 const TX_KEY = 'pm_inv_tx_v1'
 
@@ -32,14 +34,37 @@ interface PmOption {
 }
 interface PmProduct { id: string; code: string; name: string; category: string; options: PmOption[] }
 
+/* ── 모달 내 선택 아이템 ── */
+interface TxItem {
+  prodId   : string
+  prodName : string
+  prodCode : string
+  optName  : string
+  barcode  : string
+  curStock : number
+  defQty   : number
+  received : number
+  qty      : string   // 입고/출고/불량 수량
+  adjStock : string   // 재고수정 시 직접 입력값
+  note     : string
+}
+
+function mkItem(prod: PmProduct, opt: PmOption): TxItem {
+  return {
+    prodId: prod.id, prodName: prod.name, prodCode: prod.code,
+    optName: opt.name, barcode: opt.barcode,
+    curStock: getStock(opt), defQty: opt.defective || 0, received: opt.received || 0,
+    qty: '', adjStock: '', note: '',
+  }
+}
+
 function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display:'block', fontSize:12, fontWeight:800, color:'#475569', marginBottom:6 }}>{children}</label>
+  return <label style={{ display:'block', fontSize:12, fontWeight:800, color:'#475569', marginBottom:5 }}>{children}</label>
 }
 
 function getStock(o: PmOption) {
   return o.current_stock !== undefined ? o.current_stock : Math.max(0, o.received - (o.sold || 0))
 }
-function getDefective(o: PmOption) { return o.defective || 0 }
 
 /* ─── 거래 내역 localStorage ─────────────────────────────────── */
 function loadTx(): TxRecord[] {
@@ -49,266 +74,472 @@ function saveTx(tx: TxRecord[]) {
   try { localStorage.setItem(TX_KEY, JSON.stringify(tx)) } catch {}
 }
 
+/* ─── 엑셀 양식 다운로드 ────────────────────────────────────── */
+function downloadTemplate() {
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['바코드', '수량', '비고'],
+    ['예시: 1234567890123', 10, '입고 메모'],
+  ])
+  ws['!cols'] = [{ wch: 22 }, { wch: 8 }, { wch: 24 }]
+  const wb = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '입출고양식')
+  XLSX.writeFile(wb, '입출고_엑셀양식.xlsx')
+}
+
 /* ─── 메인 ──────────────────────────────────────────────────── */
 export default function InventoryPage() {
   const [products, setProducts]   = useState<PmProduct[]>([])
-  const [txList, setTxList]       = useState<TxRecord[]>([])
-  const [tab, setTab]             = useState<'stock'|'tx'>('stock')
-  const [search, setSearch]       = useState('')
-  const [loading, setLoading]     = useState(false)
+  const [txList,   setTxList]     = useState<TxRecord[]>([])
+  const [loading,  setLoading]    = useState(false)
 
-  // 모달 상태
-  const [inModal,        setInModal]        = useState(false)
-  const [outModal,       setOutModal]       = useState(false)
-  const [defectModal,    setDefectModal]    = useState(false)
-  const [adjustModal,    setAdjustModal]    = useState(false)
+  /* ── 입출고내역 필터 ── */
+  const [monthFilter, setMonthFilter] = useState<string>('') // 'YYYY-MM' 형식
+  const [typeFilter,  setTypeFilter]  = useState<TxType|'all'>('all')
+  const [expandedDates, setExpandedDates] = useState<Set<string>>(new Set())
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
 
-  // 버튼 로딩 상태
-  const [inSaving,     setInSaving]     = useState(false)
-  const [outSaving,    setOutSaving]    = useState(false)
-  const [defSaving,    setDefSaving]    = useState(false)
-  const [adjSaving,    setAdjSaving]    = useState(false)
+  /* ── 모달 상태 ── */
+  const [inModal,     setInModal]     = useState(false)
+  const [outModal,    setOutModal]    = useState(false)
+  const [defectModal, setDefectModal] = useState(false)
+  const [adjustModal, setAdjustModal] = useState(false)
+  const [saving,      setSaving]      = useState(false)
 
-  // 날짜별 수정 모달
-  const [editDateModal, setEditDateModal]     = useState(false)
-  const [editDateKey,   setEditDateKey]       = useState('')
-  const [editDateRows,  setEditDateRows]      = useState<TxRecord[]>([])
-  const [editDateSaving,setEditDateSaving]    = useState(false)
-  const [expandedDates, setExpandedDates]     = useState<Set<string>>(new Set())
+  /* ── 날짜 수정 모달 ── */
+  const [editDateModal,  setEditDateModal]  = useState(false)
+  const [editDateKey,    setEditDateKey]    = useState('')
+  const [editDateRows,   setEditDateRows]   = useState<TxRecord[]>([])
+  const [editDateSaving, setEditDateSaving] = useState(false)
 
-  // 공통 폼 상태
-  const [selProduct, setSelProduct] = useState('')
-  const [selOption,  setSelOption]  = useState('')
-  const [qty,        setQty]        = useState('')
-  const [note,       setNote]       = useState('')
-  const [adjStock,   setAdjStock]   = useState('')  // 재고조정: 직접 입력값
+  /* ── 공통 모달 폼 상태 ── */
+  const [itemSearch,  setItemSearch]  = useState('')
+  const [searchRes,   setSearchRes]   = useState<{ prod:PmProduct; opt:PmOption }[]>([])
+  const [txItems,     setTxItems]     = useState<TxItem[]>([])
+  const xlsxRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { setTxList(loadTx()) }, [])
 
   const loadProducts = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase.from('pm_products').select('id,code,name,category,options').order('created_at', { ascending:false })
+    const { data } = await supabase.from('pm_products')
+      .select('id,code,name,category,options').order('code', { ascending: true })
     if (data) setProducts(data as PmProduct[])
     setLoading(false)
   }, [])
-
   useEffect(() => { loadProducts() }, [loadProducts])
 
-  /* ── 선택된 상품/옵션 ── */
-  const selectedProd  = products.find(p => p.id === selProduct)
-  const selectedOpt   = selectedProd?.options.find(o => o.name === selOption) ?? null
+  /* ── 상품 검색 ── */
+  useEffect(() => {
+    const q = itemSearch.trim()
+    if (!q) { setSearchRes([]); return }
+    const res: { prod:PmProduct; opt:PmOption }[] = []
+    for (const prod of products) {
+      for (const opt of prod.options) {
+        if (
+          prod.name.includes(q) || prod.code.includes(q) ||
+          opt.name.includes(q)  || opt.barcode.includes(q) ||
+          (opt.chinese_name && opt.chinese_name.includes(q))
+        ) {
+          res.push({ prod, opt })
+          if (res.length >= 20) break
+        }
+      }
+      if (res.length >= 20) break
+    }
+    setSearchRes(res)
+  }, [itemSearch, products])
 
-  /* ── 공통: 폼 초기화 ── */
-  const resetForm = () => { setSelProduct(''); setSelOption(''); setQty(''); setNote(''); setAdjStock('') }
+  /* ── 아이템 추가 ── */
+  const addItem = (prod: PmProduct, opt: PmOption) => {
+    // 중복 방지
+    if (txItems.some(i => i.prodId === prod.id && i.optName === opt.name)) return
+    setTxItems(prev => [...prev, mkItem(prod, opt)])
+    setItemSearch('')
+    setSearchRes([])
+  }
+
+  /* ── 아이템 제거 ── */
+  const removeItem = (idx: number) => setTxItems(prev => prev.filter((_, i) => i !== idx))
+
+  /* ── 아이템 필드 수정 ── */
+  const updateItem = (idx: number, field: 'qty'|'adjStock'|'note', val: string) =>
+    setTxItems(prev => prev.map((item, i) => i === idx ? { ...item, [field]: val } : item))
+
+  /* ── 폼 초기화 ── */
+  const resetForm = () => { setTxItems([]); setItemSearch(''); setSearchRes([]) }
 
   /* ── Supabase 옵션 업데이트 헬퍼 ── */
-  const updateOption = async (
-    prodId: string,
-    opts: PmOption[],
-    optName: string,
+  const updateOption = useCallback(async (
+    prodId: string, opts: PmOption[], optName: string,
     updater: (o: PmOption) => PmOption,
   ) => {
     const updated = opts.map(o => o.name === optName ? updater(o) : o)
     await supabase.from('pm_products').update({ options: updated }).eq('id', prodId)
     setProducts(prev => prev.map(p => p.id === prodId ? { ...p, options: updated } : p))
     return updated
+  }, [])
+
+  /* ── 거래 기록 추가 ── */
+  const addTxBatch = (records: TxRecord[]) => {
+    const updated = [...records, ...txList]
+    setTxList(updated); saveTx(updated)
   }
 
-  /* ── 거래 추가 ── */
-  const addTx = (type: TxType, prod: PmProduct, opt: PmOption, amount: number, n: string) => {
-    const record: TxRecord = {
-      id: String(Date.now()), date: new Date().toISOString(), type,
-      product_code: prod.code, product_name: prod.name, option_name: opt.name,
-      barcode: opt.barcode, qty: amount, note: n,
-    }
-    const updated = [record, ...txList]
-    setTxList(updated)
-    saveTx(updated)
-  }
-
-  /* ── 입고 등록 ── */
+  /* ── 입고 처리 ── */
   const handleIn = async () => {
-    if (!selectedProd || !selectedOpt || !qty) return
-    const n = Number(qty); if (n <= 0) return
-    setInSaving(true)
-    await updateOption(selectedProd.id, selectedProd.options, selOption, o => ({
-      ...o, received: (o.received || 0) + n, current_stock: getStock(o) + n,
-    }))
-    addTx('in', selectedProd, selectedOpt, n, note)
-    setInSaving(false); setInModal(false); resetForm()
+    const valid = txItems.filter(i => i.qty && Number(i.qty) > 0)
+    if (valid.length === 0) return
+    setSaving(true)
+    const records: TxRecord[] = []
+    for (const item of valid) {
+      const prod = products.find(p => p.id === item.prodId)
+      if (!prod) continue
+      const n = Number(item.qty)
+      const updatedOpts = await updateOption(prod.id, prod.options, item.optName, o => ({
+        ...o, received: (o.received || 0) + n, current_stock: getStock(o) + n,
+      }))
+      const updatedOpt = updatedOpts.find(o => o.name === item.optName)
+      records.push({
+        id: `${Date.now()}_${item.barcode}`, date: new Date().toISOString(), type: 'in',
+        product_code: item.prodCode, product_name: item.prodName,
+        option_name: item.optName, barcode: item.barcode, qty: n, note: item.note,
+      })
+      // 상품목록 현재고 즉시 반영
+      if (updatedOpt) {
+        setProducts(prev => prev.map(p =>
+          p.id === prod.id ? { ...p, options: p.options.map(o =>
+            o.name === item.optName ? { ...o, received: (o.received || 0) + n, current_stock: getStock(o) + n } : o
+          )} : p
+        ))
+      }
+    }
+    addTxBatch(records)
+    setSaving(false); setInModal(false); resetForm()
   }
 
-  /* ── 출고 등록 ── */
+  /* ── 출고 처리 ── */
   const handleOut = async () => {
-    if (!selectedProd || !selectedOpt || !qty) return
-    const n = Number(qty); if (n <= 0) return
-    setOutSaving(true)
-    await updateOption(selectedProd.id, selectedProd.options, selOption, o => ({
-      ...o, current_stock: Math.max(0, getStock(o) - n),
-    }))
-    addTx('out', selectedProd, selectedOpt, -n, note)
-    setOutSaving(false); setOutModal(false); resetForm()
+    const valid = txItems.filter(i => i.qty && Number(i.qty) > 0)
+    if (valid.length === 0) return
+    setSaving(true)
+    const records: TxRecord[] = []
+    for (const item of valid) {
+      const prod = products.find(p => p.id === item.prodId)
+      if (!prod) continue
+      const n = Number(item.qty)
+      await updateOption(prod.id, prod.options, item.optName, o => ({
+        ...o, current_stock: Math.max(0, getStock(o) - n),
+      }))
+      records.push({
+        id: `${Date.now()}_${item.barcode}`, date: new Date().toISOString(), type: 'out',
+        product_code: item.prodCode, product_name: item.prodName,
+        option_name: item.optName, barcode: item.barcode, qty: -n, note: item.note,
+      })
+    }
+    addTxBatch(records)
+    setSaving(false); setOutModal(false); resetForm()
   }
 
-  /* ── 불량 등록 ── */
+  /* ── 불량 처리 ── */
   const handleDefect = async () => {
-    if (!selectedProd || !selectedOpt || !qty) return
-    const n = Number(qty); if (n <= 0) return
-    setDefSaving(true)
-    await updateOption(selectedProd.id, selectedProd.options, selOption, o => ({
-      ...o, current_stock: Math.max(0, getStock(o) - n), defective: getDefective(o) + n,
-    }))
-    addTx('defective', selectedProd, selectedOpt, -n, note || '불량 처리')
-    setDefSaving(false); setDefectModal(false); resetForm()
+    const valid = txItems.filter(i => i.qty && Number(i.qty) > 0)
+    if (valid.length === 0) return
+    setSaving(true)
+    const records: TxRecord[] = []
+    for (const item of valid) {
+      const prod = products.find(p => p.id === item.prodId)
+      if (!prod) continue
+      const n = Number(item.qty)
+      await updateOption(prod.id, prod.options, item.optName, o => ({
+        ...o, current_stock: Math.max(0, getStock(o) - n), defective: (o.defective || 0) + n,
+      }))
+      records.push({
+        id: `${Date.now()}_${item.barcode}`, date: new Date().toISOString(), type: 'defective',
+        product_code: item.prodCode, product_name: item.prodName,
+        option_name: item.optName, barcode: item.barcode, qty: -n, note: item.note || '불량 처리',
+      })
+    }
+    addTxBatch(records)
+    setSaving(false); setDefectModal(false); resetForm()
   }
 
-  /* ── 재고 등록 (직접 조정) ── */
+  /* ── 재고수정 처리 ── */
   const handleAdjust = async () => {
-    if (!selectedProd || !selectedOpt || adjStock === '') return
-    const newStock = Number(adjStock)
-    if (newStock < 0) return
-    const prev = getStock(selectedOpt)
-    const delta = newStock - prev
-    await updateOption(selectedProd.id, selectedProd.options, selOption, o => ({
-      ...o, current_stock: newStock,
-    }))
-    setAdjSaving(true)
-    addTx('adjust', selectedProd, selectedOpt, delta, note || `재고 조정 (${prev}→${newStock})`)
-    setAdjSaving(false); setAdjustModal(false); resetForm()
+    const valid = txItems.filter(i => i.adjStock !== '' && Number(i.adjStock) >= 0)
+    if (valid.length === 0) return
+    setSaving(true)
+    const records: TxRecord[] = []
+    for (const item of valid) {
+      const prod = products.find(p => p.id === item.prodId)
+      if (!prod) continue
+      const newStock = Number(item.adjStock)
+      const prev = item.curStock
+      const delta = newStock - prev
+      await updateOption(prod.id, prod.options, item.optName, o => ({
+        ...o, current_stock: newStock,
+      }))
+      records.push({
+        id: `${Date.now()}_${item.barcode}`, date: new Date().toISOString(), type: 'adjust',
+        product_code: item.prodCode, product_name: item.prodName,
+        option_name: item.optName, barcode: item.barcode,
+        qty: delta, note: item.note || `재고 수정 (${prev}→${newStock})`,
+      })
+    }
+    addTxBatch(records)
+    setSaving(false); setAdjustModal(false); resetForm()
   }
 
-  /* ── 날짜별 그룹 처리 ── */
-  const txByDate = txList.reduce<Record<string, TxRecord[]>>((acc, tx) => {
-    const key = tx.date.slice(0, 10)
-    if (!acc[key]) acc[key] = []
-    acc[key].push(tx)
+  /* ── 엑셀 파일 등록 처리 ── */
+  const handleXlsxImport = (e: React.ChangeEvent<HTMLInputElement>, type: TxType) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const wb = XLSX.read(ev.target?.result, { type: 'binary' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      const rows = XLSX.utils.sheet_to_json<{ 바코드: string; 수량: number; 비고?: string }>(ws)
+      const newItems: TxItem[] = []
+      for (const row of rows) {
+        const bc = String(row['바코드'] ?? '').trim()
+        if (!bc) continue
+        for (const prod of products) {
+          for (const opt of prod.options) {
+            if (opt.barcode === bc) {
+              if (!txItems.some(i => i.prodId === prod.id && i.optName === opt.name)) {
+                const item = mkItem(prod, opt)
+                if (type === 'adjust') {
+                  item.adjStock = String(row['수량'] ?? '')
+                } else {
+                  item.qty = String(row['수량'] ?? '')
+                }
+                item.note = row['비고'] ?? ''
+                newItems.push(item)
+              }
+            }
+          }
+        }
+      }
+      setTxItems(prev => [...prev, ...newItems])
+    }
+    reader.readAsBinaryString(file)
+    e.target.value = ''
+  }
+
+  /* ── 내역 필터 ── */
+  const filteredTx = useMemo(() => {
+    return txList.filter(tx => {
+      const month = tx.date.slice(0, 7)
+      const mMonth = !monthFilter || month === monthFilter
+      const mType  = typeFilter === 'all' || tx.type === typeFilter
+      return mMonth && mType
+    })
+  }, [txList, monthFilter, typeFilter])
+
+  /* ── 월별 그룹 ── */
+  const txByMonth = useMemo(() => {
+    const acc: Record<string, TxRecord[]> = {}
+    for (const tx of filteredTx) {
+      const key = tx.date.slice(0, 7)
+      if (!acc[key]) acc[key] = []
+      acc[key].push(tx)
+    }
     return acc
-  }, {})
-  const sortedDates = Object.keys(txByDate).sort((a, b) => b.localeCompare(a))
+  }, [filteredTx])
+
+  const sortedMonths = Object.keys(txByMonth).sort((a, b) => b.localeCompare(a))
+
+  /* ── 날짜별 그룹 (월 내부) ── */
+  const txByDate = useMemo(() => {
+    const acc: Record<string, TxRecord[]> = {}
+    for (const tx of filteredTx) {
+      const key = tx.date.slice(0, 10)
+      if (!acc[key]) acc[key] = []
+      acc[key].push(tx)
+    }
+    return acc
+  }, [filteredTx])
+
+  /* ── 월별 사용 가능한 달 목록 ── */
+  const availableMonths = useMemo(() => {
+    const months = new Set(txList.map(tx => tx.date.slice(0, 7)))
+    return Array.from(months).sort((a, b) => b.localeCompare(a))
+  }, [txList])
+
+  const toggleMonth = (key: string) =>
+    setExpandedMonths(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
+  const toggleDate  = (key: string) =>
+    setExpandedDates(prev => { const n = new Set(prev); n.has(key) ? n.delete(key) : n.add(key); return n })
 
   const openDateEdit = (dateKey: string) => {
     setEditDateKey(dateKey)
-    setEditDateRows(txByDate[dateKey].map(r => ({ ...r })))
+    setEditDateRows((txByDate[dateKey] ?? []).map(r => ({ ...r })))
     setEditDateModal(true)
   }
 
   const handleDateEditSave = async () => {
     setEditDateSaving(true)
-    // 변경된 레코드에 대해 Supabase delta 처리
     const origRows = txByDate[editDateKey] || []
     for (const newRow of editDateRows) {
       const orig = origRows.find(r => r.id === newRow.id)
       if (!orig || (orig.qty === newRow.qty && orig.note === newRow.note && orig.type === newRow.type)) continue
       const delta = newRow.qty - orig.qty
       if (delta !== 0) {
-        // 재고에 delta 반영
         const prod = products.find(p => p.code === newRow.product_code)
         if (prod) {
           await updateOption(prod.id, prod.options, newRow.option_name, o => ({
-            ...o,
-            current_stock: Math.max(0, getStock(o) + delta),
+            ...o, current_stock: Math.max(0, getStock(o) + delta),
           }))
         }
       }
     }
-    const newList = txList.map(tx => {
-      const edited = editDateRows.find(r => r.id === tx.id)
-      return edited ?? tx
-    })
+    const newList = txList.map(tx => editDateRows.find(r => r.id === tx.id) ?? tx)
     setTxList(newList); saveTx(newList)
     setEditDateSaving(false); setEditDateModal(false)
   }
 
-  const toggleDate = (key: string) => {
-    setExpandedDates(prev => {
-      const next = new Set(prev)
-      if (next.has(key)) next.delete(key); else next.add(key)
-      return next
-    })
-  }
-
-  /* ── KPI 계산 ── */
-  const allOpts  = products.flatMap(p => p.options.map(o => ({ ...o, pName: p.name })))
+  /* ── KPI ── */
+  const allOpts    = products.flatMap(p => p.options.map(o => ({ ...o, pName: p.name })))
   const totalStock = allOpts.reduce((s, o) => s + getStock(o), 0)
   const lowItems   = allOpts.filter(o => getStock(o) > 0 && getStock(o) <= 2).length
   const zeroItems  = allOpts.filter(o => getStock(o) === 0).length
-  const totalDef   = allOpts.reduce((s, o) => s + getDefective(o), 0)
+  const totalDef   = allOpts.reduce((s, o) => s + (o.defective || 0), 0)
 
-  const filteredProds = products.filter(p =>
-    !search || p.name.includes(search) || p.code.includes(search) ||
-    p.options.some(o => o.name.includes(search) || o.barcode.includes(search))
-  )
+  /* ── 이번달 통계 ── */
+  const thisMonth = new Date().toISOString().slice(0, 7)
+  const thisMonthTx = txList.filter(tx => tx.date.startsWith(thisMonth))
+  const thisMonthIn  = thisMonthTx.filter(t => t.type === 'in').reduce((s, t) => s + t.qty, 0)
+  const thisMonthOut = thisMonthTx.filter(t => t.type === 'out').reduce((s, t) => s + Math.abs(t.qty), 0)
 
-  /* ── 공통 모달 폼 ── */
-  const CommonForm = ({ type }: { type: TxType }) => (
-    <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+  /* ── 공통 모달 폼 렌더 ── */
+  const renderModalForm = (type: TxType) => {
+    const adjMode = type === 'adjust'
+    const xlsxLocalRef = useRef<HTMLInputElement>(null)
+    return (
       <div>
-        <Label>상품 선택 *</Label>
-        <select value={selProduct} onChange={e => { setSelProduct(e.target.value); setSelOption('') }}
-          style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none' }}>
-          <option value="">— 상품 선택 —</option>
-          {products.map(p => <option key={p.id} value={p.id}>{p.name} ({p.code})</option>)}
-        </select>
-      </div>
-      {selectedProd && (
-        <div>
-          <Label>옵션 선택 *</Label>
-          <select value={selOption} onChange={e => setSelOption(e.target.value)}
-            style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none' }}>
-            <option value="">— 옵션 선택 —</option>
-            {selectedProd.options.map(o => (
-              <option key={o.name} value={o.name}>
-                {o.name}{o.chinese_name ? ` (${o.chinese_name})` : ''} — 현재고: {getStock(o)}{getDefective(o)>0?` | 불량: ${getDefective(o)}`:''}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
-      {selectedOpt && (
-        <div style={{ background:'#f8fafc', borderRadius:10, padding:'10px 14px', display:'flex', gap:16, flexWrap:'wrap' }}>
-          {[['현재고', getStock(selectedOpt), '#059669'], ['입고누계', selectedOpt.received||0, '#0ea5e9'], ['불량', getDefective(selectedOpt), '#dc2626']].map(([l,v,c]) => (
-            <div key={String(l)}>
-              <p style={{ fontSize:10.5, fontWeight:800, color:'#94a3b8' }}>{l}</p>
-              <p style={{ fontSize:15, fontWeight:900, color:String(c) }}>{v}</p>
+        {/* 상품 검색 */}
+        <div style={{ marginBottom:12 }}>
+          <Label>상품 검색</Label>
+          <div style={{ position:'relative' }}>
+            <Search size={13} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', pointerEvents:'none' }}/>
+            <input
+              value={itemSearch}
+              onChange={e => setItemSearch(e.target.value)}
+              placeholder="상품명, 상품코드, 옵션명, 바코드로 검색..."
+              style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'8px 10px 8px 30px', fontSize:13, outline:'none', boxSizing:'border-box' }}
+            />
+          </div>
+          {/* 검색 결과 드롭다운 */}
+          {searchRes.length > 0 && (
+            <div style={{ border:'1.5px solid #e2e8f0', borderRadius:8, marginTop:4, maxHeight:200, overflowY:'auto', background:'white', boxShadow:'0 4px 16px rgba(0,0,0,0.10)' }}>
+              {searchRes.map(({ prod, opt }) => (
+                <button key={`${prod.id}_${opt.name}`}
+                  onClick={() => addItem(prod, opt)}
+                  style={{ width:'100%', textAlign:'left', padding:'8px 12px', border:'none', borderBottom:'1px solid #f1f5f9', background:'none', cursor:'pointer', fontSize:12 }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                  <span style={{ fontWeight:800, color:'#1e293b' }}>{prod.name}</span>
+                  <span style={{ color:'#64748b', marginLeft:6 }}>— {opt.name}</span>
+                  {opt.barcode && <span style={{ fontFamily:'monospace', fontSize:11, color:'#94a3b8', marginLeft:6 }}>{opt.barcode}</span>}
+                  <span style={{ float:'right', fontSize:11, color:'#059669', fontWeight:700 }}>현재고 {getStock(opt)}</span>
+                </button>
+              ))}
             </div>
-          ))}
-          {selectedOpt.barcode && <div><p style={{ fontSize:10.5, fontWeight:800, color:'#94a3b8' }}>바코드</p><p style={{ fontSize:12, fontFamily:'monospace', fontWeight:700, color:'#475569' }}>{selectedOpt.barcode}</p></div>}
+          )}
         </div>
-      )}
-      {type === 'adjust' ? (
-        <div>
-          <Label>조정 후 재고 수량 *</Label>
-          <Input type="number" min="0" placeholder="조정 후 실제 재고 수량 입력" value={adjStock} onChange={e => setAdjStock(e.target.value)}/>
-          {adjStock !== '' && selectedOpt && <p style={{ fontSize:11.5, color:'#6366f1', marginTop:4, fontWeight:700 }}>
-            변동: {getStock(selectedOpt)} → {adjStock} ({Number(adjStock)-getStock(selectedOpt) >= 0 ? '+' : ''}{Number(adjStock)-getStock(selectedOpt)})
-          </p>}
+
+        {/* 엑셀 버튼 */}
+        <div style={{ display:'flex', gap:8, marginBottom:12 }}>
+          <button onClick={downloadTemplate}
+            style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#15803d', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            <Download size={12}/>엑셀 양식 다운
+          </button>
+          <button onClick={() => xlsxLocalRef.current?.click()}
+            style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#1d4ed8', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            <Upload size={12}/>엑셀 파일 등록
+          </button>
+          <input ref={xlsxLocalRef} type="file" accept=".xlsx,.xls" style={{ display:'none' }}
+            onChange={e => handleXlsxImport(e, type)}/>
         </div>
-      ) : (
-        <div>
-          <Label>{type==='in'?'입고':'출고/불량'} 수량 *</Label>
-          <Input type="number" min="1" placeholder="수량 입력" value={qty} onChange={e => setQty(e.target.value)}/>
-        </div>
-      )}
-      <div>
-        <Label>비고</Label>
-        <Input placeholder="비고 입력 (선택)" value={note} onChange={e => setNote(e.target.value)}/>
+
+        {/* 선택된 상품 목록 */}
+        {txItems.length === 0 ? (
+          <div style={{ border:'2px dashed #e2e8f0', borderRadius:10, padding:'20px', textAlign:'center', color:'#94a3b8', fontSize:12.5 }}>
+            상품을 검색하여 선택하거나 엑셀 파일을 등록하세요
+          </div>
+        ) : (
+          <div>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
+              <p style={{ fontSize:12, fontWeight:800, color:'#475569' }}>선택된 상품 <span style={{ color:'#2563eb' }}>{txItems.length}개</span></p>
+              <button onClick={() => setTxItems([])}
+                style={{ fontSize:11, fontWeight:700, color:'#94a3b8', background:'none', border:'none', cursor:'pointer' }}>
+                전체 초기화
+              </button>
+            </div>
+            <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:280, overflowY:'auto' }}>
+              {txItems.map((item, idx) => (
+                <div key={idx} style={{ display:'grid', gridTemplateColumns:'1fr 90px 90px 32px', gap:6, alignItems:'center', background:'#f8fafc', borderRadius:8, padding:'8px 10px', border:'1px solid #f1f5f9' }}>
+                  <div>
+                    <p style={{ fontSize:12.5, fontWeight:800, color:'#1e293b', marginBottom:1 }}>
+                      {item.prodName}
+                      <span style={{ fontSize:11, color:'#94a3b8', fontWeight:500, marginLeft:4 }}>{item.optName}</span>
+                    </p>
+                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                      {item.barcode && <span style={{ fontFamily:'monospace', fontSize:10.5, color:'#94a3b8' }}>{item.barcode}</span>}
+                      <span style={{ fontSize:10.5, fontWeight:700, color:'#059669' }}>현재고 {item.curStock}</span>
+                    </div>
+                  </div>
+                  <div>
+                    {adjMode ? (
+                      <div>
+                        <input type="number" min="0" placeholder="수정재고"
+                          value={item.adjStock}
+                          onChange={e => updateItem(idx, 'adjStock', e.target.value)}
+                          style={{ width:'100%', border:'1.5px solid #c7d2fe', borderRadius:6, padding:'5px 6px', fontSize:12, fontWeight:800, textAlign:'center', outline:'none', color:'#1d4ed8' }}/>
+                        {item.adjStock !== '' && (
+                          <p style={{ fontSize:9.5, color: Number(item.adjStock) >= item.curStock ? '#059669' : '#dc2626', textAlign:'center', marginTop:1 }}>
+                            {Number(item.adjStock) >= item.curStock ? '+' : ''}{Number(item.adjStock) - item.curStock}
+                          </p>
+                        )}
+                      </div>
+                    ) : (
+                      <input type="number" min="1" placeholder="수량"
+                        value={item.qty}
+                        onChange={e => updateItem(idx, 'qty', e.target.value)}
+                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'5px 6px', fontSize:12, fontWeight:800, textAlign:'center', outline:'none' }}/>
+                    )}
+                  </div>
+                  <input placeholder="비고" value={item.note}
+                    onChange={e => updateItem(idx, 'note', e.target.value)}
+                    style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'5px 6px', fontSize:11.5, outline:'none' }}/>
+                  <button onClick={() => removeItem(idx)}
+                    style={{ display:'flex', alignItems:'center', justifyContent:'center', width:28, height:28, background:'#fee2e2', color:'#dc2626', border:'none', borderRadius:6, cursor:'pointer' }}>
+                    <X size={12}/>
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
-    </div>
-  )
+    )
+  }
 
   return (
     <div className="pm-page space-y-5">
+
       {/* KPI */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
         {[
-          { label:'전체 품목',   v:`${products.length}개`,               bg:'#eff6ff', color:'#1d4ed8' },
-          { label:'총 재고량',   v:`${totalStock.toLocaleString()}개`,    bg:'#faf5ff', color:'#7e22ce' },
-          { label:'재고 부족',   v:`${lowItems}개`,                       bg:'#fffbeb', color:'#d97706' },
-          { label:'불량 수량',   v:`${totalDef.toLocaleString()}개`,      bg:'#fff1f2', color:'#be123c' },
-        ].map(c=>(
-          <div key={c.label} className="pm-card p-5" style={{ background: c.bg }}>
-            <p style={{ fontSize:11, fontWeight:800, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
-            <p style={{ fontSize:32, fontWeight:900, color: c.color, marginTop:4, lineHeight:1 }}>{c.v}</p>
+          { label:'전체 품목',  v:`${products.length}개`,                    bg:'#eff6ff', color:'#1d4ed8' },
+          { label:'총 재고량',  v:`${totalStock.toLocaleString()}개`,         bg:'#faf5ff', color:'#7e22ce' },
+          { label:'재고 부족',  v:`${lowItems}개`,                            bg:'#fffbeb', color:'#d97706' },
+          { label:'품절',       v:`${zeroItems}개`,                           bg:'#fff1f2', color:'#be123c' },
+          { label:'불량 누계',  v:`${totalDef.toLocaleString()}개`,           bg:'#fff7ed', color:'#c2410c' },
+          { label:`${thisMonth.slice(5)}월 입고`, v:`${thisMonthIn.toLocaleString()}개`, bg:'#f0fdf4', color:'#15803d' },
+        ].map(c => (
+          <div key={c.label} className="pm-card p-4" style={{ background: c.bg }}>
+            <p style={{ fontSize:10.5, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
+            <p style={{ fontSize:22, fontWeight:900, color: c.color, marginTop:2, lineHeight:1 }}>{c.v}</p>
           </div>
         ))}
       </div>
@@ -329,240 +560,232 @@ export default function InventoryPage() {
         </Button>
         <Button style={{ background:'#2563eb', borderColor:'#2563eb' }} size="sm"
           onClick={() => { resetForm(); setAdjustModal(true) }}>
-          <ClipboardList size={14}/>재고 등록
+          <ClipboardList size={14}/>재고 수정
         </Button>
         <Button variant="outline" size="sm" onClick={loadProducts} style={{ marginLeft:'auto' }}>
           <RefreshCw size={13}/>새로고침
         </Button>
       </div>
 
-      {/* 탭 */}
+      {/* ── 입출고 내역 ── */}
       <div className="pm-card overflow-hidden">
-        <div style={{ display:'flex', borderBottom:'1px solid rgba(15,23,42,0.07)' }}>
-          {[{id:'stock',label:'재고 현황'},{id:'tx',label:'입출고 내역'}].map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id as 'stock'|'tx')}
-              style={{ padding:'12px 20px', fontSize:13, fontWeight:800, background:'none', border:'none', cursor:'pointer',
-                borderBottom:`2px solid ${tab===t.id?'#2563eb':'transparent'}`,
-                color: tab===t.id ? '#2563eb' : '#94a3b8' }}>
-              {t.label}
-            </button>
-          ))}
+        {/* 헤더 + 필터 */}
+        <div style={{ padding:'12px 16px', borderBottom:'1px solid rgba(15,23,42,0.07)', display:'flex', flexWrap:'wrap', gap:10, alignItems:'center' }}>
+          <p style={{ fontSize:14, fontWeight:900, color:'#1e293b', display:'flex', alignItems:'center', gap:6 }}>
+            <CalendarDays size={15} style={{ color:'#2563eb' }}/>입출고 내역
+          </p>
+
+          {/* 월별 선택 */}
+          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
+              style={{ border:'1.5px solid #e2e8f0', borderRadius:8, padding:'5px 10px', fontSize:12.5, fontWeight:700, outline:'none', color:'#334155' }}>
+              <option value="">전체 월</option>
+              {availableMonths.map(m => (
+                <option key={m} value={m}>
+                  {m.slice(0,4)}년 {m.slice(5)}월
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* 유형 필터 */}
+          <div style={{ display:'flex', gap:4 }}>
+            {([['all','전체','#64748b','#f1f5f9'],['in','입고','#15803d','#f0fdf4'],['out','출고','#be123c','#fff1f2'],['defective','불량','#c2410c','#fff7ed'],['adjust','재고수정','#1d4ed8','#eff6ff']] as const).map(([v, l, c, bg]) => (
+              <button key={v} onClick={() => setTypeFilter(v as TxType|'all')}
+                style={{ fontSize:11.5, fontWeight:800, padding:'4px 10px', borderRadius:6, border:'none', cursor:'pointer',
+                  background: typeFilter === v ? c : bg,
+                  color: typeFilter === v ? 'white' : c }}>
+                {l}
+              </button>
+            ))}
+          </div>
+
+          <p style={{ marginLeft:'auto', fontSize:11.5, color:'#94a3b8', fontWeight:700 }}>
+            총 {filteredTx.length}건
+          </p>
         </div>
 
-        {/* ── 재고 현황 탭 ── */}
-        {tab==='stock' && (
-          <>
-            <div style={{ padding:'12px 16px', borderBottom:'1px solid rgba(15,23,42,0.06)' }}>
-              <div className="relative" style={{ width:260 }}>
-                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color:'#94a3b8' }} />
-                <Input placeholder="상품명, 코드, 옵션명..." value={search} onChange={e=>setSearch(e.target.value)} className="pm-input-icon" />
-              </div>
+        {/* 내역 목록 */}
+        <div style={{ padding:'8px 0' }}>
+          {loading && (
+            <div style={{ textAlign:'center', padding:'3rem', color:'#94a3b8' }}>불러오는 중...</div>
+          )}
+          {!loading && filteredTx.length === 0 && (
+            <div style={{ textAlign:'center', padding:'3rem 1rem', color:'#94a3b8' }}>
+              <Package size={36} style={{ opacity:0.2, margin:'0 auto 10px' }}/>
+              <p style={{ fontSize:13.5, fontWeight:700 }}>입출고 내역이 없습니다</p>
+              <p style={{ fontSize:12, color:'#cbd5e1' }}>상단의 입고/출고/불량/재고수정 버튼으로 내역을 추가하세요</p>
             </div>
-            <div className="pm-table-wrap">
-              <table className="pm-table">
-                <thead><tr>
-                  <th>상품명</th><th>코드</th><th>카테고리</th>
-                  <th style={{ textAlign:'right' }}>현재고</th>
-                  <th style={{ textAlign:'right' }}>불량</th>
-                  <th style={{ textAlign:'right' }}>판매</th>
-                  <th style={{ textAlign:'center' }}>상태</th>
-                  <th></th>
-                </tr></thead>
-                <tbody>
-                  {loading && (
-                    <tr><td colSpan={8} style={{ textAlign:'center', padding:'3rem 1rem', color:'#94a3b8', fontSize:13 }}>불러오는 중...</td></tr>
-                  )}
-                  {!loading && filteredProds.length === 0 && (
-                    <tr><td colSpan={8} style={{ textAlign:'center', padding:'3rem 1rem', color:'#94a3b8' }}>
-                      <Package size={36} style={{ opacity:0.2, marginBottom:8 }}/>
-                      <p style={{ fontSize:13.5, fontWeight:700 }}>재고 데이터가 없습니다</p>
-                      <p style={{ fontSize:12, color:'#cbd5e1' }}>상품관리에서 상품을 먼저 등록하세요</p>
-                    </td></tr>
-                  )}
-                  {filteredProds.flatMap(prod =>
-                    prod.options.map((opt, oi) => {
-                      const stock = getStock(opt)
-                      const defect = getDefective(opt)
-                      const sold = Math.max(0, (opt.received||0) - stock)
-                      const isZero = stock === 0
-                      const isLow  = stock > 0 && stock <= 2
-                      return (
-                        <tr key={`${prod.id}_${oi}`}>
-                          <td>
-                            <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                              {(isZero||isLow) && <AlertTriangle size={12} color={isZero?'#dc2626':'#d97706'}/>}
-                              <div>
-                                <p style={{ fontWeight:800, color:'#1e293b', fontSize:13 }}>{prod.name}</p>
-                                <p style={{ fontSize:11, color:'#94a3b8', fontWeight:700 }}>{opt.name}{opt.chinese_name?` (${opt.chinese_name})`:''}</p>
-                              </div>
-                            </div>
-                          </td>
-                          <td><span style={{ fontFamily:'monospace', fontSize:11.5, background:'#f1f5f9', color:'#475569', padding:'2px 7px', borderRadius:5 }}>{prod.code}</span></td>
-                          <td style={{ fontSize:12, color:'#64748b', fontWeight:700 }}>{prod.category}</td>
-                          <td style={{ textAlign:'right', fontSize:15, fontWeight:900, color: isZero?'#dc2626':isLow?'#d97706':'#1e293b' }}>{stock}</td>
-                          <td style={{ textAlign:'right', fontSize:13, fontWeight:800, color: defect>0?'#dc2626':'#cbd5e1' }}>{defect > 0 ? defect : '-'}</td>
-                          <td style={{ textAlign:'right', fontSize:13, fontWeight:800, color:'#64748b' }}>{sold}</td>
-                          <td style={{ textAlign:'center' }}>
-                            <span style={{ fontSize:11, fontWeight:800, background: isZero?'#fff1f2':isLow?'#fff7ed':'#f0fdf4', color: isZero?'#be123c':isLow?'#c2410c':'#15803d', padding:'3px 9px', borderRadius:99 }}>
-                              {isZero?'품절':isLow?'부족':'정상'}
-                            </span>
-                          </td>
-                          <td>
-                            <div style={{ display:'flex', gap:4 }}>
-                              <button onClick={() => { resetForm(); setSelProduct(prod.id); setSelOption(opt.name); setInModal(true) }}
-                                style={{ fontSize:11, fontWeight:800, color:'#059669', background:'#f0fdf4', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>
-                                입고
-                              </button>
-                              <button onClick={() => { resetForm(); setSelProduct(prod.id); setSelOption(opt.name); setOutModal(true) }}
-                                style={{ fontSize:11, fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'none', borderRadius:6, padding:'3px 8px', cursor:'pointer' }}>
-                                출고
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="pm-table-footer">
-              <span>총 {filteredProds.reduce((s,p)=>s+p.options.length,0)}개 옵션 | 재고 부족 {zeroItems+lowItems}건</span>
-            </div>
-          </>
-        )}
+          )}
 
-        {/* ── 입출고 내역 탭 ── */}
-        {tab==='tx' && (
-          <div style={{ padding:'8px 0' }}>
-            {txList.length === 0 && (
-              <div style={{ textAlign:'center', padding:'3rem 1rem', color:'#94a3b8' }}>
-                <p style={{ fontSize:13.5, fontWeight:700 }}>입출고 내역이 없습니다</p>
-              </div>
-            )}
-            {sortedDates.map(dateKey => {
-              const dayTx = txByDate[dateKey]
-              const expanded = expandedDates.has(dateKey)
-              const inCount  = dayTx.filter(t => t.type === 'in').length
-              const outCount = dayTx.filter(t => t.type === 'out').length
-              const defCount = dayTx.filter(t => t.type === 'defective').length
-              const adjCount = dayTx.filter(t => t.type === 'adjust').length
-              return (
-                <div key={dateKey} style={{ borderBottom:'1px solid #f1f5f9' }}>
-                  {/* 날짜 행 */}
-                  <div
-                    style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', background:'#f8fafc', cursor:'pointer' }}
-                    onClick={() => toggleDate(dateKey)}
-                  >
-                    {expanded ? <ChevronDown size={14} color="#94a3b8"/> : <ChevronRight size={14} color="#94a3b8"/>}
-                    <span style={{ fontSize:13, fontWeight:900, color:'#334155' }}>{dateKey}</span>
-                    <span style={{ fontSize:11.5, fontWeight:700, color:'#94a3b8' }}>총 {dayTx.length}건</span>
-                    <div style={{ display:'flex', gap:5 }}>
-                      {inCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#ecfdf5', color:'#15803d', padding:'2px 7px', borderRadius:5 }}>입고 {inCount}</span>}
-                      {outCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#fff1f2', color:'#be123c', padding:'2px 7px', borderRadius:5 }}>출고 {outCount}</span>}
-                      {defCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'2px 7px', borderRadius:5 }}>불량 {defCount}</span>}
-                      {adjCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#eff6ff', color:'#2563eb', padding:'2px 7px', borderRadius:5 }}>조정 {adjCount}</span>}
-                    </div>
-                    <div style={{ marginLeft:'auto' }}>
-                      <button
-                        onClick={e => { e.stopPropagation(); openDateEdit(dateKey) }}
-                        style={{ display:'flex', alignItems:'center', gap:4, background:'#eff6ff', color:'#2563eb', border:'none', borderRadius:7, padding:'4px 10px', fontSize:11.5, fontWeight:800, cursor:'pointer' }}
-                      ><Edit2 size={11}/>수정</button>
-                    </div>
+          {sortedMonths.map(monthKey => {
+            const monthTx   = txByMonth[monthKey]
+            const monthExpanded = expandedMonths.has(monthKey)
+            const [y, m]    = monthKey.split('-')
+            // 월 내 날짜들
+            const datesInMonth = Object.keys(txByDate)
+              .filter(d => d.startsWith(monthKey))
+              .sort((a, b) => b.localeCompare(a))
+            // 월 통계
+            const mIn  = monthTx.filter(t => t.type === 'in').reduce((s, t) => s + t.qty, 0)
+            const mOut = monthTx.filter(t => t.type === 'out').reduce((s, t) => s + Math.abs(t.qty), 0)
+            const mDef = monthTx.filter(t => t.type === 'defective').length
+            const mAdj = monthTx.filter(t => t.type === 'adjust').length
+
+            return (
+              <div key={monthKey} style={{ borderBottom:'2px solid #e2e8f0' }}>
+                {/* 월 헤더 */}
+                <div
+                  onClick={() => toggleMonth(monthKey)}
+                  style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', background:'linear-gradient(135deg,#f8fafc,#f1f5f9)', cursor:'pointer' }}>
+                  {monthExpanded ? <ChevronDown size={15} color="#64748b"/> : <ChevronRight size={15} color="#64748b"/>}
+                  <span style={{ fontSize:14, fontWeight:900, color:'#1e293b' }}>
+                    {y}년 {m}월
+                  </span>
+                  <span style={{ fontSize:11.5, color:'#94a3b8', fontWeight:700 }}>{monthTx.length}건</span>
+                  <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
+                    {mIn  > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#f0fdf4', color:'#15803d', padding:'2px 8px', borderRadius:5 }}>⬇️ 입고 +{mIn}</span>}
+                    {mOut > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#fff1f2', color:'#be123c', padding:'2px 8px', borderRadius:5 }}>⬆️ 출고 -{mOut}</span>}
+                    {mDef > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'2px 8px', borderRadius:5 }}>⚠️ 불량 {mDef}건</span>}
+                    {mAdj > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#eff6ff', color:'#1d4ed8', padding:'2px 8px', borderRadius:5 }}>✏️ 재고수정 {mAdj}건</span>}
                   </div>
-                  {/* 상세 항목 */}
-                  {expanded && (
-                    <div className="pm-table-wrap" style={{ paddingLeft:16 }}>
-                      <table className="pm-table">
-                        <thead><tr>{['시간','유형','상품명','옵션명','바코드','수량','비고'].map(h=><th key={h}>{h}</th>)}</tr></thead>
-                        <tbody>
-                          {dayTx.map(tx => {
-                            const ts = TX_STYLE[tx.type]
-                            return (
-                              <tr key={tx.id}>
-                                <td style={{ fontSize:11, color:'#94a3b8', whiteSpace:'nowrap' }}>
-                                  {new Date(tx.date).toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' })}
-                                </td>
-                                <td>
-                                  <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, background:ts.bg, color:ts.color, padding:'2px 8px', borderRadius:99 }}>
-                                    <span style={{ width:5,height:5,borderRadius:'50%',background:ts.dot,display:'inline-block' }}/>{ts.label}
-                                  </span>
-                                </td>
-                                <td style={{ fontWeight:800, color:'#1e293b', fontSize:12.5 }}>{tx.product_name}</td>
-                                <td style={{ fontSize:12, color:'#64748b' }}>{tx.option_name}</td>
-                                <td><span style={{ fontFamily:'monospace', fontSize:11, background:'#f1f5f9', color:'#475569', padding:'2px 6px', borderRadius:4 }}>{tx.barcode||'-'}</span></td>
-                                <td>
-                                  <span style={{ fontSize:14, fontWeight:900, color: tx.qty > 0 ? '#059669' : '#dc2626' }}>
-                                    {tx.qty > 0 ? `+${tx.qty}` : tx.qty}
-                                  </span>
-                                </td>
-                                <td style={{ fontSize:12, color:'#64748b' }}>{tx.note}</td>
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                  )}
                 </div>
-              )
-            })}
-          </div>
-        )}
+
+                {/* 날짜별 목록 */}
+                {monthExpanded && datesInMonth.map(dateKey => {
+                  const dayTx    = txByDate[dateKey]
+                  const expanded = expandedDates.has(dateKey)
+                  const inCount  = dayTx.filter(t => t.type === 'in').length
+                  const outCount = dayTx.filter(t => t.type === 'out').length
+                  const defCount = dayTx.filter(t => t.type === 'defective').length
+                  const adjCount = dayTx.filter(t => t.type === 'adjust').length
+                  const [, , dd] = dateKey.split('-')
+
+                  return (
+                    <div key={dateKey} style={{ borderTop:'1px solid #f1f5f9' }}>
+                      {/* 날짜 행 */}
+                      <div
+                        onClick={() => toggleDate(dateKey)}
+                        style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 16px 9px 32px', background:'#fafafa', cursor:'pointer' }}>
+                        {expanded ? <ChevronDown size={13} color="#94a3b8"/> : <ChevronRight size={13} color="#94a3b8"/>}
+                        <span style={{ fontSize:12.5, fontWeight:900, color:'#334155' }}>{y}.{m}.{dd}</span>
+                        <span style={{ fontSize:11, fontWeight:700, color:'#94a3b8' }}>총 {dayTx.length}건</span>
+                        <div style={{ display:'flex', gap:4 }}>
+                          {inCount  > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#f0fdf4', color:'#15803d', padding:'2px 6px', borderRadius:5 }}>입고 {inCount}</span>}
+                          {outCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#fff1f2', color:'#be123c', padding:'2px 6px', borderRadius:5 }}>출고 {outCount}</span>}
+                          {defCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'2px 6px', borderRadius:5 }}>불량 {defCount}</span>}
+                          {adjCount > 0 && <span style={{ fontSize:10.5, fontWeight:800, background:'#eff6ff', color:'#1d4ed8', padding:'2px 6px', borderRadius:5 }}>재고수정 {adjCount}</span>}
+                        </div>
+                        <div style={{ marginLeft:'auto' }}>
+                          <button
+                            onClick={e => { e.stopPropagation(); openDateEdit(dateKey) }}
+                            style={{ display:'flex', alignItems:'center', gap:4, background:'#eff6ff', color:'#2563eb', border:'none', borderRadius:7, padding:'3px 9px', fontSize:11, fontWeight:800, cursor:'pointer' }}>
+                            <Edit2 size={10}/>수정
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 상세 항목 */}
+                      {expanded && (
+                        <div className="pm-table-wrap" style={{ paddingLeft:32 }}>
+                          <table className="pm-table">
+                            <thead>
+                              <tr>{['시간','유형','상품명','옵션명','바코드','수량','비고'].map(h => <th key={h}>{h}</th>)}</tr>
+                            </thead>
+                            <tbody>
+                              {dayTx.map(tx => {
+                                const ts = TX_STYLE[tx.type]
+                                return (
+                                  <tr key={tx.id}>
+                                    <td style={{ fontSize:11, color:'#94a3b8', whiteSpace:'nowrap' }}>
+                                      {new Date(tx.date).toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' })}
+                                    </td>
+                                    <td>
+                                      <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, background:ts.bg, color:ts.color, padding:'2px 8px', borderRadius:99 }}>
+                                        <span style={{ width:5,height:5,borderRadius:'50%',background:ts.dot,display:'inline-block' }}/>{ts.label}
+                                      </span>
+                                    </td>
+                                    <td style={{ fontWeight:800, color:'#1e293b', fontSize:12.5 }}>{tx.product_name}</td>
+                                    <td style={{ fontSize:12, color:'#64748b' }}>{tx.option_name}</td>
+                                    <td><span style={{ fontFamily:'monospace', fontSize:11, background:'#f1f5f9', color:'#475569', padding:'2px 6px', borderRadius:4 }}>{tx.barcode||'-'}</span></td>
+                                    <td>
+                                      <span style={{ fontSize:14, fontWeight:900, color: tx.qty > 0 ? '#059669' : '#dc2626' }}>
+                                        {tx.qty > 0 ? `+${tx.qty}` : tx.qty}
+                                      </span>
+                                    </td>
+                                    <td style={{ fontSize:12, color:'#64748b' }}>{tx.note}</td>
+                                  </tr>
+                                )
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )
+          })}
+        </div>
       </div>
 
       {/* ── 입고 등록 모달 ── */}
-      <Modal isOpen={inModal} onClose={() => { setInModal(false); resetForm() }} title="입고 등록" size="md">
+      <Modal isOpen={inModal} onClose={() => { setInModal(false); resetForm() }} title="입고 등록" size="lg">
         <div style={{ background:'#f0fdf4', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#15803d' }}>
-          💡 입고 등록 시 상품의 입고 누계와 현재고가 자동으로 증가합니다.
+          ⬇️ 입고 처리 시 선택한 상품의 <b>입고 누계와 현재고가 수량만큼 증가</b>합니다.
         </div>
-        <CommonForm type="in"/>
+        {renderModalForm('in')}
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
           <Button variant="outline" onClick={() => { setInModal(false); resetForm() }}>취소</Button>
-          <Button onClick={handleIn} disabled={inSaving} style={{ background:'#059669', borderColor:'#059669', opacity: inSaving ? 0.6 : 1 }}>
-            <ArrowDownCircle size={13}/>{inSaving ? '처리 중...' : '입고 처리 완료'}
+          <Button onClick={handleIn} disabled={saving || txItems.filter(i=>i.qty&&Number(i.qty)>0).length===0}
+            style={{ background:'#059669', borderColor:'#059669', opacity: saving ? 0.6 : 1 }}>
+            <ArrowDownCircle size={13}/>{saving ? '처리 중...' : `입고 처리 (${txItems.filter(i=>i.qty&&Number(i.qty)>0).length}건)`}
           </Button>
         </div>
       </Modal>
 
       {/* ── 출고 등록 모달 ── */}
-      <Modal isOpen={outModal} onClose={() => { setOutModal(false); resetForm() }} title="출고 등록" size="md">
+      <Modal isOpen={outModal} onClose={() => { setOutModal(false); resetForm() }} title="출고 등록" size="lg">
         <div style={{ background:'#fff1f2', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#be123c' }}>
-          💡 출고 등록 시 상품의 현재고가 자동으로 감소합니다.
+          ⬆️ 출고 처리 시 선택한 상품의 <b>현재고가 수량만큼 감소</b>합니다.
         </div>
-        <CommonForm type="out"/>
+        {renderModalForm('out')}
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
           <Button variant="outline" onClick={() => { setOutModal(false); resetForm() }}>취소</Button>
-          <Button onClick={handleOut} disabled={outSaving} style={{ background:'#dc2626', borderColor:'#dc2626', opacity: outSaving ? 0.6 : 1 }}>
-            <ArrowUpCircle size={13}/>{outSaving ? '처리 중...' : '출고 처리 완료'}
+          <Button onClick={handleOut} disabled={saving || txItems.filter(i=>i.qty&&Number(i.qty)>0).length===0}
+            style={{ background:'#dc2626', borderColor:'#dc2626', opacity: saving ? 0.6 : 1 }}>
+            <ArrowUpCircle size={13}/>{saving ? '처리 중...' : `출고 처리 (${txItems.filter(i=>i.qty&&Number(i.qty)>0).length}건)`}
           </Button>
         </div>
       </Modal>
 
       {/* ── 불량 등록 모달 ── */}
-      <Modal isOpen={defectModal} onClose={() => { setDefectModal(false); resetForm() }} title="불량 등록" size="md">
+      <Modal isOpen={defectModal} onClose={() => { setDefectModal(false); resetForm() }} title="불량 등록" size="lg">
         <div style={{ background:'#fff7ed', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#c2410c' }}>
-          ⚠️ 불량 등록 시 현재고가 감소하고, 상품관리에 불량 수량이 누적됩니다.
+          ⚠️ 불량 처리 시 <b>현재고가 감소</b>하고, 상품관리에 <b>불량 수량이 누적</b>됩니다.
         </div>
-        <CommonForm type="defective"/>
+        {renderModalForm('defective')}
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
           <Button variant="outline" onClick={() => { setDefectModal(false); resetForm() }}>취소</Button>
-          <Button onClick={handleDefect} disabled={defSaving} style={{ background:'#ea580c', borderColor:'#ea580c', opacity: defSaving ? 0.6 : 1 }}>
-            <ShieldAlert size={13}/>{defSaving ? '처리 중...' : '불량 등록 완료'}
+          <Button onClick={handleDefect} disabled={saving || txItems.filter(i=>i.qty&&Number(i.qty)>0).length===0}
+            style={{ background:'#ea580c', borderColor:'#ea580c', opacity: saving ? 0.6 : 1 }}>
+            <ShieldAlert size={13}/>{saving ? '처리 중...' : `불량 등록 (${txItems.filter(i=>i.qty&&Number(i.qty)>0).length}건)`}
           </Button>
         </div>
       </Modal>
 
-      {/* ── 재고 등록 모달 ── */}
-      <Modal isOpen={adjustModal} onClose={() => { setAdjustModal(false); resetForm() }} title="재고 등록 (직접 조정)" size="md">
+      {/* ── 재고 수정 모달 ── */}
+      <Modal isOpen={adjustModal} onClose={() => { setAdjustModal(false); resetForm() }} title="재고 수정" size="lg">
         <div style={{ background:'#eff6ff', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#1d4ed8' }}>
-          📋 실사 후 실제 재고 수량을 직접 입력하여 조정합니다.
+          ✏️ 실사 후 <b>실제 재고 수량을 직접 입력</b>하여 현재고를 수정합니다.
         </div>
-        <CommonForm type="adjust"/>
+        {renderModalForm('adjust')}
         <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
           <Button variant="outline" onClick={() => { setAdjustModal(false); resetForm() }}>취소</Button>
-          <Button onClick={handleAdjust} disabled={adjSaving} style={{ opacity: adjSaving ? 0.6 : 1 }}>
-            <Plus size={13}/>{adjSaving ? '처리 중...' : '재고 조정 완료'}
+          <Button onClick={handleAdjust} disabled={saving || txItems.filter(i=>i.adjStock!=='').length===0}
+            style={{ opacity: saving ? 0.6 : 1 }}>
+            <Plus size={13}/>{saving ? '처리 중...' : `재고 수정 (${txItems.filter(i=>i.adjStock!=='').length}건)`}
           </Button>
         </div>
       </Modal>
@@ -576,26 +799,20 @@ export default function InventoryPage() {
           {editDateRows.map((row, idx) => {
             const ts = TX_STYLE[row.type]
             return (
-              <div key={row.id} style={{ display:'grid', gridTemplateColumns:'80px 80px 1fr 1fr 60px 1fr', gap:8, alignItems:'center', padding:'8px 10px', background:'#f8fafc', borderRadius:8, border:'1px solid #f1f5f9' }}>
+              <div key={row.id} style={{ display:'grid', gridTemplateColumns:'70px 90px 1fr 1fr 60px 1fr', gap:8, alignItems:'center', padding:'8px 10px', background:'#f8fafc', borderRadius:8, border:'1px solid #f1f5f9' }}>
                 <span style={{ fontSize:11, color:'#94a3b8' }}>{new Date(row.date).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>
-                <div>
-                  <select value={row.type} onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, type: e.target.value as TxType} : r))}
-                    style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'3px 6px', fontSize:11, fontWeight:700, background:ts.bg, color:ts.color, width:'100%' }}>
-                    {Object.entries(TX_STYLE).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
-                  </select>
-                </div>
-                <span style={{ fontSize:12.5, fontWeight:800, color:'#1e293b' }}>{row.product_name}</span>
-                <span style={{ fontSize:12, color:'#64748b' }}>{row.option_name}</span>
-                <div>
-                  <input type="number" value={row.qty}
-                    onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, qty:Number(e.target.value)} : r))}
-                    style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 6px', fontSize:13, fontWeight:800, textAlign:'center', outline:'none' }}
-                  />
-                </div>
+                <select value={row.type} onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, type: e.target.value as TxType} : r))}
+                  style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'3px 5px', fontSize:11, fontWeight:700, background:ts.bg, color:ts.color, width:'100%' }}>
+                  {Object.entries(TX_STYLE).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
+                </select>
+                <span style={{ fontSize:12, fontWeight:800, color:'#1e293b' }}>{row.product_name}</span>
+                <span style={{ fontSize:11.5, color:'#64748b' }}>{row.option_name}</span>
+                <input type="number" value={row.qty}
+                  onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, qty:Number(e.target.value)} : r))}
+                  style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 6px', fontSize:13, fontWeight:800, textAlign:'center', outline:'none' }}/>
                 <input value={row.note} placeholder="비고"
                   onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, note:e.target.value} : r))}
-                  style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 8px', fontSize:12, outline:'none', width:'100%' }}
-                />
+                  style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 8px', fontSize:12, outline:'none', width:'100%' }}/>
               </div>
             )
           })}
