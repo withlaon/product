@@ -30,7 +30,7 @@ export class TossshoppingConnector extends BaseMarketplace {
   }
 
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
-    const res = await fetch(
+    const res = await this.fetch(
       `${BASE_URL}/orders?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(15000) }
     )
@@ -73,7 +73,7 @@ export class TossshoppingConnector extends BaseMarketplace {
   }
 
   async getClaims(params: ClaimQueryParams): Promise<UnifiedClaim[]> {
-    const res = await fetch(
+    const res = await this.fetch(
       `${BASE_URL}/claims?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(10000) }
     )

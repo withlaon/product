@@ -152,14 +152,22 @@ export class SmartstoreConnector extends BaseMarketplace {
   }
 
   /* ─── 주문 수집 ─────────────────────────────────────────────── */
+  /** ISO date → 네이버 커머스 API 형식 (YYYY-MM-DDTHH:mm:ss) */
+  private toNaverDate(dateStr: string, isEnd = false): string {
+    const d = (dateStr || '').split('T')[0]
+    return d ? (isEnd ? `${d}T23:59:59` : `${d}T00:00:00`) : ''
+  }
+
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
     const token = await this.getAccessToken()
-    const url = `${BASE_URL}/v1/pay-order/seller/product-orders/query-by-date`
-      + `?lastChangedFrom=${params.start_date || ''}`
-      + `&lastChangedTo=${params.end_date || ''}`
+    const from  = this.toNaverDate(params.start_date || '')
+    const to    = this.toNaverDate(params.end_date   || '', true)
+    const url   = `${BASE_URL}/v1/pay-order/seller/product-orders/query-by-date`
+      + `?lastChangedFrom=${from}`
+      + `&lastChangedTo=${to}`
       + `&limitCount=${params.limit || 300}`
     const res = await this.fetch(url, {
-      headers: { 'Authorization': `Bearer ${token}` },
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
       signal : AbortSignal.timeout(15000),
     })
     if (!res.ok) throw new Error(`스마트스토어 주문 조회 오류: ${res.status}`)

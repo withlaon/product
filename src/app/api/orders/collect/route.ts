@@ -106,7 +106,19 @@ export async function POST(req: NextRequest) {
         const newOrders = raw.filter(o => isNewOrder(o.status))
         newOrders.forEach(o => results.push(toUiOrder(o, name)))
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err)
+        const raw = err instanceof Error ? err.message : String(err)
+        // 에러 메시지를 사용자 친화적으로 변환
+        let msg = raw
+        if (raw.includes('timeout') || raw.includes('aborted'))
+          msg = `API 응답 없음 — 해당 쇼핑몰은 공개 API가 아니거나 IP 화이트리스트 등록이 필요합니다`
+        else if (raw.includes('404'))
+          msg = `주문 조회 실패 (404) — API 엔드포인트 또는 인증정보를 확인해주세요`
+        else if (raw.includes('403'))
+          msg = `접근 거부 (403) — 쇼핑몰 관리에서 서버 IP(52.5.155.132)를 화이트리스트에 등록해주세요`
+        else if (raw.includes('401'))
+          msg = `인증 실패 (401) — API Key / Secret Key를 다시 확인해주세요`
+        else if (raw.includes('fetch failed') || raw.includes('ENOTFOUND') || raw.includes('ECONNREFUSED'))
+          msg = `네트워크 연결 실패 — 해당 쇼핑몰 API가 공개되지 않았거나 별도 파트너 계약이 필요합니다`
         errors.push({ mall: name, error: msg })
       }
     })

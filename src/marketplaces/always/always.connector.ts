@@ -1,7 +1,7 @@
 /**
- * 올웨이즈 커넥터
+ * ???? ???
  * API: https://api.always.kr/openapi
- * 인증: API Key
+ * ??: API Key (?? ??? api_key ?? login_id ??)
  */
 
 import { BaseMarketplace } from '@/marketplaces/base/base.marketplace'
@@ -17,11 +17,12 @@ const BASE_URL = 'https://api.always.kr/openapi/v1'
 
 export class AlwaysConnector extends BaseMarketplace {
   readonly mallKey  = 'always'
-  readonly mallName = '올웨이즈'
+  readonly mallName = '????'
 
   private get apiKey(): string {
-    const key = this.credentials.api_key
-    if (!key) throw new Error('올웨이즈 API Key 누락')
+    // ?? ???? api_key ?? login_id ? ??? ? ??
+    const key = this.credentials.api_key || this.credentials.login_id
+    if (!key) throw new Error('???? API Key ??')
     return key
   }
 
@@ -30,11 +31,11 @@ export class AlwaysConnector extends BaseMarketplace {
   }
 
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
-    const res = await fetch(
+    const res = await this.fetch(
       `${BASE_URL}/orders?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(15000) }
     )
-    if (!res.ok) throw new Error(`올웨이즈 주문 조회 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`???? ?? ?? ??: ${res.status}`)
     const data = await res.json()
     return (data.orders || []).map((o: Record<string, unknown>) => ({
       order_id      : String(o.orderItemId || ''),
@@ -64,26 +65,26 @@ export class AlwaysConnector extends BaseMarketplace {
       method : 'POST',
       headers: this.authHeader(),
       body   : JSON.stringify({
-        courier     : params.courier_code,
+        courier      : params.courier_code,
         invoiceNumber: params.invoice_no,
       }),
       signal : AbortSignal.timeout(10000),
     })
-    if (!res.ok) throw new Error(`올웨이즈 송장 전송 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`???? ?? ?? ??: ${res.status}`)
   }
 
   async getClaims(params: ClaimQueryParams): Promise<UnifiedClaim[]> {
-    const res = await fetch(
+    const res = await this.fetch(
       `${BASE_URL}/claims?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(10000) }
     )
-    if (!res.ok) throw new Error(`올웨이즈 클레임 조회 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`???? ??? ?? ??: ${res.status}`)
     const data = await res.json()
     return (data.claims || []).map((c: Record<string, unknown>) => ({
       claim_id      : String(c.claimId || ''),
       order_id      : String(c.orderId || ''),
       marketplace   : this.mallKey,
-      claim_type    : '반품' as const,
+      claim_type    : '??' as const,
       claim_date    : String(c.createdAt || ''),
       reason        : String(c.reason || ''),
       detail        : '',
@@ -93,7 +94,7 @@ export class AlwaysConnector extends BaseMarketplace {
       option_name   : '',
       qty           : Number(c.quantity || 1),
       price         : Number(c.amount || 0),
-      status        : '접수' as const,
+      status        : '??' as const,
       return_courier: '',
       return_invoice: '',
       return_addr   : '',

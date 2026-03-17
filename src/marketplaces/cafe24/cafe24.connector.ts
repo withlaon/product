@@ -90,8 +90,12 @@ export class Cafe24Connector extends BaseMarketplace {
   }
 
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
-    const url = `${this.baseUrl}/orders?start_date=${params.start_date || ''}&end_date=${params.end_date || ''}&limit=${params.limit || 100}`
-    const res = await fetch(url, { headers: this.authHeader(), signal: AbortSignal.timeout(15000) })
+    const startDate = (params.start_date || '').split('T')[0]
+    const endDate   = (params.end_date   || '').split('T')[0]
+    const url = `${this.baseUrl}/orders`
+      + `?start_date=${startDate}&end_date=${endDate}`
+      + `&order_status=N30&embed=items&limit=${params.limit || 100}`
+    const res = await this.fetch(url, { headers: this.authHeader(), signal: AbortSignal.timeout(15000) })
     if (!res.ok) throw new Error(`Cafe24 주문 조회 오류: ${res.status}`)
     const data = await res.json()
     return (data.orders || []).map((o: Record<string, unknown>) => ({
