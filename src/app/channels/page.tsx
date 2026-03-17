@@ -71,11 +71,11 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'login_pw',  label:'PASSWORD (옥션 전용)',     placeholder:'+ 기호 사용 금지',            type:'password', section:'login' },
     { key:'seller_id', label:'SHOP ID',                  placeholder:'내부 구분용 (선택사항)',       type:'text',     section:'api' },
   ],
-  // 에이블리: 로그인 + API Key
+  // 에이블리: 로그인 + API Token
   ablly: [
     ...COMMON_LOGIN_FIELDS,
     { key:'seller_id', label:'판매자 ID',  placeholder:'에이블리 파트너 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'파트너센터에서 발급', type:'password', section:'api' },
+    { key:'api_key',   label:'API Token',  placeholder:'파트너센터에서 발급', type:'password', section:'api' },
   ],
   // 지그재그: 로그인 + API Key + API Secret
   zigzag: [
@@ -271,19 +271,19 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{ label:'ESM PLUS', url:'https://www.esmplus.com' }],
   },
   ablly: {
-    title:'에이블리 파트너 API 연동', authType:'API Key (파트너 승인 방식)',
-    note:'에이블리는 파트너 승인 후 API Key가 발급됩니다. 자동 발급이 아니라 수동 심사 방식입니다.',
+    title:'에이블리 파트너 API 연동', authType:'API Token (파트너 승인 방식)',
+    note:'에이블리는 파트너 승인 후 API Token이 발급됩니다. 자동 발급이 아니라 수동 심사 방식입니다.',
     warning:'⚠ 에이블리 옵션 구조는 일반 쇼핑몰과 다릅니다. 옵션상품(SKU) 단위로 업로드됩니다.',
     required:[
       { label:'Partner ID', desc:'에이블리 파트너 ID', badge:'required' },
       { label:'Store ID', desc:'스토어 ID', badge:'required' },
-      { label:'API Key (Access Token)', desc:'파트너센터 승인 후 발급', badge:'required' },
+      { label:'API Token', desc:'파트너센터 승인 후 발급되는 Access Token', badge:'required' },
     ],
     steps:[
       '① partner.a-bly.com 로그인 후 [설정] → [파트너 연동] → [API 연동 신청]',
       '② 에이블리 담당자 승인 대기 (자동 발급 아님, 수동 심사)',
-      '③ 승인 완료 후 Partner ID / API Key / Access Token 발급',
-      '④ 프로그램에 Partner ID + Store ID + API Key 입력 후 저장',
+      '③ 승인 완료 후 Partner ID / API Token 발급',
+      '④ 프로그램에 Partner ID + Store ID + API Token 입력 후 저장',
     ],
     links:[{ label:'에이블리 파트너센터', url:'https://partner.a-bly.com' }],
   },
