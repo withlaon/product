@@ -27,33 +27,36 @@ export class SmartstoreConnector extends BaseMarketplace {
 
   /**
    * 네이버 커머스 API 서명 생성
-   * client_secret = Base64(HMAC-SHA256("{clientId}_{timestamp}", clientSecretKey))
+   * client_secret_sign = Base64( HMAC-SHA256( "{clientId}_{timestamp(ms)}", clientSecretKey ) )
    */
-  private buildClientSecret(clientId: string, clientSecretKey: string): { timestamp: string; clientSecret: string } {
-    const timestamp    = String(Date.now())
-    const message      = `${clientId}_${timestamp}`
-    const clientSecret = createHmac('sha256', clientSecretKey)
-      .update(message)
+  private buildSign(clientId: string, clientSecretKey: string): { timestamp: string; sign: string } {
+    const timestamp = String(Date.now())
+    const message   = `${clientId}_${timestamp}`
+    const sign      = createHmac('sha256', Buffer.from(clientSecretKey.trim(), 'utf8'))
+      .update(Buffer.from(message, 'utf8'))
       .digest('base64')
-    return { timestamp, clientSecret }
+    return { timestamp, sign }
   }
 
   private async getAccessToken(): Promise<string> {
     const { api_key, api_secret } = this.credentials
     if (!api_key || !api_secret) throw new Error('스마트스토어 인증 정보 누락 (Application ID / Secret)')
 
-    const { timestamp, clientSecret } = this.buildClientSecret(api_key, api_secret)
+    const clientId  = String(api_key).trim()
+    const clientSec = String(api_secret).trim()
+    const { timestamp, sign } = this.buildSign(clientId, clientSec)
+
+    const params = new URLSearchParams()
+    params.append('grant_type',         'client_credentials')
+    params.append('client_id',          clientId)
+    params.append('timestamp',          timestamp)
+    params.append('client_secret_sign', sign)
+    params.append('type',               'SELF')
 
     const res = await this.fetch(`${BASE_URL}/v1/oauth2/token`, {
       method : 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body   : new URLSearchParams({
-        grant_type        : 'client_credentials',
-        client_id         : api_key,
-        timestamp,
-        client_secret_sign: clientSecret,
-        type              : 'SELF',
-      }),
+      body   : params.toString(),
       signal : AbortSignal.timeout(8000),
     })
     if (!res.ok) {
