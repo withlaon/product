@@ -1,8 +1,8 @@
-feat: 카페24 OAuth Refresh Token 자동 발급 연동
+fix: Cafe24 토큰 400 에러 수정 + 채널 연동 테스트 기능 추가
 
-- 채널 연동 모달에서 OAuth 쇼핑몰(카페24/네이버/지그재그) 감지
-- 저장 버튼 클릭 시 카페24 OAuth 팝업 자동 실행
-- 팝업 로그인+권한 승인 완료 후 postMessage로 Refresh Token 자동 입력
-- Refresh Token 필드: OAuth 자동발급 표시, 자동입력 전 안내문구 표시
-- 팝업 대기 중 버튼 비활성화 + 스피너 표시
-- OAuth 완료 시 성공 알림 배너 표시 (4초)
+- /api/cafe24/token: body에서 client_id/client_secret 제거 (Basic Auth 헤더만 사용)
+- channels: 연동 테스트 state/함수 추가 (testStatus, testMsg, runTestConnection)
+- channels: 저장 후 비-OAuth 쇼핑몰 자동 연결 테스트 실행
+- channels: 모달에 연동 테스트 버튼 + 결과 인라인 표시 (성공/실패/로딩)
+- channels: 카드에 테스트 결과 뱃지 표시 (연결확인/연결실패/테스트 중)
+- inventory: 재고 처리 배치 병렬화 (batchUpdateOptions) - 처리속도 개선

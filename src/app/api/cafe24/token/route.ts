@@ -35,6 +35,8 @@ export async function POST(req: NextRequest) {
     }
 
     /* ── 카페24 토큰 교환 요청 ── */
+    // Cafe24 공식 스펙: client_id/client_secret은 Authorization Basic 헤더에만 포함
+    // body에 중복 포함 시 400 오류 발생
     const tokenRes = await fetch(`https://${mall_id}.cafe24api.com/api/v2/oauth/token`, {
       method : 'POST',
       headers: {
@@ -44,8 +46,6 @@ export async function POST(req: NextRequest) {
       body: new URLSearchParams({
         grant_type  : 'authorization_code',
         code,
-        client_id   : clientId,
-        client_secret: clientSecret,
         redirect_uri : redirectUri,
       }).toString(),
     })

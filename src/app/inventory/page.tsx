@@ -173,15 +173,28 @@ export default function InventoryPage() {
   const resetForm = () => { setTxItems([]); setItemSearch(''); setSearchRes([]) }
 
   /* ── Supabase 옵션 업데이트 헬퍼 ── */
-  const updateOption = useCallback(async (
-    prodId: string, opts: PmOption[], optName: string,
-    updater: (o: PmOption) => PmOption,
+  /* ── 상품별로 옵션 변경 묶어서 병렬 업데이트 ── */
+  const batchUpdateOptions = useCallback(async (
+    updates: { prodId: string; optName: string; updater: (o: PmOption) => PmOption }[]
   ) => {
-    const updated = opts.map(o => o.name === optName ? updater(o) : o)
-    await supabase.from('pm_products').update({ options: updated }).eq('id', prodId)
-    setProducts(prev => prev.map(p => p.id === prodId ? { ...p, options: updated } : p))
-    return updated
-  }, [])
+    // prodId 기준으로 그룹핑
+    const grouped: Record<string, typeof updates> = {}
+    for (const u of updates) {
+      if (!grouped[u.prodId]) grouped[u.prodId] = []
+      grouped[u.prodId].push(u)
+    }
+    // 각 상품별로 옵션 전체를 한 번에 업데이트 → 모든 상품 병렬 실행
+    await Promise.all(Object.entries(grouped).map(async ([prodId, items]) => {
+      const prod = products.find(p => p.id === prodId)
+      if (!prod) return
+      let opts = [...prod.options]
+      for (const { optName, updater } of items) {
+        opts = opts.map(o => o.name === optName ? updater(o) : o)
+      }
+      await supabase.from('pm_products').update({ options: opts }).eq('id', prodId)
+      setProducts(prev => prev.map(p => p.id === prodId ? { ...p, options: opts } : p))
+    }))
+  }, [products])
 
   /* ── 거래 기록 추가 ── */
   const addTxBatch = (records: TxRecord[]) => {
@@ -195,19 +208,16 @@ export default function InventoryPage() {
     if (valid.length === 0) return
     setSaving(true)
     const records: TxRecord[] = []
-    for (const item of valid) {
-      const prod = products.find(p => p.id === item.prodId)
-      if (!prod) continue
+    const updates = valid.map(item => {
       const n = Number(item.qty)
-      await updateOption(prod.id, prod.options, item.optName, o => ({
-        ...o, current_stock: Math.max(0, getStock(o) - n),
-      }))
       records.push({
-        id: `${Date.now()}_${item.barcode}`, date: new Date().toISOString(), type: 'out',
+        id: `${Date.now()}_${item.barcode}_${Math.random()}`, date: new Date().toISOString(), type: 'out',
         product_code: item.prodCode, product_name: item.prodName,
         option_name: item.optName, barcode: item.barcode, qty: -n, note: item.note,
       })
-    }
+      return { prodId: item.prodId, optName: item.optName, updater: (o: PmOption) => ({ ...o, current_stock: Math.max(0, getStock(o) - n) }) }
+    })
+    await batchUpdateOptions(updates)
     addTxBatch(records)
     setSaving(false); setOutModal(false); resetForm()
   }
@@ -218,19 +228,16 @@ export default function InventoryPage() {
     if (valid.length === 0) return
     setSaving(true)
     const records: TxRecord[] = []
-    for (const item of valid) {
-      const prod = products.find(p => p.id === item.prodId)
-      if (!prod) continue
+    const updates = valid.map(item => {
       const n = Number(item.qty)
-      await updateOption(prod.id, prod.options, item.optName, o => ({
-        ...o, current_stock: Math.max(0, getStock(o) - n), defective: (o.defective || 0) + n,
-      }))
       records.push({
-        id: `${Date.now()}_${item.barcode}`, date: new Date().toISOString(), type: 'defective',
+        id: `${Date.now()}_${item.barcode}_${Math.random()}`, date: new Date().toISOString(), type: 'defective',
         product_code: item.prodCode, product_name: item.prodName,
         option_name: item.optName, barcode: item.barcode, qty: -n, note: item.note || '불량 처리',
       })
-    }
+      return { prodId: item.prodId, optName: item.optName, updater: (o: PmOption) => ({ ...o, current_stock: Math.max(0, getStock(o) - n), defective: (o.defective || 0) + n }) }
+    })
+    await batchUpdateOptions(updates)
     addTxBatch(records)
     setSaving(false); setDefectModal(false); resetForm()
   }
@@ -241,22 +248,19 @@ export default function InventoryPage() {
     if (valid.length === 0) return
     setSaving(true)
     const records: TxRecord[] = []
-    for (const item of valid) {
-      const prod = products.find(p => p.id === item.prodId)
-      if (!prod) continue
+    const updates = valid.map(item => {
       const newStock = Number(item.adjStock)
       const prev = item.curStock
       const delta = newStock - prev
-      await updateOption(prod.id, prod.options, item.optName, o => ({
-        ...o, current_stock: newStock,
-      }))
       records.push({
-        id: `${Date.now()}_${item.barcode}`, date: new Date().toISOString(), type: 'adjust',
+        id: `${Date.now()}_${item.barcode}_${Math.random()}`, date: new Date().toISOString(), type: 'adjust',
         product_code: item.prodCode, product_name: item.prodName,
         option_name: item.optName, barcode: item.barcode,
         qty: delta, note: item.note || `재고 수정 (${prev}→${newStock})`,
       })
-    }
+      return { prodId: item.prodId, optName: item.optName, updater: (o: PmOption) => ({ ...o, current_stock: newStock }) }
+    })
+    await batchUpdateOptions(updates)
     addTxBatch(records)
     setSaving(false); setAdjustModal(false); resetForm()
   }
@@ -351,6 +355,7 @@ export default function InventoryPage() {
   const handleDateEditSave = async () => {
     setEditDateSaving(true)
     const origRows = txByDate[editDateKey] || []
+    const updates: { prodId: string; optName: string; updater: (o: PmOption) => PmOption }[] = []
     for (const newRow of editDateRows) {
       const orig = origRows.find(r => r.id === newRow.id)
       if (!orig || (orig.qty === newRow.qty && orig.note === newRow.note && orig.type === newRow.type)) continue
@@ -358,12 +363,11 @@ export default function InventoryPage() {
       if (delta !== 0) {
         const prod = products.find(p => p.code === newRow.product_code)
         if (prod) {
-          await updateOption(prod.id, prod.options, newRow.option_name, o => ({
-            ...o, current_stock: Math.max(0, getStock(o) + delta),
-          }))
+          updates.push({ prodId: prod.id, optName: newRow.option_name, updater: (o: PmOption) => ({ ...o, current_stock: Math.max(0, getStock(o) + delta) }) })
         }
       }
     }
+    if (updates.length) await batchUpdateOptions(updates)
     const newList = txList.map(tx => editDateRows.find(r => r.id === tx.id) ?? tx)
     setTxList(newList); saveTx(newList)
     setEditDateSaving(false); setEditDateModal(false)

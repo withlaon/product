@@ -5,6 +5,7 @@ import { Modal } from '@/components/ui/modal'
 import {
   RefreshCw, Zap, Plus, CheckCircle2, Unlink,
   Tag, Truck, Search, X, BookOpen, Pencil, Trash2, Save, ChevronRight,
+  Wifi, XCircle,
 } from 'lucide-react'
 
 /* ─── 전체 쇼핑몰 정의 ────────────────────────────────────────────── */
@@ -790,6 +791,10 @@ export default function ChannelsPage() {
   const [oauthPending, setOauthPending]   = useState(false)
   const [oauthSuccess, setOauthSuccess]   = useState(false)
 
+  /* ── 연동 테스트 상태 ── */
+  const [testStatus, setTestStatus] = useState<Record<string,'idle'|'testing'|'ok'|'fail'>>({})
+  const [testMsg,    setTestMsg]    = useState<Record<string,string>>({})
+
   useEffect(() => { if (typeof window !== 'undefined') { setChannels(loadChannels()); setMounted(true) } }, [])
 
   /* ── OAuth postMessage 수신 (팝업 → 부모 창) ── */
@@ -875,6 +880,54 @@ export default function ChannelsPage() {
       return
     }
     setApiTarget(null)
+
+    // 비-OAuth 쇼핑몰은 저장 즉시 자동 연결 테스트
+    if (!OAUTH_MALLS.includes(apiTarget.key)) {
+      runTestConnection(apiTarget.key, apiForm)
+    }
+  }
+
+  /* ── 연동 테스트 ── */
+  const runTestConnection = async (mallKey: string, form: Record<string,string>) => {
+    setTestStatus(prev => ({ ...prev, [mallKey]: 'testing' }))
+    setTestMsg(prev => ({ ...prev, [mallKey]: '' }))
+    try {
+      const res = await fetch('/api/marketplaces', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'test_connection',
+          mall: mallKey,
+          credentials: {
+            api_key      : form.api_key      || '',
+            api_secret   : form.api_secret   || '',
+            seller_id    : form.seller_id    || '',
+            access_key   : form.access_key   || '',
+            login_id     : form.login_id     || '',
+            login_pw     : form.login_pw     || '',
+            site_name    : form.site_name    || '',
+            refresh_token: form.refresh_token|| '',
+          },
+        }),
+      })
+      const data = await res.json()
+      if (data.success) {
+        setTestStatus(prev => ({ ...prev, [mallKey]: 'ok' }))
+        setTestMsg(prev => ({ ...prev, [mallKey]: data.message || '연결 성공' }))
+        // 성공 시 채널 상태 업데이트
+        setChannels(prev => prev.map(c => c.key === mallKey ? { ...c, testOk: true } : c))
+        saveChannels(channels.map(c => c.key === mallKey ? { ...c, testOk: true } : c))
+      } else {
+        setTestStatus(prev => ({ ...prev, [mallKey]: 'fail' }))
+        setTestMsg(prev => ({ ...prev, [mallKey]: data.message || '연결 실패' }))
+        setChannels(prev => prev.map(c => c.key === mallKey ? { ...c, testOk: false } : c))
+        saveChannels(channels.map(c => c.key === mallKey ? { ...c, testOk: false } : c))
+      }
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '알 수 없는 오류'
+      setTestStatus(prev => ({ ...prev, [mallKey]: 'fail' }))
+      setTestMsg(prev => ({ ...prev, [mallKey]: msg }))
+    }
   }
 
   /* ── 카테고리 검색 (API 라우트 우선, 정적 데이터 fallback) ── */
@@ -1025,11 +1078,29 @@ export default function ChannelsPage() {
                     </div>
                   </div>
                   <div style={{ display:'flex', gap:4, flexWrap:'wrap', justifyContent:'flex-end' }}>
-                    {ch.api_key || ch.access_key
+                    {ch.api_key || ch.access_key || ch.refresh_token
                       ? <span style={{ fontSize:10.5, fontWeight:800, color:'#1d4ed8', background:'#dbeafe', padding:'2px 8px', borderRadius:99, border:'1px solid #bfdbfe', display:'inline-flex', alignItems:'center', gap:3 }}><CheckCircle2 size={9}/>API연동</span>
                       : <span style={{ fontSize:10.5, fontWeight:800, color:'#b45309', background:'#fef3c7', padding:'2px 8px', borderRadius:99, border:'1px solid #fde68a' }}>⚠ API미설정</span>
                     }
-                    <span style={{ fontSize:10.5, fontWeight:800, color:'#15803d', background:'#f0fdf4', padding:'2px 8px', borderRadius:99, border:'1px solid #bbf7d0', display:'inline-flex', alignItems:'center', gap:3 }}><CheckCircle2 size={9}/>연동중</span>
+                    {/* 연동 테스트 결과 뱃지 */}
+                    {testStatus[ch.key] === 'testing' && (
+                      <span style={{ fontSize:10.5, fontWeight:800, color:'#6366f1', background:'#eef2ff', padding:'2px 8px', borderRadius:99, border:'1px solid #c7d2fe', display:'inline-flex', alignItems:'center', gap:3 }}>
+                        <RefreshCw size={9} style={{ animation:'spin 0.8s linear infinite' }}/>테스트 중
+                      </span>
+                    )}
+                    {testStatus[ch.key] === 'ok' && (
+                      <span style={{ fontSize:10.5, fontWeight:800, color:'#15803d', background:'#f0fdf4', padding:'2px 8px', borderRadius:99, border:'1px solid #bbf7d0', display:'inline-flex', alignItems:'center', gap:3 }}>
+                        <CheckCircle2 size={9}/>연결확인
+                      </span>
+                    )}
+                    {testStatus[ch.key] === 'fail' && (
+                      <span style={{ fontSize:10.5, fontWeight:800, color:'#dc2626', background:'#fef2f2', padding:'2px 8px', borderRadius:99, border:'1px solid #fecaca', display:'inline-flex', alignItems:'center', gap:3 }}>
+                        <XCircle size={9}/>연결실패
+                      </span>
+                    )}
+                    {!testStatus[ch.key] && (
+                      <span style={{ fontSize:10.5, fontWeight:800, color:'#15803d', background:'#f0fdf4', padding:'2px 8px', borderRadius:99, border:'1px solid #bbf7d0', display:'inline-flex', alignItems:'center', gap:3 }}><CheckCircle2 size={9}/>연동중</span>
+                    )}
                   </div>
                 </div>
 
@@ -1185,8 +1256,52 @@ export default function ChannelsPage() {
                   </div>
                 )}
 
+                {/* 연동 테스트 결과 */}
+                {apiTarget && testStatus[apiTarget.key] && testStatus[apiTarget.key] !== 'idle' && (
+                  <div style={{
+                    borderRadius: 10, padding: '10px 14px',
+                    display: 'flex', alignItems: 'flex-start', gap: 8,
+                    background: testStatus[apiTarget.key] === 'testing' ? '#f8fafc'
+                      : testStatus[apiTarget.key] === 'ok' ? '#f0fdf4' : '#fef2f2',
+                    border: `1.5px solid ${testStatus[apiTarget.key] === 'testing' ? '#e2e8f0'
+                      : testStatus[apiTarget.key] === 'ok' ? '#bbf7d0' : '#fecaca'}`,
+                  }}>
+                    {testStatus[apiTarget.key] === 'testing' && (
+                      <div style={{ width:16, height:16, borderRadius:'50%', border:'2.5px solid #cbd5e1', borderTopColor:'#6366f1', animation:'spin 0.8s linear infinite', flexShrink:0, marginTop:1 }}/>
+                    )}
+                    {testStatus[apiTarget.key] === 'ok' && <CheckCircle2 size={16} style={{ color:'#15803d', flexShrink:0, marginTop:1 }}/>}
+                    {testStatus[apiTarget.key] === 'fail' && <XCircle size={16} style={{ color:'#dc2626', flexShrink:0, marginTop:1 }}/>}
+                    <div>
+                      <p style={{ fontSize:12.5, fontWeight:800,
+                        color: testStatus[apiTarget.key] === 'testing' ? '#475569'
+                          : testStatus[apiTarget.key] === 'ok' ? '#15803d' : '#dc2626' }}>
+                        {testStatus[apiTarget.key] === 'testing' ? 'API 연결 테스트 중...'
+                          : testStatus[apiTarget.key] === 'ok' ? '✅ 연동 성공' : '❌ 연동 실패'}
+                      </p>
+                      {testMsg[apiTarget.key] && (
+                        <p style={{ fontSize:11.5, color:'#64748b', marginTop:2, lineHeight:1.5 }}>
+                          {testMsg[apiTarget.key]}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <div style={{ display:'flex', justifyContent:'flex-end', gap:8, flexWrap:'wrap' }}>
                   <Button variant="outline" onClick={() => { setApiTarget(null); setGuideOpen(false) }}>취소</Button>
+
+                  {/* 비-OAuth 쇼핑몰: 테스트 버튼 */}
+                  {apiTarget && !OAUTH_MALLS.includes(apiTarget.key) && (
+                    <Button variant="outline"
+                      disabled={testStatus[apiTarget.key] === 'testing'}
+                      onClick={() => runTestConnection(apiTarget!.key, apiForm)}
+                      style={{ borderColor:'#0891b2', color:'#0891b2' }}>
+                      {testStatus[apiTarget.key] === 'testing'
+                        ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }}/>테스트 중...</>
+                        : <><Wifi size={13}/>연동 테스트</>
+                      }
+                    </Button>
+                  )}
 
                   {/* 수정 모드 + OAuth 쇼핑몰: 저장 버튼 + 재인증 버튼 분리 */}
                   {isEditMode && apiTarget && OAUTH_MALLS.includes(apiTarget.key) ? (
@@ -1196,7 +1311,6 @@ export default function ChannelsPage() {
                         <Save size={13}/>설정 저장
                       </Button>
                       <Button onClick={async () => {
-                        // 설정 저장 후 OAuth 팝업 실행
                         await saveApi()
                       }} disabled={oauthPending}
                         style={{ background:'#2563eb', borderColor:'#2563eb', opacity: oauthPending ? 0.7 : 1 }}>
