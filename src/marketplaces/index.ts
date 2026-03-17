@@ -46,6 +46,7 @@ type ConnectorConstructor = new () => IMarketplaceAdapter
 
 const CONNECTOR_MAP: Record<string, ConnectorConstructor> = {
   smartstore  : SmartstoreConnector,
+  naver       : SmartstoreConnector,  // channels page 키 호환 alias
   coupang     : CoupangConnector,
   '11st'      : ElevenStConnector,
   gmarket     : GmarketConnector,

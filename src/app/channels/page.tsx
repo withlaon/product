@@ -44,11 +44,10 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_secret',label:'Secret Key',  placeholder:'OPEN API에서 발급된 Secret Key',       type:'password', section:'api', required:true },
   ],
   // 스마트스토어: 로그인 + Application ID + Application Secret
+  // 스마트스토어: Client Credentials 방식 — 로그인 불필요, API Key만
   naver: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',          placeholder:'스마트스토어 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'Application ID',     placeholder:'앱 등록 후 발급된 ID',  type:'text',     section:'api' },
-    { key:'api_secret',label:'Application Secret', placeholder:'앱 Secret',            type:'password', section:'api' },
+    { key:'api_key',   label:'Application ID',     placeholder:'네이버 커머스 API센터 애플리케이션 ID', type:'text',     section:'api', required:true },
+    { key:'api_secret',label:'Application Secret', placeholder:'Application Secret Key',             type:'password', section:'api', required:true },
   ],
   // 11번가: SCM 로그인ID/PW + SHOP ID(선택) + API 인증키(Open API KEY)
   // ※ SCM [Open API] Seller API 정보의 호스팅여부를 '사방넷'으로 설정해야 연동 가능
@@ -198,24 +197,29 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     ],
   },
   naver: {
-    title:'스마트스토어(네이버 커머스) API 연동', authType:'OAuth 2.0 Bearer Token',
-    note:'네이버 커머스 API 센터에서 애플리케이션을 등록해야 합니다.',
+    title:'스마트스토어(네이버 커머스) API 연동', authType:'Client Credentials (API Key)',
+    note:'네이버 커머스 API는 OAuth 로그인 없이 Application ID + Secret만으로 바로 연동됩니다. API센터에서 앱 등록 후 IP를 등록하면 즉시 연동 테스트가 가능합니다.',
+    warning:'⚠ API 호출 IP 등록 필수 — 네이버 커머스 API센터에서 서버 IP를 등록하지 않으면 401 오류 발생',
     required:[
-      { label:'Application ID (Client ID)', desc:'앱 등록 후 발급되는 애플리케이션 ID', badge:'required' },
+      { label:'Application ID', desc:'네이버 커머스 API센터 앱 등록 후 발급', badge:'required' },
       { label:'Application Secret', desc:'앱 등록 후 발급되는 시크릿 키', badge:'required' },
-      { label:'스토어 ID', desc:'스마트스토어 판매자 ID', badge:'required' },
-      { label:'로그인 ID/PW', desc:'스마트스토어센터 로그인 계정', badge:'required' },
     ],
     steps:[
-      '① apicenter.commerce.naver.com 접속 → [내 애플리케이션] → [애플리케이션 등록]',
-      '② 애플리케이션 이름 입력, 사용 API 선택: 상품 / 주문 / 배송 / 정산 모두 체크',
-      '③ 등록 완료 후 Client ID (Application ID) / Client Secret 확인·복사',
-      '④ sell.smartstore.naver.com에서 스토어 ID 확인',
-      '⑤ 프로그램에 로그인 ID/PW + 스토어 ID + Application ID + Secret 입력 후 저장',
+      '━━ 애플리케이션 등록 ━━',
+      '① apicenter.commerce.naver.com 접속 → 로그인',
+      '② [내 애플리케이션] → [애플리케이션 등록] 클릭',
+      '③ 사용 API: 상품 / 주문 관리자 / 정산 / 판매자정보 모두 체크 후 등록',
+      '④ 등록 후 Application ID / Application Secret 복사',
+      '━━ IP 등록 (필수!) ━━',
+      '⑤ API센터 → 등록한 애플리케이션 클릭 → [API 호출 IP] → IP 추가',
+      '⑥ 서버 IP는 프로그램 [서버 IP 확인] 버튼으로 확인 (또는 whatismyip.com)',
+      '━━ 연동 등록 ━━',
+      '⑦ 프로그램에 Application ID + Secret 입력 후 [저장 및 연동 테스트] 클릭',
     ],
     links:[
-      { label:'스마트스토어센터', url:'https://sell.smartstore.naver.com' },
       { label:'네이버 커머스 API센터', url:'https://apicenter.commerce.naver.com' },
+      { label:'스마트스토어센터', url:'https://sell.smartstore.naver.com' },
+      { label:'내 공인 IP 확인', url:'https://www.whatismyip.com' },
     ],
   },
   '11st': {
@@ -872,7 +876,8 @@ export default function ChannelsPage() {
     setApiForm({ login_id:ch.login_id||'', login_pw:ch.login_pw||'', seller_id:ch.seller_id, api_key:ch.api_key, api_secret:ch.api_secret, site_name:ch.site_name||'', refresh_token:ch.refresh_token||'', access_key:ch.access_key||'' })
   }
   /* OAuth 지원 쇼핑몰 */
-  const OAUTH_MALLS = ['cafe24', 'naver', 'zigzag']
+  // naver(스마트스토어)는 client_credentials 방식 — OAuth 사용자 로그인 불필요
+  const OAUTH_MALLS = ['cafe24', 'zigzag']
 
   const saveApi = async () => {
     if (!apiTarget) return
@@ -1298,6 +1303,65 @@ export default function ChannelsPage() {
                   </div>
                 )}
 
+                {/* 스마트스토어 전용: API 호출 IP 등록 안내 */}
+                {apiTarget?.key === 'naver' && (
+                  <div style={{
+                    background: '#f0fdf4', border: '1.5px solid #86efac',
+                    borderRadius: 10, padding: '12px 14px',
+                  }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+                      <Server size={14} style={{ color:'#15803d', flexShrink:0 }}/>
+                      <span style={{ fontSize:12.5, fontWeight:700, color:'#15803d' }}>
+                        API 호출 IP 등록 필수
+                      </span>
+                    </div>
+                    <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.6, marginBottom:10 }}>
+                      네이버 커머스 API는 등록된 IP에서만 호출 가능합니다.
+                      아래 버튼으로 서버 IP를 확인 후 API센터에 등록하세요.
+                    </p>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <button
+                        onClick={fetchServerIp}
+                        disabled={serverIpState === 'loading'}
+                        style={{
+                          display:'flex', alignItems:'center', gap:5,
+                          padding:'5px 12px', borderRadius:6, fontSize:12,
+                          fontWeight:700, cursor: serverIpState === 'loading' ? 'not-allowed' : 'pointer',
+                          background: serverIpState === 'done' ? '#15803d' : 'white',
+                          color:      serverIpState === 'done' ? 'white'    : '#15803d',
+                          border:'1.5px solid #15803d', transition:'all .15s',
+                        }}>
+                        {serverIpState === 'loading'
+                          ? <><RefreshCw size={12} style={{ animation:'spin 1s linear infinite' }}/>확인 중...</>
+                          : <><Server size={12}/>서버 IP 확인</>
+                        }
+                      </button>
+                      {serverIpState === 'done' && serverIp && (
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <code style={{ background:'#14532d', color:'#86efac', padding:'4px 10px', borderRadius:5, fontSize:13, fontWeight:700, fontFamily:'monospace' }}>{serverIp}</code>
+                          <button onClick={() => navigator.clipboard.writeText(serverIp)}
+                            style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', borderRadius:5, fontSize:11, fontWeight:600, cursor:'pointer', background:'white', color:'#15803d', border:'1px solid #86efac' }}>
+                            <Copy size={11}/>복사
+                          </button>
+                        </div>
+                      )}
+                      {serverIpState === 'error' && <span style={{ fontSize:12, color:'#dc2626' }}>IP 확인 실패</span>}
+                    </div>
+                    {serverIpState === 'done' && (
+                      <div style={{ marginTop:10, padding:'8px 10px', background:'#dcfce7', borderRadius:7, fontSize:11.5, color:'#14532d', lineHeight:1.8 }}>
+                        <strong>등록 방법:</strong><br/>
+                        ① apicenter.commerce.naver.com → 내 애플리케이션 클릭<br/>
+                        ② [API 호출 IP] 항목 → [IP 추가] 클릭<br/>
+                        ③ 위 IP 주소 입력 후 저장
+                      </div>
+                    )}
+                    <a href="https://apicenter.commerce.naver.com" target="_blank" rel="noreferrer"
+                      style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#15803d', textDecoration:'none', fontWeight:600 }}>
+                      <ExternalLink size={11}/>네이버 커머스 API센터 바로가기
+                    </a>
+                  </div>
+                )}
+
                 {/* 쿠팡 전용: 서버 IP 확인 및 화이트리스트 안내 */}
                 {apiTarget?.key === 'coupang' && (
                   <div style={{
@@ -1440,6 +1504,19 @@ export default function ChannelsPage() {
                     </Button>
                   )}
 
+                  {/* 카페24: Refresh Token이 있으면 연동 테스트 버튼 표시 */}
+                  {apiTarget?.key === 'cafe24' && apiForm.refresh_token && (
+                    <Button variant="outline"
+                      disabled={testStatus['cafe24'] === 'testing'}
+                      onClick={() => runTestConnection('cafe24', apiForm)}
+                      style={{ borderColor:'#0891b2', color:'#0891b2' }}>
+                      {testStatus['cafe24'] === 'testing'
+                        ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }}/>테스트 중...</>
+                        : <><Wifi size={13}/>연동 테스트</>
+                      }
+                    </Button>
+                  )}
+
                   {/* 수정 모드 + OAuth 쇼핑몰: 저장 버튼 + 재인증 버튼 분리 */}
                   {isEditMode && apiTarget && OAUTH_MALLS.includes(apiTarget.key) ? (
                     <>
@@ -1466,9 +1543,9 @@ export default function ChannelsPage() {
                       }
                     </Button>
                   ) : (
-                    /* 일반 쇼핑몰: oauthPending과 무관 */
+                    /* 일반 쇼핑몰 (스마트스토어 포함): 저장 즉시 연동 테스트 */
                     <Button onClick={saveApi}>
-                      <Zap size={13}/>저장하고 연동 시작
+                      <Zap size={13}/>저장 및 연동 테스트
                     </Button>
                   )}
                 </div>

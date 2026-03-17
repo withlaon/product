@@ -65,6 +65,46 @@ export async function POST(req: NextRequest) {
         })
       }
 
+      /* ── 카페24: refresh_token → access_token 갱신 후 테스트 ── */
+      if (mall === 'cafe24') {
+        const { refresh_token, api_key: clientId, api_secret: clientSecret, seller_id: shopId } = credentials
+        if (!refresh_token) {
+          return NextResponse.json({ success: false, mall, message: 'Refresh Token이 없습니다. OAuth 인증을 먼저 완료해 주세요.' })
+        }
+        if (!clientId || !clientSecret || !shopId) {
+          return NextResponse.json({ success: false, mall, message: 'Client ID / Client Secret / 쇼핑몰 ID를 모두 입력해 주세요.' })
+        }
+        try {
+          const tokenRes = await fetch(`https://${shopId}.cafe24api.com/api/v2/oauth/token`, {
+            method : 'POST',
+            headers: {
+              'Content-Type' : 'application/x-www-form-urlencoded',
+              'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+            },
+            body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token }).toString(),
+          })
+          if (!tokenRes.ok) {
+            const detail = await tokenRes.text().catch(() => '')
+            const msg = tokenRes.status === 401
+              ? 'Client ID / Secret 인증 실패 (401) — 카페24 개발자센터에서 자격증명을 확인하세요.'
+              : `토큰 갱신 실패 (${tokenRes.status}) — ${detail}`
+            return NextResponse.json({ success: false, mall, message: msg })
+          }
+          const { access_token } = await tokenRes.json()
+          // access_token으로 주문 조회 테스트
+          const adapter = createAdapter('cafe24', { ...credentials, mall_id: shopId, access_token })
+          await adapter.getOrders({
+            start_date: format(subDays(now, 7), 'yyyy-MM-dd'),
+            end_date  : format(now, 'yyyy-MM-dd'),
+            limit     : 1,
+          })
+          return NextResponse.json({ success: true, mall, message: '카페24 API 연결 성공 ✓ (Refresh Token 정상)' })
+        } catch (e) {
+          const raw = e instanceof Error ? e.message : String(e)
+          return NextResponse.json({ success: false, mall, message: `카페24 연결 실패: ${raw}` })
+        }
+      }
+
       let adapter
       try {
         adapter = createAdapter(mall, credentials)
