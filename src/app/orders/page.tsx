@@ -4,169 +4,165 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Modal } from '@/components/ui/modal'
-import { formatCurrency, formatDateTime } from '@/lib/utils'
-import { Search, Download, RefreshCw, Eye, Truck, Play, Clock, X, CheckSquare, Package, Trash2 } from 'lucide-react'
+import { formatDateTime } from '@/lib/utils'
+import {
+  Search, RefreshCw, Play, Clock, X, CheckSquare, Package,
+  GitMerge, FileSpreadsheet, Upload, Truck, Eye,
+} from 'lucide-react'
+import * as XLSX from 'xlsx'
 
-/* ── 공유 스토리지 키 ── */
-export const CHANNEL_STORAGE_KEY = 'pm_mall_channels_v3'
-export const ORDERS_STORAGE_KEY  = 'pm_orders_v1'
+/* ── Storage Keys ── */
+export const CHANNEL_STORAGE_KEY  = 'pm_mall_channels_v3'
+export const ORDERS_STORAGE_KEY   = 'pm_orders_v1'
 export const SHIPPING_STORAGE_KEY = 'pm_shipping_v1'
-export const CS_NEW_KEY = 'pm_cs_new_flag'
+export const MAPPING_STORAGE_KEY  = 'pm_order_mapping_v1'
+export const CS_NEW_KEY           = 'pm_cs_new_flag'
 
-/* ── 타입 ── */
-type OrderItem = { name: string; sku: string; quantity: number; price: number }
+/* ── Types ── */
+type OrderItem = {
+  name: string; sku: string; quantity: number; price: number
+  option_name?: string; abbreviation?: string; loca?: string
+}
 export type Order = {
   id: string; order_number: string; channel: string; channel_order_id: string
   customer_name: string; customer_phone: string; shipping_address: string
-  status: string; total_amount: number; shipping_fee: number
-  tracking_number: string|null; carrier: string|null
-  created_at: string; items: OrderItem[]
-  is_claim?: boolean  // 반품/교환/취소 클레임 여부
+  status: string; mapped_status?: 'new' | 'mapped'
+  total_amount: number; shipping_fee: number
+  tracking_number: string | null; carrier: string | null
+  created_at: string; items: OrderItem[]; is_claim?: boolean
 }
-
-export type ShipItem = {
+type ShipItem = {
   id: string; order_number: string; channel: string
   customer_name: string; customer_phone: string; shipping_address: string
-  items: string; status: string; tracking_number: string|null; carrier: string|null
-  weight: string; shipped_at: string|null; created_at: string
+  items: string; status: string; tracking_number: string | null; carrier: string | null
+  weight: string; shipped_at: string | null; created_at: string
+}
+type MappingEntry  = { abbreviation: string; loca: string }
+type MappingStore  = Record<string, MappingEntry>
+type MappingRow    = { name: string; abbr: string; loca: string; matched: boolean }
+
+/* ── Storage helpers ── */
+const loadOrders   = (): Order[]        => { try { const r = localStorage.getItem(ORDERS_STORAGE_KEY);   return r ? JSON.parse(r) : [] } catch { return [] } }
+const saveOrders   = (d: Order[])       => { try { localStorage.setItem(ORDERS_STORAGE_KEY,   JSON.stringify(d)) } catch {} }
+const loadShipping = (): ShipItem[]     => { try { const r = localStorage.getItem(SHIPPING_STORAGE_KEY); return r ? JSON.parse(r) : [] } catch { return [] } }
+const saveShipping = (d: ShipItem[])    => { try { localStorage.setItem(SHIPPING_STORAGE_KEY, JSON.stringify(d)) } catch {} }
+const loadMapping  = (): MappingStore  => { try { const r = localStorage.getItem(MAPPING_STORAGE_KEY);  return r ? JSON.parse(r) : {} } catch { return {} } }
+const saveMapping  = (d: MappingStore) => { try { localStorage.setItem(MAPPING_STORAGE_KEY,  JSON.stringify(d)) } catch {} }
+
+/* ── Apply mapping to single order ── */
+function applyMapping(order: Order, m: MappingStore): Order {
+  const items = order.items.map(item => {
+    const entry = m[item.name] ?? m[item.sku]
+    return entry ? { ...item, abbreviation: entry.abbreviation, loca: entry.loca } : item
+  })
+  const allMapped = items.every(i => i.abbreviation)
+  return { ...order, items, mapped_status: allMapped ? 'mapped' : 'new' }
 }
 
-const ST: Record<string, { label:string; dot:string; cls:string }> = {
-  pending:    { label:'대기중',  dot:'#f59e0b', cls:'pm-badge pm-badge-yellow' },
-  confirmed:  { label:'확인됨',  dot:'#3b82f6', cls:'pm-badge pm-badge-blue' },
-  processing: { label:'처리중',  dot:'#6366f1', cls:'pm-badge pm-badge-indigo' },
-  shipped:    { label:'배송중',  dot:'#a855f7', cls:'pm-badge pm-badge-purple' },
-  delivered:  { label:'완료',    dot:'#22c55e', cls:'pm-badge pm-badge-green' },
-  cancelled:  { label:'취소',    dot:'#ef4444', cls:'pm-badge pm-badge-red' },
+/* ── Sample order generator ── */
+function makeSampleOrders(channelName: string, count = 3): Order[] {
+  const NAMES   = ['김민준','이서연','박지훈','최수아','정예준','윤지아','강민서','오하은']
+  const PRODS   = ['스웨이드 백','가벼운 캔버스 가방','심플 베이직 가방','딜라이트 캔버스백','작고 가벼운 백팩']
+  const OPTIONS = ['블랙/FREE','화이트/FREE','베이지/FREE','네이비/FREE','아이보리/FREE']
+  const SKUS    = ['BE','BK','WH','BR','IV','GR']
+  return Array.from({ length: count }, (_, i) => {
+    const now = new Date(); now.setMinutes(now.getMinutes() - i * 7)
+    return {
+      id: `${channelName}_${Date.now()}_${i}`,
+      order_number: `ORD-${Date.now()}-${String(i).padStart(3,'0')}`,
+      channel: channelName, channel_order_id: `CH-${Math.floor(Math.random()*900000+100000)}`,
+      customer_name: NAMES[Math.floor(Math.random()*NAMES.length)],
+      customer_phone: `010-${Math.floor(Math.random()*9000+1000)}-${Math.floor(Math.random()*9000+1000)}`,
+      shipping_address: `서울시 강남구 테헤란로 ${Math.floor(Math.random()*400+1)}`,
+      status: 'pending', mapped_status: 'new' as const,
+      total_amount: Math.floor(Math.random()*80000+15000), shipping_fee: 3000,
+      tracking_number: null, carrier: null,
+      created_at: now.toISOString(),
+      items: [{ name: PRODS[Math.floor(Math.random()*PRODS.length)], option_name: OPTIONS[Math.floor(Math.random()*OPTIONS.length)], sku: SKUS[Math.floor(Math.random()*SKUS.length)], quantity: Math.floor(Math.random()*2)+1, price: Math.floor(Math.random()*50000+10000) }],
+      is_claim: false,
+    }
+  })
 }
-
-const statCards = [
-  { label:'주문 대기', key:'pending',    bg:'#fffbeb', color:'#d97706' },
-  { label:'처리중',    key:'processing', bg:'#eef2ff', color:'#4338ca' },
-  { label:'배송중',    key:'shipped',    bg:'#faf5ff', color:'#7e22ce' },
-  { label:'배송완료',  key:'delivered',  bg:'#f0fdf4', color:'#15803d' },
-]
 
 function Label({ children }: { children: React.ReactNode }) {
   return <label style={{ display:'block', fontSize:12, fontWeight:800, color:'#475569', marginBottom:6 }}>{children}</label>
 }
 
-function loadOrders(): Order[] {
-  try { const r = localStorage.getItem(ORDERS_STORAGE_KEY); return r ? JSON.parse(r) : [] } catch { return [] }
-}
-function saveOrders(data: Order[]) {
-  try { localStorage.setItem(ORDERS_STORAGE_KEY, JSON.stringify(data)) } catch {}
-}
-function loadShipping(): ShipItem[] {
-  try { const r = localStorage.getItem(SHIPPING_STORAGE_KEY); return r ? JSON.parse(r) : [] } catch { return [] }
-}
-function saveShipping(data: ShipItem[]) {
-  try { localStorage.setItem(SHIPPING_STORAGE_KEY, JSON.stringify(data)) } catch {}
-}
-
-/* ── 샘플 주문 생성 (수집 시뮬레이션) ── */
-function makeSampleOrders(channelName: string, count = 3): Order[] {
-  const names = ['김민준','이서연','박지훈','최수아','정예준','윤지아','강민서','오하은']
-  const products = ['스웨이드 백', '가벼운 캔버스 가방', '심플 베이직 가방', '딜라이트 캔버스백', '작고 가벼운 백팩']
-  const skus = ['BE','BK','WH','BR','IV','GR']
-  return Array.from({ length: count }, (_, i) => {
-    const now = new Date()
-    now.setMinutes(now.getMinutes() - i * 7)
-    const isClaim = Math.random() < 0.2
-    return {
-      id: `${channelName}_${Date.now()}_${i}`,
-      order_number: `ORD-${Date.now()}-${String(i).padStart(3,'0')}`,
-      channel: channelName,
-      channel_order_id: `CH-${Math.floor(Math.random()*900000+100000)}`,
-      customer_name: names[Math.floor(Math.random()*names.length)],
-      customer_phone: `010-${Math.floor(Math.random()*9000+1000)}-${Math.floor(Math.random()*9000+1000)}`,
-      shipping_address: `서울시 강남구 테헤란로 ${Math.floor(Math.random()*400+1)}`,
-      status: isClaim ? 'cancelled' : 'pending',
-      total_amount: Math.floor(Math.random()*80000+15000),
-      shipping_fee: 3000,
-      tracking_number: null,
-      carrier: null,
-      created_at: now.toISOString(),
-      items: [{ name: products[Math.floor(Math.random()*products.length)], sku: skus[Math.floor(Math.random()*skus.length)], quantity: Math.floor(Math.random()*2)+1, price: Math.floor(Math.random()*50000+10000) }],
-      is_claim: isClaim,
-    }
-  })
-}
-
 export default function OrdersPage() {
-  const [orders, setOrders] = useState<Order[]>([])
-  const [search, setSearch] = useState('')
-  const [sf, setSf] = useState('전체')
-  const [cf, setCf] = useState('전체')
-  const [sel, setSel] = useState<Order|null>(null)
-  const [trackModal, setTrackModal] = useState(false)
-  const [trackOrder, setTrackOrder] = useState<Order|null>(null)
-  const [trackCarrier, setTrackCarrier] = useState('CJ대한통운')
-  const [trackNum, setTrackNum] = useState('')
+  const [orders,   setOrders]   = useState<Order[]>([])
+  const [mapping,  setMapping]  = useState<MappingStore>({})
+  const [mounted,  setMounted]  = useState(false)
+  const [viewTab,  setViewTab]  = useState<'new'|'all'>('new')
+  const [search,   setSearch]   = useState('')
+  const [cf,       setCf]       = useState('전체')
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [mounted, setMounted] = useState(false)
-
-  // 연동 쇼핑몰
   const [connectedMalls, setConnectedMalls] = useState<{key:string;name:string}[]>([])
 
-  // 주문 수집 모달
-  const [collectModal, setCollectModal] = useState(false)
-  const [collectSelected, setCollectSelected] = useState<Set<string>>(new Set())
-  const [collecting, setCollecting] = useState(false)
-  const [collectDone, setCollectDone] = useState(false)
-  // 수집 기간 선택
-  const [collectRange, setCollectRange] = useState<'1'|'3'|'5'|'7'|'custom'>('1')
-  const [collectCustomDate, setCollectCustomDate] = useState('')
+  /* collect modal */
+  const [collectModal,   setCollectModal]   = useState(false)
+  const [collectSel,     setCollectSel]     = useState<Set<string>>(new Set())
+  const [collecting,     setCollecting]     = useState(false)
+  const [collectDone,    setCollectDone]    = useState(false)
+  const [collectRange,   setCollectRange]   = useState<'1'|'3'|'5'|'7'|'custom'>('1')
+  const [collectCustom,  setCollectCustom]  = useState('')
 
-  // 자동 수집 설정 모달
-  const [autoModal, setAutoModal] = useState(false)
-  const [autoEnabled, setAutoEnabled] = useState(false)
+  /* auto collect modal */
+  const [autoModal,    setAutoModal]    = useState(false)
+  const [autoEnabled,  setAutoEnabled]  = useState(false)
   const [autoInterval, setAutoInterval] = useState('30')
-  const [autoUnit, setAutoUnit] = useState<'분'|'시간'>('분')
-  const [autoMalls, setAutoMalls] = useState<Set<string>>(new Set())
+  const [autoUnit,     setAutoUnit]     = useState<'분'|'시간'>('분')
+  const [autoMalls,    setAutoMalls]    = useState<Set<string>>(new Set())
+  const [autoNextAt,   setAutoNextAt]   = useState('')
   const autoTimerRef = useRef<ReturnType<typeof setInterval>|null>(null)
-  const [autoNextAt, setAutoNextAt] = useState<string>('')
+
+  /* manual order modal */
+  const [manualModal,  setManualModal]  = useState(false)
+  const [manualRows,   setManualRows]   = useState<Order[]>([])
+  const manualFileRef = useRef<HTMLInputElement>(null)
+
+  /* mapping modal */
+  const [mappingModal, setMappingModal] = useState(false)
+  const [mappingRows,  setMappingRows]  = useState<MappingRow[]>([])
+
+  /* detail modal */
+  const [sel, setSel] = useState<Order|null>(null)
 
   useEffect(() => {
     setMounted(true)
-    setOrders(loadOrders())
+    const rawOrders  = loadOrders()
+    const rawMapping = loadMapping()
+    setMapping(rawMapping)
+    setOrders(rawOrders.map(o => applyMapping(o, rawMapping)))
     try {
       const raw = localStorage.getItem(CHANNEL_STORAGE_KEY)
       if (raw) {
         const parsed: {key:string;name:string;active:boolean}[] = JSON.parse(raw)
-        const arr = Array.isArray(parsed)
-          ? parsed.filter(c => c.active).map(c => ({ key:c.key, name:c.name }))
-          : []
-        setConnectedMalls(arr)
+        setConnectedMalls(Array.isArray(parsed) ? parsed.filter(c=>c.active).map(c=>({key:c.key,name:c.name})) : [])
       }
     } catch {}
-    // 자동수집 설정 복원
     try {
       const saved = localStorage.getItem('pm_auto_collect')
       if (saved) {
         const v = JSON.parse(saved)
-        setAutoEnabled(v.enabled); setAutoInterval(v.interval); setAutoUnit(v.unit)
-        setAutoMalls(new Set(v.malls))
+        setAutoEnabled(v.enabled); setAutoInterval(v.interval); setAutoUnit(v.unit); setAutoMalls(new Set(v.malls))
       }
     } catch {}
   }, [])
 
-  /* 자동수집 타이머 */
+  /* auto collect */
   const runCollect = useCallback((malls: string[]) => {
     if (!malls.length) return
     const newOrd: Order[] = []
     malls.forEach(key => {
       const mall = connectedMalls.find(m => m.key === key)
-      if (!mall) return
-      newOrd.push(...makeSampleOrders(mall.name, 2))
+      if (mall) newOrd.push(...makeSampleOrders(mall.name, 2))
     })
     setOrders(prev => {
-      const merged = [...newOrd, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+      const m = loadMapping()
+      const applied = newOrd.map(o => applyMapping(o, m))
+      const merged = [...applied, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       saveOrders(merged)
-      // 클레임 있으면 CS NEW 플래그
-      if (newOrd.some(o => o.is_claim)) {
-        localStorage.setItem(CS_NEW_KEY, 'true')
-      }
+      if (newOrd.some(o => o.is_claim)) localStorage.setItem(CS_NEW_KEY, 'true')
       return merged
     })
   }, [connectedMalls])
@@ -176,70 +172,39 @@ export default function OrdersPage() {
     if (autoTimerRef.current) clearInterval(autoTimerRef.current)
     if (!autoEnabled || !autoMalls.size) return
     const ms = autoUnit === '분' ? Number(autoInterval)*60000 : Number(autoInterval)*3600000
-    const next = new Date(Date.now() + ms)
-    setAutoNextAt(next.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' }))
+    setAutoNextAt(new Date(Date.now()+ms).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}))
     autoTimerRef.current = setInterval(() => {
       runCollect(Array.from(autoMalls))
-      const n2 = new Date(Date.now() + ms)
-      setAutoNextAt(n2.toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' }))
+      setAutoNextAt(new Date(Date.now()+ms).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'}))
     }, ms)
     return () => { if (autoTimerRef.current) clearInterval(autoTimerRef.current) }
   }, [autoEnabled, autoInterval, autoUnit, autoMalls, mounted, runCollect])
 
-  const saveAutoSettings = () => {
-    const v = { enabled:autoEnabled, interval:autoInterval, unit:autoUnit, malls:Array.from(autoMalls) }
-    localStorage.setItem('pm_auto_collect', JSON.stringify(v))
-    setAutoModal(false)
-  }
-
-  /* 주문 수집 */
+  /* manual collect */
   const handleCollect = () => {
-    if (!collectSelected.size) return
+    if (!collectSel.size) return
     setCollecting(true)
     setTimeout(() => {
-      // 수집 시작일 계산
-      let startDate: Date
-      if (collectRange === 'custom' && collectCustomDate) {
-        startDate = new Date(collectCustomDate)
-      } else {
-        const days = parseInt(collectRange)
-        startDate = new Date()
-        startDate.setDate(startDate.getDate() - days)
-        startDate.setHours(0, 0, 0, 0)
-      }
-
       const newOrd: Order[] = []
-      collectSelected.forEach(key => {
-        const mall = connectedMalls.find(m => m.key === key)
-        if (!mall) return
-        const samples = makeSampleOrders(mall.name)
-        // 신규주문(pending)만 수집 - 배송준비/배송중/배송완료 제외
-        const newOnly = samples.filter(o => o.status === 'pending' && !o.is_claim)
-        // 수집 기간 내 주문만 포함 (시뮬레이션이므로 created_at을 수집 기간 내로 설정)
-        newOnly.forEach(o => {
-          const orderDate = new Date()
-          orderDate.setDate(orderDate.getDate() - Math.floor(Math.random() * parseInt(collectRange === 'custom' ? '1' : collectRange)))
-          o.created_at = orderDate.toISOString()
-        })
-        newOrd.push(...newOnly)
+      collectSel.forEach(key => {
+        const mall = connectedMalls.find(m=>m.key===key)
+        if (mall) newOrd.push(...makeSampleOrders(mall.name))
       })
-
-      // 이미 수집된 주문과 중복 제거 (order_number 기준)
-      const existingNums = new Set(orders.map(o => o.order_number))
-      const deduped = newOrd.filter(o => !existingNums.has(o.order_number))
-
+      const m = loadMapping()
+      const applied = newOrd.map(o => applyMapping(o, m))
       setOrders(prev => {
-        const merged = [...deduped, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+        const existing = new Set(prev.map(o=>o.order_number))
+        const deduped = applied.filter(o=>!existing.has(o.order_number))
+        const merged = [...deduped,...prev].sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime())
         saveOrders(merged)
-        if (deduped.some(o => o.is_claim)) localStorage.setItem(CS_NEW_KEY, 'true')
+        if (deduped.some(o=>o.is_claim)) localStorage.setItem(CS_NEW_KEY,'true')
         return merged
       })
-      setCollecting(false)
-      setCollectDone(true)
+      setCollecting(false); setCollectDone(true)
     }, 1200)
   }
 
-  /* 배송준비 이동 */
+  /* 배송준비 → 배송/송장등록 탭 이동 */
   const handleReadyShipping = () => {
     if (!selectedIds.size) return
     const chosen = orders.filter(o => selectedIds.has(o.id))
@@ -247,208 +212,345 @@ export default function OrdersPage() {
       id: o.id, order_number: o.order_number, channel: o.channel,
       customer_name: o.customer_name, customer_phone: o.customer_phone,
       shipping_address: o.shipping_address,
-      items: o.items.map(i => `${i.name}(${i.sku}×${i.quantity})`).join(', '),
+      items: o.items.map(i => `${i.abbreviation||i.name}(${i.option_name||i.sku}×${i.quantity})`).join(', '),
       status: 'ready', tracking_number: null, carrier: null,
       weight: '', shipped_at: null, created_at: o.created_at,
     }))
     const existing = loadShipping()
-    const existingIds = new Set(existing.map(s => s.id))
-    const toAdd = shipItems.filter(s => !existingIds.has(s.id))
-    saveShipping([...toAdd, ...existing])
-    // 주문 상태 업데이트
+    const existIds = new Set(existing.map(s=>s.id))
+    const toAdd = shipItems.filter(s=>!existIds.has(s.id))
+    saveShipping([...toAdd,...existing])
     setOrders(prev => {
-      const updated = prev.map(o => selectedIds.has(o.id) ? { ...o, status:'processing' } : o)
-      saveOrders(updated)
-      return updated
+      const updated = prev.map(o => selectedIds.has(o.id) ? {...o, status:'processing'} : o)
+      saveOrders(updated); return updated
     })
     setSelectedIds(new Set())
-    alert(`${toAdd.length}건이 배송/송장 탭으로 이동되었습니다.`)
+    alert(`${toAdd.length}건이 배송/송장등록 탭으로 이동되었습니다.`)
   }
 
-  const toggleSelect = (id: string) => setSelectedIds(prev => {
-    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
-  })
-  const toggleAll = (checked: boolean) => {
-    setSelectedIds(checked ? new Set(filtered.map(o => o.id)) : new Set())
-  }
-
-  const handleDeleteOrder = (id: string) => {
-    setOrders(prev => {
-      const updated = prev.filter(o => o.id !== id)
-      saveOrders(updated)
-      return updated
+  /* 매핑 모달 열기 */
+  const openMappingModal = () => {
+    const m = loadMapping()
+    const uniqueMap = new Map<string, MappingRow>()
+    orders.filter(o => o.status === 'pending').forEach(o => {
+      o.items.forEach(item => {
+        if (!uniqueMap.has(item.name)) {
+          const e = m[item.name]
+          uniqueMap.set(item.name, { name: item.name, abbr: e?.abbreviation||'', loca: e?.loca||'', matched: !!e?.abbreviation })
+        }
+      })
     })
-    setSelectedIds(prev => { const n = new Set(prev); n.delete(id); return n })
+    setMappingRows(Array.from(uniqueMap.values()))
+    setMappingModal(true)
   }
 
-  const handleDeleteSelected = () => {
-    if (!selectedIds.size) return
+  /* 매핑 저장 */
+  const handleSaveMapping = () => {
+    const current = loadMapping()
+    const updated: MappingStore = { ...current }
+    mappingRows.forEach(r => { if (r.abbr) updated[r.name] = { abbreviation: r.abbr, loca: r.loca } })
+    saveMapping(updated)
+    setMapping(updated)
     setOrders(prev => {
-      const updated = prev.filter(o => !selectedIds.has(o.id))
-      saveOrders(updated)
-      return updated
+      const applied = prev.map(o => applyMapping(o, updated))
+      saveOrders(applied); return applied
     })
-    setSelectedIds(new Set())
+    setMappingModal(false)
+    alert('매핑이 저장되었습니다.')
   }
 
-  const filtered = orders.filter(o =>
-    (o.order_number.includes(search) || o.customer_name.includes(search) || (o.tracking_number||'').includes(search)) &&
-    (sf === '전체' || o.status === sf) && (cf === '전체' || o.channel === cf)
-  ).sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  /* 패킹리스트 다운로드 */
+  const handlePackingList = async () => {
+    const mappedOrders = orders.filter(o => o.mapped_status === 'mapped' && o.status === 'pending')
+    if (!mappedOrders.length) { alert('매핑 완료된 주문이 없습니다.'); return }
 
-  const channels = Array.from(new Set(orders.map(o => o.channel)))
+    type Row = { customer:string; mall:string; abbr:string; option:string; loca:string }
+    const rows: Row[] = []
+    mappedOrders.forEach(o => {
+      o.items.forEach(item => {
+        for (let q = 0; q < item.quantity; q++) {
+          rows.push({ customer: o.customer_name, mall: o.channel, abbr: item.abbreviation||item.name, option: item.option_name||item.sku||'', loca: item.loca||'' })
+        }
+      })
+    })
+    rows.sort((a,b) => (a.loca||'').localeCompare(b.loca||''))
+
+    const ExcelJSLib = (await import('exceljs')).default
+    const wb = new ExcelJSLib.Workbook()
+    const ws = wb.addWorksheet('패킹리스트')
+    ws.columns = [
+      { header:'주문자',   key:'customer', width:12 },
+      { header:'쇼핑몰',   key:'mall',     width:14 },
+      { header:'상품약어', key:'abbr',     width:18 },
+      { header:'옵션명',   key:'option',   width:16 },
+      { header:'LOCA',     key:'loca',     width:12 },
+    ]
+    const hRow = ws.getRow(1)
+    hRow.height = 22
+    hRow.eachCell(c => {
+      c.fill = { type:'pattern', pattern:'solid', fgColor:{ argb:'FF1E3A5F' } }
+      c.font = { bold:true, color:{ argb:'FFFFFFFF' }, size:11 }
+      c.alignment = { horizontal:'center', vertical:'middle' }
+    })
+
+    const PALETTE = ['FFFDE68A','FFBFDBFE','FFD9F99D','FFFECACA','FFEDE9FE','FFE0F2FE','FFDCFCE7','FFFBD38D']
+    const colorMap = new Map<string,string>(); let ci = 0
+    const keyCounts = new Map<string,number>()
+    rows.forEach(r => { const k = `${r.customer}__${r.mall}`; keyCounts.set(k, (keyCounts.get(k)||0)+1) })
+    rows.forEach(row => {
+      const k = `${row.customer}__${row.mall}`
+      if ((keyCounts.get(k)||0) > 1 && !colorMap.has(k)) { colorMap.set(k, PALETTE[ci++ % PALETTE.length]) }
+      const dr = ws.addRow(row)
+      const color = colorMap.get(k)
+      dr.eachCell(c => {
+        if (color) c.fill = { type:'pattern', pattern:'solid', fgColor:{ argb: color } }
+        c.alignment = { horizontal:'center', vertical:'middle' }
+        c.border = { top:{style:'thin',color:{argb:'FFD1D5DB'}}, left:{style:'thin',color:{argb:'FFD1D5DB'}}, bottom:{style:'thin',color:{argb:'FFD1D5DB'}}, right:{style:'thin',color:{argb:'FFD1D5DB'}} }
+      })
+    })
+
+    const buf = await wb.xlsx.writeBuffer()
+    const blob = new Blob([buf], { type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `패킹리스트_${new Date().toLocaleDateString('ko-KR').replace(/\. /g,'-').replace('.','')}`.replace(/\s/g,'') + '.xlsx'
+    a.click(); URL.revokeObjectURL(url)
+  }
+
+  /* 수동주문 Excel 파싱 */
+  const handleManualFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]; if (!file) return
+    const reader = new FileReader()
+    reader.onload = ev => {
+      try {
+        const data = new Uint8Array(ev.target!.result as ArrayBuffer)
+        const wb = XLSX.read(data, { type:'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const raw = XLSX.utils.sheet_to_json<Record<string,string>>(ws, { defval:'' })
+        const get = (row: Record<string,string>, candidates: string[]) => {
+          for (const c of candidates) {
+            const k = Object.keys(row).find(k2 => k2.toLowerCase().includes(c))
+            if (k) return String(row[k]||'')
+          }
+          return ''
+        }
+        const parsed: Order[] = raw.map((row, i) => ({
+          id: `manual_${Date.now()}_${i}`,
+          order_number: get(row,['주문번호','order_no']) || `MNL-${Date.now()}-${i}`,
+          channel: get(row,['쇼핑몰','채널','channel','mall']) || '수동등록',
+          channel_order_id: get(row,['채널주문번호','channel_order']) || '',
+          customer_name: get(row,['주문자','수취인','받는분','customer','name','고객']) || '',
+          customer_phone: get(row,['전화','phone','연락처','휴대폰']) || '',
+          shipping_address: get(row,['주소','address','배송지']) || '',
+          status: 'pending', mapped_status: 'new' as const,
+          total_amount: Number(get(row,['결제금액','금액','amount','price'])) || 0,
+          shipping_fee: 0, tracking_number: null, carrier: null,
+          created_at: new Date().toISOString(),
+          items: [{
+            name: get(row,['상품명','상품','product','item']) || '수동등록상품',
+            option_name: get(row,['옵션','option','옵션명']) || '',
+            sku: get(row,['sku','바코드','barcode','상품코드']) || '',
+            quantity: Number(get(row,['수량','qty','quantity'])) || 1,
+            price: Number(get(row,['단가','price'])) || 0,
+          }],
+          is_claim: false,
+        }))
+        setManualRows(parsed)
+      } catch { alert('파일을 읽는 중 오류가 발생했습니다.') }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
+  const handleManualRegister = () => {
+    const m = loadMapping()
+    const applied = manualRows.map(o => applyMapping(o, m))
+    setOrders(prev => {
+      const existing = new Set(prev.map(o=>o.order_number))
+      const deduped = applied.filter(o=>!existing.has(o.order_number))
+      const merged = [...deduped,...prev].sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime())
+      saveOrders(merged); return merged
+    })
+    setManualRows([]); setManualModal(false)
+    alert('수동 주문이 등록되었습니다.')
+  }
+
+  const toggleSel   = (id:string) => setSelectedIds(p => { const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n })
+  const toggleAll   = (c:boolean) => setSelectedIds(c ? new Set(filtered.map(o=>o.id)) : new Set())
+  const channels    = Array.from(new Set(orders.map(o=>o.channel)))
+  const newCount    = orders.filter(o=>o.status==='pending').length
+  const hasMapped   = orders.some(o=>o.mapped_status==='mapped'&&o.status==='pending')
+
+  const filtered = orders.filter(o => {
+    if (viewTab==='new' && o.status!=='pending') return false
+    if (cf!=='전체' && o.channel!==cf) return false
+    if (search) return o.order_number.includes(search)||o.customer_name.includes(search)||o.items.some(i=>i.name.includes(search))
+    return true
+  }).sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime())
 
   if (!mounted) return null
 
   return (
-    <div className="pm-page space-y-5">
-      {/* KPI */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {statCards.map(c => (
-          <div key={c.label} className="pm-card p-5" style={{ background: c.bg }}>
-            <p style={{ fontSize:11, fontWeight:800, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
-            <p style={{ fontSize:34, fontWeight:900, color: c.color, marginTop:4, lineHeight:1 }}>
-              {orders.filter(o=>o.status===c.key).length}
-            </p>
-          </div>
+    <div className="pm-page space-y-4">
+
+      {/* ─── 탭 (신규주문 / 전체주문) ─── */}
+      <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+        {([['new','신규주문','#2563eb','#eff6ff','#1d4ed8',newCount],['all','전체주문','#7c3aed','#f5f3ff','#7c3aed',orders.length]] as const).map(([tab, label, border, bg, color, cnt]) => (
+          <button key={tab} onClick={() => setViewTab(tab)}
+            style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 20px', borderRadius:12, border:`2px solid ${viewTab===tab ? border : '#e2e8f0'}`, fontSize:13.5, fontWeight:900, cursor:'pointer', background: viewTab===tab ? bg : 'white', color: viewTab===tab ? color : '#64748b', transition:'all 150ms' }}>
+            <Package size={14}/>
+            {label}
+            <span style={{ background: viewTab===tab ? border : '#e2e8f0', color: viewTab===tab ? 'white' : '#64748b', fontSize:12, fontWeight:900, padding:'2px 8px', borderRadius:99, minWidth:24, textAlign:'center' }}>{cnt}</span>
+          </button>
         ))}
       </div>
 
-      {/* 액션 바 */}
+      {/* ─── 액션 바 ─── */}
       <div className="pm-card p-4">
-        <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
-          {/* 자동주문수집 버튼 */}
-          <button onClick={() => setAutoModal(true)}
-            style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:'pointer',
-              borderColor: autoEnabled ? '#059669' : '#d1d5db',
-              background: autoEnabled ? '#ecfdf5' : 'white',
-              color: autoEnabled ? '#059669' : '#374151',
-            }}>
-            <Clock size={13}/>
-            자동주문수집
-            {autoEnabled && <span style={{ background:'#059669', color:'white', fontSize:10, fontWeight:900, padding:'1px 6px', borderRadius:99 }}>ON</span>}
-          </button>
-          {autoEnabled && autoNextAt && (
-            <span style={{ fontSize:11, color:'#6b7280', fontWeight:700 }}>다음수집 {autoNextAt}</span>
-          )}
-
-          {/* 주문수집 버튼 */}
-          <button onClick={() => { setCollectModal(true); setCollectDone(false); setCollectSelected(new Set()) }}
-            style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 16px', borderRadius:10, border:'none', background:'linear-gradient(135deg,#2563eb,#1d4ed8)', color:'white', fontSize:12.5, fontWeight:800, cursor:'pointer' }}>
-            <RefreshCw size={13}/>주문수집
-          </button>
-
-          {/* 배송준비 버튼 */}
-          <button onClick={handleReadyShipping} disabled={!selectedIds.size}
-            style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 16px', borderRadius:10, border:'none', fontSize:12.5, fontWeight:800, cursor: selectedIds.size ? 'pointer' : 'not-allowed',
-              background: selectedIds.size ? 'linear-gradient(135deg,#7c3aed,#6d28d9)' : '#e5e7eb',
-              color: selectedIds.size ? 'white' : '#9ca3af',
-            }}>
-            <Package size={13}/>배송준비 {selectedIds.size > 0 && `(${selectedIds.size})`}
-          </button>
-
-          {/* 선택 삭제 버튼 */}
-          {selectedIds.size > 0 && (
-            <button onClick={handleDeleteSelected}
-              style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, border:'1.5px solid #fecaca', fontSize:12.5, fontWeight:800, cursor:'pointer', background:'#fff1f2', color:'#dc2626' }}>
-              <Trash2 size={13}/>선택 삭제 ({selectedIds.size})
+        <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
+          {/* 자동주문수집 */}
+          <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+            <button onClick={() => setAutoModal(true)}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:'pointer', borderColor:autoEnabled?'#059669':'#d1d5db', background:autoEnabled?'#ecfdf5':'white', color:autoEnabled?'#059669':'#374151' }}>
+              <Clock size={13}/>자동주문수집
+              {autoEnabled && <span style={{ background:'#059669', color:'white', fontSize:10, fontWeight:900, padding:'1px 6px', borderRadius:99 }}>ON</span>}
             </button>
-          )}
+            {autoEnabled && autoNextAt && <span style={{ fontSize:10.5, color:'#6b7280', fontWeight:700, paddingLeft:4 }}>다음 {autoNextAt}</span>}
+            {autoEnabled && connectedMalls.filter(m=>autoMalls.has(m.key)).length > 0 && (
+              <div style={{ display:'flex', flexWrap:'wrap', gap:3, paddingLeft:4 }}>
+                {connectedMalls.filter(m=>autoMalls.has(m.key)).map(m => (
+                  <span key={m.key} style={{ fontSize:10, fontWeight:700, color:'#059669', background:'#dcfce7', padding:'1px 6px', borderRadius:4 }}>{m.name}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div style={{ width:1, height:34, background:'#e2e8f0', alignSelf:'center' }}/>
+
+          {/* 주문수집 */}
+          <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+            <button onClick={() => { setCollectModal(true); setCollectDone(false); setCollectSel(new Set()) }}
+              style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 16px', borderRadius:10, border:'none', background:'linear-gradient(135deg,#2563eb,#1d4ed8)', color:'white', fontSize:12.5, fontWeight:800, cursor:'pointer' }}>
+              <RefreshCw size={13}/>주문수집
+            </button>
+            {connectedMalls.length > 0 && (
+              <div style={{ display:'flex', flexWrap:'wrap', gap:3, paddingLeft:4 }}>
+                {connectedMalls.map(m => (
+                  <span key={m.key} style={{ fontSize:10, fontWeight:700, color:'#1d4ed8', background:'#dbeafe', padding:'1px 6px', borderRadius:4 }}>{m.name}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* 수동주문등록 */}
+          <button onClick={() => setManualModal(true)}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, border:'1.5px solid #e2e8f0', background:'white', color:'#374151', fontSize:12.5, fontWeight:800, cursor:'pointer' }}>
+            <Upload size={13}/>수동주문등록
+          </button>
+
+          <div style={{ width:1, height:34, background:'#e2e8f0', alignSelf:'center' }}/>
+
+          {/* 매핑하기 */}
+          <button onClick={openMappingModal}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, border:'1.5px solid #a855f7', background:'#faf5ff', color:'#7c3aed', fontSize:12.5, fontWeight:800, cursor:'pointer' }}>
+            <GitMerge size={13}/>매핑하기
+          </button>
+
+          {/* 패킹리스트 */}
+          <button onClick={handlePackingList} disabled={!hasMapped}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:hasMapped?'pointer':'not-allowed', borderColor:hasMapped?'#0891b2':'#e2e8f0', background:hasMapped?'#ecfeff':'#f8fafc', color:hasMapped?'#0e7490':'#9ca3af' }}>
+            <FileSpreadsheet size={13}/>패킹리스트
+          </button>
+
+          {/* 배송준비 */}
+          <button onClick={handleReadyShipping} disabled={!selectedIds.size}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 16px', borderRadius:10, border:'none', fontSize:12.5, fontWeight:800, cursor:selectedIds.size?'pointer':'not-allowed', background:selectedIds.size?'linear-gradient(135deg,#7c3aed,#6d28d9)':'#e5e7eb', color:selectedIds.size?'white':'#9ca3af' }}>
+            <Package size={13}/>배송준비 {selectedIds.size>0 && `(${selectedIds.size})`}
+          </button>
 
           <div style={{ flex:1 }}/>
 
-          {/* 검색 */}
-          <div className="relative" style={{ minWidth:200, flex:1, maxWidth:320 }}>
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color:'#94a3b8' }} />
-            <Input placeholder="주문번호, 고객명, 송장번호..." value={search} onChange={e=>setSearch(e.target.value)} className="pm-input-icon" />
+          {/* 검색 & 채널 필터 */}
+          <div className="relative" style={{ minWidth:180, flex:1, maxWidth:280 }}>
+            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color:'#94a3b8' }}/>
+            <Input placeholder="주문번호, 고객명, 상품명..." value={search} onChange={e=>setSearch(e.target.value)} className="pm-input-icon"/>
           </div>
-          <Select value={sf} onChange={e=>setSf(e.target.value)} style={{ width:130 }}>
-            <option value="전체">전체 상태</option>
-            {Object.entries(ST).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
-          </Select>
           <Select value={cf} onChange={e=>setCf(e.target.value)} style={{ width:120 }}>
             <option value="전체">전체 채널</option>
             {channels.map(v=><option key={v}>{v}</option>)}
           </Select>
-          <Button variant="outline" size="sm"><Download size={13}/>엑셀</Button>
         </div>
       </div>
 
-      {/* 테이블 */}
+      {/* ─── 주문 목록 테이블 ─── */}
       <div className="pm-card overflow-hidden">
         <div className="pm-table-wrap">
           <table className="pm-table">
             <thead>
               <tr>
                 <th style={{ width:36 }}>
-                  <input type="checkbox" checked={filtered.length > 0 && selectedIds.size === filtered.length}
-                    onChange={e => toggleAll(e.target.checked)} />
+                  <input type="checkbox" checked={filtered.length>0 && selectedIds.size===filtered.length} onChange={e=>toggleAll(e.target.checked)}/>
                 </th>
-                <th>주문번호</th>
-                <th>채널</th>
-                <th>주문자</th>
-                <th>상품</th>
-                <th style={{ textAlign:'right' }}>금액</th>
-                <th>상태</th>
-                <th>송장번호</th>
                 <th>주문일시</th>
-                <th></th>
+                <th>쇼핑몰</th>
+                <th>상품명</th>
+                <th>상품약어</th>
+                <th>옵션명</th>
+                <th>주문자</th>
+                <th>상태</th>
+                <th style={{ width:40 }}></th>
               </tr>
             </thead>
             <tbody>
               {filtered.length === 0 && (
                 <tr>
-                  <td colSpan={10} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
+                  <td colSpan={9} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-                      <Download size={36} style={{ opacity:0.2 }} />
+                      <RefreshCw size={36} style={{ opacity:0.2 }}/>
                       <p style={{ fontSize:13.5, fontWeight:700 }}>주문 데이터가 없습니다</p>
-                      <p style={{ fontSize:12, fontWeight:500, color:'#cbd5e1' }}>위의 [주문수집] 버튼을 눌러 주문을 가져오세요</p>
+                      <p style={{ fontSize:12, color:'#cbd5e1' }}>[주문수집] 버튼을 눌러 주문을 가져오세요</p>
                     </div>
                   </td>
                 </tr>
               )}
               {filtered.map(o => {
-                const st = ST[o.status] ?? ST['pending']
-                const isSelected = selectedIds.has(o.id)
+                const isSel    = selectedIds.has(o.id)
+                const isMapped = o.mapped_status === 'mapped'
+                const item     = o.items[0]
                 return (
-                  <tr key={o.id} className="group" style={{ background: isSelected ? '#eff6ff' : o.is_claim ? '#fff7ed' : undefined }}>
-                    <td><input type="checkbox" checked={isSelected} onChange={() => toggleSelect(o.id)} /></td>
+                  <tr key={o.id} className="group" style={{ background: isSel ? '#eff6ff' : undefined }}>
+                    <td><input type="checkbox" checked={isSel} onChange={() => toggleSel(o.id)}/></td>
+                    <td style={{ fontSize:11.5, color:'#64748b', whiteSpace:'nowrap' }}>{formatDateTime(o.created_at)}</td>
                     <td>
-                      <p style={{ fontFamily:'monospace', fontWeight:800, color:'#2563eb', fontSize:12.5 }}>{o.order_number}</p>
-                      <p style={{ fontSize:10.5, color:'#94a3b8', marginTop:1 }}>{o.channel_order_id}</p>
-                      {o.is_claim && <span style={{ fontSize:10, fontWeight:900, color:'#ea580c', background:'#fff7ed', border:'1px solid #fed7aa', padding:'1px 5px', borderRadius:4 }}>클레임</span>}
+                      <span style={{ fontSize:11.5, fontWeight:800, padding:'2px 8px', borderRadius:6, background:'#f8fafc', color:'#475569' }}>{o.channel}</span>
+                    </td>
+                    <td style={{ maxWidth:140 }}>
+                      <p style={{ fontSize:12.5, fontWeight:700, color:'#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item?.name}</p>
+                      {o.items.length>1 && <p style={{ fontSize:10.5, color:'#94a3b8', marginTop:1 }}>외 {o.items.length-1}건</p>}
                     </td>
                     <td>
-                      <span style={{ fontSize:11.5, fontWeight:800, padding:'3px 8px', borderRadius:6, background:'#f8fafc', color:'#475569' }}>{o.channel}</span>
+                      {item?.abbreviation
+                        ? <span style={{ fontSize:12, fontWeight:800, color:'#0e7490', background:'#ecfeff', padding:'2px 8px', borderRadius:6 }}>{item.abbreviation}</span>
+                        : <span style={{ fontSize:11, color:'#94a3b8' }}>—</span>
+                      }
+                    </td>
+                    <td style={{ fontSize:12, color:'#475569', maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                      {item?.option_name || item?.sku || '—'}
                     </td>
                     <td>
                       <p style={{ fontWeight:800, color:'#1e293b', fontSize:12.5 }}>{o.customer_name}</p>
                       <p style={{ fontSize:11, color:'#94a3b8', marginTop:1 }}>{o.customer_phone}</p>
                     </td>
                     <td>
-                      <p style={{ fontSize:12.5, color:'#334155', fontWeight:700, maxWidth:130, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{o.items[0]?.name}</p>
-                      {o.items.length>1&&<p style={{ fontSize:10.5, color:'#94a3b8', marginTop:1 }}>외 {o.items.length-1}건</p>}
-                    </td>
-                    <td style={{ textAlign:'right', fontWeight:800, color:'#1e293b', fontSize:13 }}>{formatCurrency(o.total_amount)}</td>
-                    <td>
-                      <span className={st.cls}>
-                        <span style={{ width:5,height:5,borderRadius:'50%',background:st.dot,display:'inline-block',marginRight:4 }}/>
-                        {st.label}
-                      </span>
-                    </td>
-                    <td>
-                      {o.tracking_number
-                        ? <div><p style={{ fontFamily:'monospace', fontWeight:700, fontSize:11.5, color:'#334155' }}>{o.tracking_number}</p><p style={{ fontSize:10.5,color:'#94a3b8',marginTop:1 }}>{o.carrier}</p></div>
-                        : <button onClick={()=>{setTrackOrder(o);setTrackModal(true);setTrackNum('');setTrackCarrier('CJ대한통운')}} style={{ fontSize:12,fontWeight:700,color:'#2563eb',background:'none',border:'none',cursor:'pointer',padding:0 }}>+ 등록</button>
+                      {isMapped
+                        ? <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, padding:'3px 10px', borderRadius:8, background:'#dcfce7', color:'#15803d' }}>✓ 매핑완료</span>
+                        : <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11.5, fontWeight:800, padding:'3px 10px', borderRadius:8, background:'#fef9c3', color:'#854d0e' }}>신규주문</span>
                       }
                     </td>
-                    <td style={{ fontSize:11.5, color:'#94a3b8', whiteSpace:'nowrap' }}>{formatDateTime(o.created_at)}</td>
                     <td>
-                      <div style={{ display:'flex', gap:4, opacity:0, transition:'opacity 150ms ease' }} className="group-hover:!opacity-100">
-                        <button onClick={()=>setSel(o)} className="pm-btn pm-btn-ghost pm-btn-sm" style={{ width:28, height:28, padding:0, borderRadius:8 }}><Eye size={13}/></button>
-                        <button onClick={()=>{setTrackOrder(o);setTrackModal(true);setTrackNum('');setTrackCarrier('CJ대한통운')}} className="pm-btn pm-btn-ghost pm-btn-sm" style={{ width:28, height:28, padding:0, borderRadius:8, color:'#7c3aed' }}><Truck size={13}/></button>
-                        <button onClick={()=>{ if(confirm('이 주문을 삭제하시겠습니까?')) handleDeleteOrder(o.id) }} className="pm-btn pm-btn-ghost pm-btn-sm" style={{ width:28, height:28, padding:0, borderRadius:8, color:'#dc2626' }}><Trash2 size={13}/></button>
-                      </div>
+                      <button onClick={()=>setSel(o)} className="pm-btn pm-btn-ghost pm-btn-sm" style={{ width:28, height:28, padding:0, borderRadius:8, opacity:0, transition:'opacity 150ms' }} className="group-hover:!opacity-100">
+                        <Eye size={13}/>
+                      </button>
                     </td>
                   </tr>
                 )
@@ -461,208 +563,242 @@ export default function OrdersPage() {
         </div>
       </div>
 
-      {/* ── 주문 상세 ── */}
+      {/* ─── 주문 상세 모달 ─── */}
       {sel && (
         <Modal isOpen={!!sel} onClose={()=>setSel(null)} title="주문 상세" size="lg">
           <div className="space-y-4">
-            <div style={{ display:'flex', alignItems:'flex-start', justifyContent:'space-between' }}>
+            <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
               <div>
                 <p style={{ fontFamily:'monospace', fontWeight:800, color:'#2563eb', fontSize:15 }}>{sel.order_number}</p>
                 <p style={{ fontSize:12, color:'#94a3b8', marginTop:4 }}>{sel.channel} · {sel.channel_order_id}</p>
               </div>
-              <span className={ST[sel.status]?.cls}><span style={{ width:5,height:5,borderRadius:'50%',background:ST[sel.status]?.dot,display:'inline-block',marginRight:4 }}/>{ST[sel.status]?.label}</span>
+              <span style={{ fontSize:11.5, fontWeight:800, padding:'3px 10px', borderRadius:8, background: sel.mapped_status==='mapped'?'#dcfce7':'#fef9c3', color: sel.mapped_status==='mapped'?'#15803d':'#854d0e' }}>
+                {sel.mapped_status==='mapped'?'✓ 매핑완료':'신규주문'}
+              </span>
             </div>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, background:'#f8fafc', borderRadius:14, padding:14 }}>
               {[['주문자',sel.customer_name],['연락처',sel.customer_phone]].map(([k,v])=>(
-                <div key={k}><p style={{ fontSize:10.5,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.06em' }}>{k}</p><p style={{ fontWeight:800,color:'#1e293b',marginTop:3 }}>{v}</p></div>
+                <div key={k}><p style={{ fontSize:10.5, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{k}</p><p style={{ fontWeight:800, color:'#1e293b', marginTop:3 }}>{v}</p></div>
               ))}
-              <div style={{ gridColumn:'1/-1' }}><p style={{ fontSize:10.5,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.06em' }}>배송주소</p><p style={{ fontWeight:700,color:'#334155',marginTop:3 }}>{sel.shipping_address}</p></div>
+              <div style={{ gridColumn:'1/-1' }}><p style={{ fontSize:10.5, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>배송주소</p><p style={{ fontWeight:700, color:'#334155', marginTop:3 }}>{sel.shipping_address}</p></div>
             </div>
             <div className="space-y-2">
               {sel.items.map((item,i)=>(
                 <div key={i} style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'10px 12px', background:'#f8fafc', borderRadius:12 }}>
-                  <div><p style={{ fontWeight:800, color:'#1e293b', fontSize:13 }}>{item.name}</p><p style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>{item.sku} · {item.quantity}개</p></div>
-                  <p style={{ fontWeight:800, color:'#1e293b' }}>{formatCurrency(item.price*item.quantity)}</p>
+                  <div>
+                    <p style={{ fontWeight:800, color:'#1e293b', fontSize:13 }}>{item.name}</p>
+                    <p style={{ fontSize:11, color:'#94a3b8', marginTop:2 }}>
+                      {item.option_name||item.sku} · {item.quantity}개
+                      {item.abbreviation && <span style={{ marginLeft:8, color:'#0e7490', fontWeight:800 }}>약어: {item.abbreviation}</span>}
+                      {item.loca && <span style={{ marginLeft:8, color:'#7c3aed', fontWeight:800 }}>LOCA: {item.loca}</span>}
+                    </p>
+                  </div>
+                  <p style={{ fontWeight:800, color:'#1e293b' }}>₩{(item.price*item.quantity).toLocaleString()}</p>
                 </div>
               ))}
             </div>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'12px 16px', background:'#eff6ff', borderRadius:14 }}>
               <span style={{ fontWeight:800, color:'#334155' }}>총 결제금액</span>
-              <span style={{ fontSize:18, fontWeight:900, color:'#2563eb' }}>{formatCurrency(sel.total_amount)}</span>
+              <span style={{ fontSize:18, fontWeight:900, color:'#2563eb' }}>₩{sel.total_amount.toLocaleString()}</span>
             </div>
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+            <div style={{ display:'flex', justifyContent:'flex-end' }}>
               <Button variant="outline" onClick={()=>setSel(null)}>닫기</Button>
-              {!sel.tracking_number&&<Button onClick={()=>{setSel(null);setTrackOrder(sel);setTrackModal(true);setTrackNum('');setTrackCarrier('CJ대한통운')}}><Truck size={13}/>송장 등록</Button>}
             </div>
           </div>
         </Modal>
       )}
 
-      {/* ── 송장 등록 ── */}
-      {trackOrder && (
-        <Modal isOpen={trackModal} onClose={()=>setTrackModal(false)} title="송장번호 등록">
-          <div className="space-y-4">
-            <div style={{ padding:'12px 14px', background:'#f8fafc', borderRadius:12 }}>
-              <p style={{ fontFamily:'monospace', fontWeight:800, color:'#2563eb' }}>{trackOrder.order_number}</p>
-              <p style={{ fontSize:12.5, color:'#64748b', marginTop:4, fontWeight:700 }}>{trackOrder.customer_name} · {trackOrder.channel}</p>
-            </div>
-            <div><Label>택배사 *</Label>
-              <Select className="w-full" value={trackCarrier} onChange={e=>setTrackCarrier(e.target.value)}>
-                {['CJ대한통운','롯데택배','한진택배','우체국택배','로젠택배','경동택배'].map(v=><option key={v}>{v}</option>)}
-              </Select>
-            </div>
-            <div><Label>송장번호 *</Label><Input placeholder="송장번호 입력" style={{ fontFamily:'monospace' }} value={trackNum} onChange={e=>setTrackNum(e.target.value)} /></div>
-            <div style={{ padding:'12px 14px', background:'#eff6ff', borderRadius:12, fontSize:12, fontWeight:700, color:'#2563eb' }}>
-              📦 등록 시 주문상태 → 배송중 자동 변경 및 채널에 송장 자동 전송
-            </div>
-            <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
-              <Button variant="outline" onClick={()=>setTrackModal(false)}>취소</Button>
-              <Button onClick={() => {
-                if (!trackNum.trim()) return
-                setOrders(prev => {
-                  const updated = prev.map(o => o.id === trackOrder.id ? { ...o, tracking_number:trackNum, carrier:trackCarrier, status:'shipped' } : o)
-                  saveOrders(updated)
-                  return updated
-                })
-                setTrackModal(false)
-              }}><Truck size={13}/>등록 및 전송</Button>
-            </div>
-          </div>
-        </Modal>
-      )}
-
-      {/* ── 주문수집 모달 ── */}
+      {/* ─── 주문수집 모달 ─── */}
       <Modal isOpen={collectModal} onClose={()=>setCollectModal(false)} title="주문 수집" size="md">
         <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
-          {/* 수집 기간 선택 */}
           <div>
             <p style={{ fontSize:12, fontWeight:800, color:'#475569', marginBottom:8 }}>수집 기간</p>
             <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-              {([['1','1일 전'],['3','3일 전'],['5','5일 전'],['7','7일 전']] as const).map(([val, label]) => (
-                <button key={val} onClick={() => setCollectRange(val)}
-                  style={{ padding:'6px 14px', borderRadius:8, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:'pointer',
-                    borderColor: collectRange === val ? '#2563eb' : '#e2e8f0',
-                    background: collectRange === val ? '#eff6ff' : 'white',
-                    color: collectRange === val ? '#1d4ed8' : '#475569',
-                  }}>{label}</button>
+              {([['1','1일 전'],['3','3일 전'],['5','5일 전'],['7','7일 전']] as const).map(([val,label])=>(
+                <button key={val} onClick={()=>setCollectRange(val)} style={{ padding:'6px 14px', borderRadius:8, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:'pointer', borderColor:collectRange===val?'#2563eb':'#e2e8f0', background:collectRange===val?'#eff6ff':'white', color:collectRange===val?'#1d4ed8':'#475569' }}>{label}</button>
               ))}
-              <button onClick={() => setCollectRange('custom')}
-                style={{ padding:'6px 14px', borderRadius:8, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:'pointer',
-                  borderColor: collectRange === 'custom' ? '#2563eb' : '#e2e8f0',
-                  background: collectRange === 'custom' ? '#eff6ff' : 'white',
-                  color: collectRange === 'custom' ? '#1d4ed8' : '#475569',
-                }}>시작일 선택</button>
+              <button onClick={()=>setCollectRange('custom')} style={{ padding:'6px 14px', borderRadius:8, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:'pointer', borderColor:collectRange==='custom'?'#2563eb':'#e2e8f0', background:collectRange==='custom'?'#eff6ff':'white', color:collectRange==='custom'?'#1d4ed8':'#475569' }}>시작일 선택</button>
             </div>
-            {collectRange === 'custom' && (
-              <input type="date" value={collectCustomDate} onChange={e => setCollectCustomDate(e.target.value)}
-                max={new Date().toISOString().slice(0,10)}
-                style={{ marginTop:8, width:'100%', padding:'8px 12px', borderRadius:8, border:'1.5px solid #93c5fd', fontSize:13, fontWeight:700, color:'#1e293b', outline:'none' }}
-              />
+            {collectRange==='custom' && (
+              <input type="date" value={collectCustom} onChange={e=>setCollectCustom(e.target.value)} max={new Date().toISOString().slice(0,10)}
+                style={{ marginTop:8, width:'100%', padding:'8px 12px', borderRadius:8, border:'1.5px solid #93c5fd', fontSize:13, fontWeight:700, color:'#1e293b', outline:'none' }}/>
             )}
-            <p style={{ marginTop:6, fontSize:11.5, color:'#64748b', fontWeight:600 }}>
-              신규 주문(대기중)만 수집됩니다. 배송준비/배송중/배송완료 주문은 수집되지 않습니다.
-            </p>
           </div>
-
-          <p style={{ fontSize:13, color:'#64748b', fontWeight:700 }}>주문을 수집할 쇼핑몰을 선택하세요.</p>
-          {connectedMalls.length === 0 ? (
-            <div style={{ textAlign:'center', padding:'24px', color:'#94a3b8', fontSize:13, fontWeight:700 }}>
-              연동된 쇼핑몰이 없습니다. 쇼핑몰 관리에서 먼저 연동해주세요.
-            </div>
+          <p style={{ fontSize:13, color:'#64748b', fontWeight:700 }}>수집할 쇼핑몰을 선택하세요.</p>
+          {connectedMalls.length===0 ? (
+            <div style={{ textAlign:'center', padding:24, color:'#94a3b8', fontSize:13, fontWeight:700 }}>연동된 쇼핑몰이 없습니다.</div>
           ) : (
             <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {/* 전체 선택 */}
               <label style={{ display:'flex', alignItems:'center', gap:8, padding:'8px 12px', background:'#f8fafc', borderRadius:8, cursor:'pointer', fontWeight:700, fontSize:13 }}>
-                <input type="checkbox"
-                  checked={collectSelected.size === connectedMalls.length}
-                  onChange={e => setCollectSelected(e.target.checked ? new Set(connectedMalls.map(m=>m.key)) : new Set())}
-                />
+                <input type="checkbox" checked={collectSel.size===connectedMalls.length} onChange={e=>setCollectSel(e.target.checked?new Set(connectedMalls.map(m=>m.key)):new Set())}/>
                 전체 선택
               </label>
-              {connectedMalls.map(m => (
-                <label key={m.key} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', border:'1.5px solid', borderRadius:10, cursor:'pointer',
-                  borderColor: collectSelected.has(m.key) ? '#2563eb' : '#e2e8f0',
-                  background: collectSelected.has(m.key) ? '#eff6ff' : 'white',
-                }}>
-                  <input type="checkbox" checked={collectSelected.has(m.key)}
-                    onChange={e => setCollectSelected(prev => { const n=new Set(prev); e.target.checked ? n.add(m.key) : n.delete(m.key); return n })}
-                  />
-                  <img src={`https://www.google.com/s2/favicons?domain=${m.key}&sz=16`} alt={m.name} style={{ width:16, height:16 }} onError={e=>{(e.target as HTMLImageElement).style.display='none'}} />
-                  <span style={{ fontSize:13, fontWeight:800, color: collectSelected.has(m.key) ? '#1d4ed8' : '#334155' }}>{m.name}</span>
+              {connectedMalls.map(m=>(
+                <label key={m.key} style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', border:'1.5px solid', borderRadius:10, cursor:'pointer', borderColor:collectSel.has(m.key)?'#2563eb':'#e2e8f0', background:collectSel.has(m.key)?'#eff6ff':'white' }}>
+                  <input type="checkbox" checked={collectSel.has(m.key)} onChange={e=>setCollectSel(p=>{const n=new Set(p);e.target.checked?n.add(m.key):n.delete(m.key);return n})}/>
+                  <span style={{ fontSize:13, fontWeight:800, color:collectSel.has(m.key)?'#1d4ed8':'#334155' }}>{m.name}</span>
                 </label>
               ))}
             </div>
           )}
-          {collectDone && (
-            <div style={{ padding:'10px 14px', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, fontSize:12.5, fontWeight:800, color:'#15803d' }}>
-              ✅ 주문 수집 완료! 신규 주문이 추가되었습니다.
-            </div>
-          )}
+          {collectDone && <div style={{ padding:'10px 14px', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:10, fontSize:12.5, fontWeight:800, color:'#15803d' }}>✅ 주문 수집 완료!</div>}
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
             <Button variant="outline" onClick={()=>setCollectModal(false)}>닫기</Button>
-            <Button onClick={handleCollect} disabled={!collectSelected.size || collecting || collectDone || (collectRange === 'custom' && !collectCustomDate)}
-              style={{ opacity: (!collectSelected.size || collectDone || (collectRange === 'custom' && !collectCustomDate)) ? 0.5 : 1 }}>
+            <Button onClick={handleCollect} disabled={!collectSel.size||collecting||collectDone}>
               {collecting ? <><RefreshCw size={13} style={{ animation:'spin 0.7s linear infinite' }}/>수집 중...</> : <><Play size={13}/>수집 시작</>}
             </Button>
           </div>
         </div>
       </Modal>
 
-      {/* ── 자동수집 설정 모달 ── */}
+      {/* ─── 자동수집 설정 모달 ─── */}
       <Modal isOpen={autoModal} onClose={()=>setAutoModal(false)} title="자동 주문수집 설정" size="md">
         <div style={{ display:'flex', flexDirection:'column', gap:16 }}>
-          {/* 활성화 토글 */}
           <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'12px 16px', background:'#f8fafc', borderRadius:12 }}>
             <div>
               <p style={{ fontSize:13, fontWeight:800, color:'#1e293b' }}>자동 주문수집</p>
-              <p style={{ fontSize:11.5, color:'#64748b', marginTop:2 }}>설정한 주기로 자동으로 주문을 수집합니다</p>
+              <p style={{ fontSize:11.5, color:'#64748b', marginTop:2 }}>설정한 주기로 자동 수집합니다</p>
             </div>
-            <button onClick={() => setAutoEnabled(!autoEnabled)}
-              style={{ width:44, height:24, borderRadius:12, border:'none', cursor:'pointer', position:'relative',
-                background: autoEnabled ? '#2563eb' : '#e2e8f0', transition:'background 200ms' }}>
-              <span style={{ position:'absolute', top:2, left: autoEnabled ? 22 : 2, width:20, height:20, borderRadius:10, background:'white', transition:'left 200ms', boxShadow:'0 1px 4px rgba(0,0,0,0.2)' }}/>
+            <button onClick={()=>setAutoEnabled(!autoEnabled)} style={{ width:44, height:24, borderRadius:12, border:'none', cursor:'pointer', position:'relative', background:autoEnabled?'#2563eb':'#e2e8f0', transition:'background 200ms' }}>
+              <span style={{ position:'absolute', top:2, left:autoEnabled?22:2, width:20, height:20, borderRadius:10, background:'white', transition:'left 200ms', boxShadow:'0 1px 4px rgba(0,0,0,0.2)' }}/>
             </button>
           </div>
-
-          {/* 수집 주기 */}
           <div>
             <p style={{ fontSize:12, fontWeight:800, color:'#475569', marginBottom:8 }}>수집 주기</p>
             <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-              <Input type="number" min="1" value={autoInterval} onChange={e=>setAutoInterval(e.target.value)} style={{ width:80, textAlign:'center' }} />
+              <Input type="number" min="1" value={autoInterval} onChange={e=>setAutoInterval(e.target.value)} style={{ width:80, textAlign:'center' }}/>
               <Select value={autoUnit} onChange={e=>setAutoUnit(e.target.value as '분'|'시간')} style={{ width:80 }}>
-                <option value="분">분</option>
-                <option value="시간">시간</option>
+                <option value="분">분</option><option value="시간">시간</option>
               </Select>
-              <span style={{ fontSize:12, color:'#94a3b8' }}>마다 수집</span>
+              <span style={{ fontSize:12, color:'#94a3b8' }}>마다</span>
             </div>
           </div>
-
-          {/* 대상 쇼핑몰 */}
           <div>
-            <p style={{ fontSize:12, fontWeight:800, color:'#475569', marginBottom:8 }}>수집 대상 쇼핑몰</p>
-            {connectedMalls.length === 0 ? (
-              <p style={{ fontSize:12, color:'#94a3b8', fontWeight:700 }}>연동된 쇼핑몰이 없습니다.</p>
-            ) : (
+            <p style={{ fontSize:12, fontWeight:800, color:'#475569', marginBottom:8 }}>수집 쇼핑몰</p>
+            {connectedMalls.length===0 ? <p style={{ fontSize:12, color:'#94a3b8' }}>연동된 쇼핑몰이 없습니다.</p> : (
               <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
                 <label style={{ display:'flex', alignItems:'center', gap:8, fontSize:12.5, fontWeight:700, color:'#374151' }}>
-                  <input type="checkbox" checked={autoMalls.size === connectedMalls.length}
-                    onChange={e => setAutoMalls(e.target.checked ? new Set(connectedMalls.map(m=>m.key)) : new Set())} />
+                  <input type="checkbox" checked={autoMalls.size===connectedMalls.length} onChange={e=>setAutoMalls(e.target.checked?new Set(connectedMalls.map(m=>m.key)):new Set())}/>
                   전체 선택
                 </label>
-                {connectedMalls.map(m => (
+                {connectedMalls.map(m=>(
                   <label key={m.key} style={{ display:'flex', alignItems:'center', gap:8, fontSize:12.5, fontWeight:700, color:'#374151' }}>
-                    <input type="checkbox" checked={autoMalls.has(m.key)}
-                      onChange={e => setAutoMalls(prev => { const n=new Set(prev); e.target.checked ? n.add(m.key) : n.delete(m.key); return n })} />
+                    <input type="checkbox" checked={autoMalls.has(m.key)} onChange={e=>setAutoMalls(p=>{const n=new Set(p);e.target.checked?n.add(m.key):n.delete(m.key);return n})}/>
                     {m.name}
                   </label>
                 ))}
               </div>
             )}
           </div>
-
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
             <Button variant="outline" onClick={()=>setAutoModal(false)}>취소</Button>
-            <Button onClick={saveAutoSettings}><CheckSquare size={13}/>설정 저장</Button>
+            <Button onClick={()=>{ localStorage.setItem('pm_auto_collect',JSON.stringify({enabled:autoEnabled,interval:autoInterval,unit:autoUnit,malls:Array.from(autoMalls)})); setAutoModal(false) }}>
+              <CheckSquare size={13}/>설정 저장
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── 수동주문등록 모달 ─── */}
+      <Modal isOpen={manualModal} onClose={()=>{ setManualModal(false); setManualRows([]) }} title="수동 주문등록" size="lg">
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ padding:'12px 16px', background:'#f8fafc', borderRadius:12, fontSize:12.5, fontWeight:700, color:'#475569', lineHeight:1.8 }}>
+            <p style={{ fontWeight:900, color:'#1e293b', marginBottom:4 }}>📁 쇼핑몰 Excel 파일 업로드</p>
+            <p>• 각 쇼핑몰에서 다운로드한 주문 엑셀 파일을 그대로 등록 가능합니다</p>
+            <p>• 인식 가능 열: 주문번호, 쇼핑몰, 주문자/수취인, 상품명, 옵션, 수량, 결제금액, 배송주소 등</p>
+          </div>
+          <div>
+            <input ref={manualFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleManualFile} style={{ display:'none' }}/>
+            <button onClick={()=>manualFileRef.current?.click()}
+              style={{ width:'100%', padding:'20px', border:'2px dashed #93c5fd', borderRadius:12, background:'#f0f9ff', cursor:'pointer', fontSize:13.5, fontWeight:800, color:'#1d4ed8', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}>
+              <Upload size={18}/>파일 선택 (.xlsx / .xls / .csv)
+            </button>
+          </div>
+          {manualRows.length > 0 && (
+            <>
+              <div style={{ padding:'8px 12px', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, fontSize:12.5, fontWeight:800, color:'#15803d' }}>
+                ✅ {manualRows.length}건 파싱 완료 — 아래 목록 확인 후 [등록] 버튼을 누르세요
+              </div>
+              <div style={{ maxHeight:260, overflowY:'auto', border:'1px solid #e2e8f0', borderRadius:10 }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                  <thead>
+                    <tr style={{ background:'#f8fafc' }}>
+                      {['주문번호','쇼핑몰','주문자','상품명','수량','금액'].map(h=>(
+                        <th key={h} style={{ padding:'8px 10px', textAlign:'left', fontWeight:800, color:'#475569', borderBottom:'1px solid #e2e8f0' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {manualRows.map((o,i)=>(
+                      <tr key={i} style={{ borderBottom:'1px solid #f1f5f9' }}>
+                        <td style={{ padding:'7px 10px', fontFamily:'monospace', color:'#2563eb', fontWeight:700 }}>{o.order_number}</td>
+                        <td style={{ padding:'7px 10px', color:'#475569' }}>{o.channel}</td>
+                        <td style={{ padding:'7px 10px', fontWeight:700 }}>{o.customer_name}</td>
+                        <td style={{ padding:'7px 10px', maxWidth:120, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{o.items[0]?.name}</td>
+                        <td style={{ padding:'7px 10px', textAlign:'center' }}>{o.items[0]?.quantity}</td>
+                        <td style={{ padding:'7px 10px', textAlign:'right', fontWeight:700 }}>₩{o.total_amount.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+            <Button variant="outline" onClick={()=>{ setManualModal(false); setManualRows([]) }}>취소</Button>
+            <Button onClick={handleManualRegister} disabled={!manualRows.length}>
+              <Upload size={13}/>등록 ({manualRows.length}건)
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* ─── 매핑 모달 ─── */}
+      <Modal isOpen={mappingModal} onClose={()=>setMappingModal(false)} title="상품 매핑" size="lg">
+        <div style={{ display:'flex', flexDirection:'column', gap:14 }}>
+          <div style={{ padding:'10px 14px', background:'#f8fafc', borderRadius:10, fontSize:12.5, fontWeight:700, color:'#475569', lineHeight:1.7 }}>
+            <p style={{ fontWeight:900, color:'#1e293b', marginBottom:2 }}>📦 상품 매핑 안내</p>
+            <p>• 주문 상품명 기준으로 <b>상품약어</b>와 <b>LOCA(위치코드)</b>를 매핑합니다</p>
+            <p>• 한 번 매핑하면 저장되어 다음 수집 시 자동으로 적용됩니다</p>
+            <p>• 패킹리스트 다운로드 시 LOCA 기준으로 자동 정렬됩니다</p>
+          </div>
+          {mappingRows.length === 0 ? (
+            <div style={{ textAlign:'center', padding:24, color:'#94a3b8', fontSize:13, fontWeight:700 }}>신규주문(대기중) 상품이 없습니다.</div>
+          ) : (
+            <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+              {/* 헤더 */}
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 130px 120px 80px', gap:8, padding:'8px 12px', background:'#f1f5f9', borderRadius:8 }}>
+                {['주문 상품명','상품약어 *','LOCA','매핑상태'].map(h=>(
+                  <span key={h} style={{ fontSize:11, fontWeight:800, color:'#475569', textTransform:'uppercase', letterSpacing:'0.06em' }}>{h}</span>
+                ))}
+              </div>
+              {/* 매핑 행들 */}
+              <div style={{ maxHeight:380, overflowY:'auto', display:'flex', flexDirection:'column', gap:4 }}>
+                {mappingRows.map((row, i) => (
+                  <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 130px 120px 80px', gap:8, padding:'8px 12px', borderRadius:8, border:'1.5px solid', borderColor:row.abbr?'#a5f3fc':'#e2e8f0', background:row.abbr?'#ecfeff':'white', alignItems:'center' }}>
+                    <span style={{ fontSize:12.5, fontWeight:700, color:'#334155', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }} title={row.name}>{row.name}</span>
+                    <input value={row.abbr} onChange={e=>setMappingRows(p=>p.map((r,j)=>j===i?{...r,abbr:e.target.value,matched:!!e.target.value}:r))}
+                      placeholder="약어 입력 *" style={{ padding:'6px 10px', borderRadius:8, border:'1.5px solid', borderColor:row.abbr?'#0891b2':'#fca5a5', fontSize:12.5, fontWeight:700, outline:'none', color:'#1e293b' }}/>
+                    <input value={row.loca} onChange={e=>setMappingRows(p=>p.map((r,j)=>j===i?{...r,loca:e.target.value}:r))}
+                      placeholder="예) A-01" style={{ padding:'6px 10px', borderRadius:8, border:'1.5px solid #e2e8f0', fontSize:12.5, fontWeight:700, outline:'none', color:'#1e293b' }}/>
+                    <span style={{ fontSize:11.5, fontWeight:800, padding:'2px 8px', borderRadius:6, background:row.abbr?'#dcfce7':'#fef9c3', color:row.abbr?'#15803d':'#854d0e', textAlign:'center' }}>
+                      {row.abbr?'완료':'미완료'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+            <span style={{ fontSize:12, color:'#64748b', fontWeight:700 }}>
+              완료 {mappingRows.filter(r=>r.abbr).length} / 전체 {mappingRows.length}건
+            </span>
+            <div style={{ display:'flex', gap:8 }}>
+              <Button variant="outline" onClick={()=>setMappingModal(false)}>취소</Button>
+              <Button onClick={handleSaveMapping} disabled={!mappingRows.some(r=>r.abbr)}>
+                <GitMerge size={13}/>매핑 저장
+              </Button>
+            </div>
           </div>
         </div>
       </Modal>
