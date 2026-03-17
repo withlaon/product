@@ -5,7 +5,7 @@ import { Modal } from '@/components/ui/modal'
 import {
   RefreshCw, Zap, Plus, CheckCircle2, Unlink,
   Tag, Truck, Search, X, BookOpen, Pencil, Trash2, Save, ChevronRight,
-  Wifi, XCircle,
+  Wifi, XCircle, Server, Copy, ExternalLink,
 } from 'lucide-react'
 
 /* ─── 전체 쇼핑몰 정의 ────────────────────────────────────────────── */
@@ -815,6 +815,26 @@ export default function ChannelsPage() {
   const [testStatus, setTestStatus] = useState<Record<string,'idle'|'testing'|'ok'|'fail'>>({})
   const [testMsg,    setTestMsg]    = useState<Record<string,string>>({})
 
+  /* ── 쿠팡 서버 IP 확인 ── */
+  const [serverIp,      setServerIp]      = useState<string>('')
+  const [serverIpState, setServerIpState] = useState<'idle'|'loading'|'done'|'error'>('idle')
+
+  const fetchServerIp = async () => {
+    setServerIpState('loading')
+    try {
+      const res  = await fetch('/api/server-ip')
+      const data = await res.json()
+      if (data.success && data.server_ip) {
+        setServerIp(data.server_ip)
+        setServerIpState('done')
+      } else {
+        setServerIpState('error')
+      }
+    } catch {
+      setServerIpState('error')
+    }
+  }
+
   useEffect(() => { if (typeof window !== 'undefined') { setChannels(loadChannels()); setMounted(true) } }, [])
 
   /* ── OAuth postMessage 수신 (팝업 → 부모 창) ── */
@@ -1275,6 +1295,101 @@ export default function ChannelsPage() {
                         )
                       })}
                     </div>
+                  </div>
+                )}
+
+                {/* 쿠팡 전용: 서버 IP 확인 및 화이트리스트 안내 */}
+                {apiTarget?.key === 'coupang' && (
+                  <div style={{
+                    background: '#f0f9ff', border: '1.5px solid #bae6fd',
+                    borderRadius: 10, padding: '12px 14px',
+                  }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:8 }}>
+                      <Server size={14} style={{ color:'#0369a1', flexShrink:0 }}/>
+                      <span style={{ fontSize:12.5, fontWeight:700, color:'#0369a1' }}>
+                        쿠팡 IP 화이트리스트 등록 (필수)
+                      </span>
+                    </div>
+                    <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.6, marginBottom:10 }}>
+                      쿠팡 OPEN API는 등록된 IP에서만 호출이 가능합니다.
+                      아래 버튼으로 현재 서버 IP를 확인 후 Wing → OPEN API → IP 관리에 등록하세요.
+                    </p>
+
+                    {/* IP 확인 버튼 + 결과 */}
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <button
+                        onClick={fetchServerIp}
+                        disabled={serverIpState === 'loading'}
+                        style={{
+                          display:'flex', alignItems:'center', gap:5,
+                          padding:'5px 12px', borderRadius:6, fontSize:12,
+                          fontWeight:700, cursor: serverIpState === 'loading' ? 'not-allowed' : 'pointer',
+                          background: serverIpState === 'done' ? '#0369a1' : 'white',
+                          color:      serverIpState === 'done' ? 'white'    : '#0369a1',
+                          border:'1.5px solid #0369a1', transition:'all .15s',
+                        }}>
+                        {serverIpState === 'loading'
+                          ? <><RefreshCw size={12} style={{ animation:'spin 1s linear infinite' }}/>확인 중...</>
+                          : <><Server size={12}/>서버 IP 확인</>
+                        }
+                      </button>
+
+                      {serverIpState === 'done' && serverIp && (
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <code style={{
+                            background:'#1e3a5f', color:'#7dd3fc',
+                            padding:'4px 10px', borderRadius:5,
+                            fontSize:13, fontWeight:700, letterSpacing:'0.04em',
+                            fontFamily:'monospace',
+                          }}>{serverIp}</code>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(serverIp)}
+                            style={{
+                              display:'flex', alignItems:'center', gap:3,
+                              padding:'4px 8px', borderRadius:5, fontSize:11,
+                              fontWeight:600, cursor:'pointer',
+                              background:'white', color:'#0369a1',
+                              border:'1px solid #bae6fd',
+                            }}>
+                            <Copy size={11}/>복사
+                          </button>
+                        </div>
+                      )}
+
+                      {serverIpState === 'error' && (
+                        <span style={{ fontSize:12, color:'#dc2626' }}>
+                          IP 확인 실패 — 배포 환경에서 다시 시도하세요
+                        </span>
+                      )}
+                    </div>
+
+                    {/* IP 등록 안내 단계 */}
+                    {serverIpState === 'done' && (
+                      <div style={{
+                        marginTop:10, padding:'8px 10px',
+                        background:'#e0f2fe', borderRadius:7,
+                        fontSize:11.5, color:'#0c4a6e', lineHeight:1.8,
+                      }}>
+                        <strong>등록 방법:</strong><br/>
+                        ① wing.coupang.com → 로그인<br/>
+                        ② [자동화 관리] → [OPEN API] → [IP 관리] 클릭<br/>
+                        ③ [IP 추가] → 위 IP 주소 붙여넣기 후 저장<br/>
+                        <span style={{ color:'#7c3aed', fontWeight:600 }}>
+                          ⚠ Vercel 무료 플랜은 배포 시 IP가 변경될 수 있습니다.
+                          IP 차단 시 이 버튼으로 새 IP 확인 후 재등록하세요.
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Wing 바로가기 */}
+                    <a href="https://wing.coupang.com" target="_blank" rel="noreferrer"
+                      style={{
+                        display:'inline-flex', alignItems:'center', gap:4,
+                        marginTop:8, fontSize:11.5, color:'#0369a1', textDecoration:'none',
+                        fontWeight:600,
+                      }}>
+                      <ExternalLink size={11}/>쿠팡 WING 바로가기
+                    </a>
                   </div>
                 )}
 

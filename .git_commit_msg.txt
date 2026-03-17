@@ -1,6 +1,9 @@
-fix: 쿠팡 HMAC 날짜 버그, Cafe24 코드만료, 패션플러스 404, oauthPending 버그 수정
+feat: ESM(옥션/지마켓) 안내 개선 + 쿠팡 HMAC 완전 수정 + 서버IP API
 
-- coupang: HMAC datetime slice(0,15)+Z → slice(0,16) 수정 (16자리 올바른 포맷)
-- oauth/page: Cafe24 코드 교환 즉시 실행 (세션 조회 await 제거, 백그라운드 처리)
-- marketplaces/route: fashionplus를 LIMITED_API_MALLS에 추가 (SCM 방식, 공개 API 없음)
-- channels: oauthPending이 일반 쇼핑몰 저장 버튼에도 표시되는 버그 수정
+- 옥션/지마켓: ESM 직접 API 불가 안내 및 웹자동화 방식 가이드 전환
+- 옥션/지마켓 커넥터: notSupported 패턴으로 명확한 오류 메시지 제공
+- 쿠팡: 자체개발(직접입력) 방식 안내 및 IP 화이트리스트 등록 절차 추가
+- 쿠팡 HMAC: signed-date 생성 방식 개선 및 날짜 포맷 T00:00:00 적용
+- 쿠팡 폼: 로그인 필드 제거 (API Key 방식에 불필요)
+- LIMITED_API_MALLS: 옥션/지마켓 추가 및 라벨 개선
+- /api/server-ip: Vercel 서버 IP 확인 엔드포인트 신규 추가
