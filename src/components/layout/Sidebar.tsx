@@ -30,10 +30,10 @@ const navGroups = [
   {
     label: '판매 · 고객',
     items: [
-      { label: '주문수집', href: '/orders', icon: ShoppingCart },
-      { label: '주문내역', href: '/order-history', icon: BarChart3 },
-      { label: 'CS관리', href: '/cs', icon: MessageSquare },
-      { label: '배송/송장등록', href: '/shipping', icon: Truck },
+      { label: '주문수집',     href: '/orders',        icon: ShoppingCart },
+      { label: 'CS관리',       href: '/cs',            icon: MessageSquare },
+      { label: '배송/송장등록', href: '/shipping',      icon: Truck },
+      { label: '주문내역',     href: '/order-history', icon: BarChart3 },
     ],
   },
   {

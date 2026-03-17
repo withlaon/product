@@ -6,10 +6,11 @@ import { Select } from '@/components/ui/select'
 import { Modal } from '@/components/ui/modal'
 import { formatDateTime } from '@/lib/utils'
 import {
-  Search, RefreshCw, Play, Clock, X, CheckSquare, Package,
-  GitMerge, FileSpreadsheet, Upload, Truck, Eye,
+  Search, RefreshCw, Play, Clock, CheckSquare, Package,
+  GitMerge, FileSpreadsheet, Upload, Eye,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
+import { supabase } from '@/lib/supabase'
 
 /* ── Storage Keys ── */
 export const CHANNEL_STORAGE_KEY  = 'pm_mall_channels_v5'
@@ -134,14 +135,16 @@ export default function OrdersPage() {
     setMapping(rawMapping)
     setOrders(rawOrders.map(o => applyMapping(o, rawMapping)))
     try {
-      // v5 → v4 → v3 순으로 폴백
-      const raw = localStorage.getItem('pm_mall_channels_v5')
-           || localStorage.getItem('pm_mall_channels_v4')
-           || localStorage.getItem('pm_mall_channels_v3')
-      if (raw) {
-        const parsed: {key:string;name:string;active:boolean}[] = JSON.parse(raw)
-        setConnectedMalls(Array.isArray(parsed) ? parsed.filter(c=>c.active).map(c=>({key:c.key,name:c.name})) : [])
+      // v3 → v4 → v5 순으로 병합: 더 새로운 버전이 같은 key를 덮어씀
+      // → 어느 버전이든 active:true 인 쇼핑몰이 모두 표시됨
+      const parse = (k: string): {key:string;name:string;active:boolean}[] | null => {
+        try { const r = localStorage.getItem(k); return r ? JSON.parse(r) : null } catch { return null }
       }
+      const mallMap = new Map<string, {key:string;name:string;active:boolean}>()
+      ;[parse('pm_mall_channels_v3'), parse('pm_mall_channels_v4'), parse('pm_mall_channels_v5')]
+        .forEach(arr => arr?.forEach(c => mallMap.set(c.key, c)))
+      const active = Array.from(mallMap.values()).filter(c => c.active).map(c => ({key:c.key, name:c.name}))
+      setConnectedMalls(active)
     } catch {}
     try {
       const saved = localStorage.getItem('pm_auto_collect')
@@ -247,8 +250,23 @@ export default function OrdersPage() {
     setMappingModal(true)
   }
 
-  /* 매핑 저장 */
-  const handleSaveMapping = () => {
+  /* pm_channel_mappings_v1 로드/저장 헬퍼 */
+  const CHANNEL_MAPPING_KEY = 'pm_channel_mappings_v1'
+  type ChannelMappedRow = {
+    mall_product_id: string; mall_product_name: string; mall_option: string
+    matched_product_id: string|null; matched_product_name: string|null
+    matched_option: string|null; matched_barcode: string|null
+    mall_price: number|null; status: 'matched'|'unmatched'
+  }
+  const loadChannelMappings = (): Record<string, ChannelMappedRow[]> => {
+    try { const r = localStorage.getItem(CHANNEL_MAPPING_KEY); return r ? JSON.parse(r) : {} } catch { return {} }
+  }
+  const saveChannelMappings = (d: Record<string, ChannelMappedRow[]>) => {
+    try { localStorage.setItem(CHANNEL_MAPPING_KEY, JSON.stringify(d)) } catch {}
+  }
+
+  /* 매핑 저장 + 매핑관리탭·상품관리탭 동기화 */
+  const handleSaveMapping = async () => {
     const current = loadMapping()
     const updated: MappingStore = { ...current }
     mappingRows.forEach(r => { if (r.abbr) updated[r.name] = { abbreviation: r.abbr, loca: r.loca } })
@@ -259,7 +277,86 @@ export default function OrdersPage() {
       saveOrders(applied); return applied
     })
     setMappingModal(false)
-    alert('매핑이 저장되었습니다.')
+
+    // ── 매핑관리탭(pm_channel_mappings_v1) + 상품관리탭(registered_malls) 동기화 ──
+    const channelMappings = loadChannelMappings()
+    const toSync = mappingRows.filter(r => r.abbr)
+
+    for (const row of toSync) {
+      // 이 item name 을 포함한 신규주문의 채널 목록 수집
+      const channelNames = Array.from(new Set(
+        orders.filter(o => o.status === 'pending' && o.items.some(i => i.name === row.name))
+              .map(o => o.channel)
+      ))
+
+      // 채널명 → key 변환 (connectedMalls 활용)
+      const channelKeys = channelNames.map(name => ({
+        name,
+        key: connectedMalls.find(m => m.name === name)?.key || name,
+      }))
+
+      // Supabase에서 abbr로 상품 검색
+      let matched: {id:string;name:string;options:{name:string;barcode:string}[]} | null = null
+      try {
+        const { data } = await supabase.from('pm_products')
+          .select('id,name,options')
+          .eq('abbr', row.abbr)
+          .limit(1)
+          .maybeSingle()
+        if (data) matched = data as typeof matched
+      } catch {}
+      // abbr로 못 찾으면 name으로 재시도
+      if (!matched) {
+        try {
+          const { data } = await supabase.from('pm_products')
+            .select('id,name,options')
+            .ilike('name', `%${row.name}%`)
+            .limit(1)
+            .maybeSingle()
+          if (data) matched = data as typeof matched
+        } catch {}
+      }
+
+      const matchedOpt = matched?.options?.[0] ?? null
+
+      // pm_channel_mappings_v1 업데이트
+      for (const ch of channelKeys) {
+        const existing = channelMappings[ch.key] || []
+        const idx = existing.findIndex(r => r.mall_product_name === row.name)
+        const newRow: ChannelMappedRow = {
+          mall_product_id: '',
+          mall_product_name: row.name,
+          mall_option: orders.find(o => o.channel === ch.name && o.items.some(i => i.name === row.name))
+            ?.items.find(i => i.name === row.name)?.option_name || '',
+          matched_product_id:   matched?.id   || null,
+          matched_product_name: matched?.name || null,
+          matched_option:       matchedOpt?.name   || null,
+          matched_barcode:      matchedOpt?.barcode || null,
+          mall_price: null,
+          status: matched ? 'matched' : 'unmatched',
+        }
+        if (idx >= 0) existing[idx] = newRow
+        else existing.push(newRow)
+        channelMappings[ch.key] = existing
+      }
+
+      // Supabase registered_malls 업데이트
+      if (matched) {
+        try {
+          const { data: prodData } = await supabase.from('pm_products')
+            .select('registered_malls').eq('id', matched.id).single()
+          const current: string[] = prodData?.registered_malls ?? []
+          const toAdd = channelKeys.map(c => c.name).filter(n => !current.includes(n))
+          if (toAdd.length > 0) {
+            await supabase.from('pm_products')
+              .update({ registered_malls: [...current, ...toAdd] })
+              .eq('id', matched.id)
+          }
+        } catch {}
+      }
+    }
+    saveChannelMappings(channelMappings)
+    alert('매핑이 저장되었습니다. 매핑관리탭과 상품관리탭에도 반영되었습니다.')
   }
 
   /* 패킹리스트 다운로드 */
@@ -412,38 +509,22 @@ export default function OrdersPage() {
       <div className="pm-card p-4">
         <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'flex-start' }}>
           {/* 자동주문수집 */}
-          <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+          <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
             <button onClick={() => setAutoModal(true)}
               style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderRadius:10, border:'1.5px solid', fontSize:12.5, fontWeight:800, cursor:'pointer', borderColor:autoEnabled?'#059669':'#d1d5db', background:autoEnabled?'#ecfdf5':'white', color:autoEnabled?'#059669':'#374151' }}>
               <Clock size={13}/>자동주문수집
               {autoEnabled && <span style={{ background:'#059669', color:'white', fontSize:10, fontWeight:900, padding:'1px 6px', borderRadius:99 }}>ON</span>}
             </button>
-            {autoEnabled && autoNextAt && <span style={{ fontSize:10.5, color:'#6b7280', fontWeight:700, paddingLeft:4 }}>다음 {autoNextAt}</span>}
-            {autoEnabled && connectedMalls.filter(m=>autoMalls.has(m.key)).length > 0 && (
-              <div style={{ display:'flex', flexWrap:'wrap', gap:3, paddingLeft:4 }}>
-                {connectedMalls.filter(m=>autoMalls.has(m.key)).map(m => (
-                  <span key={m.key} style={{ fontSize:10, fontWeight:700, color:'#059669', background:'#dcfce7', padding:'1px 6px', borderRadius:4 }}>{m.name}</span>
-                ))}
-              </div>
-            )}
+            {autoEnabled && autoNextAt && <span style={{ fontSize:10.5, color:'#6b7280', fontWeight:700, paddingLeft:2 }}>다음 {autoNextAt}</span>}
           </div>
 
           <div style={{ width:1, height:34, background:'#e2e8f0', alignSelf:'center' }}/>
 
           {/* 주문수집 */}
-          <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
-            <button onClick={() => { setCollectModal(true); setCollectDone(false); setCollectSel(new Set()) }}
-              style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 16px', borderRadius:10, border:'none', background:'linear-gradient(135deg,#2563eb,#1d4ed8)', color:'white', fontSize:12.5, fontWeight:800, cursor:'pointer' }}>
-              <RefreshCw size={13}/>주문수집
-            </button>
-            {connectedMalls.length > 0 && (
-              <div style={{ display:'flex', flexWrap:'wrap', gap:3, paddingLeft:4 }}>
-                {connectedMalls.map(m => (
-                  <span key={m.key} style={{ fontSize:10, fontWeight:700, color:'#1d4ed8', background:'#dbeafe', padding:'1px 6px', borderRadius:4 }}>{m.name}</span>
-                ))}
-              </div>
-            )}
-          </div>
+          <button onClick={() => { setCollectModal(true); setCollectDone(false); setCollectSel(new Set()) }}
+            style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 16px', borderRadius:10, border:'none', background:'linear-gradient(135deg,#2563eb,#1d4ed8)', color:'white', fontSize:12.5, fontWeight:800, cursor:'pointer' }}>
+            <RefreshCw size={13}/>주문수집
+          </button>
 
           {/* 수동주문등록 */}
           <button onClick={() => setManualModal(true)}
