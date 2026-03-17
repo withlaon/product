@@ -1,7 +1,7 @@
-fix: lotteon connection form and guide updated with IP direct-input method
+fix: SSG connection form and guide updated with IP direct-input method
 
-- Required: login ID/PW + vendor code + auth key
-- Optional: sub-vendor code, commission rate
-- Added server IP check block (red theme) in modal
-- Guide: 4-step process with IP registration before auth key issuance
+- Required: login ID/PW + API auth key (UUID)
+- Optional: SHOP ID, department store flag (Y/blank)
+- Added purple IP registration block for both ops and test server IPs
+- Guide: 3-step process with single direct-input IP registration
 - Removed: Partner ID / API Key / Secret Key fields

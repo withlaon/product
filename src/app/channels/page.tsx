@@ -145,11 +145,13 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'site_name', label:'백화점 여부',        placeholder:'신세계백화점 입점 시 Y 입력, 아닌 경우 공란',           type:'text',     section:'api',   required:false },
   ],
   // 토스쇼핑: Partner Key + Secret Key + Store ID
+  // 토스쇼핑: 자체개발 방식 — 쇼핑몰ID/PW + OpenAPI 키 필수 / Store ID 선택
+  // IP 등록: 셀러센터 [자체개발] → [키발급] → OpenAPI 키 발급 시 IP 입력 (줄바꿈/콤마 구분)
   toss: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id',    label:'Store ID',      placeholder:'토스쇼핑 스토어 ID',          type:'text',     section:'api', required:true  },
-    { key:'api_key',      label:'Partner Key',   placeholder:'파트너센터 승인 후 발급',     type:'password', section:'api', required:true  },
-    { key:'api_secret',   label:'Secret Key',    placeholder:'파트너센터 승인 후 발급',     type:'password', section:'api', required:true  },
+    { key:'login_id',  label:'쇼핑몰ID',      placeholder:'토스쇼핑 셀러센터 로그인 ID',                       type:'text',     section:'login', required:true  },
+    { key:'login_pw',  label:'PASSWORD',       placeholder:'셀러센터 비밀번호',                                 type:'password', section:'login', required:true  },
+    { key:'api_key',   label:'OpenAPI 키',     placeholder:'셀러센터 [자체개발 → 키발급] 에서 발급된 OpenAPI 키', type:'password', section:'api',   required:true  },
+    { key:'seller_id', label:'Store ID',       placeholder:'토스쇼핑 스토어 ID (선택)',                          type:'text',     section:'api',   required:false },
   ],
   // 카카오톡스토어: 채널 ID + REST API Key + Admin Key
   kakaostore: [
@@ -581,22 +583,33 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{ label:'제이슨딜', url:'https://www.jasondeal.com' }],
   },
   toss: {
-    title:'토스쇼핑 파트너 API 연동', authType:'Partner Key + Secret + Store ID',
-    note:'토스 파트너센터에서 API 연동 신청 후 승인을 받아야 합니다.',
-    warning:'⚠ 모바일 중심 플랫폼 — 이미지 품질과 리뷰 영향이 큽니다.',
+    title:'토스쇼핑 OpenAPI 연동 (자체개발 방식)', authType:'쇼핑몰 ID/PW + OpenAPI 키',
+    note:'토스쇼핑 셀러센터에서 [자체개발] → [키발급]으로 OpenAPI 키를 발급합니다. 키 발급 시 이 프로그램의 서버 IP를 먼저 등록해야 합니다.',
+    warning:'⚠ IP 주소를 등록하지 않으면 API 호출이 차단됩니다 · 여러 IP는 줄바꿈 또는 콤마로 구분 입력',
     required:[
-      { label:'로그인 ID/PW', desc:'토스쇼핑 판매자 로그인 계정', badge:'required' },
-      { label:'Store ID', desc:'토스쇼핑 스토어 ID', badge:'required' },
-      { label:'Partner Key', desc:'파트너센터 승인 후 발급', badge:'required' },
-      { label:'Secret Key', desc:'파트너센터 승인 후 발급', badge:'required' },
+      { label:'쇼핑몰ID', desc:'토스쇼핑 셀러센터 로그인 ID', badge:'required' },
+      { label:'PASSWORD', desc:'셀러센터 비밀번호', badge:'required' },
+      { label:'OpenAPI 키', desc:'셀러센터 → 자체개발 → [키발급] 클릭 → IP 등록 후 발급되는 OpenAPI 키', badge:'required' },
+      { label:'Store ID', desc:'토스쇼핑 스토어 ID (선택사항)', badge:'optional' },
     ],
     steps:[
-      '① partners.toss.im 접속 후 로그인',
-      '② [API 연동 신청] 클릭 → 승인 대기',
-      '③ 승인 후 Partner Key / Secret Key 발급 확인',
-      '④ 프로그램에 로그인 ID/PW + Store ID + Partner Key + Secret Key 입력 후 저장',
+      '━━ STEP 1: 자체개발 OpenAPI 키 발급 ━━',
+      '① shop.toss.im 셀러센터 접속 후 로그인',
+      '② 좌측 메뉴 또는 설정에서 [자체개발] 선택',
+      '③ [키발급] 버튼 클릭 → OpenAPI 키 발급 화면 열림',
+      '④ "API를 사용할 IP 주소를 입력해주세요" 란에',
+      '   아래 [서버 IP 확인] 버튼으로 확인한 Vercel IP 입력',
+      '   (여러 IP는 줄바꿈 또는 콤마로 구분 가능)',
+      '⑤ 입력 완료 후 [발급] 또는 [확인] 클릭',
+      '⑥ 발급된 OpenAPI 키 복사',
+      '━━ STEP 2: 프로그램 연동 ━━',
+      '⑦ 쇼핑몰ID / PASSWORD 입력',
+      '⑧ OpenAPI 키 붙여넣기',
+      '⑨ [저장 및 연동 테스트] 클릭',
     ],
-    links:[{ label:'토스 파트너센터', url:'https://partners.toss.im' }],
+    links:[
+      { label:'토스쇼핑 셀러센터', url:'https://shop.toss.im' },
+    ],
   },
   kakaostore: {
     title:'카카오톡스토어(톡스토어) API 연동', authType:'REST API Key + Admin Key',
@@ -1507,6 +1520,70 @@ export default function ChannelsPage() {
                     <a href="https://apicenter.commerce.naver.com" target="_blank" rel="noreferrer"
                       style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#15803d', textDecoration:'none', fontWeight:600 }}>
                       <ExternalLink size={11}/>네이버 커머스 API센터 바로가기
+                    </a>
+                  </div>
+                )}
+
+                {/* 토스쇼핑 전용: 자체개발 OpenAPI 키 발급 시 IP 입력 안내 */}
+                {apiTarget?.key === 'toss' && (
+                  <div style={{ background:'#eff6ff', border:'1.5px solid #93c5fd', borderRadius:10, padding:'12px 14px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                      <Server size={14} style={{ color:'#1d4ed8', flexShrink:0 }}/>
+                      <span style={{ fontSize:12.5, fontWeight:700, color:'#1d4ed8' }}>
+                        OpenAPI 키 발급 시 서버 IP 등록 필수
+                      </span>
+                    </div>
+                    <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.6, marginBottom:10 }}>
+                      셀러센터 [자체개발 → 키발급] 화면의<br/>
+                      <strong>"API를 사용할 IP 주소를 입력해주세요"</strong> 란에 아래 IP를 입력하세요.<br/>
+                      <span style={{ color:'#6b7280', fontSize:11 }}>(여러 IP는 줄바꿈 또는 콤마로 구분)</span>
+                    </p>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:10 }}>
+                      <button
+                        onClick={fetchServerIp}
+                        disabled={serverIpState === 'loading'}
+                        style={{
+                          display:'flex', alignItems:'center', gap:5,
+                          padding:'5px 12px', borderRadius:6, fontSize:12, fontWeight:700,
+                          cursor: serverIpState === 'loading' ? 'not-allowed' : 'pointer',
+                          background: serverIpState === 'done' ? '#1d4ed8' : 'white',
+                          color:      serverIpState === 'done' ? 'white'    : '#1d4ed8',
+                          border:'1.5px solid #1d4ed8', transition:'all .15s',
+                        }}>
+                        {serverIpState === 'loading'
+                          ? <><RefreshCw size={12} style={{ animation:'spin 1s linear infinite' }}/>확인 중...</>
+                          : <><Server size={12}/>서버(Vercel) IP 확인</>
+                        }
+                      </button>
+                      {serverIpState === 'done' && serverIp && (
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <code style={{ background:'#1e3a8a', color:'#93c5fd', padding:'4px 10px', borderRadius:5, fontSize:13, fontWeight:700, fontFamily:'monospace' }}>{serverIp}</code>
+                          <button onClick={() => navigator.clipboard.writeText(serverIp)}
+                            style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', borderRadius:5, fontSize:11, fontWeight:600, cursor:'pointer', background:'white', color:'#1d4ed8', border:'1px solid #93c5fd' }}>
+                            <Copy size={11}/>복사
+                          </button>
+                        </div>
+                      )}
+                      {serverIpState === 'error' && <span style={{ fontSize:12, color:'#dc2626' }}>IP 확인 실패 — 배포 후 재시도</span>}
+                    </div>
+                    {serverIpState === 'done' && (
+                      <div style={{ background:'white', border:'1px solid #93c5fd', borderRadius:7, padding:'8px 10px', marginBottom:10 }}>
+                        <p style={{ fontSize:11.5, fontWeight:700, color:'#1d4ed8', marginBottom:4 }}>📋 키 발급 순서</p>
+                        <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.8 }}>
+                          ① 셀러센터 → [자체개발] → [키발급] 클릭<br/>
+                          ② IP 입력란에 <strong style={{ fontFamily:'monospace', color:'#1d4ed8' }}>{serverIp}</strong> 입력<br/>
+                          ③ [발급] 클릭 → OpenAPI 키 복사<br/>
+                          ④ 위 [OpenAPI 키] 입력란에 붙여넣기
+                        </p>
+                      </div>
+                    )}
+                    <div style={{ padding:'7px 10px', background:'#dbeafe', borderRadius:7, fontSize:11.5, color:'#1e3a8a', lineHeight:1.7 }}>
+                      <span style={{ color:'#7c3aed', fontWeight:600 }}>⚠ Vercel 무료 플랜은 배포 시 IP가 변경될 수 있습니다.</span><br/>
+                      IP 변경 시 셀러센터에서 키를 재발급해야 합니다.
+                    </div>
+                    <a href="https://shop.toss.im" target="_blank" rel="noreferrer"
+                      style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#1d4ed8', textDecoration:'none', fontWeight:600 }}>
+                      <ExternalLink size={11}/>토스쇼핑 셀러센터 바로가기
                     </a>
                   </div>
                 )}
