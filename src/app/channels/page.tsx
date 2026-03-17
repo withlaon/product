@@ -73,9 +73,14 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_key', label:'API Token', placeholder:'my.a-bly.com → 기본 정보 → API Token 복사', type:'password', section:'api', required:true },
   ],
   // 지그재그: 로그인 + API Key + API Secret
-  // 지그재그: Access Key(인증키) 하나만 — 카카오스타일 파트너센터 [내 스토어 정보 관리 > API 인증키 관리]
+  // 지그재그(카카오스타일): 쇼핑몰 ID/PW + Access Key + Secret Key 필수 / SHOP ID + 수수료 선택
   zigzag: [
-    { key:'api_key', label:'API 인증키 (Access Key)', placeholder:'카카오스타일 파트너센터 → API 인증키 관리 → 인증 상태 키', type:'text', section:'api', required:true },
+    { key:'login_id',  label:'쇼핑몰 ID',       placeholder:'카카오스타일 SCM 로그인 ID (이메일)',         type:'text',     section:'login', required:true },
+    { key:'login_pw',  label:'PASSWORD',         placeholder:'SCM 비밀번호',                              type:'password', section:'login', required:true },
+    { key:'seller_id', label:'SHOP ID',          placeholder:'내부 구분용 (선택사항)',                     type:'text',     section:'api',   required:false },
+    { key:'api_key',   label:'Access Key',       placeholder:'API 인증키 관리에서 확인한 Access Key (UUID)', type:'text',    section:'api',   required:true },
+    { key:'api_secret',label:'Secret Key',       placeholder:'API 인증키 관리에서 확인한 Secret Key',      type:'password', section:'api',   required:true },
+    { key:'site_name', label:'수수료(주문) %',   placeholder:'예: 9  (공급가 미제공 시 수수료율로 계산)',   type:'text',     section:'api',   required:false },
   ],
   // 올웨이즈: 로그인 + API Key
   alwayz: [
@@ -314,23 +319,32 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{ label:'ABLY Sellers 셀러센터', url:'https://my.a-bly.com/dashboard' }],
   },
   zigzag: {
-    title:'지그재그(카카오스타일) API 연동', authType:'Access Key (API 인증키)',
-    note:'카카오스타일 파트너센터에서 API 인증키(Access Key)를 복사해 입력하면 됩니다. Partner ID · API Secret 같은 별도 항목은 없습니다.',
-    warning:'⚠ 이미지 비율 엄격(정사각형 2000px 권장) · 카테고리 매우 세분화됨',
+    title:'지그재그(카카오스타일/포스티) API 연동', authType:'SCM 로그인 + Access Key + Secret Key',
+    note:'카카오스타일 파트너센터(SCM) 로그인 정보와 API 인증키(Access Key + Secret Key)가 모두 필요합니다.',
+    warning:'⚠ Access Key와 Secret Key 둘 다 필수 — 어느 하나만 입력하면 인증 오류 발생',
     required:[
-      { label:'API 인증키 (Access Key)', desc:'카카오스타일 파트너센터 → 내 스토어 정보 관리 → API 인증키 관리 → "인증" 상태 키 복사', badge:'required' },
+      { label:'쇼핑몰 ID', desc:'카카오스타일 SCM 로그인 ID (이메일 형식)', badge:'required' },
+      { label:'PASSWORD', desc:'SCM 비밀번호', badge:'required' },
+      { label:'Access Key', desc:'API 인증키 관리 → 인증 상태 키 (UUID 형식, 예: afae1ce9-616b-431b-…)', badge:'required' },
+      { label:'Secret Key', desc:'API 인증키 관리 → Access Key에 대응하는 Secret Key', badge:'required' },
+      { label:'SHOP ID', desc:'내부적으로 쇼핑몰 구분 시 사용 — 쇼핑몰 ID/PW와 무관한 정보', badge:'optional' },
+      { label:'수수료(주문) %', desc:'공급가 미제공 시 수집 주문금액 × 수수료율로 공급가 계산 (예: 9)', badge:'optional' },
     ],
     steps:[
-      '━━ API 인증키 위치 ━━',
-      '① partner.zigzag.kr 접속 후 로그인',
+      '━━ Access Key + Secret Key 확인 방법 ━━',
+      '① partner.zigzag.kr (카카오스타일 파트너센터) 접속 후 로그인',
       '② 좌측 메뉴 [내 스토어 정보 관리] → [API 인증키 관리] 클릭',
-      '③ 인증키 목록에서 상태가 "인증"인 Access Key UUID 복사',
-      '    (예: 4969a9a5-4568-47a0-b29a-3d71bceee08f)',
+      '③ 인증키 목록에서 상태가 "인증"인 행의 Access Key 복사',
+      '    (UUID 형식: afae1ce9-616b-431b-8682-040eb8181ed2)',
+      '④ 같은 행 오른쪽에서 Secret Key 복사',
+      '    (HEX 형식: 14fc0460f5afeeb38df…)',
       '━━ 인증키가 없는 경우 ━━',
-      '④ [API 인증키 발급] 버튼 클릭 → 새 키 발급',
-      '⑤ 발급된 키의 상태가 "인증"이 되면 복사 가능',
+      '⑤ [API 인증키 발급] 버튼 클릭 → 새 Key + Secret 쌍 발급',
       '━━ 프로그램 연동 ━━',
-      '⑥ 프로그램에 Access Key 붙여넣기 후 [저장 및 연동 테스트] 클릭',
+      '⑥ 쇼핑몰 ID / PASSWORD 입력 (SCM 로그인 계정)',
+      '⑦ Access Key + Secret Key 입력',
+      '⑧ 수수료율 입력 (공급가 자동 계산 필요 시)',
+      '⑨ [저장 및 연동 테스트] 클릭',
     ],
     links:[
       { label:'카카오스타일 파트너센터', url:'https://partner.zigzag.kr' },

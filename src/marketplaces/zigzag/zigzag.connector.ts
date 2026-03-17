@@ -1,7 +1,8 @@
 /**
- * 지그재그(카카오스타일) 커넥터
+ * 지그재그(카카오스타일/포스티) 커넥터
  * API: https://partner-api.zigzag.kr
- * 인증: API Key (X-API-KEY 헤더)
+ * 인증: Access Key (X-API-KEY) + Secret Key (X-SECRET-KEY) 헤더
+ * 확인: 파트너센터 → 내 스토어 정보 관리 → API 인증키 관리
  */
 
 import { BaseMarketplace } from '@/marketplaces/base/base.marketplace'
@@ -21,12 +22,21 @@ export class ZigzagConnector extends BaseMarketplace {
 
   private get apiKey(): string {
     const key = this.credentials.api_key
-    if (!key) throw new Error('지그재그 API Key 누락')
+    if (!key) throw new Error('지그재그 Access Key 누락 — 카카오스타일 파트너센터 [API 인증키 관리]에서 확인')
     return key
   }
 
-  private authHeader() {
-    return { 'X-API-KEY': this.apiKey, 'Content-Type': 'application/json' }
+  private get secretKey(): string {
+    return this.credentials.api_secret || ''
+  }
+
+  private authHeader(): Record<string, string> {
+    const headers: Record<string, string> = {
+      'X-API-KEY'   : this.apiKey,
+      'Content-Type': 'application/json',
+    }
+    if (this.secretKey) headers['X-SECRET-KEY'] = this.secretKey
+    return headers
   }
 
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
