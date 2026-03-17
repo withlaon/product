@@ -4,13 +4,10 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
 import {
-  LayoutDashboard, Package, Warehouse, ShoppingCart,
-  MessageSquare, Truck, Store, Settings, BarChart3,
+  LayoutDashboard, Package, Warehouse,
+  Settings,
   PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, Send, PenSquare, GitMerge,
 } from 'lucide-react'
-import { useState, useEffect } from 'react'
-
-const CS_NEW_KEY = 'pm_cs_new_flag'
 
 const navGroups = [
   {
@@ -23,31 +20,15 @@ const navGroups = [
       { label: '상품관리',       href: '/products',              icon: Package },
       { label: '상품전송',       href: '/product-transfer',      icon: Send },
       { label: '전송상품수정',    href: '/product-edit-transfer', icon: PenSquare },
-      { label: '재고관리',       href: '/inventory',              icon: Warehouse },
-      { label: '발주/입고관리',   href: '/purchase',              icon: PackagePlus },
-    ],
-  },
-  {
-    label: '판매 · 고객',
-    items: [
-      { label: '주문수집',     href: '/orders',        icon: ShoppingCart },
-      { label: 'CS관리',       href: '/cs',            icon: MessageSquare },
-      { label: '배송/송장등록', href: '/shipping',      icon: Truck },
-      { label: '주문내역',     href: '/order-history', icon: BarChart3 },
-    ],
-  },
-  {
-    label: '연동 · 분석',
-    items: [
-      { label: '쇼핑몰 관리', href: '/channels', icon: Store },
-      { label: '통계/분석',   href: '/analytics', icon: BarChart3 },
+      { label: '재고관리',       href: '/inventory',             icon: Warehouse },
+      { label: '발주/입고관리',   href: '/purchase',             icon: PackagePlus },
     ],
   },
   {
     label: '시스템',
     items: [
       { label: '매핑관리', href: '/mapping', icon: GitMerge },
-      { label: '설정', href: '/settings', icon: Settings },
+      { label: '설정',     href: '/settings', icon: Settings },
     ],
   },
 ]
@@ -61,16 +42,6 @@ interface SidebarProps {
 
 export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: SidebarProps) {
   const pathname = usePathname()
-  const [csNew, setCsNew] = useState(false)
-
-  useEffect(() => {
-    const check = () => setCsNew(localStorage.getItem(CS_NEW_KEY) === 'true')
-    check()
-    window.addEventListener('storage', check)
-    // 폴링으로도 체크 (같은 탭에서 변경 시)
-    const id = setInterval(check, 3000)
-    return () => { window.removeEventListener('storage', check); clearInterval(id) }
-  }, [])
 
   return (
     <aside
@@ -206,14 +177,6 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
                         >
                           {item.label}
                         </span>
-                      )}
-
-                      {/* CS NEW 배지 */}
-                      {!collapsed && item.href === '/cs' && csNew && (
-                        <span style={{ fontSize:9, fontWeight:900, background:'#dc2626', color:'white', padding:'1px 5px', borderRadius:99, letterSpacing:'0.05em', flexShrink:0 }}>NEW</span>
-                      )}
-                      {collapsed && item.href === '/cs' && csNew && (
-                        <span style={{ position:'absolute', top:4, right:4, width:7, height:7, borderRadius:'50%', background:'#dc2626', border:'1.5px solid #0d1117' }}/>
                       )}
 
                       {isActive && !collapsed && (
