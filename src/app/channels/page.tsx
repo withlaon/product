@@ -846,8 +846,10 @@ export default function ChannelsPage() {
       }
       // OAuth 인증 URL 생성
       // redirect_uri는 카페24 개발자센터에 등록된 것과 정확히 일치해야 함 (쿼리스트링 없이)
-      const redirectUri = `${window.location.origin}/oauth`
-      const state = btoa(JSON.stringify({ mall: apiTarget.key, client_id: clientId, shop_id: shopId }))
+      const redirectUri   = `${window.location.origin}/oauth`
+      const clientSecret  = apiForm.api_secret?.trim() || ''
+      // state에 client_secret 포함 (서버에서 토큰 교환 시 폴백으로 사용)
+      const state = btoa(JSON.stringify({ mall: apiTarget.key, client_id: clientId, client_secret: clientSecret, shop_id: shopId }))
         .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'')
       let authUrl = ''
       if (apiTarget.key === 'cafe24') {

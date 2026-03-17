@@ -53,13 +53,15 @@ function OAuthCallbackInner() {
       let clientId   = ''
       let shopId     = ''
 
+      let stateClientSecret = ''
       if (state) {
         try {
           // base64url JSON 파싱 시도 (우리 시스템이 생성한 state)
           const decoded = JSON.parse(atob(state.replace(/-/g, '+').replace(/_/g, '/')))
           if (!mallKey) mallKey = decoded.mall ?? ''
-          clientId = decoded.client_id ?? ''
-          shopId   = decoded.shop_id   ?? ''
+          clientId        = decoded.client_id     ?? ''
+          stateClientSecret = decoded.client_secret ?? ''
+          shopId          = decoded.shop_id       ?? ''
         } catch {
           // 파싱 실패 → state가 단순 문자열 (예: 카페24의 mall_id)
           shopId = state
@@ -74,8 +76,8 @@ function OAuthCallbackInner() {
       const userId = session?.user?.id ?? null
 
       /* ── 저장된 자격증명 불러오기 (client_id / client_secret 조회) ── */
-      let savedClientId = ''
-      let clientSecret  = ''
+      let savedClientId     = ''
+      let savedClientSecret = ''
       if (userId && mallKey) {
         const { data: cred } = await supabase
           .from('pm_mall_credentials')
@@ -83,12 +85,13 @@ function OAuthCallbackInner() {
           .eq('user_id', userId)
           .eq('mall_key', mallKey)
           .maybeSingle()
-        savedClientId = cred?.credentials?.api_key    ?? ''
-        clientSecret  = cred?.credentials?.api_secret ?? ''
+        savedClientId     = cred?.credentials?.api_key    ?? ''
+        savedClientSecret = cred?.credentials?.api_secret ?? ''
         if (!shopId) shopId = cred?.credentials?.seller_id ?? ''
       }
-      // state에서 추출한 client_id 우선, 없으면 DB에서 불러온 값 사용
-      const resolvedClientId = clientId || savedClientId
+      // 우선순위: state 추출값 → DB 저장값
+      const resolvedClientId     = clientId        || savedClientId
+      const resolvedClientSecret = stateClientSecret || savedClientSecret
 
       /* ── 토큰 교환 API 호출 ── */
       try {
@@ -99,15 +102,15 @@ function OAuthCallbackInner() {
               code,
               mall_id      : shopId || mallKey,
               user_id      : userId,
-              client_id    : resolvedClientId,   // 폴백으로 전달
-              client_secret: clientSecret,        // 폴백으로 전달
+              client_id    : resolvedClientId,       // state → DB → env var 순 폴백
+              client_secret: resolvedClientSecret,   // state → DB → env var 순 폴백
             })
           : JSON.stringify({
               code,
               state,
               mall         : mallKey,
               client_id    : resolvedClientId,
-              client_secret: clientSecret,
+              client_secret: resolvedClientSecret,
               shop_id      : shopId,
               user_id      : userId,
             })
