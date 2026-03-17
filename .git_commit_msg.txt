@@ -1,6 +1,7 @@
-fix: alwayz connection form and guide updated per SCM spec
+fix: lotteon connection form and guide updated with IP direct-input method
 
-- Required: login ID/PW only
-- Optional: SHOP ID, commission rate (%)
-- Removed: Partner ID, API Key, Secret Key fields
-- Guide updated with correct SCM login steps
+- Required: login ID/PW + vendor code + auth key
+- Optional: sub-vendor code, commission rate
+- Added server IP check block (red theme) in modal
+- Guide: 4-step process with IP registration before auth key issuance
+- Removed: Partner ID / API Key / Secret Key fields

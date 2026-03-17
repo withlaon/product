@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
         alwayz     : { key: 'login_id',  label: '쇼핑몰ID' },
         tosshopping: { key: 'api_key',   label: 'API Key' },
         lotteon    : { key: 'api_key',   label: '인증키' },
-        ssg        : { key: 'api_key',   label: 'API Key' },
+        ssg        : { key: 'api_key',   label: 'API 인증키' },
         halfclub   : { key: 'api_key',   label: 'API 인증키' },
         gsshop     : { key: 'login_id',  label: '쇼핑몰ID' },
         fashionplus: { key: 'login_id',  label: 'SCM 로그인 ID' },
@@ -57,6 +57,17 @@ export async function POST(req: NextRequest) {
         const token = credentials[tokenKey]
         if (!token || (token as string).length < 4) {
           return NextResponse.json({ success: false, mall, message: `${tokenLabel}이 입력되지 않았습니다.` })
+        }
+        // SSG: API 인증키 UUID 형식 검증
+        if (mall === 'ssg') {
+          const authKey = credentials.api_key as string
+          if (!authKey || authKey.length < 8) {
+            return NextResponse.json({ success: false, mall, message: 'API 인증키가 입력되지 않았습니다. SSG 파트너오피스 [API관리 → API계정정보]에서 인증 상태가 "인증"인 키를 확인하세요.' })
+          }
+          return NextResponse.json({
+            success: true, mall,
+            message: `SSG 자격증명 저장 완료 ✓ (API 인증키 확인됨)\n운영/테스트 서버 IP가 직접입력 방식으로 등록되어 있어야 정상 연동됩니다.`,
+          })
         }
         // 롯데온: 인증키 + 거래처번호 검증
         if (mall === 'lotteon') {

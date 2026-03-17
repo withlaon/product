@@ -135,12 +135,14 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_secret', label:'하위거래처번호',      placeholder:'하위거래처 있는 경우 입력 (선택)',                 type:'text',     section:'api',   required:false },
     { key:'site_name',  label:'수수료(주문) %',      placeholder:'예: 13  (공급가 미제공 시 수수료율로 계산)',        type:'text',     section:'api',   required:false },
   ],
-  // 신세계몰 SSG: Partner ID + API Key + Secret Key
+  // SSG닷컴(신세계몰): 쇼핑몰ID/PW + API 인증키 필수 / SHOP ID + 백화점 여부 선택
+  // IP 등록: 파트너오피스 [API 관리] → 운영/테스트 서버 접속 IP → 단일(직접입력)
   ssg: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'Partner ID (파트너코드)', placeholder:'SSG 파트너 ID',          type:'text',     section:'api', required:true  },
-    { key:'api_key',   label:'API Key',                placeholder:'파트너센터에서 발급',     type:'password', section:'api', required:true  },
-    { key:'api_secret',label:'Secret Key',             placeholder:'파트너센터에서 발급',     type:'password', section:'api', required:true  },
+    { key:'login_id',  label:'쇼핑몰ID',         placeholder:'SSG SCM 로그인 ID (예: jmcard1771)',                    type:'text',     section:'login', required:true  },
+    { key:'login_pw',  label:'PASSWORD',          placeholder:'SCM 비밀번호',                                         type:'password', section:'login', required:true  },
+    { key:'api_key',   label:'API 인증키',        placeholder:'SCM [API관리 > API계정정보] → UUID 형식 (예: 279d0729-2c52-…)', type:'password', section:'api', required:true },
+    { key:'seller_id', label:'SHOP ID',           placeholder:'내부 구분용 쇼핑몰 ID (선택사항)',                     type:'text',     section:'api',   required:false },
+    { key:'site_name', label:'백화점 여부',        placeholder:'신세계백화점 입점 시 Y 입력, 아닌 경우 공란',           type:'text',     section:'api',   required:false },
   ],
   // 토스쇼핑: Partner Key + Secret Key + Store ID
   toss: [
@@ -497,22 +499,37 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{ label:'GS샵 파트너센터', url:'https://partner.gsshop.com' }],
   },
   ssg: {
-    title:'SSG닷컴(신세계몰) API 연동', authType:'Partner ID + API Key + Secret',
-    note:'SSG 파트너센터에서 API 연동을 신청해야 합니다. 상품 브랜드 인증이 필요합니다.',
-    warning:'⚠ SSG닷컴은 상품 승인 필수 및 브랜드 인증이 필요합니다.',
+    title:'SSG닷컴(신세계몰) SCM 연동 (직접입력 방식)', authType:'쇼핑몰 ID/PW + API 인증키',
+    note:'SSG 파트너오피스에서 API 인증키 확인 후 입력합니다. 인증키 사용 전 반드시 운영/테스트 서버 IP를 직접입력 방식으로 등록해야 합니다.',
+    warning:'⚠ 운영 서버와 테스트 서버 IP 모두 등록 필요 · 인증 후 API 반영까지 일정 시간 소요',
     required:[
-      { label:'로그인 ID/PW', desc:'SSG 판매자 로그인 계정', badge:'required' },
-      { label:'Partner ID', desc:'SSG 파트너 코드', badge:'required' },
-      { label:'API Key', desc:'파트너센터에서 발급된 API Key', badge:'required' },
-      { label:'Secret Key', desc:'API Secret Key', badge:'required' },
+      { label:'쇼핑몰ID',   desc:'SSG SCM 로그인 ID (예: jmcard1771)',              badge:'required' },
+      { label:'PASSWORD',   desc:'SCM 비밀번호',                                    badge:'required' },
+      { label:'API 인증키', desc:'SCM → API관리 → API계정정보 → API 업체명 선택 후 인증키 확인 (UUID 형식: 279d0729-2c52-…)\n인증상태: "인증"인 것만 연동 가능', badge:'required' },
+      { label:'SHOP ID',    desc:'쇼핑몰ID/PW와 무관한 내부 구분용 (선택)',          badge:'optional' },
+      { label:'백화점 여부', desc:'신세계백화점 입점 고객사인 경우 Y 입력\n여러 지점 관리 시 쇼핑몰ID에 사용자ID 입력 (API계정정보의 사용자ID에서 "API-" 제거)', badge:'optional' },
     ],
     steps:[
-      '① partner.ssg.com 접속 후 로그인',
-      '② [API 연동] → [신청] 클릭',
-      '③ 승인 후 Partner ID / API Key / Secret Key 확인·복사',
-      '④ 프로그램에 로그인 ID/PW + Partner ID + API Key + Secret Key 입력 후 저장',
+      '━━ STEP 1: 운영 + 테스트 서버 IP 등록 (직접입력) ━━',
+      '① po.ssgadm.com 접속 → 파트너오피스 로그인',
+      '② 좌측 메뉴 [API 관리] → [API계정정보] 클릭',
+      '③ "SSG 운영 서버 접속 IP" → 선택: 단일(직접입력) 선택',
+      '④ 아래 [서버 IP 확인] 버튼으로 Vercel 서버 IP 확인 후 입력 → [추가] 클릭',
+      '⑤ "SSG 테스트 서버 접속 IP" 도 동일하게 단일(직접입력) → 같은 IP 입력 → [추가]',
+      '━━ STEP 2: API 인증키 확인 ━━',
+      '⑥ 같은 페이지 [API계정정보] → API 업체명 선택',
+      '⑦ 인증상태가 "인증"인 항목의 API 인증키(UUID) 복사',
+      '   (예: 279d0729-2c52-4179-…)',
+      '   ※ 인증 후 API 반영까지 일정 시간 소요',
+      '━━ STEP 3: 프로그램 연동 ━━',
+      '⑧ 쇼핑몰ID / PASSWORD 입력',
+      '⑨ API 인증키 입력',
+      '⑩ 백화점 입점 시 백화점 여부: Y 입력',
+      '⑪ [저장 및 연동 테스트] 클릭',
     ],
-    links:[{ label:'SSG 파트너센터', url:'https://partner.ssg.com' }],
+    links:[
+      { label:'SSG 파트너오피스 (SCM)', url:'https://po.ssgadm.com' },
+    ],
   },
   lotteon: {
     title:'롯데ON SCM 연동 (직접입력 방식)', authType:'쇼핑몰 ID/PW + 거래처번호 + 인증키',
@@ -1490,6 +1507,74 @@ export default function ChannelsPage() {
                     <a href="https://apicenter.commerce.naver.com" target="_blank" rel="noreferrer"
                       style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#15803d', textDecoration:'none', fontWeight:600 }}>
                       <ExternalLink size={11}/>네이버 커머스 API센터 바로가기
+                    </a>
+                  </div>
+                )}
+
+                {/* SSG 전용: 운영 + 테스트 서버 IP 직접입력 안내 */}
+                {apiTarget?.key === 'ssg' && (
+                  <div style={{ background:'#fdf2f8', border:'1.5px solid #f0abfc', borderRadius:10, padding:'12px 14px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                      <Server size={14} style={{ color:'#a21caf', flexShrink:0 }}/>
+                      <span style={{ fontSize:12.5, fontWeight:700, color:'#a21caf' }}>
+                        운영 + 테스트 서버 IP 직접입력 등록 필수
+                      </span>
+                    </div>
+                    <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.6, marginBottom:10 }}>
+                      파트너오피스 [API 관리 → API계정정보] → SSG 운영/테스트 서버 접속 IP<br/>
+                      선택: <strong>단일(직접입력)</strong> 으로 변경 후 아래 서버 IP를 등록하세요.
+                    </p>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:10 }}>
+                      <button
+                        onClick={fetchServerIp}
+                        disabled={serverIpState === 'loading'}
+                        style={{
+                          display:'flex', alignItems:'center', gap:5,
+                          padding:'5px 12px', borderRadius:6, fontSize:12, fontWeight:700,
+                          cursor: serverIpState === 'loading' ? 'not-allowed' : 'pointer',
+                          background: serverIpState === 'done' ? '#a21caf' : 'white',
+                          color:      serverIpState === 'done' ? 'white'    : '#a21caf',
+                          border:'1.5px solid #a21caf', transition:'all .15s',
+                        }}>
+                        {serverIpState === 'loading'
+                          ? <><RefreshCw size={12} style={{ animation:'spin 1s linear infinite' }}/>확인 중...</>
+                          : <><Server size={12}/>서버(Vercel) IP 확인</>
+                        }
+                      </button>
+                      {serverIpState === 'done' && serverIp && (
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <code style={{ background:'#4a044e', color:'#f0abfc', padding:'4px 10px', borderRadius:5, fontSize:13, fontWeight:700, fontFamily:'monospace' }}>{serverIp}</code>
+                          <button onClick={() => navigator.clipboard.writeText(serverIp)}
+                            style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', borderRadius:5, fontSize:11, fontWeight:600, cursor:'pointer', background:'white', color:'#a21caf', border:'1px solid #f0abfc' }}>
+                            <Copy size={11}/>복사
+                          </button>
+                        </div>
+                      )}
+                      {serverIpState === 'error' && <span style={{ fontSize:12, color:'#dc2626' }}>IP 확인 실패 — 배포 후 재시도</span>}
+                    </div>
+                    {serverIpState === 'done' && (
+                      <div style={{ display:'flex', flexDirection:'column', gap:6, marginBottom:10 }}>
+                        {[
+                          { label:'🖥 SSG 운영 서버 접속 IP', desc:'단일(직접입력) 선택 → 위 IP 입력 → [추가] 클릭' },
+                          { label:'🧪 SSG 테스트 서버 접속 IP', desc:'단일(직접입력) 선택 → 위 IP 입력 → [추가] 클릭' },
+                        ].map(row => (
+                          <div key={row.label} style={{ background:'white', border:'1px solid #f0abfc', borderRadius:7, padding:'8px 10px' }}>
+                            <div style={{ display:'flex', alignItems:'baseline', gap:6, marginBottom:2 }}>
+                              <span style={{ fontSize:12, fontWeight:700, color:'#a21caf', whiteSpace:'nowrap' }}>{row.label}</span>
+                            </div>
+                            <p style={{ fontSize:11.5, color:'#475569', margin:0 }}>{row.desc}</p>
+                            <code style={{ fontSize:12, fontWeight:700, color:'#a21caf', fontFamily:'monospace' }}>{serverIp}</code>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{ padding:'7px 10px', background:'#fae8ff', borderRadius:7, fontSize:11.5, color:'#4a044e', lineHeight:1.7 }}>
+                      <span style={{ color:'#7c3aed', fontWeight:600 }}>⚠ Vercel 무료 플랜은 배포 시 IP가 변경될 수 있습니다.</span> IP 차단 오류 시 위 버튼으로 새 IP 확인 후 재등록 필요.<br/>
+                      IP 등록 후 인증 반영까지 <strong>일정 시간 소요</strong>될 수 있습니다.
+                    </div>
+                    <a href="https://po.ssgadm.com" target="_blank" rel="noreferrer"
+                      style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#a21caf', textDecoration:'none', fontWeight:600 }}>
+                      <ExternalLink size={11}/>SSG 파트너오피스 바로가기
                     </a>
                   </div>
                 )}
