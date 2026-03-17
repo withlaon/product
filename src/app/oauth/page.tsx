@@ -1,5 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+export const dynamic = 'force-dynamic'
+
+import { useEffect, useState, Suspense } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
@@ -17,7 +19,7 @@ const MALL_COLORS: Record<string, { from: string; to: string; icon: string }> = 
   zigzag : { from: '#a855f7', to: '#7e22ce', icon: '🟣' },
 }
 
-export default function OAuthCallbackPage() {
+function OAuthCallbackInner() {
   const searchParams = useSearchParams()
   const router       = useRouter()
 
@@ -255,5 +257,18 @@ export default function OAuthCallbackPage() {
 
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
+  )
+}
+
+export default function OAuthCallbackPage() {
+  return (
+    <Suspense fallback={
+      <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg,#0f172a,#1e293b)' }}>
+        <div style={{ width:32, height:32, borderRadius:'50%', border:'3px solid rgba(99,102,241,0.3)', borderTopColor:'#6366f1', animation:'spin 0.8s linear infinite' }}/>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    }>
+      <OAuthCallbackInner />
+    </Suspense>
   )
 }
