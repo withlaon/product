@@ -48,11 +48,11 @@ export class SmartstoreConnector extends BaseMarketplace {
       method : 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body   : new URLSearchParams({
-        grant_type   : 'client_credentials',
-        client_id    : api_key,
+        grant_type        : 'client_credentials',
+        client_id         : api_key,
         timestamp,
-        client_secret: clientSecret,
-        type         : 'SELF',
+        client_secret_sign: clientSecret,
+        type              : 'SELF',
       }),
       signal : AbortSignal.timeout(8000),
     })
