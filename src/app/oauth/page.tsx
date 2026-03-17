@@ -1,11 +1,12 @@
-'use client'
+/**
+ * /oauth - OAuth 2.0 콜백 페이지 (서버 컴포넌트)
+ *
+ * ★ 핵심: 서버에서 직접 토큰 교환 → React 하이드레이션/useEffect 대기 없음
+ *   클라이언트 JS 실행 전에 코드 교환 완료 → 코드 만료 문제 근본 해결
+ */
 export const dynamic = 'force-dynamic'
 
-import { useEffect, useState, Suspense } from 'react'
-import { useSearchParams, useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
-
-type Status = 'loading' | 'success' | 'error'
+import { OAuthResultClient } from './OAuthResultClient'
 
 const MALL_NAMES: Record<string, string> = {
   cafe24 : '카페24',
@@ -13,298 +14,132 @@ const MALL_NAMES: Record<string, string> = {
   zigzag : '지그재그',
 }
 
-const MALL_COLORS: Record<string, { from: string; to: string; icon: string }> = {
-  cafe24 : { from: '#4f46e5', to: '#7c3aed', icon: '🛍️' },
-  naver  : { from: '#05c46b', to: '#0be881', icon: '🟢' },
-  zigzag : { from: '#a855f7', to: '#7e22ce', icon: '🟣' },
+interface Props {
+  searchParams: Promise<Record<string, string | undefined>>
 }
 
-function OAuthCallbackInner() {
-  const searchParams = useSearchParams()
-  const router       = useRouter()
+export default async function OAuthCallbackPage({ searchParams }: Props) {
+  const params = await searchParams
+  const code  = params.code
+  const state = params.state
+  const error = params.error
 
-  const [status,  setStatus]  = useState<Status>('loading')
-  const [mall,    setMall]    = useState('')
-  const [message, setMessage] = useState('')
-  const [countdown, setCountdown] = useState(5)
+  /* ── 에러 파라미터 ── */
+  if (error) {
+    return <OAuthResultClient
+      status="error"
+      mall=""
+      message={`인증이 거부되었습니다: ${params.error_description ?? error}`}
+      refresh_token=""
+    />
+  }
 
-  useEffect(() => {
-    const run = async () => {
-      const code  = searchParams.get('code')
-      const state = searchParams.get('state')
-      const error = searchParams.get('error')
+  if (!code) {
+    return <OAuthResultClient
+      status="error"
+      mall=""
+      message="인증 코드(code)가 없습니다. 쇼핑몰 연동 화면에서 다시 시도해 주세요."
+      refresh_token=""
+    />
+  }
 
-      /* ── 에러 파라미터 수신 ── */
-      if (error) {
-        setStatus('error')
-        setMessage(`인증이 거부되었습니다: ${searchParams.get('error_description') ?? error}`)
-        return
-      }
+  /* ── state 디코딩 ── */
+  let mallKey       = ''
+  let clientId      = ''
+  let clientSecret  = ''
+  let shopId        = ''
 
-      if (!code) {
-        setStatus('error')
-        setMessage('인증 코드(code)가 없습니다. 쇼핑몰 연동 화면에서 다시 시도해 주세요.')
-        return
-      }
+  if (state) {
+    try {
+      const decoded = JSON.parse(
+        Buffer.from(state.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString('utf-8')
+      )
+      mallKey      = decoded.mall          ?? ''
+      clientId     = decoded.client_id     ?? ''
+      clientSecret = decoded.client_secret ?? ''
+      shopId       = decoded.shop_id       ?? ''
+    } catch {
+      shopId  = state
+      mallKey = 'cafe24'
+    }
+  }
+  if (!mallKey) mallKey = 'cafe24'
 
-      /* ── state 디코딩 ── */
-      // URL에 mall= 파라미터가 직접 있으면 최우선 사용 (e.g. redirect_uri에 ?mall=cafe24 포함)
-      let mallKey    = searchParams.get('mall') ?? ''
-      let clientId   = ''
-      let shopId     = ''
+  /* ── 서버에서 직접 토큰 교환 (API 라우트 호출 없음) ── */
+  const resolvedClientId     = clientId     || process.env.CAFE24_CLIENT_ID     || ''
+  const resolvedClientSecret = clientSecret || process.env.CAFE24_CLIENT_SECRET || ''
+  const redirectUri          = process.env.CAFE24_REDIRECT_URI || 'https://withlaon.vercel.app/oauth'
+  const resolvedShopId       = shopId || 'withlaon'
 
-      let stateClientSecret = ''
-      if (state) {
-        try {
-          // base64url JSON 파싱 시도 (우리 시스템이 생성한 state)
-          const decoded = JSON.parse(atob(state.replace(/-/g, '+').replace(/_/g, '/')))
-          if (!mallKey) mallKey = decoded.mall ?? ''
-          clientId        = decoded.client_id     ?? ''
-          stateClientSecret = decoded.client_secret ?? ''
-          shopId          = decoded.shop_id       ?? ''
-        } catch {
-          // 파싱 실패 → state가 단순 문자열 (예: 카페24의 mall_id)
-          shopId = state
-          if (!mallKey) mallKey = 'cafe24'  // state가 plain string이면 카페24로 처리
-        }
-      }
-
-      setMall(mallKey)
-
-      /* ── 코드 만료 방지: 토큰 교환을 최우선으로 실행 ── */
-      // Cafe24 인증 코드는 수십 초 내 만료 → 어떤 await도 없이 즉시 교환
-      const sessionPromise = supabase.auth.getSession() // 백그라운드에서 시작만
-
-      /* ── 토큰 교환 API 호출 ── */
-      try {
-        const apiUrl = mallKey === 'cafe24' ? '/api/cafe24/token' : '/api/oauth'
-
-        let userId: string | null = null
-        let resolvedClientId     = clientId
-        let resolvedClientSecret = stateClientSecret
-
-        if (mallKey === 'cafe24' && resolvedClientId && resolvedClientSecret) {
-          // ★ 빠른 경로: state에 credentials 있음 → 세션 조회 없이 즉시 교환
-          // userId는 없어도 됨 (토큰 교환 성공 후 postMessage로 전달)
-          // 세션 조회는 비동기로만 시작, 결과를 기다리지 않음
-          void sessionPromise.then(({ data: { session } }) => {
-            userId = session?.user?.id ?? null
-          })
-        } else {
-          // 일반 경로: 세션 + DB 조회 후 교환
-          const { data: { session } } = await sessionPromise
-          userId = session?.user?.id ?? null
-
-          if (userId && mallKey) {
-            const { data: cred } = await supabase
-              .from('pm_mall_credentials')
-              .select('credentials')
-              .eq('user_id', userId)
-              .eq('mall_key', mallKey)
-              .maybeSingle()
-            if (!resolvedClientId)     resolvedClientId     = cred?.credentials?.api_key    ?? ''
-            if (!resolvedClientSecret) resolvedClientSecret = cred?.credentials?.api_secret ?? ''
-            if (!shopId)               shopId               = cred?.credentials?.seller_id  ?? ''
-          }
-        }
-
-        const apiBody = mallKey === 'cafe24'
-          ? JSON.stringify({
-              code,
-              mall_id      : shopId || mallKey,
-              user_id      : userId,
-              client_id    : resolvedClientId,
-              client_secret: resolvedClientSecret,
-            })
-          : JSON.stringify({
-              code,
-              state,
-              mall         : mallKey,
-              client_id    : resolvedClientId,
-              client_secret: resolvedClientSecret,
-              shop_id      : shopId,
-              user_id      : userId,
-            })
-
-        const res = await fetch(apiUrl, {
-          method : 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body   : apiBody,
-        })
-        const data = await res.json()
-
-        if (!res.ok || !data.success) {
-          setStatus('error')
-          setMessage(data.error ?? '토큰 교환에 실패했습니다.')
-          return
-        }
-
-        setStatus('success')
-        setMessage(`${MALL_NAMES[mallKey] ?? mallKey} 연동이 완료되었습니다!`)
-
-        /* ── 부모 창에 완료 메시지 전달 (팝업으로 열린 경우) ── */
-        if (window.opener) {
-          window.opener.postMessage({
-            type: 'OAUTH_SUCCESS',
-            mall: mallKey,
-            refresh_token: data?.refresh_token ?? '',
-          }, '*')
-        }
-
-        /* ── 카운트다운 후 자동 이동 ── */
-        let cnt = 5
-        const timer = setInterval(() => {
-          cnt--
-          setCountdown(cnt)
-          if (cnt <= 0) {
-            clearInterval(timer)
-            if (window.opener) {
-              window.close()
-            } else {
-              router.replace('/channels')
-            }
-          }
-        }, 1000)
-      } catch (err) {
-        setStatus('error')
-        setMessage(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.')
-      }
+  if (mallKey === 'cafe24') {
+    if (!resolvedClientId || !resolvedClientSecret) {
+      return <OAuthResultClient
+        status="error"
+        mall={mallKey}
+        message="Client ID 또는 Client Secret이 없습니다. 채널 연동 설정에서 Client ID와 Client Secret을 먼저 입력해 주세요."
+        refresh_token=""
+      />
     }
 
-    run()
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    try {
+      /* ── Cafe24 토큰 교환: 서버-서버 직접 호출 ── */
+      const tokenRes = await fetch(
+        `https://${resolvedShopId}.cafe24api.com/api/v2/oauth/token`,
+        {
+          method : 'POST',
+          headers: {
+            'Content-Type' : 'application/x-www-form-urlencoded',
+            'Authorization': `Basic ${Buffer.from(`${resolvedClientId}:${resolvedClientSecret}`).toString('base64')}`,
+          },
+          body: new URLSearchParams({
+            grant_type  : 'authorization_code',
+            code,
+            redirect_uri: redirectUri,
+          }).toString(),
+          cache: 'no-store',
+        }
+      )
 
-  const color  = MALL_COLORS[mall] ?? { from: '#6366f1', to: '#8b5cf6', icon: '🔗' }
-  const mallName = MALL_NAMES[mall] ?? mall ?? '쇼핑몰'
+      if (!tokenRes.ok) {
+        let detail = ''
+        try { detail = await tokenRes.text() } catch { /* ignore */ }
 
-  return (
-    <div style={{
-      minHeight: '100vh',
-      display: 'flex',
-      alignItems: 'center',
-      justifyContent: 'center',
-      background: 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)',
-      fontFamily: 'var(--font-nanum, sans-serif)',
-    }}>
-      <div style={{
-        background: 'white',
-        borderRadius: 20,
-        padding: '48px 40px',
-        textAlign: 'center',
-        maxWidth: 440,
-        width: '90%',
-        boxShadow: '0 25px 60px rgba(0,0,0,0.4)',
-      }}>
+        let msg = `카페24 토큰 교환 실패 (${tokenRes.status})`
+        if (tokenRes.status === 401) {
+          msg = 'Client ID 또는 Client Secret이 올바르지 않습니다 (401). 카페24 개발자센터에서 앱 자격증명을 확인해 주세요.'
+        } else if (tokenRes.status === 400) {
+          msg = detail.includes('redirect_uri')
+            ? `redirect_uri 불일치 — 등록된 redirect_uri: "${redirectUri}"`
+            : '인증 코드가 만료되었거나 이미 사용되었습니다. OAuth 인증을 다시 시도해 주세요.'
+        }
 
-        {/* 상단 아이콘 */}
-        <div style={{
-          width: 72, height: 72, borderRadius: 20,
-          background: `linear-gradient(135deg, ${color.from}, ${color.to})`,
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          fontSize: 32, margin: '0 auto 20px',
-          boxShadow: `0 8px 24px ${color.from}60`,
-        }}>
-          {status === 'loading' ? '⏳' : status === 'success' ? '✅' : '❌'}
-        </div>
+        console.error('[oauth/page] Cafe24 토큰 교환 실패', { status: tokenRes.status, detail, resolvedShopId, redirectUri })
 
-        {/* 상태별 내용 */}
-        {status === 'loading' && (
-          <>
-            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 16 }}>
-              <div style={{
-                width: 32, height: 32, borderRadius: '50%',
-                border: `3px solid ${color.from}30`,
-                borderTopColor: color.from,
-                animation: 'spin 0.8s linear infinite',
-              }}/>
-            </div>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 8 }}>
-              {mallName} OAuth 인증 처리 중
-            </h2>
-            <p style={{ fontSize: 13, color: '#64748b', lineHeight: 1.7 }}>
-              인증 코드를 확인하고 액세스 토큰을 발급받고 있습니다.<br/>
-              잠시만 기다려 주세요.
-            </p>
-          </>
-        )}
+        return <OAuthResultClient status="error" mall={mallKey} message={msg} refresh_token="" />
+      }
 
-        {status === 'success' && (
-          <>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 8 }}>
-              연동 완료!
-            </h2>
-            <p style={{ fontSize: 14, color: '#15803d', fontWeight: 700, marginBottom: 12 }}>
-              {message}
-            </p>
-            <p style={{ fontSize: 12.5, color: '#64748b', lineHeight: 1.7 }}>
-              액세스 토큰과 리프레시 토큰이 안전하게 저장되었습니다.<br/>
-              이제 상품 등록 및 주문 수집을 자동화할 수 있습니다.
-            </p>
-            <div style={{
-              marginTop: 20,
-              background: '#f0fdf4', borderRadius: 10, padding: '10px 16px',
-              border: '1px solid #bbf7d0',
-            }}>
-              <p style={{ fontSize: 12, color: '#15803d', fontWeight: 700 }}>
-                {window?.opener
-                  ? `이 창이 ${countdown}초 후 자동으로 닫힙니다.`
-                  : `${countdown}초 후 채널 관리 페이지로 이동합니다.`}
-              </p>
-            </div>
-          </>
-        )}
+      const tokenData = await tokenRes.json()
+      const { access_token, refresh_token } = tokenData
 
-        {status === 'error' && (
-          <>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', marginBottom: 8 }}>
-              인증 실패
-            </h2>
-            <p style={{ fontSize: 13, color: '#dc2626', fontWeight: 600, marginBottom: 12, lineHeight: 1.6 }}>
-              {message}
-            </p>
-            <div style={{
-              marginTop: 16, display: 'flex', gap: 8, justifyContent: 'center',
-            }}>
-              <button onClick={() => window.history.back()}
-                style={{
-                  padding: '9px 20px', borderRadius: 10, border: '1.5px solid #e2e8f0',
-                  background: 'white', fontSize: 13, fontWeight: 700, color: '#475569', cursor: 'pointer',
-                }}>
-                뒤로가기
-              </button>
-              <button onClick={() => router.replace('/channels')}
-                style={{
-                  padding: '9px 20px', borderRadius: 10, border: 'none',
-                  background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                  fontSize: 13, fontWeight: 700, color: 'white', cursor: 'pointer',
-                }}>
-                채널 관리로 이동
-              </button>
-            </div>
-          </>
-        )}
+      return <OAuthResultClient
+        status="success"
+        mall={mallKey}
+        mallName={MALL_NAMES[mallKey] ?? mallKey}
+        message={`${MALL_NAMES[mallKey] ?? mallKey} 연동이 완료되었습니다!`}
+        refresh_token={refresh_token ?? ''}
+        access_token={access_token ?? ''}
+      />
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : '알 수 없는 오류'
+      return <OAuthResultClient status="error" mall={mallKey} message={msg} refresh_token="" />
+    }
+  }
 
-        {/* 하단 도메인 표시 */}
-        <p style={{ fontSize: 11, color: '#cbd5e1', marginTop: 24 }}>
-          ProductPRO • OAuth 2.0 인증 콜백
-        </p>
-      </div>
-
-      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-    </div>
-  )
-}
-
-export default function OAuthCallbackPage() {
-  return (
-    <Suspense fallback={
-      <div style={{ minHeight:'100vh', display:'flex', alignItems:'center', justifyContent:'center', background:'linear-gradient(135deg,#0f172a,#1e293b)' }}>
-        <div style={{ width:32, height:32, borderRadius:'50%', border:'3px solid rgba(99,102,241,0.3)', borderTopColor:'#6366f1', animation:'spin 0.8s linear infinite' }}/>
-        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
-      </div>
-    }>
-      <OAuthCallbackInner />
-    </Suspense>
-  )
+  /* ── 기타 OAuth 쇼핑몰 (naver, zigzag 등) ── */
+  return <OAuthResultClient
+    status="error"
+    mall={mallKey}
+    message={`${mallKey} OAuth 처리는 준비 중입니다.`}
+    refresh_token=""
+  />
 }
