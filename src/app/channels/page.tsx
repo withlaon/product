@@ -151,7 +151,7 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
 }
 
 /* ─── 연동방법 가이드 (강화 버전) ─────────────────────────────── */
-type GuideRequiredInfo = { label: string; desc: string; example?: string; badge?: 'required'|'optional' }
+type GuideRequiredInfo = { label: string; desc: string; example?: string; badge?: 'required'|'optional'|'auto' }
 type GuideInfo = {
   title    : string
   authType : string
@@ -351,24 +351,49 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{ label:'올웨이즈 파트너센터', url:'https://partner.alwayz.co.kr' }],
   },
   cafe24: {
-    title:'카페24 OAuth API 연동', authType:'OAuth 2.0',
-    note:'카페24 개발자센터에서 앱을 생성하고 OAuth 인증을 완료해야 합니다.',
+    title:'카페24 OAuth API 연동', authType:'OAuth 2.0 (Refresh Token 방식)',
+    note:'카페24 개발자센터에서 앱을 생성하고 OAuth 인증을 완료해야 합니다. Refresh Token은 [OAuth 재인증] 버튼을 누르면 자동 발급됩니다.',
+    warning:'⚠ Redirect URI는 반드시 https://withlaon.vercel.app/oauth 로 설정해야 합니다 · scope는 앱에 등록된 권한과 정확히 일치해야 합니다',
     required:[
-      { label:'Mall ID', desc:'카페24 쇼핑몰 ID (예: myshop)', example:'myshop', badge:'required' },
-      { label:'Client ID', desc:'개발자센터 앱 Client ID', badge:'required' },
-      { label:'Client Secret', desc:'개발자센터 앱 Client Secret', badge:'required' },
-      { label:'Refresh Token', desc:'OAuth2 인증 후 발급되는 Refresh Token', badge:'required' },
+      { label:'쇼핑몰 ID (Mall ID)', desc:'카페24 쇼핑몰 ID — 쇼핑몰 주소의 서브도메인 (예: withlaon)', example:'withlaon', badge:'required' },
+      { label:'Client ID', desc:'개발자센터 → 앱 개발 → Client ID', badge:'required' },
+      { label:'Client Secret', desc:'개발자센터 → 앱 개발 → Client Secret Key', badge:'required' },
+      { label:'Refresh Token', desc:'OAuth 재인증 버튼 클릭 시 자동 발급 — 직접 입력 불필요', badge:'auto' },
     ],
     steps:[
-      '① developers.cafe24.com 로그인 → [앱 개발] → [앱 생성]',
-      '② 권한 선택: 상품 / 주문 / 고객 / 배송 모두 체크',
-      '③ Redirect URI 설정 (예: https://yourdomain.com/oauth)',
-      '④ Client ID / Client Secret 확인·복사',
-      '⑤ OAuth 인증 URL로 이동 → 로그인 후 Access Token / Refresh Token 발급',
-      '⑥ 프로그램에 Mall ID + Client ID + Client Secret + Refresh Token 입력 후 저장',
+      '━━ STEP 1. 개발자센터 앱 생성 ━━',
+      '① developers.cafe24.com 접속 → 카페24 계정으로 로그인',
+      '② 상단 [앱 개발] 메뉴 클릭 → [앱 생성] 버튼 클릭',
+      '③ 앱 이름 입력 (예: ProductPRO), 앱 유형: Private 선택',
+      '━━ STEP 2. 권한(Scope) 설정 ━━',
+      '④ [권한 설정] 탭 → 아래 항목 모두 체크',
+      '    · 상품: mall.read_product / mall.write_product',
+      '    · 주문: mall.read_order / mall.write_order',
+      '    · 고객: mall.read_customer / mall.write_customer',
+      '    · 배송: mall.read_shipping / mall.write_shipping',
+      '    · 카테고리: mall.read_category / mall.write_category',
+      '━━ STEP 3. Redirect URI 설정 ━━',
+      '⑤ [기본 정보] 탭 → Redirect URI 입력란에 정확히 입력:',
+      '    https://withlaon.vercel.app/oauth',
+      '    (띄어쓰기·슬래시 주의, 이 주소와 1글자라도 다르면 오류 발생)',
+      '━━ STEP 4. Client ID / Secret 복사 ━━',
+      '⑥ 앱 저장 후 [앱 개발] 목록에서 방금 만든 앱 클릭',
+      '⑦ Client ID (VAaw...) 복사 → 프로그램 "Client ID" 입력란에 붙여넣기',
+      '⑧ Client Secret Key 옆 [보기] 클릭 → 복사 → "Client Secret" 입력란에 붙여넣기',
+      '━━ STEP 5. OAuth 인증 (Refresh Token 발급) ━━',
+      '⑨ 프로그램에 쇼핑몰 ID + Client ID + Client Secret 입력 후 [저장하고 OAuth 인증 시작] 클릭',
+      '⑩ 팝업 창이 열리면 카페24 로그인 → 권한 동의 → 자동으로 Refresh Token 발급',
+      '⑪ 팝업이 닫히면 Refresh Token 입력란이 자동으로 채워짐',
+      '⑫ [연동 테스트] 버튼으로 정상 동작 확인',
+      '━━ 자주 발생하는 오류 ━━',
+      '❌ invalid_request: redirect_uri → Redirect URI 주소를 정확히 확인',
+      '❌ invalid scope → [권한 설정]에서 요청한 scope가 모두 체크되어 있는지 확인',
+      '❌ 인증 코드 만료 → OAuth 재인증 버튼을 다시 눌러 새 코드로 재시도',
+      '❌ 401 Client ID 오류 → Client ID / Secret 재확인, 앱이 활성화 상태인지 확인',
     ],
     links:[
       { label:'카페24 개발자센터', url:'https://developers.cafe24.com' },
+      { label:'카페24 API 문서 (scope 목록)', url:'https://developers.cafe24.com/docs/api/admin/#scope' },
     ],
   },
   fashionplus: {
@@ -1671,9 +1696,11 @@ export default function ChannelsPage() {
                           <div style={{ display:'flex', alignItems:'center', gap:5 }}>
                             <span style={{
                               fontSize:9.5, fontWeight:700, padding:'1px 6px', borderRadius:4,
-                              background: info.badge === 'required' ? '#fee2e2' : '#f1f5f9',
-                              color: info.badge === 'required' ? '#dc2626' : '#64748b',
-                            }}>{info.badge === 'required' ? '필수' : '선택'}</span>
+                              background: info.badge === 'required' ? '#fee2e2' : info.badge === 'auto' ? '#ede9fe' : '#f1f5f9',
+                              color:      info.badge === 'required' ? '#dc2626' : info.badge === 'auto' ? '#7c3aed' : '#64748b',
+                            }}>
+                              {info.badge === 'required' ? '필수' : info.badge === 'auto' ? '자동발급' : '선택'}
+                            </span>
                             <span style={{ fontSize:12, fontWeight:800, color:'#1e293b' }}>{info.label}</span>
                           </div>
                           <p style={{ fontSize:11, color:'#475569', marginLeft:36, lineHeight:1.5 }}>{info.desc}</p>
@@ -1687,11 +1714,24 @@ export default function ChannelsPage() {
                   <div>
                     <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:8 }}>🚀 API 발급 절차</p>
                     <div style={{ display:'flex', flexDirection:'column', gap:4 }}>
-                      {guide.steps.map((step, i) => (
-                        <div key={i} style={{ fontSize:11.5, color: step.startsWith('━━━') ? '#7c3aed' : '#374151', lineHeight:1.6, fontWeight: step.startsWith('━━━') ? 800 : 500, padding: step.startsWith('━━━') ? '4px 0' : '0' }}>
-                          {step}
-                        </div>
-                      ))}
+                      {guide.steps.map((step, i) => {
+                        const isSection = step.startsWith('━━')
+                        const isError   = step.startsWith('❌')
+                        const isNote    = step.startsWith('⚠') || step.startsWith('→') || step.startsWith('    ')
+                        return (
+                          <div key={i} style={{
+                            fontSize   : isSection ? 11   : isNote ? 10.5 : 11.5,
+                            color      : isSection ? '#7c3aed' : isError ? '#dc2626' : isNote ? '#64748b' : '#374151',
+                            lineHeight : 1.6,
+                            fontWeight : isSection ? 800 : isError ? 700 : 500,
+                            padding    : isSection ? '5px 0 2px' : '0',
+                            borderTop  : isSection && i > 0 ? '1px solid #e2e8f0' : 'none',
+                            marginTop  : isSection && i > 0 ? 4 : 0,
+                          }}>
+                            {step}
+                          </div>
+                        )
+                      })}
                     </div>
                   </div>
 
