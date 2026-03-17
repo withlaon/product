@@ -32,18 +32,47 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'test_connection') {
-      const now      = new Date()
-      const adapter  = createAdapter(mall, credentials)
+      const now = new Date()
+      let adapter
+      try {
+        adapter = createAdapter(mall, credentials)
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e)
+        return NextResponse.json({ success: false, mall, message: msg })
+      }
+
       try {
         await adapter.getOrders({
-          start_date: format(subDays(now, 1), 'yyyy-MM-dd'),
+          start_date: format(subDays(now, 7), 'yyyy-MM-dd'),
           end_date  : format(now, 'yyyy-MM-dd'),
           limit     : 1,
         })
-        return NextResponse.json({ success: true, mall, message: '연결 성공' })
+        return NextResponse.json({ success: true, mall, message: 'API 연결 성공 ✓' })
       } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e)
-        return NextResponse.json({ success: false, mall, message: `연결 실패: ${msg}` })
+        const raw = e instanceof Error ? e.message : String(e)
+
+        // 인증 오류(401/403) → 실패, API 키 확인 필요
+        if (raw.includes('401') || raw.includes('403')) {
+          return NextResponse.json({
+            success: false, mall,
+            message: `인증 실패 (${raw.includes('401') ? '401' : '403'}) — API 키 / 비밀번호를 확인해주세요.`,
+          })
+        }
+        // 404 → 엔드포인트는 존재하지만 데이터 없음 or 경로 오류
+        if (raw.includes('404')) {
+          return NextResponse.json({
+            success: false, mall,
+            message: 'API 엔드포인트 오류 (404) — 셀러 코드나 API URL을 확인해주세요.',
+          })
+        }
+        // 연결 timeout 등 네트워크 오류
+        if (raw.toLowerCase().includes('timeout') || raw.toLowerCase().includes('fetch')) {
+          return NextResponse.json({
+            success: false, mall,
+            message: 'API 서버 응답 없음 — 네트워크 상태나 API 서버 점검 여부를 확인해주세요.',
+          })
+        }
+        return NextResponse.json({ success: false, mall, message: `연결 실패: ${raw}` })
       }
     }
 

@@ -1,8 +1,6 @@
-fix: Cafe24 토큰 400 에러 수정 + 채널 연동 테스트 기능 추가
+fix: 에이블리 키 불일치, 패션플러스 404, 카페24 401 오류 수정
 
-- /api/cafe24/token: body에서 client_id/client_secret 제거 (Basic Auth 헤더만 사용)
-- channels: 연동 테스트 state/함수 추가 (testStatus, testMsg, runTestConnection)
-- channels: 저장 후 비-OAuth 쇼핑몰 자동 연결 테스트 실행
-- channels: 모달에 연동 테스트 버튼 + 결과 인라인 표시 (성공/실패/로딩)
-- channels: 카드에 테스트 결과 뱃지 표시 (연결확인/연결실패/테스트 중)
-- inventory: 재고 처리 배치 병렬화 (batchUpdateOptions) - 처리속도 개선
+- marketplaces/index: ablly를 AblyConnector 별칭으로 추가 (channels key 호환)
+- api/marketplaces: 테스트 오류 메시지 개선 (401/403/404 원인별 안내)
+- api/cafe24/token: DB 저장 client_id/secret 폴백, 401/400 상세 오류 메시지
+- oauth/page: Cafe24 토큰 요청 시 DB credentials 함께 전달

@@ -73,8 +73,9 @@ function OAuthCallbackInner() {
       const { data: { session } } = await supabase.auth.getSession()
       const userId = session?.user?.id ?? null
 
-      /* ── 저장된 자격증명 불러오기 (client_secret 조회) ── */
-      let clientSecret = ''
+      /* ── 저장된 자격증명 불러오기 (client_id / client_secret 조회) ── */
+      let savedClientId = ''
+      let clientSecret  = ''
       if (userId && mallKey) {
         const { data: cred } = await supabase
           .from('pm_mall_credentials')
@@ -82,24 +83,33 @@ function OAuthCallbackInner() {
           .eq('user_id', userId)
           .eq('mall_key', mallKey)
           .maybeSingle()
-        clientSecret = cred?.credentials?.api_secret ?? ''
+        savedClientId = cred?.credentials?.api_key    ?? ''
+        clientSecret  = cred?.credentials?.api_secret ?? ''
         if (!shopId) shopId = cred?.credentials?.seller_id ?? ''
       }
+      // state에서 추출한 client_id 우선, 없으면 DB에서 불러온 값 사용
+      const resolvedClientId = clientId || savedClientId
 
       /* ── 토큰 교환 API 호출 ── */
       try {
         // 카페24는 전용 엔드포인트 우선 사용 (환경변수로 처리)
         const apiUrl = mallKey === 'cafe24' ? '/api/cafe24/token' : '/api/oauth'
         const apiBody = mallKey === 'cafe24'
-          ? JSON.stringify({ code, mall_id: shopId || mallKey, user_id: userId })
+          ? JSON.stringify({
+              code,
+              mall_id      : shopId || mallKey,
+              user_id      : userId,
+              client_id    : resolvedClientId,   // 폴백으로 전달
+              client_secret: clientSecret,        // 폴백으로 전달
+            })
           : JSON.stringify({
               code,
               state,
-              mall     : mallKey,
-              client_id: clientId,
+              mall         : mallKey,
+              client_id    : resolvedClientId,
               client_secret: clientSecret,
-              shop_id  : shopId,
-              user_id  : userId,
+              shop_id      : shopId,
+              user_id      : userId,
             })
 
         const res = await fetch(apiUrl, {

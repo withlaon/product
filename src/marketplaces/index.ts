@@ -53,6 +53,7 @@ const CONNECTOR_MAP: Record<string, ConnectorConstructor> = {
   cafe24      : Cafe24Connector,
   zigzag      : ZigzagConnector,
   ably        : AblyConnector,
+  ablly       : AblyConnector,   // 오타 호환 별칭 (channels page 키)
   always      : AlwaysConnector,
   tosshopping : TossshoppingConnector,
   lotteon     : LotteonConnector,

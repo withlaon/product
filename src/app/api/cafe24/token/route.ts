@@ -17,26 +17,42 @@ const supabaseAdmin = createClient(
  */
 export async function POST(req: NextRequest) {
   try {
-    const { code, mall_id, user_id } = await req.json()
+    const body = await req.json()
+    const { code, mall_id, user_id, client_id: bodyClientId, client_secret: bodyClientSecret } = body
 
     if (!code || !mall_id) {
       return NextResponse.json({ error: 'code, mall_id 파라미터가 필요합니다.' }, { status: 400 })
     }
 
-    const clientId     = process.env.CAFE24_CLIENT_ID     ?? ''
-    const clientSecret = process.env.CAFE24_CLIENT_SECRET ?? ''
-    const redirectUri  = process.env.CAFE24_REDIRECT_URI  ?? `${req.headers.get('origin') ?? ''}/oauth`
+    // 우선순위: 요청 body → 환경변수 → DB 저장값
+    let clientId     = bodyClientId     || process.env.CAFE24_CLIENT_ID     || ''
+    let clientSecret = bodyClientSecret || process.env.CAFE24_CLIENT_SECRET || ''
+    const redirectUri = process.env.CAFE24_REDIRECT_URI
+      || `${req.headers.get('origin') || 'https://withlaon.vercel.app'}/oauth`
+
+    // DB에서 저장된 credentials 조회 (폴백)
+    if (user_id && (!clientId || !clientSecret)) {
+      const { data: cred } = await supabaseAdmin
+        .from('pm_mall_credentials')
+        .select('credentials')
+        .eq('user_id', user_id)
+        .eq('mall_key', 'cafe24')
+        .maybeSingle()
+      if (cred?.credentials) {
+        if (!clientId)     clientId     = cred.credentials.api_key     || ''
+        if (!clientSecret) clientSecret = cred.credentials.api_secret  || ''
+      }
+    }
 
     if (!clientId || !clientSecret) {
       return NextResponse.json(
-        { error: 'CAFE24_CLIENT_ID / CAFE24_CLIENT_SECRET 환경변수가 설정되지 않았습니다.' },
+        { error: 'Client ID / Client Secret을 확인할 수 없습니다. 채널 연동 설정에서 Client ID와 Client Secret을 입력해 주세요.' },
         { status: 500 }
       )
     }
 
     /* ── 카페24 토큰 교환 요청 ── */
     // Cafe24 공식 스펙: client_id/client_secret은 Authorization Basic 헤더에만 포함
-    // body에 중복 포함 시 400 오류 발생
     const tokenRes = await fetch(`https://${mall_id}.cafe24api.com/api/v2/oauth/token`, {
       method : 'POST',
       headers: {
@@ -51,9 +67,17 @@ export async function POST(req: NextRequest) {
     })
 
     if (!tokenRes.ok) {
-      const errText = await tokenRes.text()
+      let errDetail = ''
+      try { errDetail = await tokenRes.text() } catch { /* ignore */ }
+      let errMsg = `카페24 토큰 교환 실패 (${tokenRes.status})`
+      if (tokenRes.status === 401) {
+        errMsg = 'Client ID 또는 Client Secret이 올바르지 않습니다 (401). 카페24 개발자센터에서 앱 자격증명을 확인해 주세요.'
+      } else if (tokenRes.status === 400) {
+        errMsg = '잘못된 요청 (400) — 인증 코드가 만료되었거나 이미 사용되었을 수 있습니다. 다시 OAuth 인증을 진행해 주세요.'
+        if (errDetail.includes('redirect_uri')) errMsg = 'redirect_uri가 카페24 앱 설정과 다릅니다. 등록된 redirect_uri를 확인해 주세요.'
+      }
       return NextResponse.json(
-        { error: `카페24 토큰 교환 실패 (${tokenRes.status})`, detail: errText },
+        { error: errMsg, detail: errDetail, status: tokenRes.status },
         { status: 502 }
       )
     }
