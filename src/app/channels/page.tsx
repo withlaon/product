@@ -931,56 +931,69 @@ export default function ChannelsPage() {
   // zigzag: Access Key 방식으로 변경 — OAuth 로그인 불필요
   const OAUTH_MALLS = ['cafe24']
 
+  /** 자격증명만 저장 (OAuth 팝업 없음) — "설정 저장" 버튼 전용 */
+  const saveCredentialsOnly = () => {
+    if (!apiTarget) return
+    update(channels.map(c => c.key === apiTarget.key ? { ...c, ...apiForm, active:true } : c))
+    setApiTarget(null)
+  }
+
+  /** 저장 + OAuth 팝업 실행 — OAuth 쇼핑몰 전용 */
+  const startOAuth = () => {
+    if (!apiTarget) return
+    const savedKey  = apiTarget.key
+    const savedForm = { ...apiForm }
+
+    // 먼저 자격증명 저장
+    update(channels.map(c => c.key === savedKey ? { ...c, ...apiForm, active:true } : c))
+
+    const shopId   = savedForm.seller_id?.trim()
+    const clientId = savedForm.api_key?.trim()
+    if (!shopId || !clientId) {
+      alert('쇼핑몰 ID (shopId)와 Client ID를 먼저 입력해 주세요.')
+      return
+    }
+    const redirectUri  = `${window.location.origin}/oauth`
+    const clientSecret = savedForm.api_secret?.trim() || ''
+    const state = btoa(JSON.stringify({ mall: savedKey, client_id: clientId, client_secret: clientSecret, shop_id: shopId }))
+      .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'')
+
+    let authUrl = ''
+    if (savedKey === 'cafe24') {
+      authUrl = `https://${shopId}.cafe24api.com/api/v2/oauth/authorize`
+        + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
+        + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+        + `&scope=mall.read_product,mall.write_product,mall.read_order,mall.write_order,mall.read_category,mall.write_category,mall.read_customer,mall.write_customer,mall.read_shipping,mall.write_shipping`
+        + `&state=${state}`
+    } else if (savedKey === 'naver') {
+      authUrl = `https://api.commerce.naver.com/external/v1/oauth2/authorize`
+        + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
+        + `&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`
+    }
+
+    if (authUrl) {
+      setOauthPending(true)
+      const popup = window.open(authUrl, 'oauth_popup', 'width=600,height=700,left=300,top=100')
+      const checkClosed = setInterval(() => {
+        if (popup?.closed) { clearInterval(checkClosed); setOauthPending(false) }
+      }, 1000)
+    }
+    setApiTarget(null)
+  }
+
+  /** 비-OAuth 쇼핑몰: 저장 즉시 연동 테스트 */
   const saveApi = async () => {
     if (!apiTarget) return
     const savedKey  = apiTarget.key
     const savedForm = { ...apiForm }
 
-    // 공통: 입력값 저장
     update(channels.map(c => c.key === savedKey ? { ...c, ...apiForm, active:true } : c))
 
-    // OAuth 쇼핑몰: Client ID + Shop ID 있으면 팝업 실행
-    if (OAUTH_MALLS.includes(savedKey)) {
-      const shopId   = savedForm.seller_id?.trim()
-      const clientId = savedForm.api_key?.trim()
-      if (!shopId || !clientId) {
-        setApiTarget(null)
-        return
-      }
-      const redirectUri  = `${window.location.origin}/oauth`
-      const clientSecret = savedForm.api_secret?.trim() || ''
-      const state = btoa(JSON.stringify({ mall: savedKey, client_id: clientId, client_secret: clientSecret, shop_id: shopId }))
-        .replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'')
-      let authUrl = ''
-      if (savedKey === 'cafe24') {
-        authUrl = `https://${shopId}.cafe24api.com/api/v2/oauth/authorize`
-          + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
-          + `&redirect_uri=${encodeURIComponent(redirectUri)}`
-          + `&scope=mall.read_product,mall.write_product,mall.read_order,mall.write_order,mall.read_category,mall.write_category,mall.read_customer,mall.write_customer,mall.read_shipping,mall.write_shipping`
-          + `&state=${state}`
-      } else if (savedKey === 'naver') {
-        authUrl = `https://api.commerce.naver.com/external/v1/oauth2/authorize`
-          + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
-          + `&redirect_uri=${encodeURIComponent(redirectUri)}&state=${state}`
-      }
-      if (authUrl) {
-        setOauthPending(true)
-        const popup = window.open(authUrl, 'oauth_popup', 'width=600,height=700,left=300,top=100')
-        const checkClosed = setInterval(() => {
-          if (popup?.closed) { clearInterval(checkClosed); setOauthPending(false) }
-        }, 1000)
-      }
-      setApiTarget(null)
-      return
-    }
-
-    // 비-OAuth: 모달 열어둔 채로 바로 테스트 진행 → 성공 시 자동 닫기 / 실패 시 모달 유지
+    // 비-OAuth: 모달 열어둔 채로 테스트 진행 → 성공 시 자동 닫기
     const ok = await runTestConnection(savedKey, savedForm)
     if (ok) {
-      // 성공: 1.5초 뒤 자동 닫기
       setTimeout(() => setApiTarget(null), 1500)
     }
-    // 실패: 모달 유지 → 사용자가 오류 메시지 확인 후 수동으로 닫기
   }
 
   /* ── 연동 테스트 (결과를 boolean으로 반환) ── */
@@ -1705,33 +1718,27 @@ export default function ChannelsPage() {
                     </Button>
                   )}
 
-                  {/* 수정 모드 + OAuth 쇼핑몰: 저장 버튼 + 재인증 버튼 분리 */}
-                  {isEditMode && apiTarget && OAUTH_MALLS.includes(apiTarget.key) ? (
+                  {/* OAuth 쇼핑몰: 설정 저장(자격증명만) + OAuth 재인증(팝업) 완전 분리 */}
+                  {apiTarget && OAUTH_MALLS.includes(apiTarget.key) ? (
                     <>
-                      <Button variant="outline" onClick={saveApi}
+                      {/* 설정 저장: OAuth 팝업 없이 입력값만 저장 */}
+                      <Button variant="outline" onClick={saveCredentialsOnly}
                         style={{ borderColor:'#7e22ce', color:'#7e22ce' }}>
                         <Save size={13}/>설정 저장
                       </Button>
-                      <Button onClick={async () => { await saveApi() }}
-                        disabled={oauthPending}
+                      {/* OAuth 재인증: 저장 + 팝업 실행 */}
+                      <Button onClick={startOAuth} disabled={oauthPending}
                         style={{ background:'#2563eb', borderColor:'#2563eb', opacity: oauthPending ? 0.7 : 1 }}>
                         {oauthPending
                           ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }}/>인증 대기 중...</>
-                          : <><Zap size={13}/>OAuth 재인증 (Refresh Token 재발급)</>
+                          : isEditMode
+                            ? <><Zap size={13}/>OAuth 재인증 (Refresh Token 재발급)</>
+                            : <><Zap size={13}/>저장하고 OAuth 인증 시작</>
                         }
                       </Button>
                     </>
-                  ) : apiTarget && OAUTH_MALLS.includes(apiTarget.key) ? (
-                    /* 신규 OAuth 쇼핑몰 */
-                    <Button onClick={saveApi} disabled={oauthPending}
-                      style={{ opacity: oauthPending ? 0.7 : 1 }}>
-                      {oauthPending
-                        ? <><RefreshCw size={13} style={{ animation:'spin 1s linear infinite' }}/>인증 대기 중...</>
-                        : <><Zap size={13}/>저장하고 OAuth 인증 시작</>
-                      }
-                    </Button>
                   ) : (
-                    /* 일반 쇼핑몰 (스마트스토어 포함): 저장 즉시 연동 테스트 */
+                    /* 일반 쇼핑몰: 저장 즉시 연동 테스트 */
                     <Button onClick={saveApi}>
                       <Zap size={13}/>저장 및 연동 테스트
                     </Button>

@@ -1,8 +1,5 @@
-fix: save modal stays open during test, show result before closing
+fix: cafe24 invalid_grant error handling with re-auth guide
 
-- saveApi: non-OAuth malls now await test before closing modal
-- Success: modal auto-closes after 1.5s with success message shown
-- Failure: modal stays open so user can read error and fix inputs
-- runTestConnection: returns boolean for caller to use
-- zigzag: added to LIMITED_API_MALLS (partner-api.zigzag.kr is restricted)
-- zigzag test: validates Access Key + Secret Key format instead of live API call
+- API route: detailed invalid_grant message with step-by-step re-auth guide
+- UI: orange warning box appears when invalid_grant detected, showing 4-step fix
+- Cause: Client Secret regeneration invalidates all existing refresh tokens
