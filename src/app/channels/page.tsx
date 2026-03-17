@@ -37,11 +37,11 @@ const COMMON_LOGIN_FIELDS: ApiField[] = [
 ]
 const MALL_API_FIELDS: Record<string, ApiField[]> = {
   // 쿠팡: 로그인 + 판매자코드 + Access Key + Secret Key
+  // 쿠팡: 자체개발(직접입력) 방식 — 로그인 불필요, API Key만 사용
   coupang: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 코드(Vendor ID)', placeholder:'A00xxxxxx', type:'text', section:'api' },
-    { key:'api_key',   label:'Access Key',             placeholder:'발급된 Access Key', type:'password', section:'api' },
-    { key:'api_secret',label:'Secret Key',             placeholder:'발급된 Secret Key', type:'password', section:'api' },
+    { key:'seller_id', label:'Vendor ID',   placeholder:'A로 시작하는 업체코드 (예: A00123456)', type:'text',     section:'api', required:true },
+    { key:'api_key',   label:'Access Key',  placeholder:'OPEN API에서 발급된 Access Key',       type:'text',     section:'api', required:true },
+    { key:'api_secret',label:'Secret Key',  placeholder:'OPEN API에서 발급된 Secret Key',       type:'password', section:'api', required:true },
   ],
   // 스마트스토어: 로그인 + Application ID + Application Secret
   naver: [
@@ -60,17 +60,17 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
   ],
   // ESM 지마켓: 지마켓 전용 ID/PW (ESM PLUS 마스터 통합 ID 아님!)
   // ※ ESM PLUS '2단계 인증' 해제 필요, 셀링툴 관리에서 '사방넷' 설정 필요
+  // G마켓: ESM+ 직접 API 불가 → 로그인 정보만 저장 (웹 자동화 방식)
   gmarket: [
-    { key:'login_id',  label:'쇼핑몰ID (지마켓 전용)',   placeholder:'지마켓 전용 로그인 ID (ESM PLUS 마스터 ID 아님)', type:'text',     section:'login' },
-    { key:'login_pw',  label:'PASSWORD (지마켓 전용)',   placeholder:'+ 기호 사용 금지',            type:'password', section:'login' },
-    { key:'seller_id', label:'SHOP ID',                  placeholder:'내부 구분용 (선택사항)',       type:'text',     section:'api' },
+    { key:'login_id', label:'ESM PLUS 아이디', placeholder:'G마켓 전용 로그인 ID', type:'text',     section:'login', required:true },
+    { key:'login_pw', label:'ESM PLUS 비밀번호', placeholder:'ESM PLUS 비밀번호 (+ 기호 사용 금지)', type:'password', section:'login', required:true },
+    { key:'seller_id',label:'판매자 코드',     placeholder:'G마켓 판매자 코드 (선택)',               type:'text',     section:'api',   required:false },
   ],
-  // ESM 옥션: 옥션 전용 ID/PW (ESM PLUS 마스터 통합 ID 아님!)
-  // ※ ESM PLUS '2단계 인증' 해제 필요, 셀링툴 관리에서 '사방넷' 설정 필요
+  // 옥션: ESM+ 직접 API 불가 → 로그인 정보만 저장 (웹 자동화 방식)
   auction: [
-    { key:'login_id',  label:'쇼핑몰ID (옥션 전용)',     placeholder:'옥션 전용 로그인 ID (ESM PLUS 마스터 ID 아님)', type:'text',     section:'login' },
-    { key:'login_pw',  label:'PASSWORD (옥션 전용)',     placeholder:'+ 기호 사용 금지',            type:'password', section:'login' },
-    { key:'seller_id', label:'SHOP ID',                  placeholder:'내부 구분용 (선택사항)',       type:'text',     section:'api' },
+    { key:'login_id', label:'ESM PLUS 아이디', placeholder:'옥션 전용 로그인 ID (소문자)', type:'text',     section:'login', required:true },
+    { key:'login_pw', label:'ESM PLUS 비밀번호', placeholder:'ESM PLUS 비밀번호 (+ 기호 사용 금지)', type:'password', section:'login', required:true },
+    { key:'seller_id',label:'판매자 코드',     placeholder:'옥션 판매자 코드 (선택)',              type:'text',     section:'api',   required:false },
   ],
   // 에이블리: 로그인 + API Token
   ablly: [
@@ -167,25 +167,33 @@ type GuideInfo = {
 }
 const MALL_GUIDES: Record<string, GuideInfo> = {
   coupang: {
-    title:'쿠팡 WING API 연동', authType:'HMAC SHA256',
-    note:'쿠팡 WING 판매자 계정이 필요합니다. API Key 발급 후 최소 30분 ~ 최대 4시간 후 반영됩니다.',
-    warning:'API 키 발급 후 바로 연동 테스트 시 실패할 수 있습니다. 최소 30분 후 다시 시도하세요.',
+    title:'쿠팡 WING API 연동 (자체개발)', authType:'HMAC SHA256',
+    note:'쿠팡은 셀링툴 업체 없이 자체개발(직접입력) 방식으로 API 연동이 가능합니다. WING [자동화 관리 > OPEN API]에서 "자체 개발(직접 입력)"을 선택하면 Access Key / Secret Key를 직접 발급받을 수 있습니다.',
+    warning:'⚠ API 키 발급 후 최대 4시간 후 활성화됩니다 · IP 화이트리스트 등록 필수 · Vercel 배포 시 서버 IP 확인 필요',
     required:[
-      { label:'판매자 ID (Vendor ID)', desc:'쿠팡 WING의 업체코드 (A로 시작)', example:'A00123456', badge:'required' },
+      { label:'Vendor ID', desc:'쿠팡 WING 업체코드 (A로 시작, 예: A00123456)', example:'A00123456', badge:'required' },
       { label:'Access Key', desc:'OPEN API 발급된 Access Key', badge:'required' },
-      { label:'Secret Key', desc:'OPEN API 발급된 Secret Key', badge:'required' },
-      { label:'로그인 ID/PW', desc:'WING 판매자 로그인 계정', badge:'required' },
+      { label:'Secret Key', desc:'OPEN API 발급된 Secret Key (HMAC-SHA256 서명에 사용)', badge:'required' },
     ],
     steps:[
-      '① wing.coupang.com 접속 후 로그인',
-      '② 상단 메뉴 [판매자정보] → [추가 판매정보] 클릭',
-      '③ 좌측 [OPEN API] 클릭 → [확인] 버튼 클릭',
-      '④ 연동 업체 선택 화면에서 [자체 개발] 선택',
-      '⑤ Vendor ID / Access Key / Secret Key 확인 및 복사',
-      '⑥ 프로그램에 로그인 ID/PW + Vendor ID + Access Key + Secret Key 입력 후 저장',
+      '━━ 자체개발(직접입력) API 발급 ━━',
+      '① wing.coupang.com 접속 → 로그인',
+      '② 상단 메뉴 [자동화 관리] → [OPEN API] 클릭',
+      '③ 연동 방식 선택: "자체 개발(직접 입력)" 선택',
+      '④ 업체명, URL, 담당자 정보 입력 후 [신청] 클릭',
+      '⑤ 발급된 Vendor ID / Access Key / Secret Key 복사',
+      '━━ IP 화이트리스트 등록 (필수!) ━━',
+      '⑥ OPEN API 설정 → [IP 관리] → [IP 추가] 클릭',
+      '⑦ Vercel 서버 IP 확인 방법: /api/server-ip 엔드포인트 호출 또는 아래 참고',
+      '⑧ Vercel Serverless Function IP (미국 기준): 3.80.x.x ~ 3.94.x.x 대역 (동적 IP)',
+      '⑨ 임시 테스트 시: 내 PC 공인 IP(whatismyip.com)로 테스트 가능',
+      '━━ 프로그램 연동 ━━',
+      '⑩ 프로그램에 Vendor ID + Access Key + Secret Key 입력 후 저장',
+      '⑪ 연동 테스트 버튼으로 정상 동작 확인 (발급 후 최대 4시간 대기)',
     ],
     links:[
       { label:'쿠팡 WING', url:'https://wing.coupang.com' },
+      { label:'내 공인 IP 확인', url:'https://www.whatismyip.com' },
       { label:'쿠팡 Open API 문서', url:'https://developers.coupangcorp.com' },
     ],
   },
@@ -233,41 +241,56 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     ],
   },
   gmarket: {
-    title:'G마켓 ESM 연동', authType:'ESM+ ID/PW 인증',
-    note:'G마켓 전용 계정을 사용합니다. ESM PLUS 마스터 통합 ID로는 연동이 불가합니다.',
-    warning:'⚠ 비밀번호에 + 기호 사용 금지 · ESM PLUS 2단계 인증을 반드시 해제해야 합니다.',
+    title:'G마켓 ESM 연동', authType:'웹 자동화 방식 (로그인 정보 저장)',
+    note:'ESM(옥션/지마켓)은 공식 파트너 셀링툴에게만 API를 개방합니다. 개인·소규모 프로그램은 직접 API 연동이 불가하며, ESM PLUS 로그인 정보를 저장해 웹 자동화 방식으로 연동합니다.',
+    warning:'⚠ ESM PLUS 직접 API 연동 불가 — 반드시 웹 자동화 방식 사용 · 비밀번호에 + 기호 사용 금지 · 2단계 인증 해제 필수',
     required:[
-      { label:'G마켓 전용 ID', desc:'G마켓 전용 로그인 ID (ESM PLUS 마스터 ID 아님)', badge:'required' },
-      { label:'G마켓 전용 PW', desc:'+ 기호 사용 금지', badge:'required' },
-      { label:'SHOP ID', desc:'내부 구분용 (선택사항)', badge:'optional' },
+      { label:'ESM PLUS 아이디', desc:'G마켓 전용 로그인 ID (ESM PLUS 마스터 통합 ID 아님)', badge:'required' },
+      { label:'ESM PLUS 비밀번호', desc:'G마켓 전용 비밀번호 (+ 기호 사용 금지)', badge:'required' },
+      { label:'판매자 코드', desc:'G마켓 판매자 코드 — 선택사항', badge:'optional' },
     ],
     steps:[
-      '① ESM PLUS (esmplus.com) 접속 후 [판매자정보 > 보안관리]',
-      '② 2단계 인증관리 상태 "해제"로 변경 (필수!)',
-      '③ [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함"',
-      '④ 셀링툴 업체 선택 → 상품/주문 모두 "사방넷" 선택 후 저장',
-      '⑤ 프로그램에 G마켓 전용 ID/PW 입력 후 저장 (ESM PLUS 마스터 ID 아님!)',
+      '━━ ESM PLUS API 구조 이해 ━━',
+      '① ESM(옥션/G마켓) API는 "셀링툴 업체(공식 제휴사)"만 사용 가능 — 개인 직접 연동 불가',
+      '② 대신 ESM PLUS 로그인 정보를 저장해 웹 자동화 방식으로 데이터 수집',
+      '━━ ESM PLUS 계정 준비 ━━',
+      '③ esmplus.com 접속 → [판매자정보 > 보안관리] → 2단계 인증 "해제" (필수!)',
+      '④ [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함" 설정',
+      '⑤ 셀링툴 업체 선택 → 상품/주문 모두 연동할 셀링툴 업체 선택',
+      '━━ 연동 등록 ━━',
+      '⑥ 프로그램에 G마켓 전용 ID/PW 입력 후 저장',
+      '⑦ 저장 후 주문 수집 버튼으로 동작 확인',
     ],
-    links:[{ label:'ESM PLUS', url:'https://www.esmplus.com' }],
+    links:[
+      { label:'ESM PLUS 로그인', url:'https://www.esmplus.com' },
+      { label:'ESM PLUS 셀링툴 관리', url:'https://www.esmplus.com/Member/MemberInfo/SellingToolManage' },
+    ],
   },
   auction: {
-    title:'옥션 ESM 연동', authType:'ESM+ ID/PW 인증',
-    note:'옥션 전용 계정을 사용합니다. G마켓과 같은 ESM API를 공유합니다.',
-    warning:'⚠ ID는 소문자만 입력 · 비밀번호에 + 기호 사용 금지 · ESM PLUS 2단계 인증 해제 필수',
+    title:'옥션 ESM 연동', authType:'웹 자동화 방식 (로그인 정보 저장)',
+    note:'ESM(옥션/G마켓)은 공식 파트너 셀링툴에게만 API를 개방합니다. 개인·소규모 프로그램은 직접 API 연동이 불가하며, ESM PLUS 로그인 정보를 저장해 웹 자동화 방식으로 연동합니다.',
+    warning:'⚠ ESM PLUS 직접 API 연동 불가 — 반드시 웹 자동화 방식 사용 · ID는 소문자만 입력 · 비밀번호에 + 기호 사용 금지 · 2단계 인증 해제 필수',
     required:[
-      { label:'옥션 전용 ID', desc:'옥션 전용 로그인 ID (소문자만, ESM PLUS 마스터 ID 아님)', badge:'required' },
-      { label:'옥션 전용 PW', desc:'+ 기호 사용 금지', badge:'required' },
-      { label:'API Key', desc:'ESM PLUS에서 발급된 API Key', badge:'required' },
-      { label:'SHOP ID', desc:'내부 구분용 (선택사항)', badge:'optional' },
+      { label:'ESM PLUS 아이디', desc:'옥션 전용 로그인 ID (소문자, ESM PLUS 마스터 ID 아님)', badge:'required' },
+      { label:'ESM PLUS 비밀번호', desc:'옥션 전용 비밀번호 (+ 기호 사용 금지)', badge:'required' },
+      { label:'판매자 코드', desc:'옥션 판매자 코드 — 선택사항', badge:'optional' },
     ],
     steps:[
-      '① ESM PLUS (esmplus.com) [판매자정보 > 보안관리] → 2단계 인증 "적용안함" 설정',
-      '② [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함"',
-      '③ 상품/주문 모두 "사방넷" 선택 후 저장',
-      '④ [판매자정보 > API 관리] → API Key 발급 또는 확인·복사',
-      '⑤ 프로그램에 옥션 전용 ID(소문자)/PW + API Key 입력 후 저장',
+      '━━ ESM PLUS API 구조 이해 ━━',
+      '① ESM(옥션/G마켓) API는 "셀링툴 업체(공식 제휴사)"만 사용 가능 — 개인 직접 연동 불가',
+      '② 대신 ESM PLUS 로그인 정보를 저장해 웹 자동화 방식으로 데이터 수집',
+      '━━ ESM PLUS 계정 준비 ━━',
+      '③ esmplus.com 접속 → [판매자정보 > 보안관리] → 2단계 인증 "해제" (필수!)',
+      '④ [판매자정보 > 셀링툴 관리] → 셀링툴 사용여부 "사용함" 설정',
+      '⑤ 셀링툴 업체 선택 → 상품/주문 모두 연동할 셀링툴 업체 선택',
+      '━━ 연동 등록 ━━',
+      '⑥ 프로그램에 옥션 전용 ID(소문자)/PW 입력 후 저장',
+      '⑦ 저장 후 주문 수집 버튼으로 동작 확인',
     ],
-    links:[{ label:'ESM PLUS', url:'https://www.esmplus.com' }],
+    links:[
+      { label:'ESM PLUS 로그인', url:'https://www.esmplus.com' },
+      { label:'ESM PLUS 셀링툴 관리', url:'https://www.esmplus.com/Member/MemberInfo/SellingToolManage' },
+    ],
   },
   ablly: {
     title:'에이블리 셀러 API 연동', authType:'API Token 방식',

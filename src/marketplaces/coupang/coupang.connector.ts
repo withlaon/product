@@ -23,28 +23,43 @@ export class CoupangConnector extends BaseMarketplace {
   readonly mallName = '쿠팡'
 
   /**
-   * HMAC-SHA256 Authorization 헤더 생성
-   * 쿠팡 CEA 인증 방식
+   * HMAC-SHA256 Authorization 헤더 생성 (쿠팡 CEA 인증)
+   *
+   * signed-date: yyyyMMddTHHmmssZ (UTC, 정확히 16자)
+   * message    : signed-date + HTTP_METHOD + path(쿼리스트링 포함)
+   * signature  : HMAC-SHA256(secret_key, message).hexdigest()
    */
   private buildAuthHeader(method: string, path: string): Record<string, string> {
     const { api_key, api_secret } = this.credentials
     if (!api_key || !api_secret) throw new Error('쿠팡 인증 정보 누락 (AccessKey / SecretKey)')
 
-    // yyyyMMddTHHmmssZ 형식 — 16자리 (예: 20260317T094700Z)
-    const datetime  = new Date().toISOString().replace(/[:\-]|\.\d{3}/g, '').slice(0, 16)
-    const message   = datetime + method + path
+    // ISO → yyyyMMddTHHmmssZ (UTC 기준, 반드시 16자여야 함)
+    // 예: "2026-03-17T09:47:00.000Z" → "20260317T094700Z"
+    const isoStr   = new Date().toISOString()                // "2026-03-17T09:47:00.000Z"
+    const datetime = isoStr.replace(/[-:]/g, '').replace(/\.\d{3}/, '')  // "20260317T094700Z"
+    // 방어 코드: Z가 없으면 추가
+    const signed   = datetime.endsWith('Z') ? datetime : datetime + 'Z'
+
+    const message   = signed + method + path
     const signature = createHmac('sha256', api_secret).update(message).digest('hex')
 
     return {
-      'Authorization': `CEA algorithm=HmacSHA256, access-key=${api_key}, signed-date=${datetime}, signature=${signature}`,
-      'Content-Type' : 'application/json',
+      'Authorization': `CEA algorithm=HmacSHA256, access-key=${api_key}, signed-date=${signed}, signature=${signature}`,
+      'Content-Type' : 'application/json;charset=UTF-8',
     }
   }
 
   private get sellerId(): string {
     const id = this.credentials.seller_id
-    if (!id) throw new Error('쿠팡 판매자 코드(seller_id) 누락')
+    if (!id) throw new Error('쿠팡 Vendor ID(seller_id) 누락')
     return id
+  }
+
+  /** 쿠팡 API 날짜 포맷: yyyy-MM-ddT00:00:00 */
+  private fmtDate(dateStr: string, isEnd = false): string {
+    if (!dateStr) return ''
+    const d = dateStr.split('T')[0]  // "yyyy-MM-dd" 부분만
+    return isEnd ? `${d}T23:59:59` : `${d}T00:00:00`
   }
 
   /* ─── 상품 관리 ─────────────────────────────────────────────── */
@@ -127,8 +142,10 @@ export class CoupangConnector extends BaseMarketplace {
 
   /* ─── 주문 수집 ─────────────────────────────────────────────── */
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
+    const from = this.fmtDate(params.start_date || '')
+    const to   = this.fmtDate(params.end_date   || '', true)
     const path = `/v2/providers/openapi/apis/api/v4/vendors/${this.sellerId}/ordersheets`
-      + `?createdAtFrom=${params.start_date || ''}&createdAtTo=${params.end_date || ''}&maxPerPage=${params.limit || 100}`
+      + `?createdAtFrom=${from}&createdAtTo=${to}&maxPerPage=${params.limit || 100}`
     const res = await fetch(`${BASE_URL}${path}`, {
       headers: this.buildAuthHeader('GET', path),
       signal : AbortSignal.timeout(15000),

@@ -34,28 +34,34 @@ export async function POST(req: NextRequest) {
     if (action === 'test_connection') {
       const now = new Date()
 
-      /* ── API 문서가 제한적인 쇼핑몰: 토큰 형식만 검증 ── */
-      const LIMITED_API_MALLS: Record<string, string> = {
-        ablly      : 'api_key',
-        ably       : 'api_key',
-        always     : 'api_key',
-        alwayz     : 'api_key',
-        tosshopping: 'api_key',
-        lotteon    : 'api_key',
-        ssg        : 'api_key',
-        halfclub   : 'api_key',
-        gsshop     : 'api_key',
-        fashionplus: 'login_id',  // SCM 방식, 공개 REST API 없음
+      /* ── API 직접 연동 불가 / 공개 API 없는 쇼핑몰: 자격증명 형식만 검증 ── */
+      const LIMITED_API_MALLS: Record<string, { key: string; label: string }> = {
+        ablly      : { key: 'api_key',   label: 'API Token' },
+        ably       : { key: 'api_key',   label: 'API Token' },
+        always     : { key: 'api_key',   label: 'API Key' },
+        alwayz     : { key: 'api_key',   label: 'API Key' },
+        tosshopping: { key: 'api_key',   label: 'API Key' },
+        lotteon    : { key: 'api_key',   label: 'API Key' },
+        ssg        : { key: 'api_key',   label: 'API Key' },
+        halfclub   : { key: 'api_key',   label: 'API Key' },
+        gsshop     : { key: 'api_key',   label: 'API Key' },
+        fashionplus: { key: 'login_id',  label: 'SCM 로그인 ID' },
+        // ESM(옥션/지마켓): 공식 파트너 셀링툴만 API 사용 가능 — 로그인 ID 저장
+        gmarket    : { key: 'login_id',  label: 'ESM PLUS ID' },
+        auction    : { key: 'login_id',  label: 'ESM PLUS ID' },
       }
       if (mall in LIMITED_API_MALLS) {
-        const tokenKey = LIMITED_API_MALLS[mall]
-        const token    = credentials[tokenKey]
-        if (!token || token.length < 8) {
-          return NextResponse.json({ success: false, mall, message: 'API Token이 입력되지 않았거나 너무 짧습니다.' })
+        const { key: tokenKey, label: tokenLabel } = LIMITED_API_MALLS[mall]
+        const token = credentials[tokenKey]
+        if (!token || (token as string).length < 4) {
+          return NextResponse.json({ success: false, mall, message: `${tokenLabel}이 입력되지 않았습니다.` })
         }
+        const isEsm = mall === 'gmarket' || mall === 'auction'
         return NextResponse.json({
           success: true, mall,
-          message: 'API Token이 저장되었습니다. (해당 쇼핑몰 API는 공개 문서가 제한적이어서 실시간 검증은 생략됩니다)',
+          message: isEsm
+            ? `${tokenLabel} 저장 완료. ESM(옥션/지마켓)은 공식 API 직접 연동이 불가하여 로그인 정보를 저장합니다.`
+            : `${tokenLabel}이 저장되었습니다. (해당 쇼핑몰 API는 공개 문서가 제한적이어서 실시간 검증은 생략됩니다)`,
         })
       }
 
