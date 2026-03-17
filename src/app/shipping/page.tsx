@@ -1,26 +1,63 @@
 'use client'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Modal } from '@/components/ui/modal'
 import { formatDateTime } from '@/lib/utils'
-import { Truck, Search, Download, Printer, Upload, Package, AlertCircle, CheckCircle2 } from 'lucide-react'
+import { Truck, Search, Download, Printer, Upload, Package, AlertCircle, CheckCircle2, Loader2 } from 'lucide-react'
 
 export const SHIPPING_STORAGE_KEY = 'pm_shipping_v1'
 
 type ShipItem = {
   id: string; order_number: string; channel: string
+  channel_key: string          // 쇼핑몰 키 (API 송장전송에 필요)
+  channel_order_id: string     // 쇼핑몰 고유 주문 ID
   customer_name: string; customer_phone: string; shipping_address: string
   items: string; status: string; tracking_number: string|null; carrier: string|null
   weight: string; shipped_at: string|null; created_at: string
 }
 
 function loadShipping(): ShipItem[] {
-  try { const r = localStorage.getItem(SHIPPING_STORAGE_KEY); return r ? JSON.parse(r) : [] } catch { return [] }
+  try {
+    const r = localStorage.getItem(SHIPPING_STORAGE_KEY)
+    if (!r) return []
+    const list: ShipItem[] = JSON.parse(r)
+    // 레거시 데이터 마이그레이션: channel_key/channel_order_id 없는 경우 보완
+    return list.map(o => ({
+      ...o,
+      channel_key      : o.channel_key      || o.id?.split('_')?.[0] || 'manual',
+      channel_order_id : o.channel_order_id || o.order_number || o.id || '',
+    }))
+  } catch { return [] }
 }
 function saveShipping(data: ShipItem[]) {
   try { localStorage.setItem(SHIPPING_STORAGE_KEY, JSON.stringify(data)) } catch {}
+}
+
+/** localStorage에서 해당 쇼핑몰의 credentials 로드 */
+function loadCredentialsForMall(mallKey: string): Record<string, string> {
+  const creds: Record<string, string> = {}
+  try {
+    const keys = ['pm_mall_channels_v5', 'pm_mall_channels_v4', 'pm_mall_channels_v3']
+    for (const k of keys) {
+      const raw = localStorage.getItem(k)
+      if (!raw) continue
+      const list: Array<Record<string, string>> = JSON.parse(raw)
+      const ch = list.find(c => c.channel_key === mallKey || c.mall_key === mallKey || c.id === mallKey)
+      if (ch) {
+        // 모든 credentials 필드 복사
+        const CRED_FIELDS = ['api_key','api_secret','seller_id','login_id','login_pw',
+          'site_name','refresh_token','access_key','access_token','mall_id','trader_code',
+          'client_id','client_secret','vendor_id']
+        for (const f of CRED_FIELDS) {
+          if (ch[f]) creds[f] = ch[f]
+        }
+        break
+      }
+    }
+  } catch {}
+  return creds
 }
 
 const ST: Record<string, { label:string; dot:string; cls:string; icon:React.ReactNode }> = {
@@ -41,13 +78,14 @@ export default function ShippingPage() {
   const [trackItem, setTrackItem] = useState<ShipItem|null>(null)
   const [trackCarrier, setTrackCarrier] = useState('CJ대한통운')
   const [trackNum, setTrackNum] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [uploadResult, setUploadResult] = useState<{ success: boolean; message: string; manual?: boolean } | null>(null)
 
   useEffect(() => {
     setMounted(true)
     setItems(loadShipping())
   }, [])
 
-  // 주문관리에서 이동된 목록 실시간 반영
   useEffect(() => {
     if (!mounted) return
     const onStorage = () => setItems(loadShipping())
@@ -70,18 +108,63 @@ export default function ShippingPage() {
     delivered: items.filter(o=>o.status==='delivered').length,
   }
 
-  const handleTrackSave = () => {
+  /** 단건 송장 등록 + 쇼핑몰 API 전송 */
+  const handleTrackSave = useCallback(async () => {
     if (!trackItem || !trackNum.trim()) return
+    setUploading(true)
+    setUploadResult(null)
+
+    const mallKey = trackItem.channel_key || 'manual'
+    const credentials = loadCredentialsForMall(mallKey)
+
+    let apiResult: { success: boolean; message: string; manual?: boolean } = {
+      success: true,
+      message: '송장이 등록되었습니다.',
+    }
+
+    // 쇼핑몰 API 전송 (수동 등록이 아닐 때)
+    if (mallKey !== 'manual') {
+      try {
+        const res = await fetch('/api/orders/invoice', {
+          method : 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body   : JSON.stringify({
+            mall_key        : mallKey,
+            credentials,
+            channel_order_id: trackItem.channel_order_id || trackItem.order_number,
+            carrier_name    : trackCarrier,
+            invoice_no      : trackNum.trim(),
+          }),
+        })
+        const data = await res.json()
+        apiResult = {
+          success: data.success,
+          message: data.message || (data.success ? '송장 전송 완료' : '전송 실패'),
+          manual : data.manual,
+        }
+      } catch (e) {
+        apiResult = { success: false, message: `네트워크 오류: ${e instanceof Error ? e.message : String(e)}` }
+      }
+    }
+
+    // 성공 여부에 관계없이 로컬 상태는 업데이트
     setItems(prev => {
       const updated = prev.map(o => o.id === trackItem.id
-        ? { ...o, tracking_number: trackNum, carrier: trackCarrier, status: 'shipped', shipped_at: new Date().toISOString() }
+        ? { ...o, tracking_number: trackNum.trim(), carrier: trackCarrier, status: 'shipped', shipped_at: new Date().toISOString() }
         : o
       )
       saveShipping(updated)
       return updated
     })
-    setTrackModal(false)
-  }
+
+    setUploading(false)
+    setUploadResult(apiResult)
+
+    // 성공 시 1.5초 후 모달 닫기
+    if (apiResult.success) {
+      setTimeout(() => { setTrackModal(false); setUploadResult(null) }, 1500)
+    }
+  }, [trackItem, trackNum, trackCarrier])
 
   const handleStatusChange = (id: string, status: string) => {
     setItems(prev => {
@@ -197,7 +280,7 @@ export default function ShippingPage() {
                             <p className="font-mono font-extrabold text-slate-700 text-[11.5px]">{o.tracking_number}</p>
                             <p className="text-[10.5px] text-slate-400">{o.carrier}</p>
                           </div>
-                        : <button onClick={()=>{setTrackItem(o);setTrackModal(true);setTrackNum('');setTrackCarrier('CJ대한통운')}}
+                        : <button onClick={()=>{setTrackItem(o);setTrackModal(true);setTrackNum('');setTrackCarrier('CJ대한통운');setUploadResult(null)}}
                             className="text-[11.5px] font-bold text-blue-600 hover:text-blue-700 hover:underline flex items-center gap-1">
                             <Truck size={11}/>등록
                           </button>
@@ -207,7 +290,7 @@ export default function ShippingPage() {
                     <td className="px-4 py-3">
                       <div className="flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                         {!o.tracking_number && (
-                          <button onClick={()=>{setTrackItem(o);setTrackModal(true);setTrackNum('');setTrackCarrier('CJ대한통운')}}
+                          <button onClick={()=>{setTrackItem(o);setTrackModal(true);setTrackNum('');setTrackCarrier('CJ대한통운');setUploadResult(null)}}
                             className="w-7 h-7 flex items-center justify-center rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50">
                             <Truck size={13}/>
                           </button>
@@ -244,30 +327,66 @@ export default function ShippingPage() {
 
       {/* 단건 송장 등록 */}
       {trackItem && (
-        <Modal isOpen={trackModal} onClose={()=>setTrackModal(false)} title="송장번호 등록">
+        <Modal isOpen={trackModal} onClose={()=>{ if (!uploading) { setTrackModal(false); setUploadResult(null) }}} title="송장번호 등록">
           <div className="space-y-4">
             <div className="p-4 bg-slate-50 rounded-2xl">
               <p className="font-mono font-extrabold text-blue-600">{trackItem.order_number}</p>
               <p className="text-[12.5px] text-slate-600 mt-1 font-bold">{trackItem.customer_name} · {trackItem.customer_phone}</p>
               <p className="text-[12px] text-slate-500 mt-0.5">{trackItem.shipping_address}</p>
               <p className="text-[12.5px] font-extrabold text-slate-700 mt-2">{trackItem.items}</p>
+              {/* 쇼핑몰 정보 표시 */}
+              <div className="mt-2 flex items-center gap-2">
+                <span className="text-[11px] font-bold text-slate-400">채널</span>
+                <span className="text-[11px] font-extrabold text-slate-600">{trackItem.channel}</span>
+                {trackItem.channel_key === 'manual' && (
+                  <span className="text-[10px] font-bold text-amber-500 bg-amber-50 px-1.5 py-0.5 rounded-full">수동등록</span>
+                )}
+              </div>
             </div>
             <div>
               <label className="block text-[12px] font-extrabold text-slate-600 mb-1.5">택배사 *</label>
-              <Select className="w-full" value={trackCarrier} onChange={e=>setTrackCarrier(e.target.value)}>
+              <Select className="w-full" value={trackCarrier} onChange={e=>setTrackCarrier(e.target.value)} disabled={uploading}>
                 {['CJ대한통운','롯데택배','한진택배','우체국택배','로젠택배','경동택배','편의점택배'].map(v=><option key={v}>{v}</option>)}
               </Select>
             </div>
             <div>
               <label className="block text-[12px] font-extrabold text-slate-600 mb-1.5">송장번호 *</label>
-              <Input placeholder="송장번호 입력" className="font-mono" value={trackNum} onChange={e=>setTrackNum(e.target.value)} />
+              <Input placeholder="송장번호 입력" className="font-mono" value={trackNum} onChange={e=>setTrackNum(e.target.value)} disabled={uploading} />
             </div>
-            <div className="p-3.5 bg-blue-50 rounded-xl text-[12px] font-bold text-blue-700">
-              📦 등록 시 자동 처리: 주문 상태 변경 · 채널 송장 전송 · 고객 알림
-            </div>
+
+            {/* 안내 / 결과 박스 */}
+            {!uploadResult && !uploading && (
+              <div className="p-3.5 bg-blue-50 rounded-xl text-[12px] font-bold text-blue-700">
+                {trackItem.channel_key === 'manual'
+                  ? '📦 수동 등록 주문 — 로컬에만 저장됩니다 (쇼핑몰 API 전송 없음)'
+                  : `📦 등록 시 자동 처리: 로컬 저장 · ${trackItem.channel} API 송장 전송`}
+              </div>
+            )}
+            {uploading && (
+              <div className="p-3.5 bg-slate-50 rounded-xl text-[12px] font-bold text-slate-600 flex items-center gap-2">
+                <Loader2 size={14} className="animate-spin"/>
+                {trackItem.channel} API에 송장 전송 중...
+              </div>
+            )}
+            {uploadResult && (
+              <div className={`p-3.5 rounded-xl text-[12px] font-bold flex items-center gap-2 ${
+                uploadResult.success
+                  ? uploadResult.manual ? 'bg-amber-50 text-amber-700' : 'bg-emerald-50 text-emerald-700'
+                  : 'bg-red-50 text-red-700'
+              }`}>
+                {uploadResult.success
+                  ? (uploadResult.manual ? '⚠️' : <CheckCircle2 size={14}/>)
+                  : <AlertCircle size={14}/>}
+                {uploadResult.message}
+              </div>
+            )}
+
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={()=>setTrackModal(false)}>취소</Button>
-              <Button onClick={handleTrackSave}><Truck size={14}/>등록 및 전송</Button>
+              <Button variant="outline" onClick={()=>{ if(!uploading){ setTrackModal(false); setUploadResult(null) }}} disabled={uploading}>취소</Button>
+              <Button onClick={handleTrackSave} disabled={uploading || !trackNum.trim()}>
+                {uploading ? <Loader2 size={14} className="animate-spin"/> : <Truck size={14}/>}
+                {uploading ? '전송 중...' : '등록 및 전송'}
+              </Button>
             </div>
           </div>
         </Modal>
@@ -291,7 +410,7 @@ export default function ShippingPage() {
           </div>
           <div className="flex justify-end gap-2">
             <Button variant="outline" onClick={()=>setBulkModal(false)}>취소</Button>
-            <Button>일괄 등록</Button>
+            <Button><Upload size={14}/>일괄 등록</Button>
           </div>
         </div>
       </Modal>

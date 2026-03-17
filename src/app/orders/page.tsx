@@ -25,7 +25,7 @@ type OrderItem = {
   option_name?: string; abbreviation?: string; loca?: string
 }
 export type Order = {
-  id: string; order_number: string; channel: string; channel_order_id: string
+  id: string; order_number: string; channel: string; channel_key?: string; channel_order_id: string
   customer_name: string; customer_phone: string; shipping_address: string
   status: string; mapped_status?: 'new' | 'mapped'
   total_amount: number; shipping_fee: number
@@ -34,6 +34,8 @@ export type Order = {
 }
 type ShipItem = {
   id: string; order_number: string; channel: string
+  channel_key: string          // 쇼핑몰 키 (API 송장전송에 필요)
+  channel_order_id: string     // 쇼핑몰 고유 주문 ID
   customer_name: string; customer_phone: string; shipping_address: string
   items: string; status: string; tracking_number: string | null; carrier: string | null
   weight: string; shipped_at: string | null; created_at: string
@@ -283,7 +285,14 @@ export default function OrdersPage() {
     if (!selectedIds.size) return
     const chosen = orders.filter(o => selectedIds.has(o.id))
     const shipItems: ShipItem[] = chosen.map(o => ({
-      id: o.id, order_number: o.order_number, channel: o.channel,
+      id: o.id,
+      order_number: o.order_number,
+      channel: o.channel,
+      // channel_key: orders.id 형식은 "{channel_key}_{order_id}" 이므로 추출
+      channel_key      : (o as unknown as Record<string,string>).channel_key
+                        || o.id.split('_')[0]
+                        || 'manual',
+      channel_order_id : o.channel_order_id || o.id,
       customer_name: o.customer_name, customer_phone: o.customer_phone,
       shipping_address: o.shipping_address,
       items: o.items.map(i => `${i.abbreviation||i.name}(${i.option_name||i.sku}×${i.quantity})`).join(', '),
@@ -508,6 +517,7 @@ export default function OrdersPage() {
           id: `manual_${Date.now()}_${i}`,
           order_number: get(row,['주문번호','order_no']) || `MNL-${Date.now()}-${i}`,
           channel: get(row,['쇼핑몰','채널','channel','mall']) || '수동등록',
+          channel_key: 'manual',
           channel_order_id: get(row,['채널주문번호','channel_order']) || '',
           customer_name: get(row,['주문자','수취인','받는분','customer','name','고객']) || '',
           customer_phone: get(row,['전화','phone','연락처','휴대폰']) || '',
