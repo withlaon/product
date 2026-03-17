@@ -1,17 +1,17 @@
 'use client'
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { Select } from '@/components/ui/select'
 import { Modal } from '@/components/ui/modal'
-import { formatDateTime } from '@/lib/utils'
 import {
-  Plus, Search, PackagePlus, CheckCircle2, Clock, AlertCircle,
-  Truck, X, Package, Upload, Download, Layers,
+  Plus, Search, PackagePlus, CheckCircle2, Clock,
+  Truck, X, Upload, Download, Layers,
+  ChevronDown, ChevronRight, Edit2, Trash2, AlertTriangle,
 } from 'lucide-react'
 
+/* ── 타입 ── */
 type PurchaseStatus = 'ordered' | 'partial' | 'completed' | 'cancelled'
 
 interface PurchaseItem {
@@ -31,224 +31,305 @@ interface Purchase {
   items: PurchaseItem[]
 }
 
-const ST: Record<PurchaseStatus, { label:string; bg:string; color:string; dot:string; icon: React.ReactNode }> = {
-  ordered:   { label:'발주완료', bg:'#eff6ff', color:'#2563eb', dot:'#3b82f6', icon:<Clock size={11}/> },
-  partial:   { label:'부분입고', bg:'#fffbeb', color:'#d97706', dot:'#f59e0b', icon:<Truck size={11}/> },
-  completed: { label:'입고완료', bg:'#f0fdf4', color:'#15803d', dot:'#22c55e', icon:<CheckCircle2 size={11}/> },
-  cancelled: { label:'취소',    bg:'#f8fafc', color:'#64748b', dot:'#94a3b8', icon:<AlertCircle size={11}/> },
+interface PmOption {
+  name: string; barcode: string; chinese_name?: string
+  ordered?: number; received?: number; sold?: number; current_stock?: number
+}
+interface PmProduct { id: string; code: string; name: string; options: PmOption[] }
+
+/* BulkRow: 바코드 기반 행 */
+interface BulkRow {
+  barcode: string
+  qty: string
+  matchedProdId: string
+  matchedProdCode: string
+  matchedProdName: string
+  matchedOptName: string
+  manualSearch: string
+  manualResults: { prodId: string; prodCode: string; prodName: string; optName: string; barcode: string }[]
+  showSearch: boolean
+}
+
+/* ── 상태 표시 ── */
+const ST: Record<PurchaseStatus, { label: string; bg: string; color: string }> = {
+  ordered:   { label: '발주완료', bg: '#eff6ff', color: '#2563eb' },
+  partial:   { label: '부분입고', bg: '#fffbeb', color: '#d97706' },
+  completed: { label: '입고완료', bg: '#f0fdf4', color: '#15803d' },
+  cancelled: { label: '취소',    bg: '#f8fafc', color: '#64748b' },
+}
+
+function isUnresolved(p: Purchase) {
+  return p.status !== 'completed' && p.status !== 'cancelled' &&
+    p.items.some(i => i.received < i.ordered)
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display:'block', fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:5 }}>{children}</label>
+  return <label style={{ display: 'block', fontSize: 11.5, fontWeight: 800, color: '#475569', marginBottom: 5 }}>{children}</label>
 }
 
-const genBarcode = (code: string, opt: string) =>
-  code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
-
-const INIT_ITEM    = { product_code:'', option_name:'', barcode:'', ordered:'' }
-const INIT_FORM    = { order_date:'', supplier:'', items:[{ ...INIT_ITEM }] }
-const INIT_IN_ITEM = { product_code:'', option_name:'', barcode:'', qty:'' }
-const INIT_IN_FORM: { received_date:string; items:typeof INIT_IN_ITEM[] } = {
-  received_date:'', items:[{ ...INIT_IN_ITEM }],
-}
-
-type BulkRow = { product_code:string; option_name:string; barcode:string; qty:string }
-const INIT_BULK_ROW: BulkRow = { product_code:'', option_name:'', barcode:'', qty:'' }
-
-/* ── 엑셀 양식 다운로드 헬퍼 ── */
-function downloadExcelTemplate(type: 'in' | 'po') {
-  const headers = type === 'in'
-    ? [['상품코드','옵션명','입고수량'],['WA5AC001','BE','10']]
-    : [['상품코드','옵션명','발주수량'],['WA5AC001','BE','10']]
-  const ws = XLSX.utils.aoa_to_sheet(headers)
-  ws['!cols'] = [{wch:18},{wch:14},{wch:12}]
+/* ── 엑셀 양식 (바코드+수량만) ── */
+function downloadBarcodeTemplate(filename: string) {
+  const ws = XLSX.utils.aoa_to_sheet([
+    ['바코드', '수량'],
+    ['예시: 1234567890123', 10],
+  ])
+  ws['!cols'] = [{ wch: 24 }, { wch: 8 }]
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, type==='in' ? '일괄입고' : '일괄발주')
-  XLSX.writeFile(wb, type==='in' ? '일괄입고_양식.xlsx' : '일괄발주_양식.xlsx')
+  XLSX.utils.book_append_sheet(wb, ws, '양식')
+  XLSX.writeFile(wb, filename)
 }
 
-/* ── 엑셀 파싱 헬퍼 ── */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-function parseExcelToBulkRows(file: File, onDone:(rows:BulkRow[])=>void) {
-  const reader = new FileReader()
-  reader.onload = ev => {
-    const data = ev.target?.result
-    const wb = XLSX.read(data, { type:'binary' })
-    const ws = wb.Sheets[wb.SheetNames[0]]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const json: any[] = XLSX.utils.sheet_to_json(ws)
-    const rows: BulkRow[] = json.map(r => {
-      const code = String(r['상품코드'] ?? r['product_code'] ?? '')
-      const opt  = String(r['옵션명'] ?? r['option_name'] ?? '')
-      const qty  = String(r['입고수량'] ?? r['발주수량'] ?? r['수량'] ?? r['qty'] ?? '')
-      const bc   = code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
-      return { product_code:code, option_name:opt, barcode:bc, qty }
-    }).filter(r => r.product_code)
-    onDone(rows)
+/* ── 날짜 포맷 ── */
+function fmtMonth(ym: string) {
+  return `${ym.slice(0, 4)}년 ${ym.slice(5)}월`
+}
+function fmtDate(d: string) {
+  const dt = new Date(d)
+  return `${dt.getMonth() + 1}/${dt.getDate()}(${['일','월','화','수','목','금','토'][dt.getDay()]})`
+}
+
+/* ── 상품 수량 동기화 헬퍼 ── */
+async function syncProductQty(
+  products: PmProduct[],
+  rows: { prodId: string; optName: string; orderedDelta: number; receivedDelta: number }[]
+) {
+  const grouped: Record<string, typeof rows> = {}
+  for (const r of rows) {
+    if (!r.prodId) continue
+    if (!grouped[r.prodId]) grouped[r.prodId] = []
+    grouped[r.prodId].push(r)
   }
-  reader.readAsBinaryString(file)
-}
-
-/* ── 상품 발주 수량 동기화 ── */
-async function syncOrdered(items: PurchaseItem[]) {
-  for (const item of items) {
-    if (!item.product_code) continue
-    const { data:prods } = await supabase.from('pm_products').select('id,options').eq('code', item.product_code)
-    if (!prods?.length) continue
-    const prod = prods[0]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const opts: any[] = Array.isArray(prod.options) ? prod.options : []
-    const updated = opts.map(o => {
-      const match = !item.option_name || o.name === item.option_name || o.barcode === item.barcode
-      return match ? { ...o, ordered: (o.ordered||0) + item.ordered } : o
+  for (const [prodId, updates] of Object.entries(grouped)) {
+    const prod = products.find(p => p.id === prodId)
+    if (!prod) continue
+    const updatedOpts = prod.options.map(opt => {
+      const u = updates.find(u => u.optName === opt.name)
+      if (!u) return opt
+      const newOrdered = Math.max(0, (opt.ordered || 0) + u.orderedDelta)
+      const prevStock = opt.current_stock !== undefined ? opt.current_stock : Math.max(0, (opt.received || 0) - (opt.sold || 0))
+      const newReceived = Math.max(0, (opt.received || 0) + u.receivedDelta)
+      const newStock = Math.max(0, prevStock + u.receivedDelta)
+      return { ...opt, ordered: newOrdered, received: newReceived, current_stock: newStock }
     })
-    await supabase.from('pm_products').update({ options: updated }).eq('id', prod.id)
-  }
-}
-
-/* ── 상품 입고 수량 동기화 (received + current_stock 동시 반영) ── */
-async function syncReceived(items: PurchaseItem[]) {
-  for (const item of items) {
-    if (!item.product_code || item.received <= 0) continue
-    const { data:prods } = await supabase.from('pm_products').select('id,options').eq('code', item.product_code)
-    if (!prods?.length) continue
-    const prod = prods[0]
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const opts: any[] = Array.isArray(prod.options) ? prod.options : []
-    const updated = opts.map(o => {
-      const match = !item.option_name || o.name === item.option_name || o.barcode === item.barcode
-      if (!match) return o
-      const prevStock = o.current_stock !== undefined ? o.current_stock : Math.max(0, (o.received||0) - (o.sold||0))
-      return { ...o, received: (o.received||0) + item.received, current_stock: prevStock + item.received }
-    })
-    await supabase.from('pm_products').update({ options: updated }).eq('id', prod.id)
+    await supabase.from('pm_products').update({ options: updatedOpts }).eq('id', prodId)
   }
 }
 
 export default function PurchasePage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
-  const [search, setSearch]       = useState('')
-  const [sf, setSf]               = useState('전체')
-  const [isAdd, setIsAdd]         = useState(false)
-  const [isInAdd, setIsInAdd]     = useState(false)
-  const [isBulkIn, setIsBulkIn]   = useState(false)
-  const [isBulkPo, setIsBulkPo]   = useState(false)
-  const [detail, setDetail]       = useState<Purchase | null>(null)
-  const [receiveTarget, setReceiveTarget] = useState<Purchase | null>(null)
-  const [editTarget, setEditTarget]   = useState<Purchase | null>(null)   // 수정 모달
-  const [editFormData, setEditFormData] = useState<Purchase | null>(null) // 수정 폼 데이터
-  const [form, setForm]           = useState(INIT_FORM)
-  const [inForm, setInForm]       = useState(INIT_IN_FORM)
-  // 일괄 입고 폼
-  const [bulkInDate, setBulkInDate]         = useState('')
-  const [bulkInSupplier, setBulkInSupplier] = useState('')
-  const [bulkInRows, setBulkInRows]         = useState<BulkRow[]>([{ ...INIT_BULK_ROW }])
-  // 일괄 발주 폼
-  const [bulkPoDate, setBulkPoDate]         = useState('')
-  const [bulkPoSupplier, setBulkPoSupplier] = useState('')
-  const [bulkPoRows, setBulkPoRows]         = useState<BulkRow[]>([{ ...INIT_BULK_ROW }])
+  const [products, setProducts]   = useState<PmProduct[]>([])
 
-  /* ── Supabase 로드 ── */
+  /* KPI 필터: all | ordered(발주완료) | completed(입고완료) | unresolved(미입고) */
+  const [activeKpi, setActiveKpi] = useState<'all' | 'ordered' | 'completed' | 'unresolved'>('all')
+  const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
+  const [expandedDates,  setExpandedDates]  = useState<Set<string>>(new Set())
+
+  /* 모달 */
+  const [isAdd,      setIsAdd]      = useState(false)
+  const [isBulkIn,   setIsBulkIn]   = useState(false)
+  const [isBulkPo,   setIsBulkPo]   = useState(false)
+  const [receiveTarget, setReceiveTarget] = useState<Purchase | null>(null)
+  const [editTarget,    setEditTarget]    = useState<Purchase | null>(null)
+  const [editFormData,  setEditFormData]  = useState<Purchase | null>(null)
+  const [deleteTarget,  setDeleteTarget]  = useState<Purchase | null>(null)
+  const [saving, setSaving] = useState(false)
+
+  /* 발주 등록 폼 */
+  const [form, setForm] = useState({
+    order_date: '', supplier: '',
+    items: [{ product_code: '', option_name: '', barcode: '', ordered: '' }],
+  })
+
+  /* 일괄 입고/발주 */
+  const [bulkInDate,     setBulkInDate]     = useState('')
+  const [bulkInSupplier, setBulkInSupplier] = useState('')
+  const [bulkInRows,     setBulkInRows]     = useState<BulkRow[]>([])
+  const [bulkPoDate,     setBulkPoDate]     = useState('')
+  const [bulkPoSupplier, setBulkPoSupplier] = useState('')
+  const [bulkPoRows,     setBulkPoRows]     = useState<BulkRow[]>([])
+
+  /* ── 로드 ── */
   const loadPurchases = useCallback(async () => {
-    const { data } = await supabase.from('pm_purchases').select('*').order('created_at', { ascending: false })
+    const { data } = await supabase.from('pm_purchases').select('*').order('order_date', { ascending: false })
     if (data) setPurchases(data as Purchase[])
   }, [])
 
-  useEffect(() => { loadPurchases() }, [loadPurchases])
+  const loadProducts = useCallback(async () => {
+    const { data } = await supabase.from('pm_products').select('id,code,name,options')
+    if (data) setProducts(data as PmProduct[])
+  }, [])
 
-  const filtered = purchases.filter(p =>
-    (sf === '전체' || p.status === sf) &&
-    (!search || p.order_date.includes(search) || p.supplier.includes(search) ||
-      p.items.some(i => i.product_code.includes(search)))
-  )
+  useEffect(() => { loadPurchases(); loadProducts() }, [loadPurchases, loadProducts])
+
+  /* ── 바코드 맵 ── */
+  const barcodeMap = useMemo(() => {
+    const m: Record<string, { prodId: string; prodCode: string; prodName: string; optName: string }> = {}
+    for (const prod of products) {
+      for (const opt of prod.options) {
+        if (opt.barcode) m[opt.barcode] = { prodId: prod.id, prodCode: prod.code, prodName: prod.name, optName: opt.name }
+      }
+    }
+    return m
+  }, [products])
+
+  const makeBulkRow = useCallback((barcode = '', qty = ''): BulkRow => {
+    const match = barcode ? (barcodeMap[barcode] ?? null) : null
+    return {
+      barcode, qty,
+      matchedProdId: match?.prodId ?? '',
+      matchedProdCode: match?.prodCode ?? '',
+      matchedProdName: match?.prodName ?? '',
+      matchedOptName: match?.optName ?? '',
+      manualSearch: '', manualResults: [], showSearch: false,
+    }
+  }, [barcodeMap])
+
+  /* ── 엑셀 파싱 (바코드+수량) ── */
+  const parseExcel = (file: File, cb: (rows: BulkRow[]) => void) => {
+    const reader = new FileReader()
+    reader.onload = ev => {
+      const wb = XLSX.read(ev.target?.result, { type: 'binary' })
+      const ws = wb.Sheets[wb.SheetNames[0]]
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const json: any[] = XLSX.utils.sheet_to_json(ws)
+      const rows = json.map(r => {
+        const bc  = String(r['바코드'] ?? r['barcode'] ?? '').trim()
+        const qty = String(r['수량']   ?? r['qty']     ?? '').trim()
+        return makeBulkRow(bc, qty)
+      }).filter(r => r.barcode)
+      cb(rows)
+    }
+    reader.readAsBinaryString(file)
+  }
+
+  /* ── 수동 검색 ── */
+  const handleManualSearch = (
+    rows: BulkRow[], setRows: (r: BulkRow[]) => void, idx: number, q: string
+  ) => {
+    const results = q.trim() ? products.flatMap(prod =>
+      prod.options
+        .filter(opt =>
+          prod.name.includes(q) || prod.code.toLowerCase().includes(q.toLowerCase()) ||
+          opt.name.toLowerCase().includes(q.toLowerCase()) || opt.barcode.includes(q)
+        )
+        .map(opt => ({ prodId: prod.id, prodCode: prod.code, prodName: prod.name, optName: opt.name, barcode: opt.barcode }))
+    ).slice(0, 15) : []
+    const newRows = [...rows]
+    newRows[idx] = { ...newRows[idx], manualSearch: q, manualResults: results, showSearch: true }
+    setRows(newRows)
+  }
+
+  const selectMatch = (
+    rows: BulkRow[], setRows: (r: BulkRow[]) => void,
+    idx: number, match: { prodId: string; prodCode: string; prodName: string; optName: string; barcode: string }
+  ) => {
+    const newRows = [...rows]
+    newRows[idx] = {
+      ...newRows[idx],
+      barcode: match.barcode,
+      matchedProdId: match.prodId, matchedProdCode: match.prodCode,
+      matchedProdName: match.prodName, matchedOptName: match.optName,
+      manualSearch: '', manualResults: [], showSearch: false,
+    }
+    setRows(newRows)
+  }
 
   /* ── 일괄 입고 등록 ── */
   const handleBulkInSubmit = async () => {
-    if (!bulkInSupplier) return
-    const today = bulkInDate || new Date().toISOString().slice(0,10)
-    const items = bulkInRows.filter(r => r.product_code).map(r => ({
-      product_code: r.product_code,
-      option_name: r.option_name,
-      barcode: r.barcode || genBarcode(r.product_code, r.option_name),
+    const valid = bulkInRows.filter(r => r.barcode && r.qty && r.matchedProdId)
+    if (!valid.length) return
+    setSaving(true)
+    const today = bulkInDate || new Date().toISOString().slice(0, 10)
+    const items: PurchaseItem[] = valid.map(r => ({
+      product_code: r.matchedProdCode,
+      option_name: r.matchedOptName,
+      barcode: r.barcode,
       ordered: Number(r.qty) || 0,
       received: Number(r.qty) || 0,
     }))
-    if (!items.length) return
     const p: Purchase = {
-      id: String(Date.now()),
-      order_date: today,
-      supplier: bulkInSupplier,
+      id: String(Date.now()), order_date: today,
+      supplier: bulkInSupplier || '직접입고',
       status: 'completed',
-      ordered_at: new Date().toISOString(),
-      received_at: new Date(`${today}T00:00:00`).toISOString(),
-      items,
+      ordered_at: new Date().toISOString(), received_at: new Date().toISOString(), items,
     }
-    await supabase.from('pm_purchases').insert({ ...p })
-    await syncReceived(items)
-    await loadPurchases()
-    setIsBulkIn(false)
-    setBulkInDate(''); setBulkInSupplier(''); setBulkInRows([{ ...INIT_BULK_ROW }])
+    await supabase.from('pm_purchases').insert(p)
+    await syncProductQty(products, valid.map(r => ({
+      prodId: r.matchedProdId, optName: r.matchedOptName,
+      orderedDelta: Number(r.qty) || 0, receivedDelta: Number(r.qty) || 0,
+    })))
+    await loadPurchases(); await loadProducts()
+    setIsBulkIn(false); setBulkInDate(''); setBulkInSupplier(''); setBulkInRows([])
+    setSaving(false)
   }
 
   /* ── 일괄 발주 등록 ── */
   const handleBulkPoSubmit = async () => {
-    if (!bulkPoDate || !bulkPoSupplier) return
-    const items = bulkPoRows.filter(r => r.product_code).map(r => ({
-      product_code: r.product_code,
-      option_name: r.option_name,
-      barcode: r.barcode || genBarcode(r.product_code, r.option_name),
+    const valid = bulkPoRows.filter(r => r.barcode && r.qty && r.matchedProdId)
+    if (!valid.length) return
+    setSaving(true)
+    const today = bulkPoDate || new Date().toISOString().slice(0, 10)
+    const items: PurchaseItem[] = valid.map(r => ({
+      product_code: r.matchedProdCode,
+      option_name: r.matchedOptName,
+      barcode: r.barcode,
       ordered: Number(r.qty) || 0,
       received: 0,
     }))
-    if (!items.length) return
     const p: Purchase = {
-      id: String(Date.now()),
-      order_date: bulkPoDate,
-      supplier: bulkPoSupplier,
+      id: String(Date.now()), order_date: today,
+      supplier: bulkPoSupplier || '미지정',
       status: 'ordered',
-      ordered_at: new Date().toISOString(),
-      received_at: null,
-      items,
+      ordered_at: new Date().toISOString(), received_at: null, items,
     }
-    await supabase.from('pm_purchases').insert({ ...p })
-    await syncOrdered(items)
-    await loadPurchases()
-    setIsBulkPo(false)
-    setBulkPoDate(''); setBulkPoSupplier(''); setBulkPoRows([{ ...INIT_BULK_ROW }])
+    await supabase.from('pm_purchases').insert(p)
+    await syncProductQty(products, valid.map(r => ({
+      prodId: r.matchedProdId, optName: r.matchedOptName,
+      orderedDelta: Number(r.qty) || 0, receivedDelta: 0,
+    })))
+    await loadPurchases(); await loadProducts()
+    setIsBulkPo(false); setBulkPoDate(''); setBulkPoSupplier(''); setBulkPoRows([])
+    setSaving(false)
   }
 
   /* ── 개별 발주 등록 ── */
   const handleAdd = async () => {
-    if (!form.order_date || !form.supplier) return
+    if (!form.order_date) return
     const items = form.items.filter(i => i.product_code).map(i => ({
-      product_code: i.product_code,
-      option_name: i.option_name,
-      barcode: i.barcode || genBarcode(i.product_code, i.option_name),
-      ordered: Number(i.ordered) || 0,
-      received: 0,
+      product_code: i.product_code, option_name: i.option_name,
+      barcode: i.barcode, ordered: Number(i.ordered) || 0, received: 0,
     }))
+    if (!items.length) return
+    setSaving(true)
     const p: Purchase = {
-      id: String(Date.now()),
-      order_date: form.order_date,
-      supplier: form.supplier,
-      status: 'ordered',
-      ordered_at: new Date().toISOString(),
-      received_at: null,
-      items,
+      id: String(Date.now()), order_date: form.order_date,
+      supplier: form.supplier || '미지정', status: 'ordered',
+      ordered_at: new Date().toISOString(), received_at: null, items,
     }
-    await supabase.from('pm_purchases').insert({ ...p })
-    await syncOrdered(items)
-    await loadPurchases()
+    await supabase.from('pm_purchases').insert(p)
+    // 기존 방식(code 기반) 발주 동기화
+    for (const item of items) {
+      if (!item.product_code) continue
+      const prod = products.find(p => p.code === item.product_code)
+      if (!prod) continue
+      const updatedOpts = prod.options.map(o => {
+        const match = !item.option_name || o.name === item.option_name || o.barcode === item.barcode
+        return match ? { ...o, ordered: (o.ordered || 0) + item.ordered } : o
+      })
+      await supabase.from('pm_products').update({ options: updatedOpts }).eq('id', prod.id)
+    }
+    await loadPurchases(); await loadProducts()
     setIsAdd(false)
-    setForm(INIT_FORM)
+    setForm({ order_date: '', supplier: '', items: [{ product_code: '', option_name: '', barcode: '', ordered: '' }] })
+    setSaving(false)
   }
 
-  // 입고 처리
+  /* ── 입고 처리 ── */
   const handleReceive = async (receivedItems: Record<number, number>) => {
     if (!receiveTarget) return
+    setSaving(true)
     const items = receiveTarget.items.map((item, i) => ({
-      ...item,
-      received: Math.min(item.ordered, item.received + (receivedItems[i] || 0)),
+      ...item, received: Math.min(item.ordered, item.received + (receivedItems[i] || 0)),
     }))
     const allDone = items.every(i => i.received >= i.ordered)
     const anyDone = items.some(i => i.received > 0)
@@ -257,483 +338,484 @@ export default function PurchasePage() {
       status: (allDone ? 'completed' : anyDone ? 'partial' : receiveTarget.status) as PurchaseStatus,
       received_at: allDone ? new Date().toISOString() : receiveTarget.received_at,
     }
-    await supabase.from('pm_purchases').update({ items: updated.items, status: updated.status, received_at: updated.received_at }).eq('id', receiveTarget.id)
-    // 입고된 수량만큼 상품에 반영
-    const newlyReceived = receiveTarget.items.map((item, i) => ({
-      ...item,
-      received: receivedItems[i] || 0,
-    }))
-    await syncReceived(newlyReceived)
-    await loadPurchases()
-    setReceiveTarget(null)
+    await supabase.from('pm_purchases').update({
+      items: updated.items, status: updated.status, received_at: updated.received_at,
+    }).eq('id', receiveTarget.id)
+    const deltas = receiveTarget.items.map((item, i) => {
+      const prod = products.find(p => p.code === item.product_code)
+      return { prodId: prod?.id ?? '', optName: item.option_name, orderedDelta: 0, receivedDelta: receivedItems[i] || 0 }
+    }).filter(d => d.prodId && d.receivedDelta > 0)
+    if (deltas.length) await syncProductQty(products, deltas)
+    await loadPurchases(); await loadProducts()
+    setReceiveTarget(null); setSaving(false)
   }
 
-  // 직접 입고 등록 (발주 없이)
-  const handleInAdd = async () => {
-    if (!inForm.items.some(i => i.product_code)) return
-    const today = inForm.received_date || new Date().toISOString().slice(0,10)
-    const items = inForm.items.filter(i => i.product_code).map(i => ({
-      product_code: i.product_code,
-      option_name:  i.option_name,
-      barcode:      i.barcode || genBarcode(i.product_code, i.option_name),
-      ordered:      Number(i.qty) || 0,
-      received:     Number(i.qty) || 0,
-    }))
-    const p: Purchase = {
-      id:          String(Date.now()),
-      order_date:  today,
-      supplier:    '직접입고',
-      status:      'completed',
-      ordered_at:  new Date().toISOString(),
-      received_at: new Date(`${today}T00:00:00`).toISOString(),
-      items,
-    }
-    await supabase.from('pm_purchases').insert({ ...p })
-    await syncReceived(items)
-    await loadPurchases()
-    setIsInAdd(false)
-    setInForm(INIT_IN_FORM)
-  }
-
-  /* ── 수정 열기 ── */
+  /* ── 수정 ── */
   const openEdit = (p: Purchase) => {
     setEditTarget(p)
-    setEditFormData(JSON.parse(JSON.stringify(p)))  // deep copy
+    setEditFormData(JSON.parse(JSON.stringify(p)))
   }
 
-  /* ── 수정 저장 (델타로 상품 수량 반영) ── */
   const handleEditSave = async () => {
     if (!editTarget || !editFormData) return
-    // ordered 델타
-    const orderedDelta: PurchaseItem[] = editFormData.items.map((newItem, i) => {
-      const oldItem = editTarget.items[i] || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
-      return { ...newItem, ordered: newItem.ordered - oldItem.ordered, received: 0 }
-    }).filter(d => d.ordered !== 0 && d.product_code)
-    // received 델타
-    const receivedDelta: PurchaseItem[] = editFormData.items.map((newItem, i) => {
-      const oldItem = editTarget.items[i] || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
-      return { ...newItem, ordered: 0, received: newItem.received - oldItem.received }
-    }).filter(d => d.received !== 0 && d.product_code)
+    setSaving(true)
+    const orderedDeltas = editFormData.items.map((newItem, i) => {
+      const oldItem = editTarget.items[i] || { product_code: '', option_name: '', barcode: '', ordered: 0, received: 0 }
+      const prod = products.find(p => p.code === newItem.product_code || p.code === oldItem.product_code)
+      return { prodId: prod?.id ?? '', optName: newItem.option_name, orderedDelta: newItem.ordered - oldItem.ordered, receivedDelta: newItem.received - oldItem.received }
+    }).filter(d => d.prodId && (d.orderedDelta !== 0 || d.receivedDelta !== 0))
 
     await supabase.from('pm_purchases').update({
       order_date: editFormData.order_date, supplier: editFormData.supplier,
       status: editFormData.status, items: editFormData.items,
     }).eq('id', editTarget.id)
-
-    if (orderedDelta.length) await syncOrdered(orderedDelta)
-    if (receivedDelta.length) await syncReceived(receivedDelta)
-    await loadPurchases()
-    setEditTarget(null); setEditFormData(null)
+    if (orderedDeltas.length) await syncProductQty(products, orderedDeltas)
+    await loadPurchases(); await loadProducts()
+    setEditTarget(null); setEditFormData(null); setSaving(false)
   }
 
-  const kpis = [
-    { label:'전체 발주',  value: purchases.length,                                         bg:'#eff6ff', color:'#2563eb' },
-    { label:'발주완료',   value: purchases.filter(p=>p.status==='ordered').length,          bg:'#eef2ff', color:'#4338ca' },
-    { label:'부분입고',   value: purchases.filter(p=>p.status==='partial').length,          bg:'#fffbeb', color:'#d97706' },
-    { label:'입고완료',   value: purchases.filter(p=>p.status==='completed').length,        bg:'#f0fdf4', color:'#15803d' },
-  ]
+  /* ── 삭제 ── */
+  const handleDelete = async (p: Purchase) => {
+    setSaving(true)
+    // 발주/입고 역산
+    const deltas = p.items.map(item => {
+      const prod = products.find(pr => pr.code === item.product_code)
+      return { prodId: prod?.id ?? '', optName: item.option_name, orderedDelta: -item.ordered, receivedDelta: -item.received }
+    }).filter(d => d.prodId)
+    if (deltas.length) await syncProductQty(products, deltas)
+    await supabase.from('pm_purchases').delete().eq('id', p.id)
+    await loadPurchases(); await loadProducts()
+    setDeleteTarget(null); setSaving(false)
+  }
+
+  /* ── KPI ── */
+  const now = new Date()
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  const kpiOrdered   = purchases.filter(p => p.status === 'ordered').length
+  const kpiCompleted = purchases.filter(p => p.status === 'completed').length
+  const kpiUnresolved = purchases.filter(p => isUnresolved(p)).length
+
+  /* ── 뷰 필터 ── */
+  const filteredPurchases = useMemo(() => {
+    if (activeKpi === 'ordered')   return purchases.filter(p => p.status === 'ordered')
+    if (activeKpi === 'completed') return purchases.filter(p => p.status === 'completed')
+    if (activeKpi === 'unresolved') return purchases.filter(p => isUnresolved(p))
+    return purchases
+  }, [purchases, activeKpi])
+
+  /* ── 월별 그룹핑 ── */
+  const purchasesByMonth = useMemo(() => {
+    const acc: Record<string, Purchase[]> = {}
+    for (const p of filteredPurchases) {
+      const ym = p.order_date.slice(0, 7)
+      if (!acc[ym]) acc[ym] = []
+      acc[ym].push(p)
+    }
+    // 미입고는 과거 월이라도 항상 포함 (all 뷰에서도)
+    if (activeKpi === 'all') {
+      for (const p of purchases) {
+        if (!isUnresolved(p)) continue
+        const ym = p.order_date.slice(0, 7)
+        if (!acc[ym]) acc[ym] = []
+        if (!acc[ym].find(x => x.id === p.id)) acc[ym].push(p)
+      }
+    }
+    return Object.fromEntries(Object.entries(acc).sort((a, b) => b[0].localeCompare(a[0])))
+  }, [filteredPurchases, purchases, activeKpi])
+
+  /* ── 날짜별 그룹핑 ── */
+  const groupByDate = (list: Purchase[]) => {
+    const acc: Record<string, Purchase[]> = {}
+    for (const p of list) {
+      if (!acc[p.order_date]) acc[p.order_date] = []
+      acc[p.order_date].push(p)
+    }
+    return Object.fromEntries(Object.entries(acc).sort((a, b) => b[0].localeCompare(a[0])))
+  }
+
+  const toggleMonth = (ym: string) => setExpandedMonths(prev => {
+    const n = new Set(prev)
+    n.has(ym) ? n.delete(ym) : n.add(ym)
+    return n
+  })
+  const toggleDate = (key: string) => setExpandedDates(prev => {
+    const n = new Set(prev)
+    n.has(key) ? n.delete(key) : n.add(key)
+    return n
+  })
+
+  /* ── 벌크 폼 렌더 공통 ── */
+  const renderBulkTable = (
+    rows: BulkRow[],
+    setRows: (r: BulkRow[]) => void,
+    type: 'in' | 'po'
+  ) => (
+    <div>
+      {rows.length === 0 && (
+        <div style={{ textAlign: 'center', padding: '24px', color: '#94a3b8', fontSize: 13 }}>
+          엑셀을 업로드하거나 행 추가 버튼을 눌러 상품을 추가하세요
+        </div>
+      )}
+      {rows.map((row, i) => {
+        const isUnmatched = row.barcode && !row.matchedProdId
+        return (
+          <div key={i} style={{ marginBottom: 8, border: `1.5px solid ${isUnmatched ? '#fca5a5' : '#e2e8f0'}`, borderRadius: 10, padding: '10px 12px', background: isUnmatched ? '#fff5f5' : '#fafafa' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px auto', gap: 8, alignItems: 'end' }}>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', display: 'block', marginBottom: 3 }}>바코드</label>
+                <input
+                  value={row.barcode}
+                  placeholder="바코드 입력..."
+                  onChange={e => {
+                    const newRows = [...rows]
+                    newRows[i] = makeBulkRow(e.target.value, row.qty)
+                    setRows(newRows)
+                  }}
+                  style={{ width: '100%', border: `1.5px solid ${isUnmatched ? '#fca5a5' : '#e2e8f0'}`, borderRadius: 7, padding: '6px 10px', fontSize: 12.5, fontFamily: 'monospace', outline: 'none', boxSizing: 'border-box' }}
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', display: 'block', marginBottom: 3 }}>수량</label>
+                <input
+                  type="number" value={row.qty} placeholder="0"
+                  onChange={e => { const newRows = [...rows]; newRows[i] = { ...newRows[i], qty: e.target.value }; setRows(newRows) }}
+                  style={{ width: '100%', border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '6px 10px', fontSize: 13, textAlign: 'right', outline: 'none' }}
+                />
+              </div>
+              <button onClick={() => setRows(rows.filter((_, j) => j !== i))}
+                style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff1f2', color: '#dc2626', border: 'none', borderRadius: 7, cursor: 'pointer', marginBottom: 1 }}>
+                <X size={12} />
+              </button>
+            </div>
+
+            {/* 매칭 정보 */}
+            {row.matchedProdId ? (
+              <div style={{ marginTop: 6, fontSize: 11.5, color: '#15803d', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 5 }}>
+                <CheckCircle2 size={11} />
+                {row.matchedProdName} — {row.matchedOptName}
+                <span style={{ fontFamily: 'monospace', color: '#94a3b8', fontWeight: 400 }}>({row.matchedProdCode})</span>
+              </div>
+            ) : row.barcode ? (
+              <div style={{ marginTop: 6 }}>
+                <div style={{ fontSize: 11.5, color: '#dc2626', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+                  <AlertTriangle size={11} />바코드 미매칭 — 직접 검색하여 연결
+                </div>
+                <div style={{ position: 'relative' }}>
+                  <input
+                    value={row.manualSearch}
+                    placeholder="상품명, 코드, 옵션명으로 검색..."
+                    onChange={e => handleManualSearch(rows, setRows, i, e.target.value)}
+                    onFocus={() => { const newRows = [...rows]; newRows[i] = { ...newRows[i], showSearch: true }; setRows(newRows) }}
+                    style={{ width: '100%', border: '1.5px solid #fca5a5', borderRadius: 7, padding: '5px 10px', fontSize: 12, outline: 'none', boxSizing: 'border-box' }}
+                  />
+                  {row.showSearch && row.manualResults.length > 0 && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1.5px solid #e2e8f0', borderRadius: 8, boxShadow: '0 6px 20px rgba(0,0,0,0.12)', zIndex: 50, maxHeight: 160, overflowY: 'auto' }}>
+                      {row.manualResults.map((m, mi) => (
+                        <button key={mi}
+                          onClick={() => selectMatch(rows, setRows, i, m)}
+                          style={{ width: '100%', textAlign: 'left', padding: '7px 12px', border: 'none', borderBottom: '1px solid #f1f5f9', background: 'none', cursor: 'pointer', fontSize: 12 }}
+                          onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
+                          onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
+                          <span style={{ fontWeight: 800, color: '#1e293b' }}>{m.prodName}</span>
+                          <span style={{ color: '#64748b', marginLeft: 6 }}>— {m.optName}</span>
+                          {m.barcode && <span style={{ fontFamily: 'monospace', fontSize: 10.5, color: '#94a3b8', marginLeft: 5 }}>{m.barcode}</span>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        )
+      })}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8 }}>
+        <button onClick={() => setRows([...rows, makeBulkRow()])}
+          style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+          <Plus size={12} />행 추가
+        </button>
+        <span style={{ fontSize: 12, color: '#94a3b8' }}>
+          매칭 {rows.filter(r => r.matchedProdId).length}/{rows.length}건
+          {rows.filter(r => r.barcode && !r.matchedProdId).length > 0 && (
+            <span style={{ color: '#dc2626', marginLeft: 6 }}>
+              ⚠️ 미매칭 {rows.filter(r => r.barcode && !r.matchedProdId).length}건
+            </span>
+          )}
+        </span>
+      </div>
+    </div>
+  )
 
   return (
     <div className="pm-page space-y-4">
+
       {/* KPI */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        {kpis.map(c => (
-          <div key={c.label} className="pm-card p-4">
-            <p style={{ fontSize:11, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
-            <p style={{ fontSize:28, fontWeight:900, color: c.color, lineHeight:1, marginTop:6 }}>{c.value}</p>
-          </div>
+        {[
+          { key: 'all',        label: '전체 발주', value: purchases.length,  bg: '#f8fafc', color: '#475569' },
+          { key: 'ordered',    label: '발주완료',  value: kpiOrdered,        bg: '#eff6ff', color: '#2563eb' },
+          { key: 'completed',  label: '입고완료',  value: kpiCompleted,      bg: '#f0fdf4', color: '#15803d' },
+          { key: 'unresolved', label: '미입고',    value: kpiUnresolved,     bg: '#fffbeb', color: '#d97706' },
+        ].map(c => (
+          <button key={c.key}
+            onClick={() => setActiveKpi(c.key as typeof activeKpi)}
+            className="pm-card p-4 text-left"
+            style={{ background: activeKpi === c.key ? c.bg : 'white', border: activeKpi === c.key ? `2px solid ${c.color}` : '1.5px solid rgba(15,23,42,0.07)', cursor: 'pointer' }}>
+            <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{c.label}</p>
+            <p style={{ fontSize: 28, fontWeight: 900, color: c.color, lineHeight: 1, marginTop: 6 }}>{c.value}</p>
+          </button>
         ))}
       </div>
 
-      {/* 검색 + 필터 */}
-      <div className="pm-card p-4">
-        <div style={{ display:'flex', flexWrap:'wrap', gap:8, alignItems:'center' }}>
-          <div className="relative" style={{ flex:'1 1 240px' }}>
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color:'#94a3b8' }} />
-            <Input placeholder="발주번호, 구매처, 상품명..." value={search} onChange={e=>setSearch(e.target.value)} className="pm-input-icon" />
-          </div>
-          <Select value={sf} onChange={e=>setSf(e.target.value)} style={{ width:140 }}>
-            <option value="전체">전체 상태</option>
-            {Object.entries(ST).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
-          </Select>
-          <div style={{ display:'flex', gap:6, marginLeft:'auto', flexWrap:'wrap' }}>
-            <Button size="sm" onClick={() => setIsInAdd(true)}
-              style={{ background:'#059669', borderColor:'#059669' }}>
-              <CheckCircle2 size={13}/>입고 등록
-            </Button>
-            <Button size="sm" onClick={() => setIsBulkIn(true)}
-              style={{ background:'#0d9488', borderColor:'#0d9488' }}>
-              <Layers size={13}/>일괄 입고 등록
-            </Button>
-            <Button size="sm" onClick={() => setIsAdd(true)}>
-              <Plus size={13}/>발주 등록
-            </Button>
-            <Button size="sm" onClick={() => setIsBulkPo(true)}
-              style={{ background:'#2563eb', borderColor:'#2563eb' }}>
-              <Layers size={13}/>일괄 발주 등록
-            </Button>
-          </div>
+      {/* 액션 버튼 */}
+      <div className="pm-card p-3">
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+          <Button size="sm" onClick={() => { setIsBulkIn(true); setBulkInRows([makeBulkRow()]) }}
+            style={{ background: '#0d9488', borderColor: '#0d9488' }}>
+            <Layers size={13} />일괄 입고 등록
+          </Button>
+          <Button size="sm" onClick={() => setIsAdd(true)}>
+            <Plus size={13} />발주 등록
+          </Button>
+          <Button size="sm" onClick={() => { setIsBulkPo(true); setBulkPoRows([makeBulkRow()]) }}
+            style={{ background: '#2563eb', borderColor: '#2563eb' }}>
+            <Layers size={13} />일괄 발주 등록
+          </Button>
+          {activeKpi !== 'all' && (
+            <button onClick={() => setActiveKpi('all')}
+              style={{ marginLeft: 'auto', fontSize: 12, fontWeight: 700, color: '#64748b', background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '5px 12px', cursor: 'pointer' }}>
+              전체 보기
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 테이블 */}
-      <div className="pm-card overflow-hidden">
-        <div className="pm-table-wrap">
-          <table className="pm-table" style={{ minWidth:900 }}>
-            <thead>
-              <tr>
-                <th>발주일</th>
-                <th>구매처</th>
-                <th style={{ textAlign:'center' }}>상품 수</th>
-                <th style={{ textAlign:'right' }}>발주 수량</th>
-                <th style={{ textAlign:'right' }}>입고 수량</th>
-                <th style={{ textAlign:'right' }}>미입고</th>
-                <th>등록일</th>
-                <th style={{ textAlign:'center' }}>상태</th>
-                <th style={{ textAlign:'center' }}>관리</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={10} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
-                    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
-                      <PackagePlus size={36} style={{ opacity:0.22 }} />
-                      <p style={{ fontSize:13.5, fontWeight:700 }}>등록된 발주가 없습니다</p>
-                      <p style={{ fontSize:12, fontWeight:500, color:'#cbd5e1' }}>[발주 등록] 버튼을 눌러 발주를 등록하세요</p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-              {filtered.map(p => {
-                const st = ST[p.status]
-                const totalOrdered  = p.items.reduce((s, i) => s + i.ordered, 0)
-                const totalReceived = p.items.reduce((s, i) => s + i.received, 0)
-                const undelivered   = totalOrdered - totalReceived
-                return (
-                  <tr key={p.id}>
-                    <td>
-                      <button onClick={() => setDetail(p)}
-                        style={{ fontFamily:'monospace', fontWeight:800, color:'#2563eb', fontSize:12.5, background:'none', border:'none', cursor:'pointer', padding:0 }}>
-                        {p.order_date}
-                      </button>
-                    </td>
-                    <td style={{ fontSize:12.5, fontWeight:700, color:'#334155' }}>{p.supplier}</td>
-                    <td style={{ textAlign:'center', fontSize:13, fontWeight:800, color:'#64748b' }}>{p.items.length}건</td>
-                    <td style={{ textAlign:'right', fontSize:13, fontWeight:800, color:'#1e293b' }}>{totalOrdered.toLocaleString()}</td>
-                    <td style={{ textAlign:'right', fontSize:13, fontWeight:800, color:'#0ea5e9' }}>{totalReceived.toLocaleString()}</td>
-                    <td style={{ textAlign:'right', fontSize:13, fontWeight:900, color: undelivered > 0 ? '#f59e0b' : '#94a3b8' }}>
-                      {undelivered.toLocaleString()}
-                    </td>
-                    <td style={{ fontSize:11.5, color:'#94a3b8' }}>{p.ordered_at ? new Date(p.ordered_at).toLocaleDateString('ko-KR') : '-'}</td>
-                    <td style={{ textAlign:'center' }}>
-                      <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize:11, fontWeight:800, background:st.bg, color:st.color, padding:'4px 10px', borderRadius:99 }}>
-                        {st.icon}{st.label}
-                      </span>
-                    </td>
-                    <td style={{ textAlign:'center' }}>
-                      <div style={{ display:'flex', gap:5, justifyContent:'center' }}>
-                        {p.status !== 'completed' && p.status !== 'cancelled' && (
-                          <button onClick={() => setReceiveTarget(p)}
-                            style={{ fontSize:11, fontWeight:800, color:'#059669', background:'#ecfdf5', border:'none', borderRadius:7, padding:'4px 9px', cursor:'pointer' }}>
-                            <span style={{ display:'flex', alignItems:'center', gap:3 }}><Truck size={11}/>입고처리</span>
-                          </button>
+      {/* ── 월별 발주 목록 ── */}
+      <div className="space-y-3">
+        {Object.keys(purchasesByMonth).length === 0 && (
+          <div className="pm-card" style={{ textAlign: 'center', padding: '3.5rem 1rem', color: '#94a3b8' }}>
+            <PackagePlus size={36} style={{ opacity: 0.22, margin: '0 auto 10px' }} />
+            <p style={{ fontSize: 13.5, fontWeight: 700 }}>등록된 발주가 없습니다</p>
+          </div>
+        )}
+
+        {Object.entries(purchasesByMonth).map(([ym, list]) => {
+          const isExpanded = expandedMonths.has(ym)
+          const mOrdered   = list.filter(p => p.status === 'ordered').length
+          const mCompleted = list.filter(p => p.status === 'completed').length
+          const mUnresolved = list.filter(p => isUnresolved(p)).length
+          const dateGroups = groupByDate(list)
+          const isPastMonth = ym < thisMonth
+
+          return (
+            <div key={ym} className="pm-card overflow-hidden">
+              {/* 월 헤더 */}
+              <button
+                onClick={() => toggleMonth(ym)}
+                style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 10, padding: '13px 16px', background: isExpanded ? '#f8fafc' : 'white', border: 'none', cursor: 'pointer', borderBottom: isExpanded ? '1px solid rgba(15,23,42,0.06)' : 'none' }}>
+                {isExpanded ? <ChevronDown size={15} style={{ color: '#64748b' }} /> : <ChevronRight size={15} style={{ color: '#64748b' }} />}
+                <span style={{ fontSize: 15, fontWeight: 900, color: '#1e293b' }}>{fmtMonth(ym)}</span>
+                {isPastMonth && mUnresolved > 0 && (
+                  <span style={{ fontSize: 10.5, fontWeight: 800, background: '#fef3c7', color: '#d97706', padding: '2px 8px', borderRadius: 20 }}>
+                    ⚠️ 미입고 {mUnresolved}
+                  </span>
+                )}
+                <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                  {mOrdered > 0 && <span style={{ fontSize: 11, fontWeight: 800, background: '#eff6ff', color: '#2563eb', padding: '2px 9px', borderRadius: 20 }}>발주완료 {mOrdered}</span>}
+                  {mCompleted > 0 && <span style={{ fontSize: 11, fontWeight: 800, background: '#f0fdf4', color: '#15803d', padding: '2px 9px', borderRadius: 20 }}>입고완료 {mCompleted}</span>}
+                  <span style={{ fontSize: 11, color: '#94a3b8' }}>총 {list.length}건</span>
+                </span>
+              </button>
+
+              {/* 날짜별 그룹 */}
+              {isExpanded && (
+                <div style={{ padding: '8px 12px 12px' }}>
+                  {Object.entries(dateGroups).map(([date, dayList]) => {
+                    const dateKey = `${ym}_${date}`
+                    const isDateExpanded = expandedDates.has(dateKey)
+                    const dayOrdered   = dayList.filter(p => p.status === 'ordered').length
+                    const dayCompleted = dayList.filter(p => p.status === 'completed').length
+                    const dayUnresolved = dayList.filter(p => isUnresolved(p)).length
+
+                    return (
+                      <div key={date} style={{ marginBottom: 6, border: '1.5px solid #f1f5f9', borderRadius: 10, overflow: 'hidden' }}>
+                        {/* 날짜 헤더 */}
+                        <button
+                          onClick={() => toggleDate(dateKey)}
+                          style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, padding: '9px 14px', background: isDateExpanded ? '#f8fafc' : 'white', border: 'none', cursor: 'pointer' }}>
+                          {isDateExpanded ? <ChevronDown size={13} style={{ color: '#94a3b8' }} /> : <ChevronRight size={13} style={{ color: '#94a3b8' }} />}
+                          <span style={{ fontSize: 13, fontWeight: 800, color: '#334155' }}>{fmtDate(date)}</span>
+                          <span style={{ fontSize: 11, color: '#94a3b8', marginLeft: 2 }}>{date}</span>
+                          {dayUnresolved > 0 && <span style={{ fontSize: 10.5, fontWeight: 800, background: '#fef3c7', color: '#d97706', padding: '1px 7px', borderRadius: 20 }}>미입고 {dayUnresolved}</span>}
+                          <span style={{ marginLeft: 'auto', display: 'flex', gap: 5 }}>
+                            {dayOrdered > 0 && <span style={{ fontSize: 10.5, fontWeight: 800, background: '#eff6ff', color: '#2563eb', padding: '1px 7px', borderRadius: 20 }}>발주 {dayOrdered}</span>}
+                            {dayCompleted > 0 && <span style={{ fontSize: 10.5, fontWeight: 800, background: '#f0fdf4', color: '#15803d', padding: '1px 7px', borderRadius: 20 }}>입고 {dayCompleted}</span>}
+                            <span style={{ fontSize: 11, color: '#94a3b8' }}>총 {dayList.length}건</span>
+                          </span>
+                        </button>
+
+                        {/* 해당 날짜 발주 목록 */}
+                        {isDateExpanded && (
+                          <div style={{ borderTop: '1px solid #f1f5f9' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
+                              <thead>
+                                <tr style={{ background: '#f8fafc' }}>
+                                  {['구매처', '상품수', '발주', '입고', '미입고', '상태', '관리'].map(h => (
+                                    <th key={h} style={{ padding: '7px 10px', fontWeight: 800, color: '#64748b', fontSize: 11, textAlign: h === '구매처' ? 'left' : 'center', borderBottom: '1px solid #f1f5f9' }}>{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {dayList.map(p => {
+                                  const totalOrdered  = p.items.reduce((s, i) => s + i.ordered, 0)
+                                  const totalReceived = p.items.reduce((s, i) => s + i.received, 0)
+                                  const undelivered   = totalOrdered - totalReceived
+                                  const st = ST[p.status]
+                                  return (
+                                    <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc' }}>
+                                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#334155' }}>{p.supplier || '-'}</td>
+                                      <td style={{ textAlign: 'center', color: '#64748b' }}>{p.items.length}건</td>
+                                      <td style={{ textAlign: 'center', fontWeight: 800, color: '#1e293b' }}>{totalOrdered.toLocaleString()}</td>
+                                      <td style={{ textAlign: 'center', fontWeight: 800, color: '#0ea5e9' }}>{totalReceived.toLocaleString()}</td>
+                                      <td style={{ textAlign: 'center', fontWeight: 900, color: undelivered > 0 ? '#d97706' : '#94a3b8' }}>{undelivered.toLocaleString()}</td>
+                                      <td style={{ textAlign: 'center' }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 800, background: st.bg, color: st.color, padding: '3px 9px', borderRadius: 99 }}>
+                                          {st.label}
+                                        </span>
+                                      </td>
+                                      <td style={{ textAlign: 'center' }}>
+                                        <div style={{ display: 'flex', gap: 4, justifyContent: 'center' }}>
+                                          {p.status !== 'completed' && p.status !== 'cancelled' && (
+                                            <button onClick={() => setReceiveTarget(p)}
+                                              style={{ fontSize: 11, fontWeight: 800, color: '#059669', background: '#ecfdf5', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                              <Truck size={10} />입고
+                                            </button>
+                                          )}
+                                          <button onClick={() => openEdit(p)}
+                                            style={{ fontSize: 11, fontWeight: 800, color: '#7e22ce', background: '#fdf4ff', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                            <Edit2 size={10} />수정
+                                          </button>
+                                          <button onClick={() => setDeleteTarget(p)}
+                                            style={{ fontSize: 11, fontWeight: 800, color: '#dc2626', background: '#fff1f2', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                            <Trash2 size={10} />삭제
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
                         )}
-                        <button onClick={() => openEdit(p)}
-                          style={{ fontSize:11, fontWeight:800, color:'#7e22ce', background:'#fdf4ff', border:'none', borderRadius:7, padding:'4px 9px', cursor:'pointer' }}>
-                          수정
-                        </button>
-                        <button onClick={() => setDetail(p)}
-                          style={{ fontSize:11, fontWeight:800, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:7, padding:'4px 9px', cursor:'pointer' }}>
-                          상세
-                        </button>
                       </div>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="pm-table-footer">
-          <span>총 {filtered.length}건</span>
-        </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       {/* ── 발주 등록 모달 ── */}
       <Modal isOpen={isAdd} onClose={() => setIsAdd(false)} title="발주 등록" size="xl">
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-          <div><Label>발주일 *</Label><Input type="date" value={form.order_date} onChange={e=>setForm(f=>({...f,order_date:e.target.value}))}/></div>
-          <div><Label>구매처 *</Label><Input placeholder="동대문 A상회" value={form.supplier} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))}/></div>
-
-          <div style={{ gridColumn:'1/-1', marginTop:8 }}>
-            <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', paddingBottom:6, borderBottom:'1px solid #eff6ff', marginBottom:10 }}>📦 발주 상품</p>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div><Label>발주일 *</Label><Input type="date" value={form.order_date} onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))}/></div>
+          <div><Label>구매처 (선택)</Label><Input placeholder="동대문 A상회" value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}/></div>
+          <div style={{ gridColumn: '1/-1', marginTop: 8 }}>
+            <p style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', paddingBottom: 6, borderBottom: '1px solid #eff6ff', marginBottom: 10 }}>📦 발주 상품</p>
             {form.items.map((item, i) => (
-              <div key={i} style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr 1.5fr 1fr auto', gap:8, marginBottom:8 }}>
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.5fr 1fr 1.5fr 1fr auto', gap: 8, marginBottom: 8 }}>
                 <div><Label>상품코드</Label><Input placeholder="WA5AC001" value={item.product_code}
-                  onChange={e=>{const it=[...form.items];it[i]={...it[i],product_code:e.target.value,barcode:genBarcode(e.target.value,it[i].option_name)};setForm(f=>({...f,items:it}))}}/></div>
+                  onChange={e => { const it = [...form.items]; it[i] = { ...it[i], product_code: e.target.value }; setForm(f => ({ ...f, items: it })) }}/></div>
                 <div><Label>옵션명</Label><Input placeholder="BE" value={item.option_name}
-                  onChange={e=>{const it=[...form.items];it[i]={...it[i],option_name:e.target.value,barcode:genBarcode(it[i].product_code,e.target.value)};setForm(f=>({...f,items:it}))}}/></div>
-                <div><Label>바코드 (자동)</Label><Input readOnly value={item.barcode}
-                  style={{ background:'#f8fafc', color:'#334155', fontFamily:'monospace' }}/></div>
+                  onChange={e => { const it = [...form.items]; it[i] = { ...it[i], option_name: e.target.value }; setForm(f => ({ ...f, items: it })) }}/></div>
+                <div><Label>바코드</Label><Input placeholder="" value={item.barcode}
+                  onChange={e => { const it = [...form.items]; it[i] = { ...it[i], barcode: e.target.value }; setForm(f => ({ ...f, items: it })) }}/></div>
                 <div><Label>발주 수량</Label><Input type="number" placeholder="0" value={item.ordered}
-                  onChange={e=>{const it=[...form.items];it[i]={...it[i],ordered:e.target.value};setForm(f=>({...f,items:it}))}}/></div>
-                <div style={{ paddingTop:21 }}>
+                  onChange={e => { const it = [...form.items]; it[i] = { ...it[i], ordered: e.target.value }; setForm(f => ({ ...f, items: it })) }}/></div>
+                <div style={{ paddingTop: 21 }}>
                   {form.items.length > 1 && (
-                    <button onClick={() => setForm(f=>({...f,items:f.items.filter((_,j)=>j!==i)}))}
-                      style={{ width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff1f2',color:'#dc2626',border:'none',borderRadius:8,cursor:'pointer' }}>
+                    <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
+                      style={{ width: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff1f2', color: '#dc2626', border: 'none', borderRadius: 8, cursor: 'pointer' }}>
                       <X size={13}/>
                     </button>
                   )}
                 </div>
               </div>
             ))}
-            <button onClick={() => setForm(f=>({...f,items:[...f.items,{...INIT_ITEM}]}))}
-              style={{ fontSize:12,fontWeight:800,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+            <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { product_code: '', option_name: '', barcode: '', ordered: '' }] }))}
+              style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
               <Plus size={12}/>상품 추가
             </button>
           </div>
         </div>
-        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
           <Button variant="outline" onClick={() => setIsAdd(false)}>취소</Button>
-          <Button onClick={handleAdd}>발주 등록</Button>
-        </div>
-      </Modal>
-
-      {/* ── 직접 입고 등록 모달 ── */}
-      <Modal isOpen={isInAdd} onClose={() => setIsInAdd(false)} title="입고 등록" size="xl">
-        <div style={{ background:'#eff6ff', borderRadius:10, padding:'10px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#2563eb' }}>
-          💡 발주 없이 직접 입고된 상품을 등록합니다. 등록 후 <strong>입고완료</strong> 상태로 처리됩니다.
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-          <div>
-            <Label>입고일</Label>
-            <Input type="date" value={inForm.received_date}
-              onChange={e => setInForm(f => ({...f, received_date:e.target.value}))}/>
-          </div>
-
-          <div style={{ gridColumn:'1/-1', marginTop:8 }}>
-            <p style={{ fontSize:12, fontWeight:800, color:'#059669', paddingBottom:6, borderBottom:'1px solid #ecfdf5', marginBottom:10 }}>📦 입고 상품</p>
-            {inForm.items.map((item, i) => (
-              <div key={i} style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr 1.5fr 0.8fr auto', gap:8, marginBottom:8 }}>
-                <div><Label>상품코드</Label>
-                  <Input placeholder="WA5AC001" value={item.product_code}
-                    onChange={e=>{const it=[...inForm.items];it[i]={...it[i],product_code:e.target.value,barcode:genBarcode(e.target.value,it[i].option_name)};setInForm(f=>({...f,items:it}))}}/>
-                </div>
-                <div><Label>옵션명</Label>
-                  <Input placeholder="BE" value={item.option_name}
-                    onChange={e=>{const it=[...inForm.items];it[i]={...it[i],option_name:e.target.value,barcode:genBarcode(it[i].product_code,e.target.value)};setInForm(f=>({...f,items:it}))}}/>
-                </div>
-                <div><Label>바코드 (자동)</Label>
-                  <Input readOnly value={item.barcode}
-                    style={{ background:'#f8fafc', color:'#334155', fontFamily:'monospace' }}/>
-                </div>
-                <div><Label>입고 수량</Label>
-                  <Input type="number" placeholder="0" value={item.qty}
-                    onChange={e=>{const it=[...inForm.items];it[i]={...it[i],qty:e.target.value};setInForm(f=>({...f,items:it}))}}/>
-                </div>
-                <div style={{ paddingTop:21 }}>
-                  {inForm.items.length > 1 && (
-                    <button onClick={() => setInForm(f=>({...f,items:f.items.filter((_,j)=>j!==i)}))}
-                      style={{ width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff1f2',color:'#dc2626',border:'none',borderRadius:8,cursor:'pointer' }}>
-                      <X size={13}/>
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-            <button onClick={() => setInForm(f=>({...f,items:[...f.items,{...INIT_IN_ITEM}]}))}
-              style={{ fontSize:12,fontWeight:800,color:'#059669',background:'#ecfdf5',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
-              <Plus size={12}/>상품 추가
-            </button>
-          </div>
-        </div>
-        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-          <Button variant="outline" onClick={() => setIsInAdd(false)}>취소</Button>
-          <Button onClick={handleInAdd} style={{ background:'#059669' }}>
-            <CheckCircle2 size={13}/>입고 등록 완료
-          </Button>
+          <Button onClick={handleAdd} disabled={saving}>발주 등록</Button>
         </div>
       </Modal>
 
       {/* ── 일괄 입고 등록 모달 ── */}
       <Modal isOpen={isBulkIn} onClose={() => setIsBulkIn(false)} title="일괄 입고 등록" size="xl">
-        <div style={{ background:'#f0fdf4', borderRadius:10, padding:'10px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#059669' }}>
-          💡 여러 상품을 한번에 입고 등록합니다. 엑셀로 대량 업로드도 가능합니다.
+        <div style={{ background: '#f0fdf4', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, fontWeight: 700, color: '#059669' }}>
+          💡 바코드를 기준으로 상품을 찾아 일괄 입고 등록합니다.
         </div>
-
-        {/* 헤더 정보 */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
-          <div><Label>입고일 *</Label>
-            <Input type="date" value={bulkInDate} onChange={e => setBulkInDate(e.target.value)}/>
-          </div>
-          <div><Label>구매처 *</Label>
-            <Input placeholder="동대문 A상회" value={bulkInSupplier} onChange={e => setBulkInSupplier(e.target.value)}/>
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+          <div><Label>입고일</Label><Input type="date" value={bulkInDate} onChange={e => setBulkInDate(e.target.value)}/></div>
+          <div><Label>구매처 (선택)</Label><Input placeholder="동대문 A상회" value={bulkInSupplier} onChange={e => setBulkInSupplier(e.target.value)}/></div>
         </div>
-
-        {/* 툴바 */}
-        <div style={{ display:'flex', gap:8, marginBottom:10, alignItems:'center' }}>
-          <p style={{ fontSize:12, fontWeight:800, color:'#059669', flex:1 }}>📦 입고 상품 목록</p>
-          <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+          <p style={{ fontSize: 12, fontWeight: 800, color: '#059669', flex: 1 }}>📦 입고 상품 목록</p>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
             <Upload size={12}/>엑셀 업로드
-            <input type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }}
-              onChange={e => { const f=e.target.files?.[0]; if(f) parseExcelToBulkRows(f, rows => setBulkInRows(prev => [...prev.filter(r=>r.product_code), ...rows])); e.target.value='' }}/>
+            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) parseExcel(f, rows => setBulkInRows(prev => [...prev.filter(r => r.barcode), ...rows])); e.target.value = '' }}/>
           </label>
-          <button onClick={() => downloadExcelTemplate('in')}
-            style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#64748b', background:'#f1f5f9', border:'none', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+          <button onClick={() => downloadBarcodeTemplate('일괄입고_양식.xlsx')}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#64748b', background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
             <Download size={12}/>양식 다운로드
           </button>
         </div>
-
-        {/* 테이블 */}
-        <div style={{ border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden', marginBottom:12 }}>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr style={{ background:'#f8fafc' }}>
-                {['#','상품코드','옵션명','바코드 (자동)','수량',''].map((h,i)=>(
-                  <th key={i} style={{ padding:'8px 10px', fontSize:11, fontWeight:800, color:'#64748b', textAlign: i>=4?'center':'left', borderBottom:'1px solid #e2e8f0' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {bulkInRows.map((row, i) => (
-                <tr key={i} style={{ borderBottom: i<bulkInRows.length-1 ? '1px solid #f1f5f9' : 'none' }}>
-                  <td style={{ padding:'6px 10px', fontSize:11, color:'#94a3b8', fontWeight:700, width:28 }}>{i+1}</td>
-                  <td style={{ padding:'4px 6px' }}>
-                    <input value={row.product_code} placeholder="WA5AC001"
-                      onChange={e => { const r=[...bulkInRows]; r[i]={...r[i],product_code:e.target.value,barcode:genBarcode(e.target.value,r[i].option_name)}; setBulkInRows(r) }}
-                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, fontFamily:'monospace', fontWeight:700, outline:'none' }}/>
-                  </td>
-                  <td style={{ padding:'4px 6px' }}>
-                    <input value={row.option_name} placeholder="BE"
-                      onChange={e => { const r=[...bulkInRows]; r[i]={...r[i],option_name:e.target.value,barcode:genBarcode(r[i].product_code,e.target.value)}; setBulkInRows(r) }}
-                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, outline:'none' }}/>
-                  </td>
-                  <td style={{ padding:'4px 6px' }}>
-                    <input readOnly value={row.barcode}
-                      style={{ width:'100%', border:'1px solid #f1f5f9', borderRadius:6, padding:'5px 8px', fontSize:11, fontFamily:'monospace', background:'#f8fafc', color:'#475569' }}/>
-                  </td>
-                  <td style={{ padding:'4px 6px', width:80 }}>
-                    <input type="number" value={row.qty} placeholder="0"
-                      onChange={e => { const r=[...bulkInRows]; r[i]={...r[i],qty:e.target.value}; setBulkInRows(r) }}
-                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, textAlign:'right', outline:'none' }}/>
-                  </td>
-                  <td style={{ padding:'4px 6px', textAlign:'center', width:32 }}>
-                    {bulkInRows.length > 1 && (
-                      <button onClick={() => setBulkInRows(prev => prev.filter((_,j)=>j!==i))}
-                        style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:5, cursor:'pointer' }}>
-                        <X size={11}/>
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <button onClick={() => setBulkInRows(prev => [...prev, { ...INIT_BULK_ROW }])}
-            style={{ fontSize:12,fontWeight:800,color:'#059669',background:'#ecfdf5',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
-            <Plus size={12}/>행 추가
-          </button>
-          <span style={{ fontSize:12, color:'#94a3b8' }}>총 {bulkInRows.filter(r=>r.product_code).length}건</span>
-        </div>
-        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+        {renderBulkTable(bulkInRows, setBulkInRows, 'in')}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
           <Button variant="outline" onClick={() => setIsBulkIn(false)}>취소</Button>
-          <Button onClick={handleBulkInSubmit} style={{ background:'#059669' }}>
-            <CheckCircle2 size={13}/>일괄 입고 등록
+          <Button onClick={handleBulkInSubmit} disabled={saving || bulkInRows.filter(r => r.matchedProdId).length === 0}
+            style={{ background: '#059669', borderColor: '#059669', opacity: saving ? 0.6 : 1 }}>
+            <CheckCircle2 size={13}/>{saving ? '처리 중...' : `일괄 입고 등록 (${bulkInRows.filter(r => r.matchedProdId).length}건)`}
           </Button>
         </div>
       </Modal>
 
       {/* ── 일괄 발주 등록 모달 ── */}
       <Modal isOpen={isBulkPo} onClose={() => setIsBulkPo(false)} title="일괄 발주 등록" size="xl">
-        <div style={{ background:'#eff6ff', borderRadius:10, padding:'10px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#2563eb' }}>
-          💡 여러 상품을 한번에 발주 등록합니다. 엑셀로 대량 업로드도 가능합니다.
+        <div style={{ background: '#eff6ff', borderRadius: 10, padding: '10px 14px', marginBottom: 14, fontSize: 12, fontWeight: 700, color: '#2563eb' }}>
+          💡 바코드를 기준으로 상품을 찾아 일괄 발주 등록합니다.
         </div>
-
-        {/* 헤더 정보 */}
-        <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
-          <div><Label>발주일 *</Label>
-            <Input type="date" value={bulkPoDate} onChange={e => setBulkPoDate(e.target.value)}/>
-          </div>
-          <div><Label>구매처 *</Label>
-            <Input placeholder="동대문 A상회" value={bulkPoSupplier} onChange={e => setBulkPoSupplier(e.target.value)}/>
-          </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+          <div><Label>발주일</Label><Input type="date" value={bulkPoDate} onChange={e => setBulkPoDate(e.target.value)}/></div>
+          <div><Label>구매처 (선택)</Label><Input placeholder="동대문 A상회" value={bulkPoSupplier} onChange={e => setBulkPoSupplier(e.target.value)}/></div>
         </div>
-
-        {/* 툴바 */}
-        <div style={{ display:'flex', gap:8, marginBottom:10, alignItems:'center' }}>
-          <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', flex:1 }}>📦 발주 상품 목록</p>
-          <label style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center' }}>
+          <p style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', flex: 1 }}>📦 발주 상품 목록</p>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
             <Upload size={12}/>엑셀 업로드
-            <input type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }}
-              onChange={e => { const f=e.target.files?.[0]; if(f) parseExcelToBulkRows(f, rows => setBulkPoRows(prev => [...prev.filter(r=>r.product_code), ...rows])); e.target.value='' }}/>
+            <input type="file" accept=".xlsx,.xls" style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0]; if (f) parseExcel(f, rows => setBulkPoRows(prev => [...prev.filter(r => r.barcode), ...rows])); e.target.value = '' }}/>
           </label>
-          <button onClick={() => downloadExcelTemplate('po')}
-            style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#64748b', background:'#f1f5f9', border:'none', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+          <button onClick={() => downloadBarcodeTemplate('일괄발주_양식.xlsx')}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#64748b', background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '6px 12px', cursor: 'pointer' }}>
             <Download size={12}/>양식 다운로드
           </button>
         </div>
-
-        {/* 테이블 */}
-        <div style={{ border:'1px solid #e2e8f0', borderRadius:10, overflow:'hidden', marginBottom:12 }}>
-          <table style={{ width:'100%', borderCollapse:'collapse' }}>
-            <thead>
-              <tr style={{ background:'#f8fafc' }}>
-                {['#','상품코드','옵션명','바코드 (자동)','발주수량',''].map((h,i)=>(
-                  <th key={i} style={{ padding:'8px 10px', fontSize:11, fontWeight:800, color:'#64748b', textAlign: i>=4?'center':'left', borderBottom:'1px solid #e2e8f0' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {bulkPoRows.map((row, i) => (
-                <tr key={i} style={{ borderBottom: i<bulkPoRows.length-1 ? '1px solid #f1f5f9' : 'none' }}>
-                  <td style={{ padding:'6px 10px', fontSize:11, color:'#94a3b8', fontWeight:700, width:28 }}>{i+1}</td>
-                  <td style={{ padding:'4px 6px' }}>
-                    <input value={row.product_code} placeholder="WA5AC001"
-                      onChange={e => { const r=[...bulkPoRows]; r[i]={...r[i],product_code:e.target.value,barcode:genBarcode(e.target.value,r[i].option_name)}; setBulkPoRows(r) }}
-                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, fontFamily:'monospace', fontWeight:700, outline:'none' }}/>
-                  </td>
-                  <td style={{ padding:'4px 6px' }}>
-                    <input value={row.option_name} placeholder="BE"
-                      onChange={e => { const r=[...bulkPoRows]; r[i]={...r[i],option_name:e.target.value,barcode:genBarcode(r[i].product_code,e.target.value)}; setBulkPoRows(r) }}
-                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, outline:'none' }}/>
-                  </td>
-                  <td style={{ padding:'4px 6px' }}>
-                    <input readOnly value={row.barcode}
-                      style={{ width:'100%', border:'1px solid #f1f5f9', borderRadius:6, padding:'5px 8px', fontSize:11, fontFamily:'monospace', background:'#f8fafc', color:'#475569' }}/>
-                  </td>
-                  <td style={{ padding:'4px 6px', width:80 }}>
-                    <input type="number" value={row.qty} placeholder="0"
-                      onChange={e => { const r=[...bulkPoRows]; r[i]={...r[i],qty:e.target.value}; setBulkPoRows(r) }}
-                      style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:6, padding:'5px 8px', fontSize:12, textAlign:'right', outline:'none' }}/>
-                  </td>
-                  <td style={{ padding:'4px 6px', textAlign:'center', width:32 }}>
-                    {bulkPoRows.length > 1 && (
-                      <button onClick={() => setBulkPoRows(prev => prev.filter((_,j)=>j!==i))}
-                        style={{ width:24, height:24, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:5, cursor:'pointer' }}>
-                        <X size={11}/>
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-          <button onClick={() => setBulkPoRows(prev => [...prev, { ...INIT_BULK_ROW }])}
-            style={{ fontSize:12,fontWeight:800,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
-            <Plus size={12}/>행 추가
-          </button>
-          <span style={{ fontSize:12, color:'#94a3b8' }}>총 {bulkPoRows.filter(r=>r.product_code).length}건</span>
-        </div>
-        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+        {renderBulkTable(bulkPoRows, setBulkPoRows, 'po')}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
           <Button variant="outline" onClick={() => setIsBulkPo(false)}>취소</Button>
-          <Button onClick={handleBulkPoSubmit}>
-            <Layers size={13}/>일괄 발주 등록
+          <Button onClick={handleBulkPoSubmit} disabled={saving || bulkPoRows.filter(r => r.matchedProdId).length === 0}
+            style={{ opacity: saving ? 0.6 : 1 }}>
+            <Layers size={13}/>{saving ? '처리 중...' : `일괄 발주 등록 (${bulkPoRows.filter(r => r.matchedProdId).length}건)`}
           </Button>
         </div>
       </Modal>
@@ -746,115 +828,84 @@ export default function PurchasePage() {
       {/* ── 수정 모달 ── */}
       {editTarget && editFormData && (
         <Modal isOpen onClose={() => { setEditTarget(null); setEditFormData(null) }} title={`발주 수정 — ${editTarget.order_date}`} size="xl">
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
             <div>
               <Label>발주일 *</Label>
               <Input type="date" value={editFormData.order_date}
-                onChange={e => setEditFormData(f => f ? {...f, order_date:e.target.value} : f)}/>
+                onChange={e => setEditFormData(f => f ? { ...f, order_date: e.target.value } : f)}/>
             </div>
             <div>
-              <Label>구매처 *</Label>
+              <Label>구매처 (선택)</Label>
               <Input placeholder="구매처" value={editFormData.supplier}
-                onChange={e => setEditFormData(f => f ? {...f, supplier:e.target.value} : f)}/>
+                onChange={e => setEditFormData(f => f ? { ...f, supplier: e.target.value } : f)}/>
             </div>
           </div>
-
-          <p style={{ fontSize:12, fontWeight:800, color:'#475569', marginBottom:8, paddingBottom:6, borderBottom:'1px solid #f1f5f9' }}>📦 발주 상품 목록 (수정 가능)</p>
+          <p style={{ fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid #f1f5f9' }}>📦 발주 상품 목록 (수정 가능)</p>
           {editFormData.items.map((item, i) => (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:'1.4fr 1fr 1.6fr 0.8fr 0.8fr auto', gap:8, marginBottom:8, alignItems:'end' }}>
+            <div key={i} style={{ display: 'grid', gridTemplateColumns: '1.4fr 1fr 1.6fr 0.8fr 0.8fr auto', gap: 8, marginBottom: 8, alignItems: 'end' }}>
               <div>
-                {i===0 && <Label>상품코드</Label>}
+                {i === 0 && <Label>상품코드</Label>}
                 <Input placeholder="WA5AC001" value={item.product_code}
-                  onChange={e => setEditFormData(f => {
-                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],product_code:e.target.value}; return {...f,items:it}
-                  })}/>
+                  onChange={e => setEditFormData(f => { if (!f) return f; const it = [...f.items]; it[i] = { ...it[i], product_code: e.target.value }; return { ...f, items: it } })}/>
               </div>
               <div>
-                {i===0 && <Label>옵션명</Label>}
+                {i === 0 && <Label>옵션명</Label>}
                 <Input placeholder="BE" value={item.option_name}
-                  onChange={e => setEditFormData(f => {
-                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],option_name:e.target.value}; return {...f,items:it}
-                  })}/>
+                  onChange={e => setEditFormData(f => { if (!f) return f; const it = [...f.items]; it[i] = { ...it[i], option_name: e.target.value }; return { ...f, items: it } })}/>
               </div>
               <div>
-                {i===0 && <Label>바코드</Label>}
-                <Input style={{ fontFamily:'monospace', background:'#f8fafc' }} value={item.barcode}
-                  onChange={e => setEditFormData(f => {
-                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],barcode:e.target.value}; return {...f,items:it}
-                  })}/>
+                {i === 0 && <Label>바코드</Label>}
+                <Input style={{ fontFamily: 'monospace', background: '#f8fafc' }} value={item.barcode}
+                  onChange={e => setEditFormData(f => { if (!f) return f; const it = [...f.items]; it[i] = { ...it[i], barcode: e.target.value }; return { ...f, items: it } })}/>
               </div>
               <div>
-                {i===0 && <Label>발주 수량</Label>}
+                {i === 0 && <Label>발주수량</Label>}
                 <Input type="number" value={item.ordered}
-                  onChange={e => setEditFormData(f => {
-                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],ordered:Number(e.target.value)||0}; return {...f,items:it}
-                  })}/>
+                  onChange={e => setEditFormData(f => { if (!f) return f; const it = [...f.items]; it[i] = { ...it[i], ordered: Number(e.target.value) || 0 }; return { ...f, items: it } })}/>
               </div>
               <div>
-                {i===0 && <Label>입고 수량</Label>}
+                {i === 0 && <Label>입고수량</Label>}
                 <Input type="number" value={item.received}
-                  onChange={e => setEditFormData(f => {
-                    if (!f) return f; const it=[...f.items]; it[i]={...it[i],received:Number(e.target.value)||0}; return {...f,items:it}
-                  })}/>
+                  onChange={e => setEditFormData(f => { if (!f) return f; const it = [...f.items]; it[i] = { ...it[i], received: Number(e.target.value) || 0 }; return { ...f, items: it } })}/>
               </div>
-              <button onClick={() => setEditFormData(f => f ? {...f, items: f.items.filter((_,j)=>j!==i)} : f)}
-                style={{ width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff1f2',color:'#dc2626',border:'none',borderRadius:7,cursor:'pointer',marginBottom:1 }}>
+              <button onClick={() => setEditFormData(f => f ? { ...f, items: f.items.filter((_, j) => j !== i) } : f)}
+                style={{ width: 32, height: 32, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff1f2', color: '#dc2626', border: 'none', borderRadius: 7, cursor: 'pointer', marginBottom: 1 }}>
                 <X size={12}/>
               </button>
             </div>
           ))}
-          <button onClick={() => setEditFormData(f => f ? {...f, items:[...f.items,{product_code:'',option_name:'',barcode:'',ordered:0,received:0}]} : f)}
-            style={{ fontSize:12,fontWeight:800,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4,marginBottom:16 }}>
+          <button onClick={() => setEditFormData(f => f ? { ...f, items: [...f.items, { product_code: '', option_name: '', barcode: '', ordered: 0, received: 0 }] } : f)}
+            style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16 }}>
             <Plus size={12}/>상품 추가
           </button>
-
-          <div style={{ background:'#fffbeb', border:'1px solid #fde68a', borderRadius:10, padding:'9px 14px', fontSize:12, fontWeight:700, color:'#92400e', marginBottom:16 }}>
-            💡 수정 후 저장하면 발주수량/입고수량의 변동분이 상품관리 탭에 자동 반영됩니다.
+          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 10, padding: '9px 14px', fontSize: 12, fontWeight: 700, color: '#92400e', marginBottom: 16 }}>
+            💡 저장 시 발주/입고 수량의 변동분이 상품관리 탭에 자동 반영됩니다.
           </div>
-          <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
             <Button variant="outline" onClick={() => { setEditTarget(null); setEditFormData(null) }}>취소</Button>
-            <Button onClick={handleEditSave}>저장 및 상품 반영</Button>
+            <Button onClick={handleEditSave} disabled={saving}>저장 및 상품 반영</Button>
           </div>
         </Modal>
       )}
 
-      {/* ── 발주 상세 모달 ── */}
-      {detail && (
-        <Modal isOpen={!!detail} onClose={() => setDetail(null)} title={`발주 상세 — ${detail.order_date}`} size="lg">
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, marginBottom:16 }}>
-            {[['발주일',detail.order_date],['구매처',detail.supplier],['등록일',detail.ordered_at ? new Date(detail.ordered_at).toLocaleDateString('ko-KR') : '-'],['입고일',detail.received_at ? new Date(detail.received_at).toLocaleDateString('ko-KR') : '-']].map(([k,v])=>(
-              <div key={k} style={{ background:'#f8fafc', borderRadius:10, padding:'10px 14px' }}>
-                <p style={{ fontSize:10, fontWeight:800, color:'#94a3b8', textTransform:'uppercase' }}>{k}</p>
-                <p style={{ fontSize:13, fontWeight:800, color:'#1e293b', marginTop:3 }}>{v}</p>
-              </div>
-            ))}
+      {/* ── 삭제 확인 모달 ── */}
+      {deleteTarget && (
+        <Modal isOpen onClose={() => setDeleteTarget(null)} title="발주 삭제 확인" size="sm">
+          <div style={{ textAlign: 'center', padding: '16px 0' }}>
+            <Trash2 size={36} style={{ color: '#dc2626', margin: '0 auto 12px' }} />
+            <p style={{ fontSize: 14, fontWeight: 800, color: '#1e293b', marginBottom: 8 }}>
+              {deleteTarget.order_date} 발주를 삭제하시겠습니까?
+            </p>
+            <p style={{ fontSize: 12, color: '#64748b' }}>
+              삭제 시 발주/입고 수량이 상품관리에서 차감됩니다.
+            </p>
           </div>
-          <div style={{ borderRadius:12, overflow:'hidden', border:'1px solid rgba(15,23,42,0.07)' }}>
-            <table className="pm-table">
-              <thead><tr>{['상품코드','옵션','바코드','발주','입고','미입고'].map(h=><th key={h}>{h}</th>)}</tr></thead>
-              <tbody>
-                {detail.items.map((item, i) => (
-                  <tr key={i}>
-                    <td style={{ fontWeight:800, color:'#1e293b', fontFamily:'monospace' }}>{item.product_code}</td>
-                    <td style={{ fontSize:12, color:'#64748b' }}>{item.option_name||'-'}</td>
-                    <td style={{ fontFamily:'monospace', fontSize:11.5, color:'#475569' }}>{item.barcode||'-'}</td>
-                    <td style={{ textAlign:'right', fontWeight:800, color:'#1e293b' }}>{item.ordered}</td>
-                    <td style={{ textAlign:'right', fontWeight:800, color:'#0ea5e9' }}>{item.received}</td>
-                    <td style={{ textAlign:'right', fontWeight:900, color: item.ordered-item.received > 0 ? '#f59e0b' : '#94a3b8' }}>
-                      {item.ordered - item.received}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
-            <Button variant="outline" onClick={() => setDetail(null)}>닫기</Button>
-            {detail.status !== 'completed' && detail.status !== 'cancelled' && (
-              <Button onClick={() => { setReceiveTarget(detail); setDetail(null) }}>
-                <Truck size={13}/>입고 처리
-              </Button>
-            )}
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>취소</Button>
+            <Button onClick={() => handleDelete(deleteTarget)} disabled={saving}
+              style={{ background: '#dc2626', borderColor: '#dc2626', opacity: saving ? 0.6 : 1 }}>
+              <Trash2 size={13}/>{saving ? '삭제 중...' : '삭제'}
+            </Button>
           </div>
         </Modal>
       )}
@@ -862,7 +913,7 @@ export default function PurchasePage() {
   )
 }
 
-/* ── 입고 처리 모달 컴포넌트 ── */
+/* ── 입고 처리 모달 ── */
 function ReceiveModal({
   purchase, onClose, onSave,
 }: { purchase: Purchase; onClose: () => void; onSave: (items: Record<number, number>) => void }) {
@@ -871,37 +922,35 @@ function ReceiveModal({
   )
   return (
     <Modal isOpen onClose={onClose} title={`입고 처리 — ${purchase.order_date}`} size="md">
-      <p style={{ fontSize:12, fontWeight:700, color:'#64748b', marginBottom:14 }}>
-        실제 입고된 수량을 입력하세요.
-      </p>
-      <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+      <p style={{ fontSize: 12, fontWeight: 700, color: '#64748b', marginBottom: 14 }}>실제 입고된 수량을 입력하세요.</p>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {purchase.items.map((item, i) => {
           const remain = item.ordered - item.received
           return (
-            <div key={i} style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
-              <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
+            <div key={i} style={{ background: '#f8fafc', borderRadius: 12, padding: '12px 14px' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div>
-                  <p style={{ fontSize:13, fontWeight:800, color:'#1e293b', fontFamily:'monospace' }}>{item.product_code}</p>
-                  {item.option_name && <p style={{ fontSize:11.5, color:'#94a3b8', marginTop:2 }}>{item.option_name}</p>}
+                  <p style={{ fontSize: 13, fontWeight: 800, color: '#1e293b', fontFamily: 'monospace' }}>{item.product_code}</p>
+                  {item.option_name && <p style={{ fontSize: 11.5, color: '#94a3b8', marginTop: 2 }}>{item.option_name}</p>}
                 </div>
-                <div style={{ textAlign:'right' }}>
-                  <p style={{ fontSize:11, color:'#94a3b8' }}>발주 {item.ordered} / 기입고 {item.received}</p>
-                  <p style={{ fontSize:11.5, fontWeight:800, color:'#f59e0b' }}>미입고 {remain}</p>
+                <div style={{ textAlign: 'right' }}>
+                  <p style={{ fontSize: 11, color: '#94a3b8' }}>발주 {item.ordered} / 기입고 {item.received}</p>
+                  <p style={{ fontSize: 11.5, fontWeight: 800, color: '#f59e0b' }}>미입고 {remain}</p>
                 </div>
               </div>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <label style={{ fontSize:12, fontWeight:700, color:'#64748b', whiteSpace:'nowrap' }}>입고 수량</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <label style={{ fontSize: 12, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>입고 수량</label>
                 <Input type="number" value={qty[i]} min={0} max={remain}
-                  onChange={e => setQty(prev => ({...prev, [i]: e.target.value}))}
-                  style={{ fontWeight:800, fontSize:14 }}/>
+                  onChange={e => setQty(prev => ({ ...prev, [i]: e.target.value }))}
+                  style={{ fontWeight: 800, fontSize: 14 }}/>
               </div>
             </div>
           )
         })}
       </div>
-      <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 16 }}>
         <Button variant="outline" onClick={onClose}>취소</Button>
-        <Button onClick={() => onSave(Object.fromEntries(Object.entries(qty).map(([k,v]) => [Number(k), Number(v)||0])))}>
+        <Button onClick={() => onSave(Object.fromEntries(Object.entries(qty).map(([k, v]) => [Number(k), Number(v) || 0])))}>
           <CheckCircle2 size={13}/>입고 처리 완료
         </Button>
       </div>

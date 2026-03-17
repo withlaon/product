@@ -75,15 +75,15 @@ function saveTx(tx: TxRecord[]) {
 }
 
 /* ─── 엑셀 양식 다운로드 ────────────────────────────────────── */
-function downloadTemplate() {
+function downloadTemplate(filename: string) {
   const ws = XLSX.utils.aoa_to_sheet([
     ['바코드', '수량', '비고'],
-    ['예시: 1234567890123', 10, '입고 메모'],
+    ['예시: 1234567890123', 10, '메모'],
   ])
   ws['!cols'] = [{ wch: 22 }, { wch: 8 }, { wch: 24 }]
   const wb = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '입출고양식')
-  XLSX.writeFile(wb, '입출고_엑셀양식.xlsx')
+  XLSX.utils.book_append_sheet(wb, ws, '양식')
+  XLSX.writeFile(wb, filename)
 }
 
 /* ─── 메인 ──────────────────────────────────────────────────── */
@@ -99,7 +99,6 @@ export default function InventoryPage() {
   const [expandedMonths, setExpandedMonths] = useState<Set<string>>(new Set())
 
   /* ── 모달 상태 ── */
-  const [inModal,     setInModal]     = useState(false)
   const [outModal,    setOutModal]    = useState(false)
   const [defectModal, setDefectModal] = useState(false)
   const [adjustModal, setAdjustModal] = useState(false)
@@ -183,38 +182,6 @@ export default function InventoryPage() {
   const addTxBatch = (records: TxRecord[]) => {
     const updated = [...records, ...txList]
     setTxList(updated); saveTx(updated)
-  }
-
-  /* ── 입고 처리 ── */
-  const handleIn = async () => {
-    const valid = txItems.filter(i => i.qty && Number(i.qty) > 0)
-    if (valid.length === 0) return
-    setSaving(true)
-    const records: TxRecord[] = []
-    for (const item of valid) {
-      const prod = products.find(p => p.id === item.prodId)
-      if (!prod) continue
-      const n = Number(item.qty)
-      const updatedOpts = await updateOption(prod.id, prod.options, item.optName, o => ({
-        ...o, received: (o.received || 0) + n, current_stock: getStock(o) + n,
-      }))
-      const updatedOpt = updatedOpts.find(o => o.name === item.optName)
-      records.push({
-        id: `${Date.now()}_${item.barcode}`, date: new Date().toISOString(), type: 'in',
-        product_code: item.prodCode, product_name: item.prodName,
-        option_name: item.optName, barcode: item.barcode, qty: n, note: item.note,
-      })
-      // 상품목록 현재고 즉시 반영
-      if (updatedOpt) {
-        setProducts(prev => prev.map(p =>
-          p.id === prod.id ? { ...p, options: p.options.map(o =>
-            o.name === item.optName ? { ...o, received: (o.received || 0) + n, current_stock: getStock(o) + n } : o
-          )} : p
-        ))
-      }
-    }
-    addTxBatch(records)
-    setSaving(false); setInModal(false); resetForm()
   }
 
   /* ── 출고 처리 ── */
@@ -449,7 +416,10 @@ export default function InventoryPage() {
 
         {/* 엑셀 버튼 */}
         <div style={{ display:'flex', gap:8, marginBottom:12 }}>
-          <button onClick={downloadTemplate}
+          <button onClick={() => {
+            const names: Record<TxType,string> = { in:'입고등록양식.xlsx', out:'출고등록양식.xlsx', defective:'불량등록양식.xlsx', adjust:'재고수정양식.xlsx' }
+            downloadTemplate(names[type])
+          }}
             style={{ display:'flex', alignItems:'center', gap:5, fontSize:12, fontWeight:700, color:'#15803d', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
             <Download size={12}/>엑셀 양식 다운
           </button>
@@ -546,10 +516,6 @@ export default function InventoryPage() {
 
       {/* 액션 버튼 */}
       <div style={{ display:'flex', gap:8, flexWrap:'wrap', alignItems:'center' }}>
-        <Button style={{ background:'#059669', borderColor:'#059669' }} size="sm"
-          onClick={() => { resetForm(); setInModal(true) }}>
-          <ArrowDownCircle size={14}/>입고 등록
-        </Button>
         <Button style={{ background:'#dc2626', borderColor:'#dc2626' }} size="sm"
           onClick={() => { resetForm(); setOutModal(true) }}>
           <ArrowUpCircle size={14}/>출고 등록
@@ -729,21 +695,6 @@ export default function InventoryPage() {
           })}
         </div>
       </div>
-
-      {/* ── 입고 등록 모달 ── */}
-      <Modal isOpen={inModal} onClose={() => { setInModal(false); resetForm() }} title="입고 등록" size="lg">
-        <div style={{ background:'#f0fdf4', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize:12, fontWeight:700, color:'#15803d' }}>
-          ⬇️ 입고 처리 시 선택한 상품의 <b>입고 누계와 현재고가 수량만큼 증가</b>합니다.
-        </div>
-        {renderModalForm('in')}
-        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:18 }}>
-          <Button variant="outline" onClick={() => { setInModal(false); resetForm() }}>취소</Button>
-          <Button onClick={handleIn} disabled={saving || txItems.filter(i=>i.qty&&Number(i.qty)>0).length===0}
-            style={{ background:'#059669', borderColor:'#059669', opacity: saving ? 0.6 : 1 }}>
-            <ArrowDownCircle size={13}/>{saving ? '처리 중...' : `입고 처리 (${txItems.filter(i=>i.qty&&Number(i.qty)>0).length}건)`}
-          </Button>
-        </div>
-      </Modal>
 
       {/* ── 출고 등록 모달 ── */}
       <Modal isOpen={outModal} onClose={() => { setOutModal(false); resetForm() }} title="출고 등록" size="lg">
