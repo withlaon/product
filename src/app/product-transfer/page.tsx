@@ -8,7 +8,11 @@ import { Send, RefreshCw, CheckCircle2, XCircle, Clock, Package, Search, Plus } 
 
 type ProductStatus = 'active'|'soldout'|'pending_delete'|'upcoming'|'ready_to_ship'
 interface MallCategory { channel:string; category:string; category_code:string }
-interface BasicInfo { title:string; brand:string; origin:string; manufacturer:string; material:string; description:string; handling:string; notes:string }
+interface BasicInfo {
+  title:string; brand:string; origin:string; manufacturer:string; material:string
+  model_name:string; color:string; gender:string; season:string
+  description:string; handling:string; as_info:string; legal_notice:string; notes:string
+}
 interface Product {
   id:string; code:string; name:string; category:string; status:ProductStatus
   basic_info:BasicInfo|null; mall_categories:MallCategory[]
@@ -58,14 +62,20 @@ export default function ProductTransferPage() {
     setSendTarget(p)
     setSelectedChannels(p.mall_categories.map(m=>m.channel))
     setSendForm({
-      title: p.basic_info?.title || p.name,
-      brand: p.basic_info?.brand || '',
-      origin: p.basic_info?.origin || '',
+      title:        p.basic_info?.title        || p.name,
+      brand:        p.basic_info?.brand        || '',
+      origin:       p.basic_info?.origin       || '',
       manufacturer: p.basic_info?.manufacturer || '',
-      material: p.basic_info?.material || '',
-      description: p.basic_info?.description || '',
-      handling: p.basic_info?.handling || '',
-      notes: p.basic_info?.notes || '',
+      material:     p.basic_info?.material     || '',
+      model_name:   p.basic_info?.model_name   || '',
+      color:        p.basic_info?.color        || '',
+      gender:       p.basic_info?.gender       || '',
+      season:       p.basic_info?.season       || '',
+      description:  p.basic_info?.description  || '',
+      handling:     p.basic_info?.handling     || '',
+      as_info:      p.basic_info?.as_info      || '',
+      legal_notice: p.basic_info?.legal_notice || '',
+      notes:        p.basic_info?.notes        || '',
     })
   }
 
@@ -243,25 +253,80 @@ export default function ProductTransferPage() {
           </div>
 
           {/* 기본정보 */}
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <div style={{ gridColumn:'1/-1' }}>
-              <Label>상품 타이틀</Label>
-              <Input value={sendForm.title||''} onChange={e=>setSendForm(f=>({...f,title:e.target.value}))}/>
-            </div>
-            {[
-              {k:'brand',l:'브랜드'},{k:'origin',l:'원산지'},
-              {k:'manufacturer',l:'제조사'},{k:'material',l:'소재'},
-              {k:'handling',l:'취급주의'},{k:'notes',l:'비고'},
-            ].map(({k,l})=>(
-              <div key={k}><Label>{l}</Label>
-                <Input value={sendForm[k]||''} onChange={e=>setSendForm(f=>({...f,[k]:e.target.value}))}/>
+          <div style={{ background:'#f8fafc', borderRadius:10, padding:'12px 14px', marginBottom:12 }}>
+            <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>📦 기본 상품 정보</p>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>상품 타이틀 *</Label>
+                <Input value={sendForm.title||''} onChange={e=>setSendForm(f=>({...f,title:e.target.value}))}/>
               </div>
-            ))}
-            <div style={{ gridColumn:'1/-1' }}>
-              <Label>상세설명</Label>
-              <textarea value={sendForm.description||''} onChange={e=>setSendForm(f=>({...f,description:e.target.value}))}
-                style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:80 }}/>
+              {([
+                { k:'brand',        l:'브랜드',    p:'브랜드명',                  badge:'' },
+                { k:'model_name',   l:'모델명',    p:'모델명 또는 상품코드',       badge:'스마트스토어·쿠팡' },
+                { k:'origin',       l:'원산지',    p:'예) 중국',                  badge:'' },
+                { k:'manufacturer', l:'제조사',    p:'제조사명',                  badge:'' },
+                { k:'material',     l:'소재/재질', p:'예) 폴리에스터 100%',       badge:'' },
+                { k:'color',        l:'색상',      p:'예) 블랙, 베이지',           badge:'패션필수' },
+              ] as {k:string;l:string;p:string;badge:string}[]).map(({k,l,p,badge})=>(
+                <div key={k}>
+                  <Label>
+                    {l}
+                    {badge && <span style={{ marginLeft:4, fontSize:9.5, fontWeight:700, background:'#eff6ff', color:'#2563eb', padding:'1px 5px', borderRadius:4 }}>{badge}</span>}
+                  </Label>
+                  <Input placeholder={p} value={sendForm[k]||''} onChange={e=>setSendForm(f=>({...f,[k]:e.target.value}))}/>
+                </div>
+              ))}
+              <div>
+                <Label>성별</Label>
+                <select value={sendForm.gender||''} onChange={e=>setSendForm(f=>({...f,gender:e.target.value}))}
+                  style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white' }}>
+                  <option value="">선택안함</option>
+                  <option value="여성">여성</option><option value="남성">남성</option>
+                  <option value="공용">공용</option><option value="아동">아동</option>
+                </select>
+              </div>
+              <div>
+                <Label>시즌</Label>
+                <select value={sendForm.season||''} onChange={e=>setSendForm(f=>({...f,season:e.target.value}))}
+                  style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white' }}>
+                  <option value="">선택안함</option>
+                  <option value="SS">SS (봄/여름)</option><option value="FW">FW (가을/겨울)</option>
+                  <option value="4S">사계절 공용</option>
+                </select>
+              </div>
             </div>
+          </div>
+
+          <div style={{ background:'#f8fafc', borderRadius:10, padding:'12px 14px', marginBottom:12 }}>
+            <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>📝 설명 및 취급 정보</p>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>상세설명</Label>
+                <textarea value={sendForm.description||''} onChange={e=>setSendForm(f=>({...f,description:e.target.value}))}
+                  placeholder="상품 상세 설명을 입력하세요"
+                  style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:72 }}/>
+              </div>
+              <div>
+                <Label>취급 주의 <span style={{ fontSize:9.5, color:'#94a3b8' }}>(세탁방법 포함)</span></Label>
+                <Input placeholder="예) 손세탁, 세탁기 사용불가" value={sendForm.handling||''} onChange={e=>setSendForm(f=>({...f,handling:e.target.value}))}/>
+              </div>
+              <div>
+                <Label>A/S 안내 <span style={{ fontSize:9.5, fontWeight:700, background:'#eff6ff', color:'#2563eb', padding:'1px 5px', borderRadius:4 }}>스마트스토어 필수</span></Label>
+                <Input placeholder="예) 고객센터 02-0000-0000" value={sendForm.as_info||''} onChange={e=>setSendForm(f=>({...f,as_info:e.target.value}))}/>
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background:'#fffbeb', borderRadius:10, padding:'12px 14px', marginBottom:12, border:'1px solid #fde68a' }}>
+            <p style={{ fontSize:11.5, fontWeight:900, color:'#92400e', marginBottom:6 }}>⚖️ 법적 고시 정보 <span style={{ fontSize:10, fontWeight:600 }}>(쇼핑몰 필수 기재)</span></p>
+            <textarea value={sendForm.legal_notice||''} onChange={e=>setSendForm(f=>({...f,legal_notice:e.target.value}))}
+              placeholder="예) 소재: 폴리에스터 100% / 치수: 가로30×세로25×높이15cm / 색상: 블랙 / 제조국: 중국"
+              style={{ width:'100%', border:'1px solid #fde68a', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:52, background:'white' }}/>
+          </div>
+
+          <div>
+            <Label>비고</Label>
+            <Input placeholder="기타 메모 (내부용)" value={sendForm.notes||''} onChange={e=>setSendForm(f=>({...f,notes:e.target.value}))}/>
           </div>
 
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>

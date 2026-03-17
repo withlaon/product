@@ -36,14 +36,20 @@ export default function ProductEditTransferPage() {
   const openEdit = (p: Product) => {
     setEditTarget(p)
     setEditForm({
-      title: p.basic_info?.title ?? p.name,
-      brand: p.basic_info?.brand ?? '',
-      origin: p.basic_info?.origin ?? '',
+      title:        p.basic_info?.title        ?? p.name,
+      brand:        p.basic_info?.brand        ?? '',
+      origin:       p.basic_info?.origin       ?? '',
       manufacturer: p.basic_info?.manufacturer ?? '',
-      material: p.basic_info?.material ?? '',
-      description: p.basic_info?.description ?? '',
-      handling: p.basic_info?.handling ?? '',
-      notes: p.basic_info?.notes ?? '',
+      material:     p.basic_info?.material     ?? '',
+      model_name:   p.basic_info?.model_name   ?? '',
+      color:        p.basic_info?.color        ?? '',
+      gender:       p.basic_info?.gender       ?? '',
+      season:       p.basic_info?.season       ?? '',
+      description:  p.basic_info?.description  ?? '',
+      handling:     p.basic_info?.handling     ?? '',
+      as_info:      p.basic_info?.as_info      ?? '',
+      legal_notice: p.basic_info?.legal_notice ?? '',
+      notes:        p.basic_info?.notes        ?? '',
     })
   }
 
@@ -130,28 +136,88 @@ export default function ProductEditTransferPage() {
       </div>
 
       {editTarget && (
-        <Modal isOpen onClose={() => setEditTarget(null)} title={`기본정보 수정 — ${editTarget.name}`} size="lg">
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <div style={{ gridColumn:'1/-1' }}>
-              <Label>상품 타이틀</Label>
-              <Input value={editForm.title||''} onChange={e=>setEditForm(f=>({...f,title:e.target.value}))}/>
-            </div>
-            {[
-              {key:'brand',label:'브랜드'},{key:'origin',label:'원산지'},
-              {key:'manufacturer',label:'제조사'},{key:'material',label:'소재'},
-              {key:'handling',label:'취급주의'},{key:'notes',label:'비고'},
-            ].map(({key,label})=>(
-              <div key={key}><Label>{label}</Label>
-                <Input value={editForm[key]||''} onChange={e=>setEditForm(f=>({...f,[key]:e.target.value}))}/>
+        <Modal isOpen onClose={() => setEditTarget(null)} title={`기본정보 수정 — ${editTarget.name}`} size="xl">
+          {/* 섹션1: 기본 상품 정보 */}
+          <div style={{ background:'#f8fafc', borderRadius:10, padding:'12px 14px', marginBottom:12 }}>
+            <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>📦 기본 상품 정보</p>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>상품 타이틀 *</Label>
+                <Input value={editForm.title||''} onChange={e=>setEditForm(f=>({...f,title:e.target.value}))}/>
               </div>
-            ))}
-            <div style={{ gridColumn:'1/-1' }}>
-              <Label>상세설명</Label>
-              <textarea value={editForm.description||''} onChange={e=>setEditForm(f=>({...f,description:e.target.value}))}
-                style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:80 }}/>
+              {([
+                { key:'brand',        label:'브랜드',    placeholder:'브랜드명',             badge:'' },
+                { key:'model_name',   label:'모델명',    placeholder:'모델명 또는 상품코드',  badge:'스마트스토어·쿠팡' },
+                { key:'origin',       label:'원산지',    placeholder:'예) 중국',             badge:'' },
+                { key:'manufacturer', label:'제조사',    placeholder:'제조사명',             badge:'' },
+                { key:'material',     label:'소재/재질', placeholder:'예) 폴리에스터 100%', badge:'' },
+                { key:'color',        label:'색상',      placeholder:'예) 블랙, 베이지',     badge:'패션필수' },
+              ] as {key:string;label:string;placeholder:string;badge:string}[]).map(({key,label,placeholder,badge})=>(
+                <div key={key}>
+                  <Label>
+                    {label}
+                    {badge && <span style={{ marginLeft:4, fontSize:9.5, fontWeight:700, background:'#eff6ff', color:'#2563eb', padding:'1px 5px', borderRadius:4 }}>{badge}</span>}
+                  </Label>
+                  <Input placeholder={placeholder} value={editForm[key]||''} onChange={e=>setEditForm(f=>({...f,[key]:e.target.value}))}/>
+                </div>
+              ))}
+              <div>
+                <Label>성별</Label>
+                <select value={editForm.gender||''} onChange={e=>setEditForm(f=>({...f,gender:e.target.value}))}
+                  style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white' }}>
+                  <option value="">선택안함</option>
+                  <option value="여성">여성</option><option value="남성">남성</option>
+                  <option value="공용">공용</option><option value="아동">아동</option>
+                </select>
+              </div>
+              <div>
+                <Label>시즌</Label>
+                <select value={editForm.season||''} onChange={e=>setEditForm(f=>({...f,season:e.target.value}))}
+                  style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white' }}>
+                  <option value="">선택안함</option>
+                  <option value="SS">SS (봄/여름)</option><option value="FW">FW (가을/겨울)</option>
+                  <option value="4S">사계절 공용</option>
+                </select>
+              </div>
             </div>
           </div>
-          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+
+          {/* 섹션2: 설명 및 취급 정보 */}
+          <div style={{ background:'#f8fafc', borderRadius:10, padding:'12px 14px', marginBottom:12 }}>
+            <p style={{ fontSize:11.5, fontWeight:900, color:'#475569', marginBottom:10 }}>📝 설명 및 취급 정보</p>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>상세설명</Label>
+                <textarea value={editForm.description||''} onChange={e=>setEditForm(f=>({...f,description:e.target.value}))}
+                  placeholder="상품 상세 설명을 입력하세요"
+                  style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:72 }}/>
+              </div>
+              <div>
+                <Label>취급 주의 <span style={{ fontSize:9.5, color:'#94a3b8' }}>(세탁방법 포함)</span></Label>
+                <Input placeholder="예) 손세탁, 세탁기 사용불가" value={editForm.handling||''} onChange={e=>setEditForm(f=>({...f,handling:e.target.value}))}/>
+              </div>
+              <div>
+                <Label>A/S 안내 <span style={{ fontSize:9.5, fontWeight:700, background:'#eff6ff', color:'#2563eb', padding:'1px 5px', borderRadius:4 }}>스마트스토어 필수</span></Label>
+                <Input placeholder="예) 고객센터 02-0000-0000" value={editForm.as_info||''} onChange={e=>setEditForm(f=>({...f,as_info:e.target.value}))}/>
+              </div>
+            </div>
+          </div>
+
+          {/* 섹션3: 법적 고시 정보 */}
+          <div style={{ background:'#fffbeb', borderRadius:10, padding:'12px 14px', marginBottom:12, border:'1px solid #fde68a' }}>
+            <p style={{ fontSize:11.5, fontWeight:900, color:'#92400e', marginBottom:6 }}>⚖️ 법적 고시 정보 <span style={{ fontSize:10, fontWeight:600 }}>(쇼핑몰 필수 기재)</span></p>
+            <textarea value={editForm.legal_notice||''} onChange={e=>setEditForm(f=>({...f,legal_notice:e.target.value}))}
+              placeholder="예) 소재: 폴리에스터 100% / 치수: 가로30×세로25×높이15cm / 색상: 블랙 / 제조국: 중국"
+              style={{ width:'100%', border:'1px solid #fde68a', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:52, background:'white' }}/>
+          </div>
+
+          {/* 비고 */}
+          <div style={{ marginBottom:16 }}>
+            <Label>비고</Label>
+            <Input placeholder="기타 메모 (내부용)" value={editForm.notes||''} onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))}/>
+          </div>
+
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:8 }}>
             <Button variant="outline" onClick={() => setEditTarget(null)}>취소</Button>
             <Button onClick={handleSave} style={{ background:'#7e22ce', borderColor:'#7e22ce' }}>저장</Button>
           </div>

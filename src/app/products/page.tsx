@@ -40,8 +40,50 @@ interface ProductOption {
 interface ChannelPrice { channel: string; price: number }
 interface MallCategory { channel: string; category: string; category_code: string }
 interface BasicInfo {
-  title: string; brand: string; origin: string; manufacturer: string
-  material: string; description: string; handling: string; notes: string
+  // ── 기본 상품정보
+  title       : string
+  brand       : string
+  origin      : string
+  manufacturer: string
+  material    : string
+  model_name  : string
+  color       : string
+  // ── 가격 정보
+  sale_price     : string
+  original_price : string
+  supply_price   : string
+  // ── 패션 추가정보
+  gender      : string
+  season      : string
+  fit         : string
+  thickness   : string
+  elasticity  : string
+  transparency: string
+  age_group   : string
+  wash_method : string
+  // ── 배송 정보
+  shipping_fee   : string
+  shipping_origin: string
+  courier        : string
+  shipping_days  : string
+  // ── 정책 정보
+  description   : string
+  as_info       : string
+  return_policy : string
+  handling      : string
+  // ── 의류 상품고시 (법적 필수)
+  notice_material    : string
+  notice_color       : string
+  notice_size        : string
+  notice_manufacturer: string
+  notice_country     : string
+  notice_wash        : string
+  notice_year_month  : string
+  notice_warranty    : string
+  notice_as          : string
+  // ── 내부 메모
+  legal_notice: string
+  notes       : string
 }
 interface Product {
   id: string; code: string; name: string; abbr: string; category: string; loca: string
@@ -54,7 +96,16 @@ interface Product {
   registered_malls: string[]   // 등록된 쇼핑몰 이름 목록
   created_at?: string
 }
-const DEF_BASIC_INFO: BasicInfo = { title:'', brand:'', origin:'', manufacturer:'', material:'', description:'', handling:'', notes:'' }
+const DEF_BASIC_INFO: BasicInfo = {
+  title:'', brand:'', origin:'', manufacturer:'', material:'', model_name:'', color:'',
+  sale_price:'', original_price:'', supply_price:'',
+  gender:'', season:'', fit:'', thickness:'', elasticity:'', transparency:'', age_group:'', wash_method:'',
+  shipping_fee:'', shipping_origin:'', courier:'', shipping_days:'',
+  description:'', as_info:'', return_policy:'', handling:'',
+  notice_material:'', notice_color:'', notice_size:'', notice_manufacturer:'', notice_country:'',
+  notice_wash:'', notice_year_month:'', notice_warranty:'', notice_as:'',
+  legal_notice:'', notes:'',
+}
 
 const CNY_TO_KRW = 210
 const DEFAULT_CATS = ['전체'] // '전체' 탭은 항상 고정, 나머지는 extraCats로 관리
@@ -366,6 +417,7 @@ export default function ProductsPage() {
   // 기본정보 팝업 상태
   const [basicInfoTarget, setBasicInfoTarget] = useState<Product | null>(null)
   const [basicInfoForm, setBasicInfoForm]     = useState<BasicInfo>({...DEF_BASIC_INFO})
+  const [basicInfoTab, setBasicInfoTab]       = useState<'basic'|'price'|'fashion'|'notice'|'policy'>('basic')
 
   // 카테고리 관리 상태
   const [catAddMode, setCatAddMode]       = useState(false)
@@ -392,6 +444,22 @@ export default function ProductsPage() {
   }
   const [editForm, setEditForm] = useState<EditFormState | null>(null)
 
+  /* ── 전체 옵션 재고=0 상품 자동 품절 처리 ── */
+  const autoMarkSoldout = async (loaded: Product[]) => {
+    const toSoldout = loaded.filter(p =>
+      p.status !== 'soldout' &&
+      p.options.length > 0 &&
+      p.options.every(o => optStock(o) === 0)
+    )
+    if (toSoldout.length === 0) return
+    await Promise.all(toSoldout.map(p =>
+      supabase.from('pm_products').update({ status: 'soldout' }).eq('id', p.id)
+    ))
+    setProducts(prev => prev.map(p =>
+      toSoldout.find(s => s.id === p.id) ? { ...p, status: 'soldout' } : p
+    ))
+  }
+
   /* ── Supabase 로드 (캐시 우선 표시 후 백그라운드 갱신) ── */
   useEffect(() => {
     const load = async () => {
@@ -412,6 +480,7 @@ export default function ProductsPage() {
             if (!error && data) {
               const loaded = data.map(rowToProduct)
               setProducts(loaded)
+              autoMarkSoldout(loaded)
               localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded }))
               const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
               setExtraCats(prev => {
@@ -431,6 +500,7 @@ export default function ProductsPage() {
       if (!error && data) {
         const loaded = data.map(rowToProduct)
         setProducts(loaded)
+        autoMarkSoldout(loaded)
         setShowList(true)  // 데이터 도착하면 즉시 목록 표시
         try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
         const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
@@ -496,7 +566,7 @@ export default function ProductsPage() {
 
   const [basicInfoSaving, setBasicInfoSaving] = useState(false)
 
-  /* ── 기본정보 저장 ── */
+  /* ── 기본정보 저장 (상태 → 전송준비) ── */
   const handleBasicInfoSave = async () => {
     if (!basicInfoTarget) return
     setBasicInfoSaving(true)
@@ -505,6 +575,17 @@ export default function ProductsPage() {
     setBasicInfoSaving(false)
     if (error) { console.error('기본정보 저장 오류:', error); return }
     setProducts(prev => prev.map(p => p.id === basicInfoTarget.id ? { ...p, ...payload } : p))
+    setBasicInfoTarget(null)
+  }
+
+  /* ── 기본정보 수정 (상태 유지) ── */
+  const handleBasicInfoUpdate = async () => {
+    if (!basicInfoTarget) return
+    setBasicInfoSaving(true)
+    const { error } = await supabase.from('pm_products').update({ basic_info: basicInfoForm }).eq('id', basicInfoTarget.id)
+    setBasicInfoSaving(false)
+    if (error) { console.error('기본정보 수정 오류:', error); return }
+    setProducts(prev => prev.map(p => p.id === basicInfoTarget.id ? { ...p, basic_info: basicInfoForm } : p))
     setBasicInfoTarget(null)
   }
 
@@ -597,7 +678,9 @@ export default function ProductsPage() {
       if (statusFilter === '__low_stock__') {
         mSt = p.status === 'active' && p.options.some(o => optStock(o) > 0 && optStock(o) <= 2)
       } else if (statusFilter === '__soldout__') {
-        mSt = p.status === 'active' && p.options.some(o => optStock(o) === 0)
+        mSt = p.status === 'active' && p.options.some(o => optStock(o) === 0) && !p.options.every(o => optStock(o) === 0)
+      } else if (statusFilter === '__fully_soldout__') {
+        mSt = p.options.length > 0 && p.options.every(o => optStock(o) === 0)
       } else if (statusFilter !== '전체') {
         mSt = p.status === statusFilter
       }
@@ -1131,13 +1214,22 @@ export default function ProductsPage() {
       bg:'#fffbeb', activeBg:'#d97706', color:'#d97706', activeColor:'white', icon:AlertTriangle,
     },
     {
-      // 판매중인 상품 중 옵션 하나라도 재고 0개
-      label:'품절', filterKey:'__soldout__',
+      // 판매중인 상품 중 옵션 일부가 재고 0개 (전체품절 아님)
+      label:'옵션품절', filterKey:'__soldout__',
       value: catProducts.filter(p =>
         p.status === 'active' &&
-        p.options.some(o => optStock(o) === 0)
+        p.options.some(o => optStock(o) === 0) &&
+        !p.options.every(o => optStock(o) === 0)
       ).length,
       bg:'#fff1f2', activeBg:'#be123c', color:'#be123c', activeColor:'white', icon:AlertTriangle,
+    },
+    {
+      // 모든 옵션 재고 0개 (전체 품절)
+      label:'품절', filterKey:'__fully_soldout__',
+      value: catProducts.filter(p =>
+        p.options.length > 0 && p.options.every(o => optStock(o) === 0)
+      ).length,
+      bg:'#fef2f2', activeBg:'#991b1b', color:'#991b1b', activeColor:'white', icon:X,
     },
   ]
 
@@ -1145,7 +1237,7 @@ export default function ProductsPage() {
     <div className="pm-page space-y-4">
 
       {/* KPI 필터 버튼 */}
-      <div className="grid grid-cols-3 xl:grid-cols-6 gap-3">
+      <div className="grid grid-cols-3 xl:grid-cols-7 gap-3">
         {kpis.map(c => {
           const isActive = statusFilter === c.filterKey
           return (
@@ -1439,7 +1531,7 @@ export default function ProductsPage() {
 
                     {/* 상품명 */}
                     <td style={{ paddingTop:13 }}>
-                      <button onClick={() => { setBasicInfoTarget(p); setBasicInfoForm(p.basic_info ?? {...DEF_BASIC_INFO, title:p.name}) }}
+                      <button onClick={() => { setBasicInfoTarget(p); setBasicInfoForm({ ...DEF_BASIC_INFO, ...(p.basic_info ?? {}), title: p.basic_info?.title || p.name }); setBasicInfoTab('basic') }}
                         style={{ background:'none', border:'none', cursor:'pointer', padding:0, textAlign:'left' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
                           <p style={{ fontSize:13, fontWeight:800, color:'#2563eb', lineHeight:1.4, textDecoration:'underline', textDecorationStyle:'dotted', textUnderlineOffset:3 }}>{p.name}</p>
@@ -2191,55 +2283,274 @@ export default function ProductsPage() {
       )}
 
       {/* ── 기본정보 입력 팝업 (상품명 클릭) ── */}
-      {basicInfoTarget && (
-        <Modal isOpen onClose={() => setBasicInfoTarget(null)} title={`기본정보 입력 — ${basicInfoTarget.name}`} size="lg">
-          <div style={{ background:'#fdf4ff', borderRadius:10, padding:'10px 14px', marginBottom:16, fontSize:12, fontWeight:700, color:'#7e22ce' }}>
-            💡 한국 쇼핑몰 등록용 기본 정보를 입력하세요. 저장 시 상태가 <b>전송준비</b>로 변경됩니다.
+      {basicInfoTarget && (() => {
+        const bi = basicInfoForm
+        const setBi = (k: keyof BasicInfo, v: string) => setBasicInfoForm(f => ({ ...f, [k]: v }))
+        const selStyle = { width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:13, outline:'none', background:'white' } as React.CSSProperties
+        const badge = (text: string, color = '#2563eb', bg = '#eff6ff') => (
+          <span style={{ marginLeft:4, fontSize:9.5, fontWeight:700, background:bg, color, padding:'1px 5px', borderRadius:4 }}>{text}</span>
+        )
+        const TABS: { key: typeof basicInfoTab; label: string; icon: string }[] = [
+          { key:'basic',   label:'기본정보',   icon:'📦' },
+          { key:'price',   label:'가격정보',   icon:'💰' },
+          { key:'fashion', label:'패션정보',   icon:'👗' },
+          { key:'notice',  label:'상품고시',   icon:'⚖️' },
+          { key:'policy',  label:'배송/정책',  icon:'🚚' },
+        ]
+        return (
+        <Modal isOpen onClose={() => setBasicInfoTarget(null)} title={`상품 등록정보 입력 — ${basicInfoTarget.name}`} size="xl">
+          {/* 단계 안내 */}
+          <div style={{ display:'flex', gap:0, background:'#f8fafc', borderRadius:10, overflow:'hidden', marginBottom:14, border:'1px solid #e2e8f0' }}>
+            {TABS.map((t, i) => {
+              const active = basicInfoTab === t.key
+              return (
+                <button key={t.key} onClick={() => setBasicInfoTab(t.key)}
+                  style={{ flex:1, padding:'9px 4px', border:'none', cursor:'pointer', borderRight: i < TABS.length-1 ? '1px solid #e2e8f0' : 'none',
+                    background: active ? '#7e22ce' : 'white',
+                    transition:'all 150ms ease' }}>
+                  <div style={{ fontSize:15 }}>{t.icon}</div>
+                  <div style={{ fontSize:10.5, fontWeight:800, color: active ? 'white' : '#64748b', marginTop:2, whiteSpace:'nowrap' }}>{t.label}</div>
+                </button>
+              )
+            })}
           </div>
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-            <div style={{ gridColumn:'1/-1' }}>
-              <Label>상품 타이틀 *</Label>
-              <Input placeholder="쇼핑몰에 등록될 상품명" value={basicInfoForm.title}
-                onChange={e => setBasicInfoForm(f=>({...f,title:e.target.value}))}/>
-            </div>
-            {([
-              { key:'brand' as const,        label:'브랜드',   placeholder:'브랜드명' },
-              { key:'origin' as const,       label:'원산지',   placeholder:'예) 중국' },
-              { key:'manufacturer' as const, label:'제조사',   placeholder:'제조사명' },
-              { key:'material' as const,     label:'소재',     placeholder:'예) 폴리에스터 100%' },
-            ]).map(({key, label, placeholder}) => (
-              <div key={key}>
-                <Label>{label}</Label>
-                <Input placeholder={placeholder} value={basicInfoForm[key]}
-                  onChange={e => setBasicInfoForm(f=>({...f,[key]:e.target.value}))}/>
+
+          {/* ── TAB 1: 기본정보 ── */}
+          {basicInfoTab === 'basic' && (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>상품 타이틀 * <span style={{ fontSize:10, color:'#94a3b8', fontWeight:500 }}>(쇼핑몰 노출 상품명)</span></Label>
+                <Input placeholder="쇼핑몰에 등록될 상품명" value={bi.title}
+                  onChange={e => setBi('title', e.target.value)}
+                  style={{ border: !bi.title ? '1.5px solid #fca5a5' : undefined }}/>
               </div>
-            ))}
-            <div style={{ gridColumn:'1/-1' }}>
-              <Label>상세 설명</Label>
-              <textarea value={basicInfoForm.description}
-                onChange={e => setBasicInfoForm(f=>({...f,description:e.target.value}))}
-                placeholder="상품 상세 설명을 입력하세요"
-                style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:80 }}/>
+              {([
+                { k:'brand'        as const, l:'브랜드',    p:'브랜드명',             b:'' },
+                { k:'model_name'   as const, l:'모델명',    p:'모델번호 / 자체코드',   b:'스마트스토어·쿠팡' },
+                { k:'origin'       as const, l:'원산지',    p:'예) 중국',             b:'' },
+                { k:'manufacturer' as const, l:'제조사',    p:'제조사명',             b:'' },
+                { k:'material'     as const, l:'소재/재질', p:'예) 폴리에스터 100%', b:'' },
+                { k:'color'        as const, l:'색상',      p:'예) 블랙, 베이지',     b:'패션필수' },
+              ]).map(({k,l,p,b}) => (
+                <div key={k}>
+                  <Label>{l}{b && badge(b)}</Label>
+                  <Input placeholder={p} value={bi[k]} onChange={e => setBi(k, e.target.value)}/>
+                </div>
+              ))}
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>상세 설명 <span style={{ fontSize:9.5, color:'#94a3b8' }}>(HTML 가능)</span></Label>
+                <textarea value={bi.description} onChange={e => setBi('description', e.target.value)}
+                  placeholder="상품 상세 설명 (쇼핑몰 노출)"
+                  style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:72 }}/>
+              </div>
             </div>
+          )}
+
+          {/* ── TAB 2: 가격정보 ── */}
+          {basicInfoTab === 'price' && (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:12 }}>
+              <div>
+                <Label>판매가 {badge('필수','#dc2626','#fee2e2')}</Label>
+                <Input placeholder="0" type="number" value={bi.sale_price} onChange={e => setBi('sale_price', e.target.value)}/>
+                <p style={{ fontSize:10.5, color:'#94a3b8', marginTop:3 }}>실제 쇼핑몰 판매 가격</p>
+              </div>
+              <div>
+                <Label>정상가 <span style={{ fontSize:9.5, color:'#94a3b8' }}>(할인 전)</span></Label>
+                <Input placeholder="0" type="number" value={bi.original_price} onChange={e => setBi('original_price', e.target.value)}/>
+                <p style={{ fontSize:10.5, color:'#94a3b8', marginTop:3 }}>할인 전 원래 가격</p>
+              </div>
+              <div>
+                <Label>공급가 <span style={{ fontSize:9.5, color:'#94a3b8' }}>(도매가)</span></Label>
+                <Input placeholder="0" type="number" value={bi.supply_price} onChange={e => setBi('supply_price', e.target.value)}/>
+                <p style={{ fontSize:10.5, color:'#94a3b8', marginTop:3 }}>매입 원가</p>
+              </div>
+              {bi.sale_price && bi.original_price && Number(bi.original_price) > 0 && (
+                <div style={{ gridColumn:'1/-1', background:'#f0fdf4', borderRadius:10, padding:'10px 14px', border:'1px solid #bbf7d0' }}>
+                  <p style={{ fontSize:12, fontWeight:800, color:'#15803d' }}>
+                    할인율: <b style={{ fontSize:15 }}>{Math.round((1 - Number(bi.sale_price)/Number(bi.original_price)) * 100)}%</b>
+                    {' '}<span style={{ color:'#94a3b8', fontWeight:500 }}>({Number(bi.original_price).toLocaleString()}원 → {Number(bi.sale_price).toLocaleString()}원)</span>
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── TAB 3: 패션정보 ── */}
+          {basicInfoTab === 'fashion' && (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div>
+                <Label>성별</Label>
+                <select value={bi.gender} onChange={e => setBi('gender', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="여성">여성</option><option value="남성">남성</option>
+                  <option value="공용">공용</option><option value="아동">아동</option>
+                </select>
+              </div>
+              <div>
+                <Label>시즌</Label>
+                <select value={bi.season} onChange={e => setBi('season', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="SS">SS (봄/여름)</option><option value="FW">FW (가을/겨울)</option><option value="4S">사계절</option>
+                </select>
+              </div>
+              <div>
+                <Label>연령대</Label>
+                <select value={bi.age_group} onChange={e => setBi('age_group', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="10대">10대</option><option value="20대">20대</option>
+                  <option value="30대">30대</option><option value="40대 이상">40대 이상</option><option value="전연령">전연령</option>
+                </select>
+              </div>
+              <div>
+                <Label>핏</Label>
+                <select value={bi.fit} onChange={e => setBi('fit', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="루즈핏">루즈핏</option><option value="오버핏">오버핏</option>
+                  <option value="레귤러핏">레귤러핏</option><option value="슬림핏">슬림핏</option>
+                </select>
+              </div>
+              <div>
+                <Label>두께</Label>
+                <select value={bi.thickness} onChange={e => setBi('thickness', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="얇음">얇음</option><option value="보통">보통</option><option value="두꺼움">두꺼움</option>
+                </select>
+              </div>
+              <div>
+                <Label>신축성</Label>
+                <select value={bi.elasticity} onChange={e => setBi('elasticity', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="없음">없음</option><option value="약간 있음">약간 있음</option><option value="있음">있음</option>
+                </select>
+              </div>
+              <div>
+                <Label>비침</Label>
+                <select value={bi.transparency} onChange={e => setBi('transparency', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="없음">없음</option><option value="약간 있음">약간 있음</option><option value="있음">있음</option>
+                </select>
+              </div>
+              <div>
+                <Label>세탁방법</Label>
+                <select value={bi.wash_method} onChange={e => setBi('wash_method', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="손세탁">손세탁</option><option value="세탁기">세탁기 사용 가능</option>
+                  <option value="드라이클리닝">드라이클리닝</option><option value="세탁기 불가">세탁기 사용불가</option>
+                </select>
+              </div>
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>취급 주의 <span style={{ fontSize:9.5, color:'#94a3b8' }}>(세탁·보관 방법 등 상세 내용)</span></Label>
+                <Input placeholder="예) 30°C 이하 손세탁, 직사광선 피해 보관" value={bi.handling} onChange={e => setBi('handling', e.target.value)}/>
+              </div>
+            </div>
+          )}
+
+          {/* ── TAB 4: 상품고시 (의류 법적 필수) ── */}
+          {basicInfoTab === 'notice' && (
             <div>
-              <Label>취급 주의</Label>
-              <Input placeholder="예) 세탁기 사용불가" value={basicInfoForm.handling}
-                onChange={e => setBasicInfoForm(f=>({...f,handling:e.target.value}))}/>
+              <div style={{ background:'#fffbeb', borderRadius:10, padding:'10px 14px', marginBottom:12, border:'1px solid #fde68a', fontSize:11.5, color:'#92400e', fontWeight:600 }}>
+                ⚠️ 의류·가방·잡화 판매 시 전자상거래법 상 <b>법적으로 필수</b> 기재 사항입니다. 미기재 시 쇼핑몰 등록 거절 또는 패널티 발생 가능합니다.
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                {([
+                  { k:'notice_material'     as const, l:'소재',      p:'예) 폴리에스터 100%',         b:'필수' },
+                  { k:'notice_color'        as const, l:'색상',      p:'예) 블랙, 아이보리',           b:'필수' },
+                  { k:'notice_size'         as const, l:'치수',      p:'예) 가로30×세로25×높이15cm', b:'필수' },
+                  { k:'notice_manufacturer' as const, l:'제조자',    p:'제조사명',                    b:'' },
+                  { k:'notice_country'      as const, l:'제조국',    p:'예) 중국',                    b:'필수' },
+                  { k:'notice_wash'         as const, l:'세탁방법',  p:'예) 손세탁 권장',             b:'' },
+                  { k:'notice_year_month'   as const, l:'제조연월',  p:'예) 2024.01',                b:'' },
+                  { k:'notice_warranty'     as const, l:'품질보증',  p:'예) 구매일로부터 1년',        b:'' },
+                  { k:'notice_as'           as const, l:'A/S 책임자', p:'고객센터 번호',              b:'필수' },
+                ]).map(({k,l,p,b}) => (
+                  <div key={k}>
+                    <Label>{l}{b && badge(b,'#dc2626','#fee2e2')}</Label>
+                    <Input placeholder={p} value={bi[k]} onChange={e => setBi(k, e.target.value)}/>
+                  </div>
+                ))}
+                <div style={{ gridColumn:'1/-1' }}>
+                  <Label>법적 고시 전문 <span style={{ fontSize:9.5, color:'#94a3b8' }}>(위 항목을 통합 입력하거나 추가 내용)</span></Label>
+                  <textarea value={bi.legal_notice} onChange={e => setBi('legal_notice', e.target.value)}
+                    placeholder="예) 소재: 폴리에스터 100% / 치수: 가로30×세로25cm / 색상: 블랙 / 제조국: 중국"
+                    style={{ width:'100%', border:'1px solid #fde68a', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:52, background:'#fffbeb' }}/>
+                </div>
+              </div>
             </div>
-            <div>
-              <Label>비고</Label>
-              <Input placeholder="기타 메모" value={basicInfoForm.notes}
-                onChange={e => setBasicInfoForm(f=>({...f,notes:e.target.value}))}/>
+          )}
+
+          {/* ── TAB 5: 배송/정책 ── */}
+          {basicInfoTab === 'policy' && (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+              <div>
+                <Label>배송비</Label>
+                <select value={bi.shipping_fee} onChange={e => setBi('shipping_fee', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="무료">무료배송</option>
+                  <option value="유료_3000">유료 3,000원</option>
+                  <option value="유료_5000">유료 5,000원</option>
+                  <option value="조건부">조건부 무료 (3만원 이상)</option>
+                </select>
+              </div>
+              <div>
+                <Label>택배사</Label>
+                <select value={bi.courier} onChange={e => setBi('courier', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="CJ대한통운">CJ대한통운</option><option value="롯데택배">롯데택배</option>
+                  <option value="한진택배">한진택배</option><option value="우체국택배">우체국택배</option>
+                  <option value="로젠택배">로젠택배</option>
+                </select>
+              </div>
+              <div>
+                <Label>출고지</Label>
+                <Input placeholder="예) 서울특별시 강남구" value={bi.shipping_origin} onChange={e => setBi('shipping_origin', e.target.value)}/>
+              </div>
+              <div>
+                <Label>배송기간</Label>
+                <select value={bi.shipping_days} onChange={e => setBi('shipping_days', e.target.value)} style={selStyle}>
+                  <option value="">선택안함</option>
+                  <option value="당일발송">당일 발송</option>
+                  <option value="1~2일">1~2일 이내</option>
+                  <option value="2~3일">2~3일 이내</option>
+                  <option value="3~5일">3~5일 이내</option>
+                </select>
+              </div>
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>A/S 안내 {badge('스마트스토어 필수')}</Label>
+                <Input placeholder="예) 제품 이상 시 고객센터 문의 (02-0000-0000)" value={bi.as_info} onChange={e => setBi('as_info', e.target.value)}/>
+              </div>
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>교환/반품 정책</Label>
+                <textarea value={bi.return_policy} onChange={e => setBi('return_policy', e.target.value)}
+                  placeholder="예) 수령 후 7일 이내 교환·반품 가능. 단, 착용·세탁 후 반품 불가."
+                  style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:64 }}/>
+              </div>
+              <div style={{ gridColumn:'1/-1' }}>
+                <Label>비고 <span style={{ fontSize:9.5, color:'#94a3b8' }}>(내부 메모용)</span></Label>
+                <Input placeholder="기타 메모" value={bi.notes} onChange={e => setBi('notes', e.target.value)}/>
+              </div>
             </div>
-          </div>
-          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-            <Button variant="outline" onClick={() => setBasicInfoTarget(null)}>취소</Button>
-            <Button onClick={handleBasicInfoSave} disabled={basicInfoSaving} style={{ background:'#7e22ce', borderColor:'#7e22ce', opacity: basicInfoSaving ? 0.6 : 1 }}>
-              {basicInfoSaving ? '저장 중...' : '저장 (전송준비로 변경)'}
-            </Button>
+          )}
+
+          {/* 하단 버튼 */}
+          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', gap:8, marginTop:20, paddingTop:14, borderTop:'1px solid #f1f5f9' }}>
+            <p style={{ fontSize:11, color:'#94a3b8' }}>
+              {basicInfoTarget.basic_info ? '✏️ 기존 정보가 있습니다. 수정 후 저장하세요.' : '🆕 처음 입력합니다. 저장 시 전송준비로 변경됩니다.'}
+            </p>
+            <div style={{ display:'flex', gap:8 }}>
+              <Button variant="outline" onClick={() => setBasicInfoTarget(null)}>취소</Button>
+              <Button variant="outline" onClick={handleBasicInfoUpdate} disabled={basicInfoSaving}
+                style={{ borderColor:'#0ea5e9', color:'#0ea5e9', opacity: basicInfoSaving ? 0.6 : 1 }}>
+                {basicInfoSaving ? '저장 중...' : '✏️ 수정'}
+              </Button>
+              <Button onClick={handleBasicInfoSave} disabled={basicInfoSaving || !basicInfoForm.title}
+                style={{ background:'#7e22ce', borderColor:'#7e22ce', opacity: basicInfoSaving || !basicInfoForm.title ? 0.6 : 1 }}>
+                {basicInfoSaving ? '저장 중...' : '저장 (전송준비로 변경)'}
+              </Button>
+            </div>
           </div>
         </Modal>
-      )}
+        )
+      })()}
     </div>
   )
 }
