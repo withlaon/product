@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
         always     : { key: 'login_id',  label: '쇼핑몰ID' },
         alwayz     : { key: 'login_id',  label: '쇼핑몰ID' },
         tosshopping: { key: 'api_key',   label: 'API Key' },
-        lotteon    : { key: 'api_key',   label: 'API Key' },
+        lotteon    : { key: 'api_key',   label: '인증키' },
         ssg        : { key: 'api_key',   label: 'API Key' },
         halfclub   : { key: 'api_key',   label: 'API 인증키' },
         gsshop     : { key: 'login_id',  label: '쇼핑몰ID' },
@@ -57,6 +57,21 @@ export async function POST(req: NextRequest) {
         const token = credentials[tokenKey]
         if (!token || (token as string).length < 4) {
           return NextResponse.json({ success: false, mall, message: `${tokenLabel}이 입력되지 않았습니다.` })
+        }
+        // 롯데온: 인증키 + 거래처번호 검증
+        if (mall === 'lotteon') {
+          const vendorCode = credentials.seller_id
+          if (!vendorCode || (vendorCode as string).length < 4) {
+            return NextResponse.json({ success: false, mall, message: '거래처번호가 입력되지 않았습니다. SCM [판매자정보 → 기본정보관리 → 거래처번호]에서 확인하세요.' })
+          }
+          const authKey = credentials.api_key
+          if (!authKey || (authKey as string).length < 8) {
+            return NextResponse.json({ success: false, mall, message: '인증키가 입력되지 않았습니다. SCM [판매자정보 → Open API 관리 → 인증키 발급]에서 발급 후 입력하세요.' })
+          }
+          return NextResponse.json({
+            success: true, mall,
+            message: `롯데ON 자격증명 저장 완료 ✓ (거래처번호: ${vendorCode} · 인증키 확인됨)\n서버 IP 등록 후 연동이 정상 작동합니다.`,
+          })
         }
         // 하프클럽: API 인증키 + 협력사코드 둘 다 확인
         if (mall === 'halfclub') {

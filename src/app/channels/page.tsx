@@ -125,11 +125,15 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
   // 제이슨딜/공구마켓/할인중독/심쿵할인: 로그인 only
   jasondeal: [...COMMON_LOGIN_FIELDS],
   // 롯데온: Partner ID + API Key + Secret Key
+  // 롯데온: 쇼핑몰ID/PW + 거래처번호 + 인증키 필수 / 하위거래처번호 + 수수료 선택
+  // IP 등록: SCM [판매자정보 > Open API 관리] → 1단계 서버 IP 등록(직접입력)
   lotteon: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'Partner ID (파트너코드)', placeholder:'롯데온 Partner ID',      type:'text',     section:'api', required:true  },
-    { key:'api_key',   label:'API Key',                placeholder:'파트너센터에서 발급',     type:'password', section:'api', required:true  },
-    { key:'api_secret',label:'Secret Key',             placeholder:'파트너센터에서 발급',     type:'password', section:'api', required:true  },
+    { key:'login_id',   label:'쇼핑몰ID',          placeholder:'롯데ON SCM 로그인 ID (예: jmcard1771)',            type:'text',     section:'login', required:true  },
+    { key:'login_pw',   label:'PASSWORD',           placeholder:'SCM 비밀번호',                                    type:'password', section:'login', required:true  },
+    { key:'seller_id',  label:'거래처번호',          placeholder:'SCM [판매자정보 > 기본정보관리 > 거래처번호] (예: LO10068335)', type:'text', section:'api', required:true },
+    { key:'api_key',    label:'인증키',              placeholder:'SCM [판매자정보 > Open API 관리 > 인증키 발급]',   type:'password', section:'api',   required:true  },
+    { key:'api_secret', label:'하위거래처번호',      placeholder:'하위거래처 있는 경우 입력 (선택)',                 type:'text',     section:'api',   required:false },
+    { key:'site_name',  label:'수수료(주문) %',      placeholder:'예: 13  (공급가 미제공 시 수수료율로 계산)',        type:'text',     section:'api',   required:false },
   ],
   // 신세계몰 SSG: Partner ID + API Key + Secret Key
   ssg: [
@@ -511,22 +515,40 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     links:[{ label:'SSG 파트너센터', url:'https://partner.ssg.com' }],
   },
   lotteon: {
-    title:'롯데온 파트너 API 연동', authType:'Partner ID + API Key + Secret',
-    note:'롯데온 파트너센터에서 API 연동을 신청해야 합니다.',
-    warning:'⚠ 롯데온은 상품 승인이 필요하며 카테고리 제한이 많습니다.',
+    title:'롯데ON SCM 연동 (직접입력 방식)', authType:'쇼핑몰 ID/PW + 거래처번호 + 인증키',
+    note:'롯데ON SCM에서 거래처번호와 인증키를 확인 후 입력합니다. 인증키 발급 전 반드시 서버 IP를 먼저 등록해야 합니다.',
+    warning:'⚠ 인증키 유효기간 1년 — 만료 전 갱신 필요 · 하위거래처 있는 경우 하위거래처번호도 입력',
     required:[
-      { label:'로그인 ID/PW', desc:'롯데온 판매자 로그인 계정', badge:'required' },
-      { label:'Partner ID', desc:'롯데온 파트너 코드', badge:'required' },
-      { label:'API Key', desc:'파트너센터에서 발급된 API Key', badge:'required' },
-      { label:'Secret Key', desc:'API Secret Key', badge:'required' },
+      { label:'쇼핑몰ID',   desc:'SCM 로그인 ID (예: jmcard1771)',       badge:'required' },
+      { label:'PASSWORD',   desc:'SCM 비밀번호',                          badge:'required' },
+      { label:'거래처번호', desc:'SCM → 판매자정보 → 기본정보관리 → 거래처번호 (예: LO10068335)', badge:'required' },
+      { label:'인증키',     desc:'SCM → 판매자정보 → Open API 관리 → 인증키 발급\n(유효기간 1년, 만료 전 갱신 필요)', badge:'required' },
+      { label:'하위거래처번호', desc:'하위거래처가 있는 경우 입력 — SCM [판매자정보 > 하위거래처관리]에서 확인', badge:'optional' },
+      { label:'수수료(주문) %', desc:'공급가 미제공 시 수집 주문금액 × 수수료율로 공급가 계산 (예: 13)', badge:'optional' },
     ],
     steps:[
-      '① partners.lotteon.com 접속 후 로그인',
-      '② [개발자 API] → [연동 신청] 클릭',
-      '③ 승인 후 Partner ID / API Key / Secret Key 확인·복사',
-      '④ 프로그램에 로그인 ID/PW + Partner ID + API Key + Secret Key 입력 후 저장',
+      '━━ STEP 1: 서버 IP 등록 (직접입력 방식) ━━',
+      '① sellers.lotteon.com 접속 후 SCM 계정으로 로그인',
+      '② 좌측 메뉴 [판매자정보] → [Open API 관리] 클릭',
+      '③ 1단계 "서버 IP 등록" 에서 연동 방법: ● 직접입력 선택',
+      '④ 아래 [서버 IP 확인] 버튼으로 이 프로그램의 서버 IP 확인',
+      '⑤ 확인된 IP를 "서버 IP 등록" 입력란에 붙여넣기 후 [저장하기] 클릭',
+      '━━ STEP 2: 인증키 발급 ━━',
+      '⑥ 2단계 "인증키 정보" 에서 [기발급] 또는 [신규발급] 버튼 클릭',
+      '⑦ 생성된 인증키 복사 (예: 5d5b2cb498f3d20001...)',
+      '   ※ 유효기간 1년 — 만료 전에 반드시 갱신',
+      '━━ STEP 3: 거래처번호 확인 ━━',
+      '⑧ SCM → [판매자정보] → [기본정보관리] → 거래처번호 확인·복사',
+      '   (예: LO10068335)',
+      '━━ STEP 4: 프로그램 연동 ━━',
+      '⑨ 쇼핑몰ID / PASSWORD 입력',
+      '⑩ 거래처번호 + 인증키 입력',
+      '⑪ 수수료율 입력 (공급가 자동 계산 필요 시)',
+      '⑫ [저장 및 연동 테스트] 클릭',
     ],
-    links:[{ label:'롯데온 파트너센터', url:'https://partners.lotteon.com' }],
+    links:[
+      { label:'롯데ON 판매자센터 (SCM)', url:'https://sellers.lotteon.com' },
+    ],
   },
   jasondeal: {
     title:'제이슨딜(공구마켓/할인중독/심쿵할인) 연동', authType:'ID/PW',
@@ -1468,6 +1490,70 @@ export default function ChannelsPage() {
                     <a href="https://apicenter.commerce.naver.com" target="_blank" rel="noreferrer"
                       style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#15803d', textDecoration:'none', fontWeight:600 }}>
                       <ExternalLink size={11}/>네이버 커머스 API센터 바로가기
+                    </a>
+                  </div>
+                )}
+
+                {/* 롯데온 전용: 직접입력 서버 IP 등록 안내 */}
+                {apiTarget?.key === 'lotteon' && (
+                  <div style={{ background:'#fff1f2', border:'1.5px solid #fecdd3', borderRadius:10, padding:'12px 14px' }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:6, marginBottom:6 }}>
+                      <Server size={14} style={{ color:'#be123c', flexShrink:0 }}/>
+                      <span style={{ fontSize:12.5, fontWeight:700, color:'#be123c' }}>
+                        서버 IP 직접입력 등록 필수 (인증키 발급 전)
+                      </span>
+                    </div>
+                    <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.6, marginBottom:10 }}>
+                      롯데ON SCM → [판매자정보] → [Open API 관리] → 1단계 "서버 IP 등록"<br/>
+                      연동 방법: <strong>● 직접입력</strong> 선택 후 아래 서버 IP를 입력하세요.
+                    </p>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:10 }}>
+                      <button
+                        onClick={fetchServerIp}
+                        disabled={serverIpState === 'loading'}
+                        style={{
+                          display:'flex', alignItems:'center', gap:5,
+                          padding:'5px 12px', borderRadius:6, fontSize:12, fontWeight:700,
+                          cursor: serverIpState === 'loading' ? 'not-allowed' : 'pointer',
+                          background: serverIpState === 'done' ? '#be123c' : 'white',
+                          color:      serverIpState === 'done' ? 'white'    : '#be123c',
+                          border:'1.5px solid #be123c', transition:'all .15s',
+                        }}>
+                        {serverIpState === 'loading'
+                          ? <><RefreshCw size={12} style={{ animation:'spin 1s linear infinite' }}/>확인 중...</>
+                          : <><Server size={12}/>서버(Vercel) IP 확인</>
+                        }
+                      </button>
+                      {serverIpState === 'done' && serverIp && (
+                        <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                          <code style={{ background:'#4c0519', color:'#fecdd3', padding:'4px 10px', borderRadius:5, fontSize:13, fontWeight:700, fontFamily:'monospace' }}>{serverIp}</code>
+                          <button onClick={() => navigator.clipboard.writeText(serverIp)}
+                            style={{ display:'flex', alignItems:'center', gap:3, padding:'4px 8px', borderRadius:5, fontSize:11, fontWeight:600, cursor:'pointer', background:'white', color:'#be123c', border:'1px solid #fecdd3' }}>
+                            <Copy size={11}/>복사
+                          </button>
+                        </div>
+                      )}
+                      {serverIpState === 'error' && <span style={{ fontSize:12, color:'#dc2626' }}>IP 확인 실패 — 배포 후 재시도</span>}
+                    </div>
+                    {serverIpState === 'done' && (
+                      <div style={{ background:'white', border:'1px solid #fecdd3', borderRadius:7, padding:'8px 10px', marginBottom:10 }}>
+                        <p style={{ fontSize:11.5, fontWeight:700, color:'#be123c', marginBottom:4 }}>📋 입력 순서</p>
+                        <p style={{ fontSize:11.5, color:'#475569', lineHeight:1.8 }}>
+                          ① SCM Open API 관리 → 연동방법: <strong>직접입력</strong> 선택<br/>
+                          ② 서버 IP 등록란에 <strong style={{ fontFamily:'monospace', color:'#be123c' }}>{serverIp}</strong> 입력<br/>
+                          ③ [저장하기] 클릭<br/>
+                          ④ 2단계 인증키 정보 → [기발급] 또는 [신규발급] 클릭<br/>
+                          ⑤ 인증키 복사 후 프로그램에 입력
+                        </p>
+                      </div>
+                    )}
+                    <div style={{ padding:'7px 10px', background:'#ffe4e6', borderRadius:7, fontSize:11.5, color:'#4c0519', lineHeight:1.7 }}>
+                      <span style={{ color:'#7c3aed', fontWeight:600 }}>⚠ Vercel 무료 플랜은 배포 시 IP가 변경될 수 있습니다.</span> IP 차단 오류 시 위 버튼으로 새 IP 확인 후 재등록 필요.<br/>
+                      <strong>인증키 유효기간 1년</strong> — 만료 전 반드시 갱신하세요.
+                    </div>
+                    <a href="https://sellers.lotteon.com" target="_blank" rel="noreferrer"
+                      style={{ display:'inline-flex', alignItems:'center', gap:4, marginTop:8, fontSize:11.5, color:'#be123c', textDecoration:'none', fontWeight:600 }}>
+                      <ExternalLink size={11}/>롯데ON SCM 바로가기
                     </a>
                   </div>
                 )}
