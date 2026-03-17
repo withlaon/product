@@ -82,11 +82,12 @@ const MALL_API_FIELDS: Record<string, ApiField[]> = {
     { key:'api_secret',label:'Secret Key',       placeholder:'API 인증키 관리에서 확인한 Secret Key',      type:'password', section:'api',   required:true },
     { key:'site_name', label:'수수료(주문) %',   placeholder:'예: 9  (공급가 미제공 시 수수료율로 계산)',   type:'text',     section:'api',   required:false },
   ],
-  // 올웨이즈: 로그인 + API Key
+  // 올웨이즈: 쇼핑몰ID/PW 필수 / SHOP ID + 수수료 선택
   alwayz: [
-    ...COMMON_LOGIN_FIELDS,
-    { key:'seller_id', label:'판매자 ID',  placeholder:'올웨이즈 판매자 ID', type:'text',     section:'api' },
-    { key:'api_key',   label:'API Key',    placeholder:'셀러센터에서 발급',  type:'password', section:'api' },
+    { key:'login_id',  label:'쇼핑몰ID',       placeholder:'올웨이즈 SCM 로그인 ID (예: withlaon)',          type:'text',     section:'login', required:true  },
+    { key:'login_pw',  label:'PASSWORD',        placeholder:'SCM 비밀번호',                                  type:'password', section:'login', required:true  },
+    { key:'seller_id', label:'SHOP ID',         placeholder:'내부 구분용 쇼핑몰 ID (선택사항)',               type:'text',     section:'api',   required:false },
+    { key:'site_name', label:'수수료(주문) %',  placeholder:'예: 4  (공급가 미제공 시 수수료율로 계산)',       type:'text',     section:'api',   required:false },
   ],
   // 카페24 유튜브쇼핑: 쇼핑몰 ID + 로그인 + Client ID + Client Secret + Refresh Token
   cafe24: [
@@ -351,21 +352,25 @@ const MALL_GUIDES: Record<string, GuideInfo> = {
     ],
   },
   alwayz: {
-    title:'올웨이즈 API 연동', authType:'API Key + Secret',
-    note:'올웨이즈는 공동구매 플랫폼으로 API가 제한적입니다. 파트너센터에서 승인 후 발급됩니다.',
-    warning:'⚠ 공동구매 가격 구조 — 할인율 필수, 재고 필수 입력',
+    title:'올웨이즈 SCM 연동', authType:'쇼핑몰 ID / PW',
+    note:'올웨이즈 SCM 로그인 계정(ID/PW)만 입력하면 됩니다. SHOP ID와 수수료는 선택 항목입니다.',
+    warning:'⚠ 수수료를 소수점으로 설정 시 판매단가 기준으로 입력한 수수료율을 절사하여 계산됩니다',
     required:[
-      { label:'Partner ID', desc:'올웨이즈 파트너 ID', badge:'required' },
-      { label:'API Key', desc:'파트너센터 승인 후 발급', badge:'required' },
-      { label:'Secret Key', desc:'API Secret Key', badge:'required' },
+      { label:'쇼핑몰ID', desc:'올웨이즈 SCM 로그인 ID (예: withlaon)', badge:'required' },
+      { label:'PASSWORD', desc:'SCM 비밀번호', badge:'required' },
+      { label:'SHOP ID',  desc:'쇼핑몰ID·PW 등록과 무관한 내부 구분용 정보 (미입력 가능)', badge:'optional' },
+      { label:'수수료(주문) %', desc:'공급가 미제공 시 수집 주문금액 × 수수료율로 공급가 계산 (예: 4)\n소수점 입력 시 판매단가 기준 절사 계산', badge:'optional' },
     ],
     steps:[
-      '① partner.alwayz.co.kr 접속 후 로그인',
-      '② [개발자 연동] → [API 신청] 클릭',
-      '③ 승인 후 API Key / Secret Key 발급 확인',
-      '④ 프로그램에 Partner ID + API Key + Secret Key 입력 후 저장',
+      '━━ SCM 로그인 정보 확인 ━━',
+      '① alwayz.co.kr 접속 후 셀러(판매자) 계정으로 로그인',
+      '② 상단 계정정보에서 쇼핑몰ID 확인',
+      '━━ 프로그램 연동 ━━',
+      '③ 쇼핑몰ID / PASSWORD 입력 (필수)',
+      '④ 수수료율 입력 (공급가 자동 계산 필요 시, 예: 4)',
+      '⑤ [저장 및 연동 테스트] 클릭',
     ],
-    links:[{ label:'올웨이즈 파트너센터', url:'https://partner.alwayz.co.kr' }],
+    links:[{ label:'올웨이즈 셀러센터', url:'https://alwayz.co.kr' }],
   },
   cafe24: {
     title:'카페24 OAuth API 연동', authType:'OAuth 2.0 (Refresh Token 방식)',

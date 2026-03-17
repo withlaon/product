@@ -38,8 +38,8 @@ export async function POST(req: NextRequest) {
       const LIMITED_API_MALLS: Record<string, { key: string; label: string }> = {
         ablly      : { key: 'api_key',   label: 'API Token' },
         ably       : { key: 'api_key',   label: 'API Token' },
-        always     : { key: 'api_key',   label: 'API Key' },
-        alwayz     : { key: 'api_key',   label: 'API Key' },
+        always     : { key: 'login_id',  label: '쇼핑몰ID' },
+        alwayz     : { key: 'login_id',  label: '쇼핑몰ID' },
         tosshopping: { key: 'api_key',   label: 'API Key' },
         lotteon    : { key: 'api_key',   label: 'API Key' },
         ssg        : { key: 'api_key',   label: 'API Key' },

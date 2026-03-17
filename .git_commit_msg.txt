@@ -1,6 +1,7 @@
-fix: separate saveCredentialsOnly and startOAuth for OAuth malls
+fix: halfclub and gsshop connection form and guide updated
 
-- saveCredentialsOnly(): saves form data only, no OAuth popup (Settings Save button)
-- startOAuth(): saves + opens OAuth popup (OAuth Re-auth button)
-- Both buttons now work independently - clicking Settings Save no longer triggers OAuth
-- Fixes bug where Settings Save was triggering OAuth flow and causing expired code errors
+halfclub: login ID/PW + partner code (SA...) + API auth key (UUID) required
+         수수료(주문)% optional, FTP fields removed
+gsshop: login ID/PW + shipment lead time (days) required, SHOP ID optional
+        Vendor ID / API Key / Secret Key fields removed
+Both guides updated with exact SCM menu navigation steps
