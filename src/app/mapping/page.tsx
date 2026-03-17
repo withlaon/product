@@ -251,25 +251,56 @@ export default function MappingPage() {
     }
   }
 
+  /* registered_malls에서 특정 쇼핑몰 제거 (매핑 삭제 시 동기화) */
+  const removeRegisteredMall = async (productId: string, mallName: string) => {
+    try {
+      const { data } = await supabase.from('pm_products').select('registered_malls').eq('id', productId).single()
+      if (!data) return
+      const current: string[] = data.registered_malls ?? []
+      if (current.includes(mallName)) {
+        await supabase.from('pm_products').update({ registered_malls: current.filter(m => m !== mallName) }).eq('id', productId)
+      }
+    } catch { /* 무시 */ }
+  }
+
   const handleDeleteRow = (idx: number) => {
-    // 목록에서만 제거 (registered_malls, channel_prices 유지)
+    const row = rows[idx]
     const newRows = [...rows]; newRows.splice(idx, 1)
     const updated = { ...mappings, [selectedMall]: newRows }
     setMappings(updated); saveMappings(updated)
     setCheckedIdxs(new Set())
+    // 해당 상품이 이 쇼핑몰로 더 이상 매핑되지 않으면 registered_malls에서 제거
+    if (row.matched_product_id) {
+      const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
+      const stillMapped = newRows.some(r => r.matched_product_id === row.matched_product_id && r.status === 'matched')
+      if (!stillMapped) removeRegisteredMall(row.matched_product_id, mallName)
+    }
   }
 
   const handleDeleteChecked = () => {
     if (checkedIdxs.size === 0) return
-    if (!confirm(`선택한 ${checkedIdxs.size}개 항목을 목록에서 삭제하시겠습니까?\n(쇼핑몰 등록현황 및 판매가는 유지됩니다)`)) return
+    if (!confirm(`선택한 ${checkedIdxs.size}개 항목을 삭제하시겠습니까?`)) return
+    const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
+    const deletedRows = rows.filter((_, i) => checkedIdxs.has(i))
     const newRows = rows.filter((_, i) => !checkedIdxs.has(i))
     const updated = { ...mappings, [selectedMall]: newRows }
     setMappings(updated); saveMappings(updated)
     setCheckedIdxs(new Set())
+    // 삭제된 행 중 이 쇼핑몰에서 더 이상 매핑되지 않는 상품의 registered_malls 정리
+    const remainingIds = new Set(newRows.filter(r => r.status === 'matched').map(r => r.matched_product_id))
+    deletedRows.forEach(row => {
+      if (row.matched_product_id && !remainingIds.has(row.matched_product_id)) {
+        removeRegisteredMall(row.matched_product_id, mallName)
+      }
+    })
   }
 
   const handleClearAll = () => {
-    if (!confirm('현재 쇼핑몰의 매핑 데이터를 모두 삭제하시겠습니까?')) return
+    if (!confirm('현재 쇼핑몰의 매핑 데이터를 모두 삭제하고 등록현황도 초기화하시겠습니까?')) return
+    const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
+    // 현재 매핑된 모든 상품의 registered_malls에서 이 쇼핑몰 제거
+    const matchedIds = new Set(rows.filter(r => r.status === 'matched' && r.matched_product_id).map(r => r.matched_product_id!))
+    matchedIds.forEach(pid => removeRegisteredMall(pid, mallName))
     const updated = { ...mappings }; delete updated[selectedMall]
     setMappings(updated); saveMappings(updated)
     setCheckedIdxs(new Set())

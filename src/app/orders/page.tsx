@@ -12,7 +12,7 @@ import {
 import * as XLSX from 'xlsx'
 
 /* ── Storage Keys ── */
-export const CHANNEL_STORAGE_KEY  = 'pm_mall_channels_v3'
+export const CHANNEL_STORAGE_KEY  = 'pm_mall_channels_v5'
 export const ORDERS_STORAGE_KEY   = 'pm_orders_v1'
 export const SHIPPING_STORAGE_KEY = 'pm_shipping_v1'
 export const MAPPING_STORAGE_KEY  = 'pm_order_mapping_v1'
@@ -134,7 +134,10 @@ export default function OrdersPage() {
     setMapping(rawMapping)
     setOrders(rawOrders.map(o => applyMapping(o, rawMapping)))
     try {
-      const raw = localStorage.getItem(CHANNEL_STORAGE_KEY)
+      // v5 → v4 → v3 순으로 폴백
+      const raw = localStorage.getItem('pm_mall_channels_v5')
+           || localStorage.getItem('pm_mall_channels_v4')
+           || localStorage.getItem('pm_mall_channels_v3')
       if (raw) {
         const parsed: {key:string;name:string;active:boolean}[] = JSON.parse(raw)
         setConnectedMalls(Array.isArray(parsed) ? parsed.filter(c=>c.active).map(c=>({key:c.key,name:c.name})) : [])
@@ -162,7 +165,7 @@ export default function OrdersPage() {
       const applied = newOrd.map(o => applyMapping(o, m))
       const merged = [...applied, ...prev].sort((a,b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
       saveOrders(merged)
-      if (newOrd.some(o => o.is_claim)) localStorage.setItem(CS_NEW_KEY, 'true')
+      if (newOrd.some(o => o.is_claim || o.status === 'cancelled')) localStorage.setItem(CS_NEW_KEY, 'true')
       return merged
     })
   }, [connectedMalls])
@@ -197,7 +200,7 @@ export default function OrdersPage() {
         const deduped = applied.filter(o=>!existing.has(o.order_number))
         const merged = [...deduped,...prev].sort((a,b) => new Date(b.created_at).getTime()-new Date(a.created_at).getTime())
         saveOrders(merged)
-        if (deduped.some(o=>o.is_claim)) localStorage.setItem(CS_NEW_KEY,'true')
+        if (deduped.some(o=>o.is_claim || o.status==='cancelled')) localStorage.setItem(CS_NEW_KEY,'true')
         return merged
       })
       setCollecting(false); setCollectDone(true)

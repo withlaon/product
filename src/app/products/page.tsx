@@ -475,8 +475,10 @@ export default function ProductsPage() {
           if (Date.now() - ts < PRODUCTS_CACHE_TTL && Array.isArray(cached)) {
             setProducts(cached)
             setLoading(false)
-            // 캐시가 있어도 백그라운드에서 최신 데이터 갱신
-            const { data, error } = await supabase.from('pm_products').select('*').order('code', { ascending: true })
+            // 캐시가 있어도 백그라운드에서 최신 데이터 갱신 (basic_info 제외 → 빠른 로드)
+            const { data, error } = await supabase.from('pm_products')
+              .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,mall_categories,registered_malls,created_at')
+              .order('code', { ascending: true })
             if (!error && data) {
               const loaded = data.map(rowToProduct)
               setProducts(loaded)
@@ -494,9 +496,11 @@ export default function ProductsPage() {
         }
       } catch {}
 
-      // 캐시 없거나 만료 → fetch 후 자동 표시
+      // 캐시 없거나 만료 → fetch 후 자동 표시 (basic_info 제외 → 빠른 로드)
       setLoading(true)
-      const { data, error } = await supabase.from('pm_products').select('*').order('code', { ascending: true })
+      const { data, error } = await supabase.from('pm_products')
+        .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,mall_categories,registered_malls,created_at')
+        .order('code', { ascending: true })
       if (!error && data) {
         const loaded = data.map(rowToProduct)
         setProducts(loaded)
@@ -1531,7 +1535,18 @@ export default function ProductsPage() {
 
                     {/* 상품명 */}
                     <td style={{ paddingTop:13 }}>
-                      <button onClick={() => { setBasicInfoTarget(p); setBasicInfoForm({ ...DEF_BASIC_INFO, ...(p.basic_info ?? {}), title: p.basic_info?.title || p.name }); setBasicInfoTab('basic') }}
+                      <button onClick={async () => {
+                          let bi = p.basic_info
+                          if (!bi) {
+                            // basic_info lazy load
+                            const { data } = await supabase.from('pm_products').select('basic_info').eq('id', p.id).single()
+                            bi = data?.basic_info ?? null
+                            if (bi) setProducts(prev => prev.map(pp => pp.id === p.id ? { ...pp, basic_info: bi } : pp))
+                          }
+                          setBasicInfoTarget({ ...p, basic_info: bi })
+                          setBasicInfoForm({ ...DEF_BASIC_INFO, ...(bi ?? {}), title: bi?.title || p.name })
+                          setBasicInfoTab('basic')
+                        }}
                         style={{ background:'none', border:'none', cursor:'pointer', padding:0, textAlign:'left' }}>
                         <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
                           <p style={{ fontSize:13, fontWeight:800, color:'#2563eb', lineHeight:1.4, textDecoration:'underline', textDecorationStyle:'dotted', textUnderlineOffset:3 }}>{p.name}</p>

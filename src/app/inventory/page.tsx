@@ -265,39 +265,49 @@ export default function InventoryPage() {
     setSaving(false); setAdjustModal(false); resetForm()
   }
 
-  /* ── 엑셀 파일 등록 처리 ── */
+  /* ── 엑셀 파일 등록 처리 (바코드 Map 인덱스로 O(n) 처리) ── */
   const handleXlsxImport = (e: React.ChangeEvent<HTMLInputElement>, type: TxType) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    // 바코드 → {prod, opt} 인덱스 빌드 (O(products×options) 한 번만)
+    const barcodeIndex = new Map<string, { prod: PmProduct; opt: PmOption }>()
+    for (const prod of products) {
+      for (const opt of prod.options) {
+        const bc = (opt.barcode || '').trim()
+        if (bc) barcodeIndex.set(bc, { prod, opt })
+      }
+    }
+
     const reader = new FileReader()
     reader.onload = ev => {
-      const wb = XLSX.read(ev.target?.result, { type: 'binary' })
+      const wb = XLSX.read(ev.target?.result, { type: 'array' })
       const ws = wb.Sheets[wb.SheetNames[0]]
       const rows = XLSX.utils.sheet_to_json<{ 바코드: string; 수량: number; 비고?: string }>(ws)
       const newItems: TxItem[] = []
+      const existingKeys = new Set(txItems.map(i => `${i.prodId}__${i.optName}`))
+
       for (const row of rows) {
         const bc = String(row['바코드'] ?? '').trim()
         if (!bc) continue
-        for (const prod of products) {
-          for (const opt of prod.options) {
-            if (opt.barcode === bc) {
-              if (!txItems.some(i => i.prodId === prod.id && i.optName === opt.name)) {
-                const item = mkItem(prod, opt)
-                if (type === 'adjust') {
-                  item.adjStock = String(row['수량'] ?? '')
-                } else {
-                  item.qty = String(row['수량'] ?? '')
-                }
-                item.note = row['비고'] ?? ''
-                newItems.push(item)
-              }
-            }
-          }
+        const found = barcodeIndex.get(bc)
+        if (!found) continue
+        const { prod, opt } = found
+        const key = `${prod.id}__${opt.name}`
+        if (existingKeys.has(key)) continue
+        existingKeys.add(key)
+        const item = mkItem(prod, opt)
+        if (type === 'adjust') {
+          item.adjStock = String(row['수량'] ?? '')
+        } else {
+          item.qty = String(row['수량'] ?? '')
         }
+        item.note = row['비고'] ?? ''
+        newItems.push(item)
       }
       setTxItems(prev => [...prev, ...newItems])
     }
-    reader.readAsBinaryString(file)
+    reader.readAsArrayBuffer(file)
     e.target.value = ''
   }
 

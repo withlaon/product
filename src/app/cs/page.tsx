@@ -74,34 +74,48 @@ export default function CSPage() {
     setMounted(true)
     let t = loadTickets()
 
-    // 주문관리의 클레임 주문을 CS로 자동 변환
+    // 주문관리의 클레임/취소 주문을 CS로 자동 변환
     try {
       const ordersRaw = localStorage.getItem(ORDERS_STORAGE_KEY)
       if (ordersRaw) {
         const orders = JSON.parse(ordersRaw)
-        const claimOrders = orders.filter((o: {is_claim?:boolean; id:string}) => o.is_claim)
+        // is_claim=true 이거나 status=cancelled/return/exchange 인 주문 자동 변환
+        const claimOrders = orders.filter((o: {is_claim?:boolean; status:string}) =>
+          o.is_claim || ['cancelled', 'return', 'exchange'].includes(o.status)
+        )
         const existingOrderIds = new Set(t.map((tk: Ticket) => tk.order_id))
         const newFromClaims: Ticket[] = claimOrders
-          .filter((o: {id:string}) => !existingOrderIds.has(o.id))
-          .map((o: {id:string; order_number:string; channel:string; customer_name:string; customer_phone:string; created_at:string; status:string}) => ({
-            id: `cs_${o.id}`,
-            ticket_number: `CS-${o.order_number}`,
-            type: o.status === 'cancelled' ? 'refund' : 'claim',
-            status: 'open',
-            priority: 'high',
-            channel: o.channel,
-            order_id: o.order_number,
-            customer_name: o.customer_name,
-            customer_phone: o.customer_phone,
-            subject: `[자동수집] ${o.status === 'cancelled' ? '취소/환불' : '클레임'} 요청`,
-            content: `주문번호 ${o.order_number}에 대한 클레임이 접수되었습니다.`,
-            response: null,
-            created_at: o.created_at,
-            is_auto: true,
-          }))
+          .filter((o: {id:string; order_number:string}) => !existingOrderIds.has(o.order_number))
+          .map((o: {id:string; order_number:string; channel:string; customer_name:string; customer_phone:string; created_at:string; status:string}) => {
+            const csType = o.status === 'cancelled' ? 'cancel_before_invoice'
+                         : o.status === 'return'    ? 'return'
+                         : o.status === 'exchange'  ? 'exchange'
+                         : 'claim'
+            const csSubject = o.status === 'cancelled' ? '주문 취소 요청'
+                            : o.status === 'return'    ? '반품 요청'
+                            : o.status === 'exchange'  ? '교환 요청'
+                            : '클레임 접수'
+            return {
+              id: `cs_${o.id}`,
+              ticket_number: `CS-${o.order_number}`,
+              type: csType,
+              status: 'open',
+              priority: 'high',
+              channel: o.channel,
+              order_id: o.order_number,
+              customer_name: o.customer_name,
+              customer_phone: o.customer_phone,
+              subject: `[자동수집] ${csSubject}`,
+              content: `주문번호 ${o.order_number}에 대한 ${csSubject}이 접수되었습니다.`,
+              response: null,
+              created_at: o.created_at,
+              is_auto: true,
+            }
+          })
         if (newFromClaims.length > 0) {
           t = [...newFromClaims, ...t]
           saveTickets(t)
+          localStorage.setItem(CS_NEW_KEY, 'true')
         }
       }
     } catch {}
