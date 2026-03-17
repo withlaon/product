@@ -69,15 +69,28 @@ export async function POST(req: NextRequest) {
     if (!tokenRes.ok) {
       let errDetail = ''
       try { errDetail = await tokenRes.text() } catch { /* ignore */ }
+
+      // Vercel 로그에 디버그 정보 출력
+      console.error('[cafe24/token] 토큰 교환 실패', {
+        status     : tokenRes.status,
+        mall_id,
+        clientId   : clientId ? `${clientId.slice(0, 6)}...` : '(없음)',
+        hasSecret  : !!clientSecret,
+        redirectUri,
+        errDetail,
+      })
+
       let errMsg = `카페24 토큰 교환 실패 (${tokenRes.status})`
       if (tokenRes.status === 401) {
-        errMsg = 'Client ID 또는 Client Secret이 올바르지 않습니다 (401). 카페24 개발자센터에서 앱 자격증명을 확인해 주세요.'
+        errMsg = 'Client ID 또는 Client Secret이 올바르지 않습니다 (401). 카페24 개발자센터 → 내 앱 → 기본 정보에서 Client Secret을 확인 후 Vercel 환경변수 CAFE24_CLIENT_SECRET을 업데이트 해주세요.'
       } else if (tokenRes.status === 400) {
-        errMsg = '잘못된 요청 (400) — 인증 코드가 만료되었거나 이미 사용되었을 수 있습니다. 다시 OAuth 인증을 진행해 주세요.'
-        if (errDetail.includes('redirect_uri')) errMsg = 'redirect_uri가 카페24 앱 설정과 다릅니다. 등록된 redirect_uri를 확인해 주세요.'
+        errMsg = '인증 코드 만료 또는 이미 사용됨 (400) — OAuth 인증 팝업을 다시 열어 재시도해 주세요.'
+        if (errDetail.includes('redirect_uri')) {
+          errMsg = `redirect_uri 불일치 (400) — 카페24 앱에 등록된 redirect_uri: "${redirectUri}" 와 일치하는지 확인해 주세요.`
+        }
       }
       return NextResponse.json(
-        { error: errMsg, detail: errDetail, status: tokenRes.status },
+        { error: errMsg, detail: errDetail, status: tokenRes.status, debugRedirectUri: redirectUri },
         { status: 502 }
       )
     }
