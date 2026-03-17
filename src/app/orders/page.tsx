@@ -548,7 +548,7 @@ export default function OrdersPage() {
                       }
                     </td>
                     <td>
-                      <button onClick={()=>setSel(o)} className="pm-btn pm-btn-ghost pm-btn-sm" style={{ width:28, height:28, padding:0, borderRadius:8, opacity:0, transition:'opacity 150ms' }} className="group-hover:!opacity-100">
+                      <button onClick={()=>setSel(o)} className="pm-btn pm-btn-ghost pm-btn-sm group-hover:!opacity-100" style={{ width:28, height:28, padding:0, borderRadius:8, opacity:0, transition:'opacity 150ms' }}>
                         <Eye size={13}/>
                       </button>
                     </td>
