@@ -46,7 +46,7 @@ type ConnectorConstructor = new () => IMarketplaceAdapter
 
 const CONNECTOR_MAP: Record<string, ConnectorConstructor> = {
   smartstore  : SmartstoreConnector,
-  naver       : SmartstoreConnector,  // channels page 키 호환 alias
+  naver       : SmartstoreConnector,  // alias
   coupang     : CoupangConnector,
   '11st'      : ElevenStConnector,
   gmarket     : GmarketConnector,
@@ -54,9 +54,11 @@ const CONNECTOR_MAP: Record<string, ConnectorConstructor> = {
   cafe24      : Cafe24Connector,
   zigzag      : ZigzagConnector,
   ably        : AblyConnector,
-  ablly       : AblyConnector,   // 오타 호환 별칭 (channels page 키)
+  ablly       : AblyConnector,        // 오타 호환 alias
   always      : AlwaysConnector,
+  alwayz      : AlwaysConnector,      // localStorage 키 호환 alias
   tosshopping : TossshoppingConnector,
+  toss        : TossshoppingConnector, // localStorage 키 호환 alias
   lotteon     : LotteonConnector,
   ssg         : SsgConnector,
   halfclub    : HalfclubConnector,

@@ -3,11 +3,12 @@
  * API: https://api.commerce.naver.com
  * 인증: OAuth2 Client Credentials
  *
- * client_secret = Base64( HMAC-SHA256( "{clientId}_{timestamp(ms)}", clientSecretKey ) )
- * 네이버 커머스 API 공식 스펙에 따라 서명된 값을 사용해야 합니다.
+ * 공식 스펙 (apicenter.commerce.naver.com/docs/auth):
+ *   client_secret_sign = Base64( bcrypt(password="{clientId}_{timestamp_ms}", salt=clientSecret) )
+ *   ※ client_secret 자체가 bcrypt salt 값입니다 (HMAC-SHA256 아님)
  */
 
-import { createHmac } from 'crypto'
+import bcrypt from 'bcryptjs'
 import { BaseMarketplace } from '@/marketplaces/base/base.marketplace'
 import type {
   UnifiedProduct,
@@ -26,15 +27,15 @@ export class SmartstoreConnector extends BaseMarketplace {
   readonly mallName = '스마트스토어'
 
   /**
-   * 네이버 커머스 API 서명 생성
-   * client_secret_sign = Base64( HMAC-SHA256( "{clientId}_{timestamp(ms)}", clientSecretKey ) )
+   * 네이버 커머스 API 서명 생성 (공식 스펙)
+   * client_secret_sign = Base64( bcrypt( "{clientId}_{timestamp_ms}", clientSecret_as_salt ) )
+   * clientSecret은 bcrypt salt 형식($2b$10$...) 값입니다.
    */
-  private buildSign(clientId: string, clientSecretKey: string): { timestamp: string; sign: string } {
+  private async buildSign(clientId: string, clientSecret: string): Promise<{ timestamp: string; sign: string }> {
     const timestamp = String(Date.now())
-    const message   = `${clientId}_${timestamp}`
-    const sign      = createHmac('sha256', Buffer.from(clientSecretKey.trim(), 'utf8'))
-      .update(Buffer.from(message, 'utf8'))
-      .digest('base64')
+    const password  = `${clientId}_${timestamp}`
+    const hashed    = await bcrypt.hash(password, clientSecret.trim())
+    const sign      = Buffer.from(hashed).toString('base64')
     return { timestamp, sign }
   }
 
@@ -44,7 +45,7 @@ export class SmartstoreConnector extends BaseMarketplace {
 
     const clientId  = String(api_key).trim()
     const clientSec = String(api_secret).trim()
-    const { timestamp, sign } = this.buildSign(clientId, clientSec)
+    const { timestamp, sign } = await this.buildSign(clientId, clientSec)
 
     const params = new URLSearchParams()
     params.append('grant_type',         'client_credentials')
@@ -157,7 +158,7 @@ export class SmartstoreConnector extends BaseMarketplace {
       + `?lastChangedFrom=${params.start_date || ''}`
       + `&lastChangedTo=${params.end_date || ''}`
       + `&limitCount=${params.limit || 300}`
-    const res = await fetch(url, {
+    const res = await this.fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` },
       signal : AbortSignal.timeout(15000),
     })

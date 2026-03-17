@@ -40,7 +40,7 @@ export class ZigzagConnector extends BaseMarketplace {
   }
 
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
-    const res = await fetch(
+    const res = await this.fetch(
       `${BASE_URL}/orders?date_from=${params.start_date || ''}&date_to=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(15000) }
     )

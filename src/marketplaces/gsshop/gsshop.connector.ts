@@ -34,7 +34,7 @@ export class GsshopConnector extends BaseMarketplace {
   }
 
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
-    const res = await fetch(
+    const res = await this.fetch(
       `${BASE_URL}/orders?startDt=${params.start_date || ''}&endDt=${params.end_date || ''}&pageSize=${params.limit || 100}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(15000) }
     )

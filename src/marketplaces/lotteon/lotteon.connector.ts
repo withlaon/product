@@ -30,7 +30,7 @@ export class LotteonConnector extends BaseMarketplace {
   }
 
   async getOrders(params: OrderQueryParams): Promise<UnifiedOrder[]> {
-    const res = await fetch(
+    const res = await this.fetch(
       `${BASE_URL}/orders?orderDateFrom=${params.start_date || ''}&orderDateTo=${params.end_date || ''}&pageSize=${params.limit || 100}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(15000) }
     )

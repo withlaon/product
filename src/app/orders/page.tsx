@@ -84,7 +84,9 @@ function loadChannelCredentials(): ChannelCredentials[] {
           site_name    : c.site_name     || '',
           refresh_token: c.refresh_token || '',
           access_key   : c.access_key    || '',
-          mall_id      : c.mall_id       || c.site_name || '',
+          // Cafe24: access_token 필드명으로도 매핑 (access_key 우선 사용)
+          access_token : c.access_token  || c.access_key || '',
+          mall_id      : c.mall_id       || c.site_name  || '',
           trader_code  : c.trader_code   || '',
         },
       }))
