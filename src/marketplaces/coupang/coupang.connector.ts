@@ -25,27 +25,34 @@ export class CoupangConnector extends BaseMarketplace {
   /**
    * HMAC-SHA256 Authorization 헤더 생성 (쿠팡 CEA 인증)
    *
-   * signed-date: yyyyMMddTHHmmssZ (UTC, 정확히 16자)
-   * message    : signed-date + HTTP_METHOD + path(쿼리스트링 포함)
-   * signature  : HMAC-SHA256(secret_key, message).hexdigest()
+   * 공식 Postman pre-script 기준:
+   *   signed-date : YYMMDDTHHmmssZ  (2자리 연도, UTC)
+   *   message     : signed-date + METHOD + pathOnly + queryString (? 없이 연결)
+   *   signature   : HmacSHA256(secret_key, message).hexdigest()
+   *   헤더        : Authorization + X-Requested-By(vendorId) 필수
    */
   private buildAuthHeader(method: string, path: string): Record<string, string> {
     const { api_key, api_secret } = this.credentials
     if (!api_key || !api_secret) throw new Error('쿠팡 인증 정보 누락 (AccessKey / SecretKey)')
 
-    // ISO → yyyyMMddTHHmmssZ (UTC 기준, 반드시 16자여야 함)
-    // 예: "2026-03-17T09:47:00.000Z" → "20260317T094700Z"
-    const isoStr   = new Date().toISOString()                // "2026-03-17T09:47:00.000Z"
-    const datetime = isoStr.replace(/[-:]/g, '').replace(/\.\d{3}/, '')  // "20260317T094700Z"
-    // 방어 코드: Z가 없으면 추가
-    const signed   = datetime.endsWith('Z') ? datetime : datetime + 'Z'
+    // "2026-03-17T09:47:00.000Z" → split → "2026-03-17T09:47:00" + "Z"
+    //   → replace(:,-)  → "20260317T094700Z"
+    //   → substring(2)  → "260317T094700Z"  ← 쿠팡 공식 2자리 연도 형식
+    const signed = (new Date().toISOString().split('.')[0] + 'Z')
+      .replace(/:/g, '')
+      .replace(/-/g, '')
+      .substring(2)
 
-    const message   = signed + method + path
+    // path = "/v2/.../ordersheets?createdAtFrom=...&createdAtTo=..."
+    // 서명 메시지: pathOnly + queryString (? 제외)
+    const [pathOnly, queryStr = ''] = path.split('?')
+    const message   = signed + method + pathOnly + queryStr
     const signature = createHmac('sha256', api_secret).update(message).digest('hex')
 
     return {
-      'Authorization': `CEA algorithm=HmacSHA256, access-key=${api_key}, signed-date=${signed}, signature=${signature}`,
-      'Content-Type' : 'application/json;charset=UTF-8',
+      'Authorization' : `CEA algorithm=HmacSHA256, access-key=${api_key}, signed-date=${signed}, signature=${signature}`,
+      'Content-Type'  : 'application/json;charset=UTF-8',
+      'X-Requested-By': this.credentials.seller_id || '',
     }
   }
 
