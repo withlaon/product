@@ -852,7 +852,7 @@ export default function ChannelsPage() {
         authUrl = `https://${shopId}.cafe24api.com/api/v2/oauth/authorize`
           + `?response_type=code&client_id=${encodeURIComponent(clientId)}`
           + `&redirect_uri=${encodeURIComponent(redirectUri)}`
-          + `&scope=mall.read_product,mall.write_product,mall.read_order,mall.write_order,mall.read_store,mall.read_customer`
+          + `&scope=mall.read_product,mall.write_product,mall.read_order,mall.write_order,mall.read_category,mall.write_category,mall.read_customer,mall.write_customer,mall.read_shipping,mall.write_shipping`
           + `&state=${state}`
       } else if (apiTarget.key === 'naver') {
         authUrl = `https://api.commerce.naver.com/external/v1/oauth2/authorize`
