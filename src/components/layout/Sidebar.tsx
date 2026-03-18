@@ -6,7 +6,7 @@ import { cn } from '@/lib/utils'
 import {
   LayoutDashboard, Package, Warehouse,
   Settings,
-  PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, Send, PenSquare, GitMerge,
+  PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, ShoppingCart, Truck, GitMerge,
 } from 'lucide-react'
 
 const navGroups = [
@@ -17,11 +17,11 @@ const navGroups = [
   {
     label: '상품 · 재고',
     items: [
-      { label: '상품관리',       href: '/products',              icon: Package },
-      { label: '상품전송',       href: '/product-transfer',      icon: Send },
-      { label: '전송상품수정',    href: '/product-edit-transfer', icon: PenSquare },
-      { label: '재고관리',       href: '/inventory',             icon: Warehouse },
-      { label: '발주/입고관리',   href: '/purchase',             icon: PackagePlus },
+      { label: '상품관리',     href: '/products',              icon: Package },
+      { label: '주문관리',     href: '/product-transfer',      icon: ShoppingCart },
+      { label: '송장등록',     href: '/product-edit-transfer', icon: Truck },
+      { label: '재고관리',     href: '/inventory',             icon: Warehouse },
+      { label: '발주/입고관리', href: '/purchase',              icon: PackagePlus },
     ],
   },
   {
