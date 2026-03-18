@@ -404,8 +404,7 @@ export default function ProductsPage() {
   // 등록일 필터: 'all' | 'today' | '30' | '365' | 'custom'
   const [dateFilter, setDateFilter]   = useState<'all'|'today'|'30'|'365'|'custom'>('all')
   const [dateCustom, setDateCustom]   = useState('')
-  // 캐시가 있으면 즉시 목록 표시, 없으면 버튼/검색 시 표시
-  const [showList, setShowList]       = useState(() => hasFreshCache())
+  const [showList, setShowList]       = useState(true)
   const [isAdd, setIsAdd]             = useState(false)
   const [detail, setDetail]           = useState<Product | null>(null)
   const [isEdit, setIsEdit]           = useState<Product | null>(null)
@@ -460,52 +459,25 @@ export default function ProductsPage() {
     ))
   }
 
-  /* ── Supabase 로드 (캐시 우선 표시 후 백그라운드 갱신) ── */
+  /* ── Supabase 로드 (캐시 우선 → 백그라운드 최신화) ── */
   useEffect(() => {
     const load = async () => {
-      // localStorage에 저장된 카테고리 먼저 복원
       const saved = loadSavedCats()
       if (saved && saved.length > 0) setExtraCats(saved)
 
-      // 캐시 확인 → 있으면 즉시 표시 (로딩 없이)
-      try {
-        const cacheRaw = localStorage.getItem(PRODUCTS_CACHE_KEY)
-        if (cacheRaw) {
-          const { ts, data: cached } = JSON.parse(cacheRaw)
-          if (Date.now() - ts < PRODUCTS_CACHE_TTL && Array.isArray(cached)) {
-            setProducts(cached)
-            setLoading(false)
-            // 캐시가 있어도 백그라운드에서 최신 데이터 갱신 (basic_info 제외 → 빠른 로드)
-            const { data, error } = await supabase.from('pm_products')
-              .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,mall_categories,registered_malls,created_at')
-              .order('code', { ascending: true })
-            if (!error && data) {
-              const loaded = data.map(rowToProduct)
-              setProducts(loaded)
-              autoMarkSoldout(loaded)
-              localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded }))
-              const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
-              setExtraCats(prev => {
-                const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
-                const merged = [...new Set([...base, ...dbCats])]
-                saveCats(merged); return merged
-              })
-            }
-            return
-          }
-        }
-      } catch {}
+      // 캐시가 신선하면 즉시 표시, 아니면 로딩 시작
+      const hasFresh = hasFreshCache()
+      if (!hasFresh) setLoading(true)
 
-      // 캐시 없거나 만료 → fetch 후 자동 표시 (basic_info 제외 → 빠른 로드)
-      setLoading(true)
+      // 항상 Supabase에서 최신 데이터 fetch
       const { data, error } = await supabase.from('pm_products')
         .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,mall_categories,registered_malls,created_at')
         .order('code', { ascending: true })
+
       if (!error && data) {
         const loaded = data.map(rowToProduct)
         setProducts(loaded)
         autoMarkSoldout(loaded)
-        setShowList(true)  // 데이터 도착하면 즉시 목록 표시
         try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
         const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
         setExtraCats(prev => {
@@ -700,7 +672,7 @@ export default function ProductsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  const doSearch    = () => { setSearch(searchInput); setPage(1); setShowList(true) }
+  const doSearch    = () => { setSearch(searchInput); setPage(1) }
   const clearSearch = () => { setSearch(''); setSearchInput(''); setPage(1) }
 
   const handleAdd = async () => {
@@ -1475,33 +1447,8 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {/* ── 로딩 중 ── */}
-      {!showList && loading && (
-        <div className="pm-card" style={{ padding:'48px 24px', textAlign:'center' }}>
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
-            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation:'spin 1s linear infinite' }}>
-              <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
-            </svg>
-            <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
-            <p style={{ fontSize:15, fontWeight:800, color:'#64748b' }}>상품 목록을 불러오는 중입니다...</p>
-            <p style={{ fontSize:12.5, fontWeight:600, color:'#94a3b8' }}>잠시만 기다려 주세요</p>
-          </div>
-        </div>
-      )}
-
-      {/* ── 목록 미표시 안내 ── */}
-      {!showList && !loading && (
-        <div className="pm-card" style={{ padding:'48px 24px', textAlign:'center' }}>
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
-            <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="#cbd5e1" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            <p style={{ fontSize:15, fontWeight:800, color:'#94a3b8' }}>검색하거나 필터를 선택하면 상품 목록이 표시됩니다</p>
-            <p style={{ fontSize:12.5, fontWeight:600, color:'#cbd5e1' }}>상단 상태 버튼, 카테고리 탭, 날짜 필터, 검색어 입력 후 검색 버튼을 클릭하세요</p>
-          </div>
-        </div>
-      )}
-
       {/* ── 테이블 ── */}
-      {showList && <div className="pm-card overflow-hidden">
+      {<div className="pm-card overflow-hidden">
         <div className="pm-table-wrap">
           <table className="pm-table" style={{ minWidth:1500 }}>
             <thead>
@@ -1520,7 +1467,20 @@ export default function ProductsPage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.length === 0 && (
+              {loading && (
+                <tr>
+                  <td colSpan={11} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" style={{ animation:'spin 1s linear infinite' }}>
+                        <path d="M21 12a9 9 0 1 1-6.219-8.56"/>
+                      </svg>
+                      <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+                      <p style={{ fontSize:13.5, fontWeight:700, color:'#64748b' }}>상품 목록을 불러오는 중입니다...</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {!loading && filtered.length === 0 && (
                 <tr>
                   <td colSpan={11} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
@@ -1753,7 +1713,7 @@ export default function ProductsPage() {
       </div>}
 
       {/* ── 하단 페이지네이션 ── */}
-      {showList && totalPages > 1 && (
+      {totalPages > 1 && (
         <div style={{ display:'flex', justifyContent:'center', gap:4, alignItems:'center', padding:'12px 0 4px' }}>
           <button disabled={page===1} onClick={() => setPage(p=>p-1)}
             className="pm-btn pm-btn-ghost pm-btn-sm"
