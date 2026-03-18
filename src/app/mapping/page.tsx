@@ -23,7 +23,7 @@ interface MappedRow {
 interface PmOption { name: string; barcode: string }
 interface PmProduct { id: string; code: string; name: string; category: string; options: PmOption[] }
 
-const MAPPING_KEY = 'pm_channel_mappings_v1'
+const MAPPING_KEY = 'pm_channel_mappings_v2'
 
 function loadMappings(): Record<string, MappedRow[]> {
   try {
@@ -97,35 +97,36 @@ export default function MappingPage() {
   }
 
   function autoMatch(mallId: string, mallName: string, mallOption: string) {
-    const idLc = mallId.toLowerCase()
+    const idLc = mallId.toLowerCase().trim()
     const nameLc = mallName.toLowerCase()
     const optLc = mallOption.toLowerCase()
 
-    // 1순위: 바코드 직접 일치 (쇼핑몰 상품ID 또는 옵션에 바코드가 포함)
-    for (const p of products) {
+    const tryMatchOptions = (p: PmProduct) => {
       for (const o of p.options) {
-        const bc = o.barcode?.trim().toLowerCase() || ''
-        if (!bc) continue
-        if (idLc === bc || optLc === bc || idLc.includes(bc) || optLc.includes(bc)) {
+        if (o.name && optLc.includes(o.name.toLowerCase())) {
           return { pid: p.id, pname: p.name, oname: o.name, barcode: o.barcode }
         }
       }
+      if (p.options.length === 1) {
+        const o = p.options[0]
+        return { pid: p.id, pname: p.name, oname: o.name, barcode: o.barcode }
+      }
+      return { pid: p.id, pname: p.name, oname: null, barcode: null }
     }
-    // 2순위: 상품코드 + 옵션명 일치
+
+    // 1순위: 등록상품 상품코드와 정확히 일치
     for (const p of products) {
       if (!p.code) continue
-      const codeLc = p.code.toLowerCase()
-      if (nameLc.includes(codeLc) || idLc.includes(codeLc)) {
-        for (const o of p.options) {
-          if (o.name && optLc.includes(o.name.toLowerCase())) {
-            return { pid: p.id, pname: p.name, oname: o.name, barcode: o.barcode }
-          }
-        }
-        // 코드만 맞아도 옵션 하나면 매핑
-        if (p.options.length === 1) {
-          const o = p.options[0]
-          return { pid: p.id, pname: p.name, oname: o.name, barcode: o.barcode }
-        }
+      const codeLc = p.code.toLowerCase().trim()
+      if (idLc === codeLc) return tryMatchOptions(p)
+    }
+
+    // 2순위: 쇼핑몰 상품ID 또는 상품명에 등록상품 코드가 포함
+    for (const p of products) {
+      if (!p.code) continue
+      const codeLc = p.code.toLowerCase().trim()
+      if (idLc.includes(codeLc) || nameLc.includes(codeLc)) {
+        return tryMatchOptions(p)
       }
     }
     return null
@@ -185,7 +186,7 @@ export default function MappingPage() {
       const matched = newRows.filter(r => r.status === 'matched' && r.matched_product_id)
       for (const r of matched) {
         if (r.matched_product_id) {
-          updateRegisteredMalls(r.matched_product_id, mallName)
+          updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id)
           if (r.mall_price && r.mall_price > 0) {
             updateChannelPrice(r.matched_product_id, mallName, r.mall_price)
           }
@@ -214,13 +215,23 @@ export default function MappingPage() {
     } catch { /* 무시 */ }
   }
 
-  const updateRegisteredMalls = async (productId: string, mallName: string) => {
+  const updateRegisteredMalls = async (productId: string, mallName: string, mallCode: string) => {
     try {
       const { data } = await supabase.from('pm_products').select('registered_malls').eq('id', productId).single()
       if (!data) return
-      const current: string[] = data.registered_malls ?? []
-      if (!current.includes(mallName)) {
-        await supabase.from('pm_products').update({ registered_malls: [...current, mallName] }).eq('id', productId)
+      const current: (string | { mall: string; code: string })[] = data.registered_malls ?? []
+      const hasMall = current.some(m => (typeof m === 'string' ? m === mallName : m.mall === mallName))
+      if (hasMall) {
+        const updated = current.map(m =>
+          (typeof m === 'string' ? m === mallName : m.mall === mallName)
+            ? { mall: mallName, code: mallCode }
+            : m
+        )
+        await supabase.from('pm_products').update({ registered_malls: updated }).eq('id', productId)
+      } else {
+        await supabase.from('pm_products').update({
+          registered_malls: [...current, { mall: mallName, code: mallCode }],
+        }).eq('id', productId)
       }
     } catch { /* 무시 */ }
   }
@@ -246,7 +257,7 @@ export default function MappingPage() {
     // 매핑된 상품에 쇼핑몰 등록현황 + 판매가 업데이트
     if (prod) {
       const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
-      updateRegisteredMalls(prod.id, mallName)
+      updateRegisteredMalls(prod.id, mallName, manualTarget?.mall_product_id || '')
       if (price && price > 0) updateChannelPrice(prod.id, mallName, price)
     }
   }
@@ -256,10 +267,9 @@ export default function MappingPage() {
     try {
       const { data } = await supabase.from('pm_products').select('registered_malls').eq('id', productId).single()
       if (!data) return
-      const current: string[] = data.registered_malls ?? []
-      if (current.includes(mallName)) {
-        await supabase.from('pm_products').update({ registered_malls: current.filter(m => m !== mallName) }).eq('id', productId)
-      }
+      const current: (string | { mall: string; code: string })[] = data.registered_malls ?? []
+      const updated = current.filter(m => (typeof m === 'string' ? m !== mallName : m.mall !== mallName))
+      await supabase.from('pm_products').update({ registered_malls: updated }).eq('id', productId)
     } catch { /* 무시 */ }
   }
 
@@ -489,7 +499,7 @@ export default function MappingPage() {
               {/* 엑셀 안내 */}
               <div style={{ padding: '8px 12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, marginBottom: 14 }}>
                 <p style={{ fontSize: 11.5, fontWeight: 700, color: '#0369a1' }}>
-                  📋 자동 매핑은 <strong>바코드</strong> 기준으로 동작합니다. 양식다운 버튼으로 템플릿을 다운받아 <strong>바코드</strong> 컬럼을 채워주세요. 매핑 안 된 항목은 <strong>수동매핑</strong> 버튼으로 직접 연결할 수 있습니다.
+                  📋 자동 매핑은 <strong>등록상품 상품코드</strong> 기준으로 동작합니다. 쇼핑몰 상품코드(ID)가 등록상품 코드와 일치할 때 자동 매핑됩니다. 매핑 안 된 항목은 <strong>수동매핑</strong> 버튼으로 직접 연결할 수 있습니다.
                 </p>
               </div>
             </div>

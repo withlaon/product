@@ -93,7 +93,7 @@ interface Product {
   mall_categories: MallCategory[]
   basic_info: BasicInfo | null
   status: ProductStatus; supplier: string
-  registered_malls: string[]   // 등록된 쇼핑몰 이름 목록
+  registered_malls: (string | { mall: string; code: string })[]   // 등록된 쇼핑몰 이름 및 상품코드
   created_at?: string
 }
 const DEF_BASIC_INFO: BasicInfo = {
@@ -387,7 +387,7 @@ function rowToProduct(row: any): Product {
     channel_prices: (row.channel_prices ?? []) as ChannelPrice[],
     mall_categories: (row.mall_categories ?? []) as MallCategory[],
     basic_info: (row.basic_info ?? null) as BasicInfo | null,
-    registered_malls: (row.registered_malls ?? []) as string[],
+    registered_malls: (row.registered_malls ?? []) as (string | { mall: string; code: string })[],
     created_at: row.created_at ?? '',
   }
 }
@@ -439,6 +439,7 @@ export default function ProductsPage() {
   const [isEdit, setIsEdit]           = useState<Product | null>(null)
   const [channelPriceTarget, setChannelPriceTarget] = useState<Product | null>(null)
   const [editStatusId, setEditStatusId] = useState<string | null>(null)
+  const [hoveredBadge, setHoveredBadge] = useState<string | null>(null)
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
 
@@ -1107,7 +1108,7 @@ export default function ProductsPage() {
         channel_prices: [] as ChannelPrice[],
         mall_categories: [] as MallCategory[],
         basic_info: null,
-        registered_malls: [] as string[],
+        registered_malls: [] as (string | { mall: string; code: string })[],
       }
 
       if (!payload.name) { errors.push(`${code}: 상품명 없음`); continue }
@@ -1657,36 +1658,73 @@ export default function ProductsPage() {
                     </td>
 
                     {/* 쇼핑몰 등록현황 */}
-                    <td style={{ paddingTop:10, paddingBottom:10 }}>
+                    <td style={{ paddingTop:10, paddingBottom:10, overflow:'visible' }}>
                       <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
                         {(p.registered_malls ?? []).length === 0 ? (
                           <span style={{ fontSize:11, color:'#cbd5e1', fontWeight:600 }}>-</span>
-                        ) : (p.registered_malls ?? []).map((mall, mi) => {
-                          const abbr = mall.replace(/\s/g,'').slice(0,2)
+                        ) : (p.registered_malls ?? []).map((mallData, mi) => {
+                          const mallName = typeof mallData === 'string' ? mallData : mallData.mall
+                          const mallCode = typeof mallData === 'string' ? '' : (mallData.code || '')
+                          const abbr = mallName.replace(/\s/g,'').slice(0,2)
                           const colors: Record<string,{bg:string;color:string}> = {
                             '쿠팡':    { bg:'#fff7ed', color:'#c2410c' },
                             '네이버':  { bg:'#f0fdf4', color:'#15803d' },
+                            '스마트스토어': { bg:'#f0fdf4', color:'#15803d' },
                             '11번가':  { bg:'#fff1f2', color:'#be123c' },
                             '에이블리':{ bg:'#fdf4ff', color:'#7e22ce' },
                             '지그재그':{ bg:'#eff6ff', color:'#2563eb' },
                             'G마켓':   { bg:'#fefce8', color:'#854d0e' },
                             '옥션':    { bg:'#f0fdf4', color:'#166534' },
                           }
-                          const cs = colors[mall] ?? { bg:'#f1f5f9', color:'#475569' }
+                          const cs = colors[mallName] ?? { bg:'#f1f5f9', color:'#475569' }
+                          const badgeKey = `${p.id}-${mi}`
+                          const isHovered = hoveredBadge === badgeKey
                           return (
-                            <span
+                            <div
                               key={mi}
-                              title={mall}
-                              style={{
-                                display:'inline-flex', alignItems:'center', justifyContent:'center',
-                                width:28, height:22, borderRadius:5, fontSize:10, fontWeight:900,
-                                background:cs.bg, color:cs.color,
-                                border:`1px solid ${cs.color}33`, cursor:'default',
-                                flexShrink:0,
-                              }}
+                              style={{ position:'relative', display:'inline-block', flexShrink:0 }}
+                              onMouseEnter={() => setHoveredBadge(badgeKey)}
+                              onMouseLeave={() => setHoveredBadge(null)}
                             >
-                              {abbr}
-                            </span>
+                              <span
+                                style={{
+                                  display:'inline-flex', alignItems:'center', justifyContent:'center',
+                                  width:28, height:22, borderRadius:5, fontSize:10, fontWeight:900,
+                                  background:cs.bg, color:cs.color,
+                                  border:`1px solid ${cs.color}33`, cursor:'default',
+                                }}
+                              >
+                                {abbr}
+                              </span>
+                              {isHovered && (
+                                <div style={{
+                                  position:'absolute', bottom:'calc(100% + 4px)', left:'50%',
+                                  transform:'translateX(-50%)',
+                                  background:'#1e293b', borderRadius:7,
+                                  padding:'6px 10px', zIndex:9999,
+                                  boxShadow:'0 4px 12px rgba(0,0,0,0.25)',
+                                  minWidth:120, textAlign:'center',
+                                  pointerEvents:'auto',
+                                }}>
+                                  <div style={{ fontSize:9, color:'#94a3b8', fontWeight:700, marginBottom:3, whiteSpace:'nowrap' }}>
+                                    {mallName}
+                                  </div>
+                                  <div style={{
+                                    fontFamily:'monospace', fontSize:11.5, fontWeight:700,
+                                    color: mallCode ? '#e2e8f0' : '#475569',
+                                    userSelect:'text', cursor:'text',
+                                    whiteSpace:'nowrap',
+                                  }}>
+                                    {mallCode || '코드 없음'}
+                                  </div>
+                                  {mallCode && (
+                                    <div style={{ fontSize:9, color:'#64748b', marginTop:3, whiteSpace:'nowrap' }}>
+                                      드래그하여 복사
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                           )
                         })}
                       </div>
