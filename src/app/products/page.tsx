@@ -459,32 +459,42 @@ export default function ProductsPage() {
     ))
   }
 
-  /* ── Supabase 로드 (캐시 우선 → 백그라운드 최신화) ── */
+  /* ── 상품 로드 (서버 API → RLS 우회) ── */
   useEffect(() => {
     const load = async () => {
       const saved = loadSavedCats()
       if (saved && saved.length > 0) setExtraCats(saved)
 
-      // 캐시가 신선하면 즉시 표시, 아니면 로딩 시작
+      // 캐시가 신선하면 즉시 표시
       const hasFresh = hasFreshCache()
-      if (!hasFresh) setLoading(true)
+      if (hasFresh) {
+        const cached = loadProductsFromCache()
+        if (cached.length > 0) {
+          setProducts(cached)
+          setLoading(false)
+        }
+      }
 
-      // 항상 Supabase에서 최신 데이터 fetch
-      const { data, error } = await supabase.from('pm_products')
-        .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,mall_categories,registered_malls,created_at')
-        .order('code', { ascending: true })
-
-      if (!error && data) {
-        const loaded = data.map(rowToProduct)
-        setProducts(loaded)
-        autoMarkSoldout(loaded)
-        try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
-        const dbCats = loaded.map(p => p.category).filter(c => c && c !== '전체')
-        setExtraCats(prev => {
-          const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
-          const merged = [...new Set([...base, ...dbCats])]
-          saveCats(merged); return merged
-        })
+      // 항상 서버 API로 최신 데이터 fetch (service role key → RLS 우회)
+      try {
+        const res = await fetch('/api/pm-products')
+        if (res.ok) {
+          const raw = await res.json()
+          if (Array.isArray(raw)) {
+            const loaded = raw.map(rowToProduct)
+            setProducts(loaded)
+            autoMarkSoldout(loaded)
+            try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
+            const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
+            setExtraCats(prev => {
+              const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
+              const merged = [...new Set([...base, ...dbCats])]
+              saveCats(merged); return merged
+            })
+          }
+        }
+      } catch (e) {
+        console.error('상품 로드 실패:', e)
       }
       setLoading(false)
     }
