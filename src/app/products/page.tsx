@@ -1697,31 +1697,36 @@ export default function ProductsPage() {
                                 {abbr}
                               </span>
                               {isHovered && (
+                                /* 뱃지와 툴팁 사이 틈을 투명 패딩으로 메워 마우스 이탈 방지 */
                                 <div style={{
-                                  position:'absolute', bottom:'calc(100% + 4px)', left:'50%',
+                                  position:'absolute', bottom:'100%', left:'50%',
                                   transform:'translateX(-50%)',
-                                  background:'#1e293b', borderRadius:7,
-                                  padding:'6px 10px', zIndex:9999,
-                                  boxShadow:'0 4px 12px rgba(0,0,0,0.25)',
-                                  minWidth:120, textAlign:'center',
+                                  paddingBottom:6, zIndex:9999,
                                   pointerEvents:'auto',
                                 }}>
-                                  <div style={{ fontSize:9, color:'#94a3b8', fontWeight:700, marginBottom:3, whiteSpace:'nowrap' }}>
-                                    {mallName}
-                                  </div>
                                   <div style={{
-                                    fontFamily:'monospace', fontSize:11.5, fontWeight:700,
-                                    color: mallCode ? '#e2e8f0' : '#475569',
-                                    userSelect:'text', cursor:'text',
-                                    whiteSpace:'nowrap',
+                                    background:'#1e293b', borderRadius:7,
+                                    padding:'6px 10px',
+                                    boxShadow:'0 4px 12px rgba(0,0,0,0.25)',
+                                    minWidth:120, textAlign:'center',
                                   }}>
-                                    {mallCode || '코드 없음'}
-                                  </div>
-                                  {mallCode && (
-                                    <div style={{ fontSize:9, color:'#64748b', marginTop:3, whiteSpace:'nowrap' }}>
-                                      드래그하여 복사
+                                    <div style={{ fontSize:9, color:'#94a3b8', fontWeight:700, marginBottom:3, whiteSpace:'nowrap' }}>
+                                      {mallName}
                                     </div>
-                                  )}
+                                    <div style={{
+                                      fontFamily:'monospace', fontSize:11.5, fontWeight:700,
+                                      color: mallCode ? '#e2e8f0' : '#475569',
+                                      userSelect:'text', cursor:'text',
+                                      whiteSpace:'nowrap',
+                                    }}>
+                                      {mallCode || '코드 없음'}
+                                    </div>
+                                    {mallCode && (
+                                      <div style={{ fontSize:9, color:'#64748b', marginTop:3, whiteSpace:'nowrap' }}>
+                                        드래그하여 복사
+                                      </div>
+                                    )}
+                                  </div>
                                 </div>
                               )}
                             </div>
