@@ -22,7 +22,7 @@ export async function GET(req: NextRequest) {
 
   const { data, error } = await supabase
     .from('pm_products')
-    .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,mall_categories,registered_malls,created_at')
+    .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,registered_malls,created_at')
     .order('code', { ascending: true })
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
