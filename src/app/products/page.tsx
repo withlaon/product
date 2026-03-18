@@ -392,6 +392,35 @@ function rowToProduct(row: any): Product {
   }
 }
 
+/* ─── API 헬퍼 (service role key 서버 API → RLS 완전 우회) ────── */
+const PM_API = '/api/pm-products'
+const jsonHeaders = { 'Content-Type': 'application/json' }
+
+async function pmPatch(id: string, fields: Record<string, unknown>) {
+  const res = await fetch(PM_API, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify({ id, ...fields }) })
+  const json = await res.json()
+  return { error: res.ok ? null : (json.error ?? '수정 실패'), code: json.code }
+}
+async function pmPatchByCategory(filterCategory: string, newCategory: string) {
+  await fetch(PM_API, { method: 'PATCH', headers: jsonHeaders, body: JSON.stringify({ filter_category: filterCategory, category: newCategory }) })
+}
+async function pmInsert(payload: Record<string, unknown>) {
+  const res = await fetch(PM_API, { method: 'POST', headers: jsonHeaders, body: JSON.stringify(payload) })
+  const json = await res.json()
+  return { data: res.ok ? json : null, error: res.ok ? null : (json.error ?? '등록 실패'), code: json.code }
+}
+async function pmDelete(id: string) {
+  const res = await fetch(PM_API, { method: 'DELETE', headers: jsonHeaders, body: JSON.stringify({ id }) })
+  const json = await res.json()
+  return { error: res.ok ? null : (json.error ?? '삭제 실패') }
+}
+async function pmGetBasicInfo(id: string) {
+  const res = await fetch(`${PM_API}?id=${id}`)
+  if (!res.ok) return null
+  const json = await res.json()
+  return json?.basic_info ?? null
+}
+
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */
 export default function ProductsPage() {
   // 캐시에서 즉시 초기화 → KPI 숫자가 첫 렌더부터 표시됨
@@ -451,9 +480,7 @@ export default function ProductsPage() {
       p.options.every(o => optStock(o) === 0)
     )
     if (toSoldout.length === 0) return
-    await Promise.all(toSoldout.map(p =>
-      supabase.from('pm_products').update({ status: 'soldout' }).eq('id', p.id)
-    ))
+    await Promise.all(toSoldout.map(p => pmPatch(p.id, { status: 'soldout' })))
     setProducts(prev => prev.map(p =>
       toSoldout.find(s => s.id === p.id) ? { ...p, status: 'soldout' } : p
     ))
@@ -533,7 +560,7 @@ export default function ProductsPage() {
       return updated
     })
     setProducts(prev => prev.map(p => p.category === catEditTarget ? { ...p, category: newName } : p))
-    supabase.from('pm_products').update({ category: newName }).eq('category', catEditTarget).then(() => {})
+    pmPatchByCategory(catEditTarget, newName)
     if (activeTab === catEditTarget) setActiveTab(newName)
     setCatEditTarget(null)
   }
@@ -557,7 +584,7 @@ export default function ProductsPage() {
     if (!basicInfoTarget) return
     setBasicInfoSaving(true)
     const payload = { basic_info: basicInfoForm, status: 'ready_to_ship' as ProductStatus }
-    const { error } = await supabase.from('pm_products').update(payload).eq('id', basicInfoTarget.id)
+    const { error } = await pmPatch(basicInfoTarget.id, payload)
     setBasicInfoSaving(false)
     if (error) { console.error('기본정보 저장 오류:', error); return }
     setProducts(prev => prev.map(p => p.id === basicInfoTarget.id ? { ...p, ...payload } : p))
@@ -568,7 +595,7 @@ export default function ProductsPage() {
   const handleBasicInfoUpdate = async () => {
     if (!basicInfoTarget) return
     setBasicInfoSaving(true)
-    const { error } = await supabase.from('pm_products').update({ basic_info: basicInfoForm }).eq('id', basicInfoTarget.id)
+    const { error } = await pmPatch(basicInfoTarget.id, { basic_info: basicInfoForm })
     setBasicInfoSaving(false)
     if (error) { console.error('기본정보 수정 오류:', error); return }
     setProducts(prev => prev.map(p => p.id === basicInfoTarget.id ? { ...p, basic_info: basicInfoForm } : p))
@@ -622,13 +649,12 @@ export default function ProductsPage() {
       status: editForm.status, supplier: editForm.supplier,
       options,
     }
-    const { error } = await supabase.from('pm_products').update(payload).eq('id', isEdit.id)
+    const { error, code } = await pmPatch(isEdit.id, payload)
     setEditSaving(false)
     if (error) {
-      // integer 컬럼에 소숫점 저장 시 반올림 재시도
-      if (error.code === '22P02' || error.message?.includes('integer')) {
+      if (code === '22P02' || error.includes('integer')) {
         const intPayload = { ...payload, cost_price: Math.round(payload.cost_price) }
-        const { error: e2 } = await supabase.from('pm_products').update(intPayload).eq('id', isEdit.id)
+        const { error: e2 } = await pmPatch(isEdit.id, intPayload)
         if (e2) { console.error('수정 오류(int fallback):', e2); return }
         setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...intPayload, channel_prices: p.channel_prices } : p))
       } else { console.error('수정 오류:', error); return }
@@ -714,36 +740,30 @@ export default function ProductsPage() {
       basic_info: null,
       registered_malls: [],
     }
-    const { data, error } = await supabase.from('pm_products').insert(payload).select().single()
+    const { data, error, code } = await pmInsert(payload)
     setAddSubmitting(false)
     if (error) {
       console.error('상품 등록 오류:', error)
-      // integer 컬럼에 소숫점 저장 시도 시 반올림 재시도
-      if (error.code === '22P02' || error.message?.includes('integer')) {
+      if (code === '22P02' || error.includes('integer')) {
         const intPayload = { ...payload, cost_price: Math.round(payload.cost_price) }
-        const { data: d2, error: e2 } = await supabase.from('pm_products').insert(intPayload).select().single()
-        if (e2) { setAddDbError(`등록 실패: ${e2.message}\n※ Supabase에서 cost_price 컬럼 타입을 numeric으로 변경해주세요.`); return }
+        const { data: d2, error: e2 } = await pmInsert(intPayload)
+        if (e2) { setAddDbError(`등록 실패: ${e2}`); return }
         const p = rowToProduct(d2)
         setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
         if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => { const u=[...prev,cat]; saveCats(u); return u })
         setIsAdd(false); setForm(INIT_FORM); return
       }
-      // mall_categories/basic_info 컬럼 미존재 시 fallback
-      if (error.message?.includes('mall_categories') || error.message?.includes('basic_info') || error.code === '42703') {
+      if (error.includes('mall_categories') || error.includes('basic_info') || code === '42703') {
         const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload
         void _mc; void _bi
-        const { data: d2, error: e2 } = await supabase.from('pm_products').insert(fallback).select().single()
-        if (e2) { setAddDbError(`등록 실패: ${e2.message}\n※ Supabase에서 schema.sql의 ALTER TABLE 구문을 실행해주세요.`); return }
+        const { data: d2, error: e2 } = await pmInsert(fallback)
+        if (e2) { setAddDbError(`등록 실패: ${e2}`); return }
         const p = rowToProduct(d2)
         setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
-        if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
-          const updated = [...prev, cat]
-          saveCats(updated)
-          return updated
-        })
+        if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => { const u=[...prev,cat]; saveCats(u); return u })
         setIsAdd(false); setForm(INIT_FORM); return
       }
-      setAddDbError(`등록 실패: ${error.message}`)
+      setAddDbError(`등록 실패: ${error}`)
       return
     }
     const p = rowToProduct(data)
@@ -759,13 +779,13 @@ export default function ProductsPage() {
 
   const handleChannelPriceSave = async (prices: ChannelPrice[]) => {
     if (!channelPriceTarget) return
-    const { error } = await supabase.from('pm_products').update({ channel_prices: prices }).eq('id', channelPriceTarget.id)
+    const { error } = await pmPatch(channelPriceTarget.id, { channel_prices: prices })
     if (!error) setProducts(prev => prev.map(p => p.id === channelPriceTarget.id ? { ...p, channel_prices: prices } : p))
     setChannelPriceTarget(null)
   }
 
   const handleStatusChange = async (id: string, status: ProductStatus) => {
-    const { error } = await supabase.from('pm_products').update({ status }).eq('id', id)
+    const { error } = await pmPatch(id, { status })
     if (!error) setProducts(prev => prev.map(p => p.id === id ? { ...p, status } : p))
     setEditStatusId(null)
   }
@@ -775,7 +795,7 @@ export default function ProductsPage() {
   }
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from('pm_products').delete().eq('id', id)
+    const { error } = await pmDelete(id)
     if (!error) { setProducts(prev => prev.filter(p => p.id !== id)); invalidateProductsCache() }
   }
 
@@ -1098,50 +1118,47 @@ export default function ProductsPage() {
 
       const existing = products.find(p => p.code === code)
       if (existing) {
-        let { error } = await supabase.from('pm_products').update(payload).eq('id', existing.id)
+        let { error, code: errCode } = await pmPatch(existing.id, payload)
         if (error) {
-          if (error.code === '22P02' || error.message?.includes('integer')) {
-            // DB 컬럼이 integer인 경우 반올림 재시도
-            const { error: e2 } = await supabase.from('pm_products').update(payloadIntCost).eq('id', existing.id)
-            if (e2) { errors.push(`${code}: ${e2.message}`); continue }
+          if (errCode === '22P02' || error.includes('integer')) {
+            const { error: e2 } = await pmPatch(existing.id, payloadIntCost)
+            if (e2) { errors.push(`${code}: ${e2}`); continue }
             setProducts(prev => prev.map(p => p.code === code ? { ...p, ...payloadIntCost } : p))
-          } else if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
+          } else if (errCode === '42703' || error.includes('mall_categories') || error.includes('basic_info')) {
             const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload; void _mc; void _bi
-            const { error: e2 } = await supabase.from('pm_products').update(fallback).eq('id', existing.id)
+            const { error: e2, code: ec2 } = await pmPatch(existing.id, fallback)
             if (e2) {
-              // 그래도 integer 오류면 반올림 재시도
-              if (e2.code === '22P02' || e2.message?.includes('integer')) {
+              if (ec2 === '22P02' || e2.includes('integer')) {
                 const { mall_categories: _mc2, basic_info: _bi2, ...fallbackInt } = payloadIntCost; void _mc2; void _bi2
-                const { error: e3 } = await supabase.from('pm_products').update(fallbackInt).eq('id', existing.id)
-                if (e3) { errors.push(`${code}: ${e3.message}`); continue }
-              } else { errors.push(`${code}: ${e2.message}`); continue }
+                const { error: e3 } = await pmPatch(existing.id, fallbackInt)
+                if (e3) { errors.push(`${code}: ${e3}`); continue }
+              } else { errors.push(`${code}: ${e2}`); continue }
             }
-          } else { errors.push(`${code}: ${error.message}`); continue }
+          } else { errors.push(`${code}: ${error}`); continue }
         }
         setProducts(prev => prev.map(p => p.code === code ? { ...p, ...payload } : p))
         updateCount++
       } else {
-        let { data, error } = await supabase.from('pm_products').insert(payload).select().single()
+        let { data, error, code: errCode } = await pmInsert(payload)
         if (error) {
-          if (error.code === '22P02' || error.message?.includes('integer')) {
-            // DB 컬럼이 integer인 경우 반올림 재시도
-            const { data: d2, error: e2 } = await supabase.from('pm_products').insert(payloadIntCost).select().single()
-            if (e2) { errors.push(`${code}: ${e2.message}`); continue }
+          if (errCode === '22P02' || error.includes('integer')) {
+            const { data: d2, error: e2 } = await pmInsert(payloadIntCost)
+            if (e2) { errors.push(`${code}: ${e2}`); continue }
             setProducts(prev => [...prev, rowToProduct(d2)].sort((a,b) => a.code.localeCompare(b.code)))
-          } else if (error.code === '42703' || error.message?.includes('mall_categories') || error.message?.includes('basic_info')) {
+          } else if (errCode === '42703' || error.includes('mall_categories') || error.includes('basic_info')) {
             const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload; void _mc; void _bi
-            const { data: d2, error: e2 } = await supabase.from('pm_products').insert(fallback).select().single()
+            const { data: d2, error: e2, code: ec2 } = await pmInsert(fallback)
             if (e2) {
-              if (e2.code === '22P02' || e2.message?.includes('integer')) {
+              if (ec2 === '22P02' || e2.includes('integer')) {
                 const { mall_categories: _mc2, basic_info: _bi2, ...fallbackInt } = payloadIntCost; void _mc2; void _bi2
-                const { data: d3, error: e3 } = await supabase.from('pm_products').insert(fallbackInt).select().single()
-                if (e3) { errors.push(`${code}: ${e3.message}`); continue }
+                const { data: d3, error: e3 } = await pmInsert(fallbackInt)
+                if (e3) { errors.push(`${code}: ${e3}`); continue }
                 setProducts(prev => [...prev, rowToProduct(d3)].sort((a,b) => a.code.localeCompare(b.code)))
-              } else { errors.push(`${code}: ${e2.message}`); continue }
+              } else { errors.push(`${code}: ${e2}`); continue }
             } else if (d2) {
               setProducts(prev => [...prev, rowToProduct(d2)].sort((a,b) => a.code.localeCompare(b.code)))
             }
-          } else { errors.push(`${code}: ${error.message}`); continue }
+          } else { errors.push(`${code}: ${error}`); continue }
         } else if (data) {
           setProducts(prev => [...prev, rowToProduct(data)].sort((a,b) => a.code.localeCompare(b.code)))
         }
@@ -1522,9 +1539,7 @@ export default function ProductsPage() {
                       <button onClick={async () => {
                           let bi = p.basic_info
                           if (!bi) {
-                            // basic_info lazy load
-                            const { data } = await supabase.from('pm_products').select('basic_info').eq('id', p.id).single()
-                            bi = data?.basic_info ?? null
+                            bi = await pmGetBasicInfo(p.id)
                             if (bi) setProducts(prev => prev.map(pp => pp.id === p.id ? { ...pp, basic_info: bi } : pp))
                           }
                           setBasicInfoTarget({ ...p, basic_info: bi })
