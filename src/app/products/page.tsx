@@ -560,48 +560,66 @@ export default function ProductsPage() {
       ])
 
     const runLoad = async () => {
-      const PER_TIMEOUT = 7000
+      const PER_TIMEOUT = 8000
 
-      // ── 1단계: Next.js API route (service_role key → RLS 우회) ──
+      let apiResult:  Product[] | null = null
+      let dbResult:   Product[] | null = null
       let apiErr = ''
-      for (let i = 0; i < 2; i++) {
-        if (done) return
-        try {
-          if (i > 0) await new Promise(r => setTimeout(r, 1500))
-          const res = await timedFetch('/api/pm-products', PER_TIMEOUT)
-          if (res.ok) {
-            const raw = await res.json()
-            if (Array.isArray(raw)) { finish(raw.map(rowToProduct), ''); return }
-            apiErr = `API 응답 형식 오류: ${JSON.stringify(raw).slice(0, 100)}`
-          } else {
-            const body = await res.text().catch(() => '')
-            apiErr = `API HTTP ${res.status}: ${body.slice(0, 100)}`
+      let dbErr  = ''
+
+      // ── API route (service_role key, RLS 우회) ──
+      const apiFetch = async () => {
+        for (let i = 0; i < 2; i++) {
+          if (done) return
+          try {
+            if (i > 0) await new Promise(r => setTimeout(r, 1200))
+            const res = await timedFetch('/api/pm-products', PER_TIMEOUT)
+            if (res.ok) {
+              const raw = await res.json()
+              if (Array.isArray(raw)) { apiResult = raw.map(rowToProduct); return }
+              apiErr = `API 응답형식 오류: ${JSON.stringify(raw).slice(0, 80)}`
+            } else {
+              const body = await res.text().catch(() => '')
+              apiErr = `API HTTP ${res.status}: ${body.slice(0, 80)}`
+            }
+          } catch (e) {
+            apiErr = `API: ${e instanceof Error ? e.message : String(e)}`
           }
-        } catch (e) {
-          apiErr = `API 오류: ${e instanceof Error ? e.message : String(e)}`
         }
       }
 
-      // ── 2단계: 직접 Supabase 클라이언트 (anon key 폴백) ──
-      if (!done) {
+      // ── 직접 Supabase 클라이언트 (anon key) ──
+      const directFetch = async () => {
+        if (done) return
         try {
-          // Supabase FilterBuilder를 실제 Promise로 변환 후 타임아웃 경쟁
           const dbPromise = supabase
             .from('pm_products')
             .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,registered_malls,created_at')
             .order('code', { ascending: true })
-            .then(r => r)  // PostgrestResponse<T> 형태의 실제 Promise
+            .then(r => r)
 
           const result = await timedSupabaseQuery(dbPromise, PER_TIMEOUT)
           const { data, error } = result as { data: unknown[] | null; error: { message: string } | null }
           if (!error && Array.isArray(data)) {
-            finish(data.map(rowToProduct), ''); return
+            dbResult = data.map(rowToProduct)
+          } else {
+            dbErr = `Supabase직접: ${error?.message ?? 'no data'}`
           }
-          const dbErr = `Supabase 직접쿼리: ${error?.message ?? 'no data'}`
-          finish(null, `${apiErr} | ${dbErr}`)
         } catch (e) {
-          finish(null, `${apiErr} | Supabase: ${e instanceof Error ? e.message : String(e)}`)
+          dbErr = `Supabase직접: ${e instanceof Error ? e.message : String(e)}`
         }
+      }
+
+      // ── API route 와 직접 Supabase 를 병렬 실행, 먼저 성공하면 바로 적용 ──
+      await Promise.all([apiFetch(), directFetch()])
+
+      if (done) return  // 안전 타이머가 이미 실행한 경우
+
+      const loaded = apiResult ?? dbResult
+      if (loaded) {
+        finish(loaded, '')
+      } else {
+        finish(null, `${apiErr} | ${dbErr}`)
       }
     }
 

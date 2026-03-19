@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 
-const SUPABASE_URL  = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const SERVICE_KEY   = process.env.SUPABASE_SERVICE_ROLE_KEY!
+export const runtime = 'nodejs'
+export const maxDuration = 10
+
+const SUPABASE_URL  = (process.env.NEXT_PUBLIC_SUPABASE_URL  ?? '').trim()
+const SERVICE_KEY   = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
 const TABLE         = 'pm_products'
 const TIMEOUT_MS    = 9000   // Vercel Hobby 10s 제한 내에 완료
 
