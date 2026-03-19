@@ -7,8 +7,9 @@ import {
 } from 'lucide-react'
 import {
   loadOrders, saveOrders, loadMappings, lookupMapping, channelToMp,
+  loadShippedOrders, saveShippedOrders,
 } from '@/lib/orders'
-import type { Order } from '@/lib/orders'
+import type { Order, ShippedOrder } from '@/lib/orders'
 import { loadAllDayData } from '@/app/order-registration/page'
 
 /* ─── 쇼핑몰별 다운로드 설정 ────────────────────────────── */
@@ -193,6 +194,31 @@ export default function InvoiceSendPage() {
     else            setChecked(prev => { const n = new Set(prev); filtered.forEach(o => n.add(o.id)); return n })
   }
 
+  /* ── 출고확정: 선택된 주문을 출고내역으로 이동 ── */
+  const handleConfirmShipping = () => {
+    if (checked.size === 0) return
+    const now = new Date().toISOString()
+    const toConfirm = orders.filter(o => checked.has(o.id) && o.status === 'shipped' && o.tracking_number)
+    if (toConfirm.length === 0) return
+
+    // 출고내역에 추가
+    const existing = loadShippedOrders()
+    const existingIds = new Set(existing.map(o => o.id))
+    const newShipped: ShippedOrder[] = toConfirm
+      .filter(o => !existingIds.has(o.id))
+      .map(o => ({ ...o, status: 'shipped' as const, shipped_at: now }))
+    saveShippedOrders([...existing, ...newShipped])
+
+    // pm_orders_v1에서 상태를 'delivered'로 변경
+    const updatedOrders = orders.map(o =>
+      checked.has(o.id) ? { ...o, status: 'delivered' as const } : o
+    )
+    setOrders(updatedOrders)
+    saveOrders(updatedOrders)
+    setChecked(new Set())
+    alert(`${toConfirm.length}건이 출고내역으로 이동되었습니다.`)
+  }
+
   const handleDownload = (mallId: DownloadMallId, mallLabel: string) => {
     setDownloading(mallId)
     try {
@@ -294,9 +320,17 @@ export default function InvoiceSendPage() {
           style={{ flex: 1, height: 34, fontSize: 13, border: 'none', outline: 'none', background: 'transparent' }}
         />
         {checked.size > 0 && (
-          <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>
-            {checked.size}건 선택
-          </span>
+          <>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>
+              {checked.size}건 선택
+            </span>
+            <button
+              onClick={handleConfirmShipping}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+            >
+              <Truck size={13} /> 출고확정
+            </button>
+          </>
         )}
       </div>
 

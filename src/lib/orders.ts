@@ -1,3 +1,22 @@
+/* ─── 출고내역 타입 ─────────────────────────────────────── */
+export interface ShippedOrder extends Omit<Order, 'status'> {
+  status: 'shipped' | 'delivered'
+  shipped_at: string   // 출고확정 시각 ISO string
+}
+
+export const SHIPPED_ORDERS_KEY = 'pm_shipped_orders_v1'
+
+export function loadShippedOrders(): ShippedOrder[] {
+  try {
+    const raw = localStorage.getItem(SHIPPED_ORDERS_KEY)
+    return raw ? (JSON.parse(raw) as ShippedOrder[]) : []
+  } catch { return [] }
+}
+
+export function saveShippedOrders(orders: ShippedOrder[]) {
+  try { localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(orders)) } catch {}
+}
+
 /* ─── 주문 타입 ─────────────────────────────────────────── */
 export interface OrderItem {
   product_name: string
