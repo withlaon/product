@@ -146,19 +146,6 @@ function hasFreshCache(): boolean {
   } catch { return false }
 }
 
-/** fetch with AbortController timeout */
-async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), ms)
-  try {
-    const res = await fetch(url, { signal: controller.signal })
-    clearTimeout(timer)
-    return res
-  } catch (e) {
-    clearTimeout(timer)
-    throw e
-  }
-}
 
 function loadSavedCats(): string[] | null {
   try { const r = localStorage.getItem(CATS_STORAGE_KEY); return r ? JSON.parse(r) : null } catch { return null }
@@ -519,80 +506,108 @@ export default function ProductsPage() {
     const saved = loadSavedCats()
     if (saved && saved.length > 0) setExtraCats(saved)
 
-    // SSR에서 localStorage 없으므로 useEffect에서 캐시 즉시 표시
+    // 캐시가 있으면 즉시 표시 (SSR에선 localStorage 없으므로 useEffect에서 처리)
     const anyCache = loadProductsAnyCached()
     if (anyCache.length > 0) {
       setProducts(anyCache)
       setLoading(false)
     }
 
-    const FETCH_TIMEOUT = 12000
+    let done = false // 중복 상태 업데이트 방지
 
-    const applyLoaded = (loaded: Product[]) => {
-      setProducts(loaded)
-      setLoadError(false)
-      setLoadErrorMsg('')
-      autoMarkSoldout(loaded)
-      try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
-      const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
-      setExtraCats(prev => {
-        const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
-        const merged = [...new Set([...base, ...dbCats])]
-        saveCats(merged); return merged
-      })
+    const finish = (loaded: Product[] | null, errMsg: string) => {
+      if (done) return
+      done = true
+      clearTimeout(safetyTimer)
+      if (loaded && loaded.length >= 0) {
+        setProducts(loaded)
+        setLoadError(false)
+        setLoadErrorMsg('')
+        autoMarkSoldout(loaded)
+        try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
+        const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
+        setExtraCats(prev => {
+          const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
+          const merged = [...new Set([...base, ...dbCats])]
+          saveCats(merged); return merged
+        })
+      } else {
+        const msg = errMsg || '알 수 없는 오류'
+        console.error('상품 로드 최종 실패:', msg)
+        setLoadErrorMsg(msg)
+        if (loadProductsAnyCached().length === 0) setLoadError(true)
+      }
       setLoading(false)
     }
 
-    const loadFromServer = async (): Promise<void> => {
-      // ── 1단계: 서버 API route (service role key, RLS 우회) ──
-      let apiError = ''
-      for (let attempt = 0; attempt <= 2; attempt++) {
+    // 안전 타임아웃: 최대 18초 후 강제 종료 (무한 대기 방지)
+    const safetyTimer = setTimeout(() => {
+      finish(null, '요청 시간 초과(18s). 네트워크/Supabase 연결을 확인하세요.')
+    }, 18000)
+
+    // 타임아웃을 걸 수 있는 fetch 래퍼
+    const timedFetch = (url: string, ms: number): Promise<Response> => {
+      const ac = new AbortController()
+      const t = setTimeout(() => ac.abort(), ms)
+      return fetch(url, { signal: ac.signal }).finally(() => clearTimeout(t))
+    }
+
+    // 타임아웃을 걸 수 있는 Supabase 쿼리 래퍼 (PromiseLike → Promise 변환 포함)
+    const timedSupabaseQuery = <T,>(query: PromiseLike<T>, ms: number): Promise<T> =>
+      Promise.race([
+        Promise.resolve(query),
+        new Promise<T>((_, reject) => setTimeout(() => reject(new Error(`supabase timeout ${ms}ms`)), ms)),
+      ])
+
+    const runLoad = async () => {
+      const PER_TIMEOUT = 7000
+
+      // ── 1단계: Next.js API route (service_role key → RLS 우회) ──
+      let apiErr = ''
+      for (let i = 0; i < 2; i++) {
+        if (done) return
         try {
-          if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt))
-          const res = await fetchWithTimeout('/api/pm-products', FETCH_TIMEOUT)
+          if (i > 0) await new Promise(r => setTimeout(r, 1500))
+          const res = await timedFetch('/api/pm-products', PER_TIMEOUT)
           if (res.ok) {
             const raw = await res.json()
-            if (Array.isArray(raw)) {
-              applyLoaded(raw.map(rowToProduct))
-              return
-            }
-            apiError = `응답 형식 오류: ${JSON.stringify(raw).slice(0, 120)}`
+            if (Array.isArray(raw)) { finish(raw.map(rowToProduct), ''); return }
+            apiErr = `API 응답 형식 오류: ${JSON.stringify(raw).slice(0, 100)}`
           } else {
             const body = await res.text().catch(() => '')
-            apiError = `HTTP ${res.status}: ${body.slice(0, 120)}`
+            apiErr = `API HTTP ${res.status}: ${body.slice(0, 100)}`
           }
         } catch (e) {
-          apiError = e instanceof Error ? e.message : String(e)
+          apiErr = `API 오류: ${e instanceof Error ? e.message : String(e)}`
         }
       }
 
-      // ── 2단계: 직접 Supabase 클라이언트 폴백 (anon key) ──
-      try {
-        const { data, error } = await supabase
-          .from('pm_products')
-          .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,registered_malls,created_at')
-          .order('code', { ascending: true })
+      // ── 2단계: 직접 Supabase 클라이언트 (anon key 폴백) ──
+      if (!done) {
+        try {
+          // Supabase FilterBuilder를 실제 Promise로 변환 후 타임아웃 경쟁
+          const dbPromise = supabase
+            .from('pm_products')
+            .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,registered_malls,created_at')
+            .order('code', { ascending: true })
+            .then(r => r)  // PostgrestResponse<T> 형태의 실제 Promise
 
-        if (!error && Array.isArray(data)) {
-          applyLoaded(data.map(rowToProduct))
-          return
+          const result = await timedSupabaseQuery(dbPromise, PER_TIMEOUT)
+          const { data, error } = result as { data: unknown[] | null; error: { message: string } | null }
+          if (!error && Array.isArray(data)) {
+            finish(data.map(rowToProduct), ''); return
+          }
+          const dbErr = `Supabase 직접쿼리: ${error?.message ?? 'no data'}`
+          finish(null, `${apiErr} | ${dbErr}`)
+        } catch (e) {
+          finish(null, `${apiErr} | Supabase: ${e instanceof Error ? e.message : String(e)}`)
         }
-        const directErr = error ? error.message : 'no data'
-        const finalMsg = `서버 API: ${apiError} / 직접쿼리: ${directErr}`
-        console.error('상품 로드 실패:', finalMsg)
-        setLoadErrorMsg(finalMsg)
-      } catch (e) {
-        const finalMsg = `서버 API: ${apiError} / 직접쿼리: ${e instanceof Error ? e.message : String(e)}`
-        console.error('상품 로드 실패:', finalMsg)
-        setLoadErrorMsg(finalMsg)
       }
-
-      // 캐시가 없을 때만 에러 UI 표시 (캐시 있으면 기존 데이터 유지)
-      if (loadProductsAnyCached().length === 0) setLoadError(true)
-      setLoading(false)
     }
 
-    loadFromServer()
+    runLoad()
+
+    return () => { done = true; clearTimeout(safetyTimer) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
