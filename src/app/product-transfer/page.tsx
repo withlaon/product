@@ -278,10 +278,11 @@ export default function OrdersPage() {
   const [showMapping, setShowMapping] = useState(false)
   const [draftMappings, setDraftMappings] = useState<MappingStore>({})
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
-  const [myProducts, setMyProducts]       = useState<MyProduct[]>([])
+  const [myProducts, setMyProducts]           = useState<MyProduct[]>([])
   const [productsLoading, setProductsLoading] = useState(false)
   const [mappingFilter, setMappingFilter]     = useState<'all' | 'unmapped'>('all')
   const [mappingSearch, setMappingSearch]     = useState('')
+  const [autoMapResult, setAutoMapResult]     = useState<{ mapped: number; skipped: number; total: number } | null>(null)
 
   useEffect(() => {
     setOrders(loadOrders())
@@ -390,6 +391,7 @@ export default function OrdersPage() {
     setDraftMappings(draft)
     setMappingFilter('all')
     setMappingSearch('')
+    setAutoMapResult(null)
     setShowMapping(true)   // 즉시 모달 표시
 
     // 상품이 아직 없으면 백그라운드에서 로드
@@ -411,6 +413,67 @@ export default function OrdersPage() {
       }
       fetchProds()
     }
+  }
+
+  /* ── 자동매핑 ───────────────────────────────────────────── */
+  const handleAutoMap = () => {
+    if (myProducts.length === 0) return
+
+    let mapped = 0
+    let skipped = 0
+    const total = Object.keys(draftMappings).length
+
+    const normalize = (s: string) => s.toLowerCase().replace(/[\s,_\-]/g, '')
+
+    const matchOption = (opt: string, productOpts: MyProductOption[]): MyProductOption | undefined => {
+      if (!opt) return undefined
+      const normOpt = normalize(opt)
+      return (
+        productOpts.find(o => normalize(o.name) === normOpt) ??
+        productOpts.find(o => o.korean_name && normalize(o.korean_name) === normOpt) ??
+        productOpts.find(o => o.korean_name && normOpt.includes(normalize(o.korean_name))) ??
+        productOpts.find(o => normalize(o.name) !== '' && normOpt.includes(normalize(o.name))) ??
+        productOpts.find(o => o.korean_name && normalize(o.korean_name).includes(normOpt))
+      )
+    }
+
+    const matchProduct = (productName: string): MyProduct | undefined => {
+      const norm = normalize(productName)
+      return (
+        myProducts.find(p => normalize(p.name) === norm) ??
+        myProducts.find(p => p.abbr && normalize(p.abbr) === norm) ??
+        myProducts.find(p => normalize(p.name).includes(norm) && norm.length >= 4) ??
+        myProducts.find(p => norm.includes(normalize(p.name)) && normalize(p.name).length >= 4) ??
+        myProducts.find(p => p.abbr && norm.includes(normalize(p.abbr)) && normalize(p.abbr).length >= 2)
+      )
+    }
+
+    const newDraft = { ...draftMappings }
+    Object.entries(newDraft).forEach(([key, m]) => {
+      // 이미 연결된 항목은 건너뜀 (수동 저장된 매핑 보존)
+      if (m.product_id) { skipped++; return }
+
+      const [productName, option] = splitMappingKey(key)
+      const p = matchProduct(productName)
+      if (!p) return
+
+      const matchedOpt = option ? matchOption(option, p.options) : undefined
+
+      newDraft[key] = {
+        ...m,
+        product_id:      p.id,
+        product_code:    p.code,
+        my_product_name: p.name,
+        my_option_name:  matchedOpt?.name,
+        barcode:         matchedOpt?.barcode,
+        abbreviation:    m.abbreviation || p.abbr || '',
+        loca:            m.loca || p.loca || '',
+      }
+      mapped++
+    })
+
+    setDraftMappings(newDraft)
+    setAutoMapResult({ mapped, skipped, total })
   }
 
   /* 매핑에서 내 상품 선택 시 */
@@ -784,8 +847,26 @@ export default function OrdersPage() {
             </div>
 
             {/* 툴바 */}
-            <div style={{ padding: '10px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: '#fafafa' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, maxWidth: 300, border: '1.5px solid #e2e8f0', borderRadius: 9, padding: '0 10px', background: 'white', height: 32 }}>
+            <div style={{ padding: '10px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: '#fafafa', flexWrap: 'wrap' }}>
+              {/* 자동매핑 버튼 */}
+              <button
+                onClick={() => { setAutoMapResult(null); handleAutoMap() }}
+                disabled={myProducts.length === 0 || productsLoading}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '6px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: myProducts.length === 0 ? 'not-allowed' : 'pointer', border: 'none',
+                  background: myProducts.length === 0 ? '#e2e8f0' : 'linear-gradient(135deg,#2563eb,#7c3aed)',
+                  color: myProducts.length === 0 ? '#94a3b8' : 'white',
+                  boxShadow: myProducts.length > 0 ? '0 2px 8px rgba(37,99,235,0.3)' : 'none',
+                  flexShrink: 0,
+                }}
+              >
+                ✨ 자동매핑
+              </button>
+
+              <div style={{ width: 1, height: 20, background: '#e2e8f0', flexShrink: 0 }} />
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, minWidth: 180, maxWidth: 260, border: '1.5px solid #e2e8f0', borderRadius: 9, padding: '0 10px', background: 'white', height: 32 }}>
                 <Search size={12} style={{ color: '#94a3b8', flexShrink: 0 }} />
                 <input value={mappingSearch} onChange={e => setMappingSearch(e.target.value)}
                   placeholder="주문서 상품명 검색..."
@@ -803,6 +884,32 @@ export default function OrdersPage() {
               </div>
               {productsLoading && <span style={{ fontSize: 12, color: '#94a3b8' }}>상품 불러오는 중...</span>}
             </div>
+
+            {/* 자동매핑 결과 배너 */}
+            {autoMapResult && (
+              <div style={{ padding: '10px 24px', borderBottom: '1px solid #f1f5f9', flexShrink: 0, display: 'flex', alignItems: 'center', gap: 10, background: autoMapResult.mapped > 0 ? '#f0fdf4' : '#fffbeb' }}>
+                <span style={{ fontSize: 13, fontWeight: 800, color: autoMapResult.mapped > 0 ? '#16a34a' : '#d97706' }}>
+                  {autoMapResult.mapped > 0 ? '✅' : '⚠️'} 자동매핑 결과:
+                </span>
+                <span style={{ fontSize: 12.5, color: '#334155', fontWeight: 600 }}>
+                  총 {autoMapResult.total}건 중{' '}
+                  <strong style={{ color: '#2563eb' }}>{autoMapResult.mapped}건 자동매핑 완료</strong>
+                  {autoMapResult.skipped > 0 && `, ${autoMapResult.skipped}건 기존 매핑 유지`}
+                  {autoMapResult.total - autoMapResult.mapped - autoMapResult.skipped > 0 &&
+                    `, `}<strong style={{ color: '#dc2626' }}>{autoMapResult.total - autoMapResult.mapped - autoMapResult.skipped > 0 ? `${autoMapResult.total - autoMapResult.mapped - autoMapResult.skipped}건 수동 매핑 필요` : ''}</strong>
+                </span>
+                {autoMapResult.total - autoMapResult.mapped - autoMapResult.skipped > 0 && (
+                  <button onClick={() => setMappingFilter('unmapped')}
+                    style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#dc2626', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 6, padding: '3px 10px', cursor: 'pointer' }}>
+                    미연결만 보기
+                  </button>
+                )}
+                <button onClick={() => setAutoMapResult(null)}
+                  style={{ fontSize: 11, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', padding: '2px 6px', marginLeft: autoMapResult.total - autoMapResult.mapped - autoMapResult.skipped > 0 ? 0 : 'auto' }}>
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* 컬럼 헤더 */}
             <div style={{ padding: '0 24px', flexShrink: 0 }}>
