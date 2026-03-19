@@ -1,418 +1,645 @@
 'use client'
 
-import { useState, useEffect, useRef, useMemo } from 'react'
-import * as XLSX from 'xlsx'
+import { useState, useEffect, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import {
-  Upload, ShoppingCart, Calendar, X, ChevronRight,
-  Package, AlertCircle, CheckCircle2,
+  ShoppingCart, Calendar, Package, Map, Printer,
+  Truck, X, Save, ChevronLeft, ChevronRight,
+  BarChart2, ListFilter, CheckSquare, Square,
 } from 'lucide-react'
+import {
+  loadOrders, saveOrders, loadMappings, saveMappings, extractColor,
+  saveSelectedForInvoice, STATUS_MAP,
+} from '@/lib/orders'
+import type { Order, MappingStore } from '@/lib/orders'
 
-/* ─── 타입 ─────────────────────────────────────────────── */
-interface OrderItem {
-  product_name: string
-  sku?: string
-  quantity: number
-  unit_price?: number
-  option?: string
+/* ─── 하위 호환 re-export (product-edit-transfer가 import 함) ── */
+export { loadOrders, saveOrders } from '@/lib/orders'
+export { ORDERS_KEY } from '@/lib/orders'
+export type { Order } from '@/lib/orders'
+
+/* ─── 유틸 ──────────────────────────────────────────────── */
+function getToday() { return new Date().toISOString().slice(0, 10) }
+
+function addDays(d: string, n: number) {
+  const dt = new Date(d + 'T00:00:00')
+  dt.setDate(dt.getDate() + n)
+  return dt.toISOString().slice(0, 10)
 }
 
-export interface Order {
-  id: string
-  order_date: string        // YYYY-MM-DD
-  order_number: string
-  channel: string
-  customer_name: string
-  customer_phone?: string
-  shipping_address: string
-  items: OrderItem[]
-  total_amount: number
-  status: 'pending' | 'confirmed' | 'shipped' | 'delivered' | 'cancelled'
-  tracking_number?: string
-  carrier?: string
-  memo?: string
-  uploaded_at: string
+function addMonths(ym: string, n: number) {
+  const [y, m] = ym.split('-').map(Number)
+  const dt = new Date(y, m - 1 + n, 1)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
 }
 
-/* ─── localStorage 헬퍼 ────────────────────────────────── */
-export const ORDERS_KEY = 'pm_orders_v1'
-
-export function loadOrders(): Order[] {
-  try {
-    const raw = localStorage.getItem(ORDERS_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch { return [] }
+function fmtDate(d: string) {
+  const [y, m, day] = d.split('-')
+  const dow = ['일', '월', '화', '수', '목', '금', '토'][new Date(d + 'T00:00:00').getDay()]
+  return `${y}년 ${parseInt(m)}월 ${parseInt(day)}일 (${dow})`
 }
 
-export function saveOrders(orders: Order[]) {
-  try { localStorage.setItem(ORDERS_KEY, JSON.stringify(orders)) } catch {}
+function fmtMonth(ym: string) {
+  const [y, m] = ym.split('-')
+  return `${y}년 ${parseInt(m)}월`
 }
 
-/* ─── 상태 정보 ────────────────────────────────────────── */
-const STATUS_MAP = {
-  pending:   { label: '결제완료', color: '#2563eb', bg: '#eff6ff' },
-  confirmed: { label: '처리중',   color: '#d97706', bg: '#fffbeb' },
-  shipped:   { label: '배송중',   color: '#7c3aed', bg: '#f5f3ff' },
-  delivered: { label: '배송완료', color: '#059669', bg: '#ecfdf5' },
-  cancelled: { label: '취소',     color: '#dc2626', bg: '#fef2f2' },
-} as const
-
-function toDate(val: unknown): string {
-  if (!val) return ''
-  if (typeof val === 'number') {
-    // Excel serial number
-    const d = new Date(Math.round((val - 25569) * 86400 * 1000))
-    return d.toISOString().slice(0, 10)
+/* ─── 피킹리스트 출력 ─────────────────────────────────────── */
+function printPickingList(orders: Order[], mappings: MappingStore) {
+  interface PickRow {
+    order_number: string
+    customer_name: string
+    shipping_address: string
+    abbreviation: string
+    color: string
+    quantity: number
+    loca: string
+    sku: string
   }
-  try {
-    const d = new Date(String(val))
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
-  } catch {}
-  return ''
+
+  const rows: PickRow[] = []
+  for (const order of orders) {
+    for (const item of order.items) {
+      const m = mappings[item.product_name] ?? { abbreviation: '', loca: '' }
+      rows.push({
+        order_number: order.order_number,
+        customer_name: order.customer_name,
+        shipping_address: order.shipping_address,
+        abbreviation: m.abbreviation || item.product_name,
+        color: extractColor(item.option ?? ''),
+        quantity: item.quantity,
+        loca: m.loca ?? '',
+        sku: item.sku ?? '',
+      })
+    }
+  }
+
+  // LOCA 내림차순
+  rows.sort((a, b) => b.loca.localeCompare(a.loca, 'ko'))
+
+  // 같은 수령인+주소 카운트
+  const addrCount: Record<string, number> = {}
+  for (const r of rows) {
+    const k = `${r.customer_name}||${r.shipping_address}`
+    addrCount[k] = (addrCount[k] ?? 0) + 1
+  }
+
+  const today = getToday()
+  const trRows = rows.map((r, i) => {
+    const k = `${r.customer_name}||${r.shipping_address}`
+    const isDup = addrCount[k] > 1
+    const isQty2 = r.quantity >= 2
+    let bg = ''
+    if (isDup && isQty2) bg = 'background:#bbf7d0'
+    else if (isDup)      bg = 'background:#bfdbfe'
+    else if (isQty2)     bg = 'background:#fef9c3'
+    return `<tr style="${bg}">
+      <td style="text-align:center">${i + 1}</td>
+      <td><b>${r.customer_name}</b></td>
+      <td>${r.abbreviation}</td>
+      <td>${r.color}</td>
+      <td style="text-align:center;font-weight:900;${isQty2 ? 'color:#b45309' : ''}">${r.quantity}</td>
+      <td style="text-align:center;font-family:monospace">${r.loca}</td>
+    </tr>`
+  }).join('')
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>피킹리스트 ${today}</title>
+<style>
+  body{font-family:'Malgun Gothic',sans-serif;margin:20px}
+  h2{margin:0 0 12px}
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th,td{border:1px solid #475569;padding:6px 10px}
+  th{background:#1e293b;color:#fff;font-weight:800;text-align:left}
+  .btn{padding:8px 18px;background:#1e293b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;margin-bottom:14px}
+  @media print{.btn{display:none}}
+</style></head><body>
+<h2>📋 피킹리스트 — ${today} (${rows.length}건)</h2>
+<button class="btn" onclick="window.print()">🖨 인쇄</button>
+<table>
+  <thead><tr>
+    <th style="width:36px">NO</th>
+    <th>수령인</th>
+    <th>상품약어</th>
+    <th>색상</th>
+    <th style="width:46px">수량</th>
+    <th style="width:70px">LOCA</th>
+  </tr></thead>
+  <tbody>${trRows}</tbody>
+</table>
+<div style="margin-top:14px;font-size:11px;color:#64748b">
+  ● 파란배경: 동일 수령인·주소 중복  ● 노란배경: 수량 2개 이상  ● 초록배경: 중복+2개이상
+</div>
+</body></html>`
+
+  const w = window.open('', '_blank', 'width=900,height=720')
+  if (w) { w.document.write(html); w.document.close() }
 }
 
-/* ─── 페이지 컴포넌트 ──────────────────────────────────── */
+/* ─── 페이지 ─────────────────────────────────────────────── */
 export default function OrdersPage() {
-  const [orders, setOrders]             = useState<Order[]>([])
+  const router = useRouter()
+  const today  = getToday()
+  const now    = new Date()
+  const curYM  = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`
+
+  const [orders, setOrders]         = useState<Order[]>([])
+  const [viewMode, setViewMode]     = useState<'monthly' | 'daily'>('daily')
+  const [selectedDate, setSelectedDate] = useState(today)
+  const [selectedMonth, setSelectedMonth] = useState(curYM)
+  const [checked, setChecked]       = useState<Set<string>>(new Set())
+  const [mappings, setMappings]     = useState<MappingStore>({})
+  const [showMapping, setShowMapping] = useState(false)
+  const [draftMappings, setDraftMappings] = useState<MappingStore>({})
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
-  const [importing, setImporting]       = useState(false)
-  const [importMsg, setImportMsg]       = useState<{ text: string; ok: boolean } | null>(null)
-  const fileRef = useRef<HTMLInputElement>(null)
 
-  const today = useMemo(() => new Date().toISOString().slice(0, 10), [])
-  const now   = useMemo(() => new Date(), [])
-  const yr    = now.getFullYear()
-  const mo    = now.getMonth()
+  useEffect(() => {
+    setOrders(loadOrders())
+    setMappings(loadMappings())
+  }, [])
 
-  useEffect(() => { setOrders(loadOrders()) }, [])
+  /* 스토리지 변경 이벤트 수신 (같은 탭 내 주문서등록 동기화) */
+  useEffect(() => {
+    const onStorage = () => {
+      setOrders(loadOrders())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
-  /* 이번 달 주문 → 최신 날짜순 */
-  const monthOrders = useMemo(() =>
+  /* 날짜별 표시 주문 */
+  const dailyOrders = useMemo(() =>
     orders
-      .filter(o => {
-        const d = new Date(o.order_date)
-        return d.getFullYear() === yr && d.getMonth() === mo
-      })
-      .sort((a, b) =>
-        b.order_date.localeCompare(a.order_date) ||
-        b.uploaded_at.localeCompare(a.uploaded_at)
-      ),
-  [orders, yr, mo])
+      .filter(o => o.order_date === selectedDate)
+      .sort((a, b) => {
+        const ch = a.channel.localeCompare(b.channel, 'ko')
+        if (ch !== 0) return ch
+        const skuA = a.items[0]?.sku ?? ''
+        const skuB = b.items[0]?.sku ?? ''
+        const sk = skuA.localeCompare(skuB)
+        if (sk !== 0) return sk
+        const optA = a.items[0]?.option ?? ''
+        const optB = b.items[0]?.option ?? ''
+        const op = optA.localeCompare(optB, 'ko')
+        if (op !== 0) return op
+        return (b.items[0]?.unit_price ?? 0) - (a.items[0]?.unit_price ?? 0)
+      }),
+  [orders, selectedDate])
 
-  /* 날짜별 그룹 */
-  const grouped = useMemo(() => {
+  /* 월별 표시 주문 (날짜 그룹화) */
+  const monthOrders = useMemo(() =>
+    orders.filter(o => o.order_date.startsWith(selectedMonth))
+      .sort((a, b) => a.order_date.localeCompare(b.order_date) || a.channel.localeCompare(b.channel, 'ko')),
+  [orders, selectedMonth])
+
+  const monthGrouped = useMemo(() => {
     const g: Record<string, Order[]> = {}
-    monthOrders.forEach(o => {
-      if (!g[o.order_date]) g[o.order_date] = []
-      g[o.order_date].push(o)
-    })
+    monthOrders.forEach(o => { (g[o.order_date] ??= []).push(o) })
     return g
   }, [monthOrders])
 
-  const todayCount    = orders.filter(o => o.order_date === today).length
-  const shippedCount  = monthOrders.filter(o => o.status === 'shipped').length
+  const displayOrders = viewMode === 'daily' ? dailyOrders : monthOrders
 
-  /* ─── 엑셀 업로드 처리 ─────────────────────────────── */
-  const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (!file) return
-    setImporting(true)
-    setImportMsg(null)
-
-    const reader = new FileReader()
-    reader.onload = (ev) => {
-      try {
-        const wb   = XLSX.read(ev.target?.result, { type: 'array', cellDates: true })
-        const ws   = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
-
-        if (rows.length === 0) {
-          setImportMsg({ text: '엑셀에 데이터가 없습니다.', ok: false })
-          setImporting(false)
-          return
-        }
-
-        const existing   = loadOrders()
-        const newOrders: Order[] = []
-        let duplicates = 0
-
-        rows.forEach((row, idx) => {
-          const orderNum = String(
-            row['주문번호'] ?? row['order_number'] ?? row['OrderNumber'] ?? `AUTO-${Date.now()}-${idx}`
-          )
-
-          if (existing.find(o => o.order_number === orderNum)) {
-            duplicates++
-            return
-          }
-
-          const rawDate   = row['주문일'] ?? row['주문일시'] ?? row['order_date'] ?? row['날짜'] ?? ''
-          const orderDate = toDate(rawDate) || today
-
-          newOrders.push({
-            id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
-            order_date: orderDate,
-            order_number: orderNum,
-            channel: String(row['채널'] ?? row['쇼핑몰'] ?? row['channel'] ?? row['Mall'] ?? '-'),
-            customer_name: String(row['수취인'] ?? row['고객명'] ?? row['받는분성명'] ?? row['customer_name'] ?? '-'),
-            customer_phone: String(row['연락처'] ?? row['전화번호'] ?? row['받는분 연락처'] ?? row['phone'] ?? ''),
-            shipping_address: String(row['배송주소'] ?? row['주소'] ?? row['받는분주소'] ?? row['address'] ?? ''),
-            items: [{
-              product_name: String(row['상품명'] ?? row['product_name'] ?? row['상품'] ?? '-'),
-              sku: String(row['SKU'] ?? row['상품코드'] ?? row['sku'] ?? ''),
-              quantity: Number(row['수량'] ?? row['quantity'] ?? row['qty'] ?? 1),
-              unit_price: Number(row['단가'] ?? row['판매가'] ?? row['price'] ?? 0),
-              option: String(row['옵션'] ?? row['option'] ?? ''),
-            }],
-            total_amount: Number(row['결제금액'] ?? row['총액'] ?? row['total'] ?? row['주문금액'] ?? 0),
-            status: 'pending',
-            tracking_number: String(row['운송장번호'] ?? row['송장번호'] ?? row['tracking'] ?? ''),
-            carrier: String(row['택배사'] ?? row['carrier'] ?? ''),
-            memo: String(row['메모'] ?? row['비고'] ?? row['memo'] ?? ''),
-            uploaded_at: new Date().toISOString(),
-          })
-        })
-
-        const all = [...existing, ...newOrders]
-        saveOrders(all)
-        setOrders(all)
-        setImportMsg({
-          text: `${newOrders.length}건 등록 완료${duplicates > 0 ? ` (중복 ${duplicates}건 제외)` : ''}`,
-          ok: true,
-        })
-      } catch (err) {
-        setImportMsg({ text: '파일 파싱 오류: ' + String(err), ok: false })
-      }
-      setImporting(false)
-      if (fileRef.current) fileRef.current.value = ''
+  /* 전체 선택 */
+  const allChecked = displayOrders.length > 0 && displayOrders.every(o => checked.has(o.id))
+  const toggleAll = () => {
+    if (allChecked) {
+      setChecked(prev => { const n = new Set(prev); displayOrders.forEach(o => n.delete(o.id)); return n })
+    } else {
+      setChecked(prev => { const n = new Set(prev); displayOrders.forEach(o => n.add(o.id)); return n })
     }
-    reader.readAsArrayBuffer(file)
+  }
+  const toggleOne = (id: string) => setChecked(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+
+  /* 매핑 모달 열기 */
+  const openMapping = () => {
+    const allProducts = Array.from(new Set(orders.flatMap(o => o.items.map(i => i.product_name))))
+    const draft: MappingStore = {}
+    allProducts.forEach(name => {
+      draft[name] = mappings[name] ?? { abbreviation: '', loca: '' }
+    })
+    setDraftMappings(draft)
+    setShowMapping(true)
   }
 
-  /* ─── 렌더 ─────────────────────────────────────────── */
-  return (
-    <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+  const saveMapping = () => {
+    saveMappings(draftMappings)
+    setMappings(draftMappings)
+    setShowMapping(false)
+  }
 
-      {/* KPI 카드 */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
+  /* 피킹리스트 출력 */
+  const handlePickingList = () => {
+    const targets = checked.size > 0
+      ? orders.filter(o => checked.has(o.id))
+      : displayOrders
+    if (targets.length === 0) return alert('출력할 주문이 없습니다.')
+    printPickingList(targets, mappings)
+  }
+
+  /* 송장등록으로 이동 */
+  const goToInvoice = () => {
+    const targets = checked.size > 0
+      ? Array.from(checked)
+      : displayOrders.map(o => o.id)
+    if (targets.length === 0) return alert('이동할 주문을 선택하세요.')
+    saveSelectedForInvoice(targets)
+    router.push('/product-edit-transfer/print')
+  }
+
+  /* KPI */
+  const todayCount   = orders.filter(o => o.order_date === today).length
+  const monthCount   = orders.filter(o => o.order_date.startsWith(curYM)).length
+  const shippedCount = orders.filter(o => o.status === 'shipped').length
+
+  /* ─── 테이블 행 공통 렌더 ─────────────────────────────── */
+  const renderRow = (order: Order) => {
+    const st   = STATUS_MAP[order.status] ?? STATUS_MAP.pending
+    const item = order.items[0]
+    const isChk = checked.has(order.id)
+    return (
+      <div
+        key={order.id}
+        style={{
+          display: 'grid',
+          gridTemplateColumns: '32px 140px 80px 100px 1fr 80px 90px 90px',
+          gap: 8, padding: '11px 16px',
+          borderBottom: '1px solid #f1f5f9',
+          alignItems: 'center',
+          background: isChk ? '#eff6ff' : 'transparent',
+          transition: 'background 100ms',
+          cursor: 'pointer',
+        }}
+        onClick={() => setSelectedOrder(order)}
+      >
+        <span
+          onClick={e => { e.stopPropagation(); toggleOne(order.id) }}
+          style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+        >
+          {isChk
+            ? <CheckSquare size={15} style={{ color: '#2563eb' }} />
+            : <Square size={15} style={{ color: '#cbd5e1' }} />}
+        </span>
+        <span style={{ fontSize: 11, fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {order.order_number}
+        </span>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {order.channel}
+        </span>
+        <span style={{ fontSize: 11.5, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {item?.sku || '-'}
+        </span>
+        <div style={{ overflow: 'hidden' }}>
+          <p style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {item?.product_name}
+          </p>
+          {item?.option && (
+            <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {item.option}
+            </p>
+          )}
+        </div>
+        <span style={{ fontSize: 12, fontWeight: 700, color: '#475569', textAlign: 'right' }}>
+          {item?.unit_price ? item.unit_price.toLocaleString() : '-'}
+        </span>
+        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>
+          {order.customer_name}
+        </span>
+        <span style={{
+          fontSize: 11, fontWeight: 800,
+          color: st.color, background: st.bg,
+          padding: '3px 7px', borderRadius: 6, textAlign: 'center', display: 'block',
+        }}>
+          {st.label}
+        </span>
+      </div>
+    )
+  }
+
+  const TableHeader = () => (
+    <div style={{
+      display: 'grid',
+      gridTemplateColumns: '32px 140px 80px 100px 1fr 80px 90px 90px',
+      gap: 8, padding: '9px 16px',
+      background: '#f8fafc', borderBottom: '1px solid #e2e8f0',
+      position: 'sticky', top: 0, zIndex: 1,
+    }}>
+      <span
+        onClick={toggleAll}
+        style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+      >
+        {allChecked
+          ? <CheckSquare size={14} style={{ color: '#2563eb' }} />
+          : <Square size={14} style={{ color: '#cbd5e1' }} />}
+      </span>
+      {['주문번호', '쇼핑몰', '상품코드', '상품명/옵션', '판매가', '수취인', '상태'].map(h => (
+        <span key={h} style={{ fontSize: 10.5, fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+          {h}
+        </span>
+      ))}
+    </div>
+  )
+
+  /* ─── 렌더 ────────────────────────────────────────────── */
+  return (
+    <div style={{ maxWidth: 1200, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+      {/* KPI */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
         {[
-          { label: '오늘 주문',    value: todayCount,           color: '#2563eb' },
-          { label: '이번달 전체',  value: monthOrders.length,   color: '#7c3aed' },
-          { label: '배송중',       value: shippedCount,         color: '#059669' },
+          { label: '오늘 주문',   value: todayCount,   color: '#2563eb' },
+          { label: '이번달 전체', value: monthCount,   color: '#7c3aed' },
+          { label: '배송중',      value: shippedCount, color: '#059669' },
         ].map(k => (
-          <div key={k.label} className="pm-card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: `${k.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <ShoppingCart size={18} style={{ color: k.color }} />
+          <div key={k.label} className="pm-card" style={{ padding: '14px 18px', display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{ width: 38, height: 38, borderRadius: 10, background: `${k.color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <ShoppingCart size={17} style={{ color: k.color }} />
             </div>
             <div>
-              <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
-              <p style={{ fontSize: 11.5, color: '#94a3b8', fontWeight: 700, marginTop: 3 }}>{k.label}</p>
+              <p style={{ fontSize: 22, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
+              <p style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, marginTop: 3 }}>{k.label}</p>
             </div>
           </div>
         ))}
       </div>
 
-      {/* 업로드 바 */}
-      <div className="pm-card" style={{ padding: '14px 20px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-        <button
-          onClick={() => fileRef.current?.click()}
-          disabled={importing}
-          style={{
-            display: 'flex', alignItems: 'center', gap: 7,
-            padding: '9px 18px', background: '#2563eb', color: 'white',
-            borderRadius: 10, fontSize: 13, fontWeight: 800, border: 'none', cursor: 'pointer',
-            opacity: importing ? 0.6 : 1,
-          }}
-        >
-          <Upload size={14} />
-          {importing ? '처리 중...' : '오늘 주문 엑셀 업로드'}
-        </button>
-        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFile} />
+      {/* 툴바 */}
+      <div className="pm-card" style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
 
-        {importMsg && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 8, background: importMsg.ok ? '#ecfdf5' : '#fef2f2' }}>
-            {importMsg.ok
-              ? <CheckCircle2 size={13} style={{ color: '#059669' }} />
-              : <AlertCircle  size={13} style={{ color: '#dc2626' }} />}
-            <span style={{ fontSize: 12.5, fontWeight: 700, color: importMsg.ok ? '#059669' : '#dc2626' }}>
-              {importMsg.text}
+        {/* 뷰 모드 토글 */}
+        <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
+          {(['daily', 'monthly'] as const).map(mode => (
+            <button
+              key={mode}
+              onClick={() => setViewMode(mode)}
+              style={{
+                padding: '7px 14px', fontSize: 12.5, fontWeight: 800, border: 'none', cursor: 'pointer',
+                background: viewMode === mode ? '#1e293b' : 'white',
+                color: viewMode === mode ? 'white' : '#64748b',
+                display: 'flex', alignItems: 'center', gap: 5,
+              }}
+            >
+              {mode === 'daily' ? <><Calendar size={13} />날짜별</> : <><BarChart2 size={13} />월별</>}
+            </button>
+          ))}
+        </div>
+
+        {/* 날짜/월 이동 */}
+        {viewMode === 'daily' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => setSelectedDate(d => addDays(d, -1))}
+              style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronLeft size={14} style={{ color: '#64748b' }} />
+            </button>
+            <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a', minWidth: 180, textAlign: 'center' }}>
+              {fmtDate(selectedDate)}
+              {selectedDate === today && <span style={{ fontSize: 10, background: '#dbeafe', color: '#2563eb', fontWeight: 900, padding: '2px 6px', borderRadius: 20, marginLeft: 6 }}>TODAY</span>}
             </span>
+            <button onClick={() => selectedDate < today && setSelectedDate(d => addDays(d, 1))}
+              disabled={selectedDate >= today}
+              style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #e2e8f0', background: 'white', cursor: selectedDate < today ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: selectedDate < today ? 1 : 0.3 }}>
+              <ChevronRight size={14} style={{ color: '#64748b' }} />
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <button onClick={() => setSelectedMonth(m => addMonths(m, -1))}
+              style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronLeft size={14} style={{ color: '#64748b' }} />
+            </button>
+            <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a', minWidth: 120, textAlign: 'center' }}>
+              {fmtMonth(selectedMonth)}
+            </span>
+            <button onClick={() => selectedMonth < curYM && setSelectedMonth(m => addMonths(m, 1))}
+              disabled={selectedMonth >= curYM}
+              style={{ width: 28, height: 28, borderRadius: 7, border: '1px solid #e2e8f0', background: 'white', cursor: selectedMonth < curYM ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: selectedMonth < curYM ? 1 : 0.3 }}>
+              <ChevronRight size={14} style={{ color: '#64748b' }} />
+            </button>
           </div>
         )}
 
-        <span style={{ fontSize: 11.5, color: '#94a3b8' }}>
-          주문번호 · 주문일 · 채널 · 수취인 · 상품명 · 수량 · 배송주소 컬럼 포함 파일
-        </span>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
+          {checked.size > 0 && (
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '6px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+              <CheckSquare size={13} />{checked.size}건 선택
+            </span>
+          )}
+
+          {/* 매핑하기 */}
+          <button onClick={openMapping} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#f1f5f9', color: '#475569', borderRadius: 9, fontSize: 12.5, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+            <Map size={13} />매핑하기
+          </button>
+
+          {/* 피킹리스트 출력 */}
+          <button onClick={handlePickingList} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#059669', color: 'white', borderRadius: 9, fontSize: 12.5, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+            <Printer size={13} />피킹리스트 출력
+          </button>
+
+          {/* 송장등록으로 이동 */}
+          <button onClick={goToInvoice} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#7c3aed', color: 'white', borderRadius: 9, fontSize: 12.5, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+            <Truck size={13} />송장등록 이동
+          </button>
+        </div>
       </div>
 
       {/* 주문 목록 */}
-      <div className="pm-card" style={{ overflow: 'hidden' }}>
-        <div style={{ padding: '14px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Calendar size={15} style={{ color: '#64748b' }} />
-          <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>
-            {yr}년 {mo + 1}월 주문 목록
-          </span>
-          <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>({monthOrders.length}건)</span>
-        </div>
-
-        {monthOrders.length === 0 ? (
-          <div style={{ padding: '64px 20px', textAlign: 'center' }}>
-            <Package size={40} style={{ margin: '0 auto 14px', opacity: 0.15, display: 'block' }} />
-            <p style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>이번달 주문내역이 없습니다</p>
-            <p style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>상단의 엑셀 업로드 버튼으로 주문을 등록하세요</p>
-          </div>
-        ) : (
-          <div>
-            {/* 헤더 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '160px 90px 1fr 100px 90px 32px',
-              gap: 12, padding: '8px 20px',
-              background: '#f8fafc', borderBottom: '1px solid #f1f5f9',
-            }}>
-              {['주문번호', '채널', '상품명', '수취인', '상태', ''].map(h => (
-                <span key={h} style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
-              ))}
+      <div className="pm-card" style={{ overflow: 'hidden', flex: 1 }}>
+        {viewMode === 'daily' ? (
+          <>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <ListFilter size={14} style={{ color: '#64748b' }} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>
+                {fmtDate(selectedDate)} 주문
+              </span>
+              <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>({dailyOrders.length}건)</span>
+              <span style={{ fontSize: 11, color: '#cbd5e1', marginLeft: 8 }}>
+                정렬: 쇼핑몰 → 상품코드 → 옵션 → 판매가↓
+              </span>
             </div>
-
-            {Object.entries(grouped)
-              .sort(([a], [b]) => b.localeCompare(a))
-              .map(([date, dayOrders]) => (
-                <div key={date}>
-                  {/* 날짜 구분선 */}
-                  <div style={{
-                    padding: '7px 20px',
-                    background: '#f8fafc',
-                    borderBottom: '1px solid #f1f5f9',
-                    borderTop: '1px solid #f1f5f9',
-                    display: 'flex', alignItems: 'center', gap: 8,
-                  }}>
-                    <span style={{ fontSize: 11.5, fontWeight: 800, color: '#475569' }}>
-                      {date === today ? `📅 오늘 (${date})` : `📅 ${date}`}
-                    </span>
-                    <span style={{ fontSize: 11, color: '#94a3b8' }}>{dayOrders.length}건</span>
-                  </div>
-
-                  {dayOrders.map(order => {
-                    const st = STATUS_MAP[order.status] ?? STATUS_MAP.pending
-                    return (
-                      <div
-                        key={order.id}
-                        onClick={() => setSelectedOrder(order)}
-                        style={{
-                          display: 'grid',
-                          gridTemplateColumns: '160px 90px 1fr 100px 90px 32px',
-                          gap: 12, padding: '12px 20px',
-                          borderBottom: '1px solid #f8fafc',
-                          alignItems: 'center', cursor: 'pointer',
-                          transition: 'background 120ms',
-                        }}
-                        onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
-                      >
-                        <span style={{ fontSize: 11.5, fontWeight: 800, color: '#2563eb', fontFamily: 'monospace' }}>
-                          {order.order_number}
+            {dailyOrders.length === 0 ? (
+              <EmptyState text="해당 날짜의 주문이 없습니다" sub="주문서등록 탭에서 주문서를 업로드하세요" />
+            ) : (
+              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
+                <TableHeader />
+                {dailyOrders.map(renderRow)}
+              </div>
+            )}
+          </>
+        ) : (
+          <>
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <BarChart2 size={14} style={{ color: '#64748b' }} />
+              <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{fmtMonth(selectedMonth)} 주문</span>
+              <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>({monthOrders.length}건)</span>
+            </div>
+            {monthOrders.length === 0 ? (
+              <EmptyState text="해당 월의 주문이 없습니다" sub="주문서등록 탭에서 주문서를 업로드하세요" />
+            ) : (
+              <div style={{ overflow: 'auto', maxHeight: 'calc(100vh - 360px)' }}>
+                {Object.entries(monthGrouped)
+                  .sort(([a], [b]) => a.localeCompare(b))
+                  .map(([date, dayOrders]) => (
+                    <div key={date}>
+                      <div style={{
+                        padding: '8px 16px',
+                        background: '#f8fafc', borderBottom: '1px solid #e2e8f0',
+                        borderTop: '1px solid #e2e8f0',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        position: 'sticky', top: 0, zIndex: 2,
+                      }}>
+                        <Calendar size={13} style={{ color: '#64748b' }} />
+                        <span style={{ fontSize: 12, fontWeight: 800, color: '#475569' }}>
+                          {date === today ? `${fmtDate(date)} ⭐ 오늘` : fmtDate(date)}
                         </span>
-                        <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b' }}>{order.channel}</span>
-                        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {order.items[0]?.product_name}
-                          {order.items.length > 1 ? ` 외 ${order.items.length - 1}건` : ''}
-                        </span>
-                        <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a' }}>{order.customer_name}</span>
-                        <span style={{
-                          fontSize: 11.5, fontWeight: 800,
-                          color: st.color, background: st.bg,
-                          padding: '3px 8px', borderRadius: 6, textAlign: 'center',
-                        }}>
-                          {st.label}
-                        </span>
-                        <ChevronRight size={13} style={{ color: '#cbd5e1' }} />
+                        <span style={{ fontSize: 11, color: '#94a3b8' }}>{dayOrders.length}건</span>
                       </div>
-                    )
-                  })}
-                </div>
-              ))}
-          </div>
+                      <TableHeader />
+                      {dayOrders.map(renderRow)}
+                    </div>
+                  ))}
+              </div>
+            )}
+          </>
         )}
       </div>
 
-      {/* 상세 모달 */}
+      {/* ── 매핑 모달 ── */}
+      {showMapping && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.55)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          onClick={() => setShowMapping(false)}
+        >
+          <div
+            style={{ background: 'white', borderRadius: 18, padding: 28, width: '100%', maxWidth: 680, maxHeight: '80vh', overflow: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.18)' }}
+            onClick={e => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 2 }}>상품 매핑 설정</h2>
+                <p style={{ fontSize: 12, color: '#94a3b8' }}>상품약어와 LOCA 위치코드를 입력하세요</p>
+              </div>
+              <button onClick={() => setShowMapping(false)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={14} style={{ color: '#94a3b8' }} />
+              </button>
+            </div>
+
+            {/* 헤더 */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px 100px', gap: 10, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, marginBottom: 8 }}>
+              {['상품명', '약어 (상품약어)', 'LOCA'].map(h => (
+                <span key={h} style={{ fontSize: 11, fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+              ))}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
+              {Object.keys(draftMappings).length === 0 ? (
+                <p style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8', fontSize: 13 }}>
+                  주문관리에 등록된 상품이 없습니다.
+                </p>
+              ) : (
+                Object.entries(draftMappings).map(([name, m]) => (
+                  <div key={name} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 100px', gap: 10, alignItems: 'center', padding: '6px 12px', borderRadius: 8, background: '#fafafa', border: '1px solid #f1f5f9' }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={name}>{name}</span>
+                    <input
+                      value={m.abbreviation}
+                      onChange={e => setDraftMappings(prev => ({ ...prev, [name]: { ...prev[name], abbreviation: e.target.value } }))}
+                      placeholder="약어"
+                      style={{ height: 32, borderRadius: 7, border: '1.5px solid #e2e8f0', padding: '0 10px', fontSize: 12, fontWeight: 600, outline: 'none', width: '100%' }}
+                      onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
+                      onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                    />
+                    <input
+                      value={m.loca}
+                      onChange={e => setDraftMappings(prev => ({ ...prev, [name]: { ...prev[name], loca: e.target.value } }))}
+                      placeholder="LOCA"
+                      style={{ height: 32, borderRadius: 7, border: '1.5px solid #e2e8f0', padding: '0 10px', fontSize: 12, fontWeight: 600, outline: 'none', width: '100%', fontFamily: 'monospace' }}
+                      onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
+                      onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                    />
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button onClick={() => setShowMapping(false)} style={{ padding: '9px 18px', borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                취소
+              </button>
+              <button onClick={saveMapping} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                <Save size={13} />저장
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 주문 상세 모달 ── */}
       {selectedOrder && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.5)', zIndex: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
           onClick={() => setSelectedOrder(null)}
         >
           <div
-            style={{ background: 'white', borderRadius: 16, padding: 28, maxWidth: 560, width: '100%', maxHeight: '82vh', overflow: 'auto' }}
+            style={{ background: 'white', borderRadius: 18, padding: 28, maxWidth: 520, width: '100%', maxHeight: '80vh', overflow: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.18)' }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18 }}>
               <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a' }}>주문 상세</h2>
-              <button onClick={() => setSelectedOrder(null)} style={{ border: 'none', background: 'none', cursor: 'pointer', padding: 4 }}>
-                <X size={18} style={{ color: '#94a3b8' }} />
+              <button onClick={() => setSelectedOrder(null)} style={{ width: 30, height: 30, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={14} style={{ color: '#94a3b8' }} />
               </button>
             </div>
-
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
               {([
                 ['주문번호', selectedOrder.order_number],
+                ['쇼핑몰',   selectedOrder.channel],
                 ['주문일',   selectedOrder.order_date],
-                ['채널',     selectedOrder.channel],
                 ['상태',     STATUS_MAP[selectedOrder.status]?.label ?? '-'],
                 ['수취인',   selectedOrder.customer_name],
                 ['연락처',   selectedOrder.customer_phone || '-'],
               ] as [string, string][]).map(([label, value]) => (
                 <div key={label}>
                   <p style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</p>
-                  <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0f172a' }}>{value}</p>
+                  <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{value}</p>
                 </div>
               ))}
             </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <p style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>배송주소</p>
-              <p style={{ fontSize: 13, fontWeight: 600, color: '#334155' }}>{selectedOrder.shipping_address || '-'}</p>
-            </div>
-
-            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 14, marginBottom: 14 }}>
+            {selectedOrder.shipping_address && (
+              <div style={{ marginBottom: 14 }}>
+                <p style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>배송주소</p>
+                <p style={{ fontSize: 12.5, fontWeight: 600, color: '#334155' }}>{selectedOrder.shipping_address}</p>
+              </div>
+            )}
+            <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 12 }}>
               <p style={{ fontSize: 10.5, fontWeight: 800, color: '#94a3b8', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '0.06em' }}>주문 상품</p>
               {selectedOrder.items.map((item, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 0', borderBottom: '1px solid #f8fafc' }}>
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid #f8fafc' }}>
                   <div>
-                    <p style={{ fontSize: 13.5, fontWeight: 700, color: '#0f172a' }}>{item.product_name}</p>
+                    <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a' }}>{item.product_name}</p>
                     {item.option && <p style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>옵션: {item.option}</p>}
-                    {item.sku   && <p style={{ fontSize: 11,   color: '#94a3b8', marginTop: 2 }}>SKU: {item.sku}</p>}
+                    {item.sku && <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>SKU: {item.sku}</p>}
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 16 }}>
-                    <p style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>×{item.quantity}</p>
+                    <p style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>×{item.quantity}</p>
                     {item.unit_price ? <p style={{ fontSize: 11.5, color: '#64748b', marginTop: 2 }}>{item.unit_price.toLocaleString()}원</p> : null}
                   </div>
                 </div>
               ))}
-              {selectedOrder.total_amount > 0 && (
-                <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 10 }}>
-                  <span style={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>
-                    총 {selectedOrder.total_amount.toLocaleString()}원
-                  </span>
-                </div>
-              )}
             </div>
-
-            {selectedOrder.tracking_number && (
-              <div style={{ padding: '10px 14px', background: '#f0fdf4', borderRadius: 10, marginBottom: 8 }}>
-                <p style={{ fontSize: 12, fontWeight: 800, color: '#059669' }}>
-                  {selectedOrder.carrier && `[${selectedOrder.carrier}] `}운송장: {selectedOrder.tracking_number}
-                </p>
-              </div>
-            )}
-
-            {selectedOrder.memo && (
-              <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: 10 }}>
-                <p style={{ fontSize: 12, color: '#64748b' }}>메모: {selectedOrder.memo}</p>
-              </div>
-            )}
           </div>
         </div>
       )}
+    </div>
+  )
+}
+
+function EmptyState({ text, sub }: { text: string; sub: string }) {
+  return (
+    <div style={{ padding: '60px 20px', textAlign: 'center' }}>
+      <Package size={40} style={{ margin: '0 auto 14px', opacity: 0.12, display: 'block' }} />
+      <p style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>{text}</p>
+      <p style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>{sub}</p>
     </div>
   )
 }

@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Package, Warehouse,
   Settings,
   PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, ShoppingCart, Truck, GitMerge,
-  ClipboardList,
+  ClipboardList, Printer, Send,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -44,7 +44,13 @@ const navGroups: NavGroup[] = [
           { label: '주문서등록', href: '/order-registration', icon: ClipboardList },
         ],
       },
-      { label: '송장등록',     href: '/product-edit-transfer', icon: Truck },
+      {
+        label: '송장등록',     href: '/product-edit-transfer', icon: Truck,
+        children: [
+          { label: '송장출력용', href: '/product-edit-transfer/print', icon: Printer },
+          { label: '송장전송용', href: '/product-edit-transfer/send',  icon: Send },
+        ],
+      },
       { label: '재고관리',     href: '/inventory',             icon: Warehouse },
       { label: '발주/입고관리', href: '/purchase',              icon: PackagePlus },
     ],

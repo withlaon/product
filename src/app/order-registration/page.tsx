@@ -6,6 +6,8 @@ import {
   Upload, ChevronLeft, ChevronRight, Package,
   CheckCircle2, AlertCircle, Store, FileSpreadsheet,
 } from 'lucide-react'
+import { loadOrders, saveOrders, toOrderDate } from '@/lib/orders'
+import type { Order } from '@/lib/orders'
 
 /* ─── 쇼핑몰 정의 ────────────────────────────────────────── */
 const MALLS = [
@@ -94,18 +96,6 @@ function addDays(dateStr: string, delta: number): string {
   return d.toISOString().slice(0, 10)
 }
 
-function toDate(val: unknown): string {
-  if (!val) return ''
-  if (typeof val === 'number') {
-    const d = new Date(Math.round((val - 25569) * 86400 * 1000))
-    return d.toISOString().slice(0, 10)
-  }
-  try {
-    const d = new Date(String(val))
-    if (!isNaN(d.getTime())) return d.toISOString().slice(0, 10)
-  } catch {}
-  return ''
-}
 
 /* ─── 페이지 컴포넌트 ─────────────────────────────────────── */
 export default function OrderRegistrationPage() {
@@ -162,7 +152,7 @@ export default function OrderRegistrationPage() {
             row['주문번호'] ?? row['order_number'] ?? row['OrderNumber'] ?? `AUTO-${Date.now()}-${idx}`
           )
           const rawDate  = row['주문일'] ?? row['주문일시'] ?? row['order_date'] ?? row['날짜'] ?? ''
-          const orderDate = toDate(rawDate) || today
+          const orderDate = toOrderDate(rawDate, today)
 
           return {
             id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
@@ -184,16 +174,41 @@ export default function OrderRegistrationPage() {
           }
         })
 
+        const uploadedAt = new Date().toISOString()
         const newData: DayData = {
           mall: selectedMall,
           date: today,
           orders,
-          uploaded_at: new Date().toISOString(),
+          uploaded_at: uploadedAt,
         }
         saveDayData(newData)
         setDayData(newData)
         setCurrentDate(today)
-        setImportMsg({ text: `${orders.length}건 등록 완료`, ok: true })
+
+        /* ── 주문관리(pm_orders_v1)에 실시간 동기화 ── */
+        const mallLabel = MALLS.find(m => m.id === selectedMall)?.label ?? selectedMall
+        const syncOrders: Order[] = orders.map(o => ({
+          id: o.id,
+          order_date: today,
+          order_number: o.order_number,
+          channel: mallLabel,
+          customer_name: o.customer_name,
+          customer_phone: o.customer_phone,
+          shipping_address: o.shipping_address,
+          items: o.items,
+          total_amount: o.total_amount,
+          status: o.status,
+          tracking_number: undefined,
+          carrier: undefined,
+          memo: o.memo,
+          uploaded_at: uploadedAt,
+        }))
+        const existingMain = loadOrders()
+        // 같은 쇼핑몰+날짜 이전 업로드 제거 후 새 주문 추가
+        const filtered = existingMain.filter(o => !(o.channel === mallLabel && o.order_date === today))
+        saveOrders([...filtered, ...syncOrders])
+
+        setImportMsg({ text: `${orders.length}건 등록 완료 (주문관리 동기화됨)`, ok: true })
       } catch (err) {
         setImportMsg({ text: '파일 파싱 오류: ' + String(err), ok: false })
       }
