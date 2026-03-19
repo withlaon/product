@@ -230,13 +230,14 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>피킹리스트 ${today}</title>
 <style>
-  body{font-family:'Malgun Gothic',sans-serif;margin:20px}
-  h2{margin:0 0 12px}
-  table{width:100%;border-collapse:collapse;font-size:12px}
-  th,td{border:1px solid #475569;padding:6px 10px}
+  @page{size:A4 portrait;margin:12mm 10mm}
+  body{font-family:'Malgun Gothic',sans-serif;margin:0;padding:10px}
+  h2{margin:0 0 10px;font-size:14px}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th,td{border:1px solid #475569;padding:5px 8px}
   th{background:#1e293b;color:#fff;font-weight:800;text-align:left}
-  .btn{padding:8px 18px;background:#1e293b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;margin-bottom:14px}
-  @media print{.btn{display:none}}
+  .btn{padding:8px 18px;background:#1e293b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;margin-bottom:12px}
+  @media print{.btn{display:none}body{padding:0}h2{font-size:13px}}
 </style></head><body>
 <h2>📋 피킹리스트 — ${today} (${rows.length}건)</h2>
 <button class="btn" onclick="window.print()">🖨 인쇄</button>
@@ -284,6 +285,21 @@ export default function OrdersPage() {
   useEffect(() => {
     setOrders(loadOrders())
     setMappings(loadMappings())
+
+    // 상품 목록을 마운트 시 미리 로드 (캐시 우선, 없으면 API)
+    const preFetch = async () => {
+      let prods = loadMyProductsFromCache()
+      if (prods.length > 0) { setMyProducts(prods); return }
+      try {
+        const res = await fetch('/api/pm-products')
+        if (res.ok) {
+          const json = await res.json() as unknown
+          prods = Array.isArray(json) ? (json as MyProduct[]) : []
+          setMyProducts(prods)
+        }
+      } catch {}
+    }
+    preFetch()
   }, [])
 
   /* 스토리지 변경 이벤트 수신 (같은 탭 내 주문서등록 동기화) */
@@ -341,24 +357,9 @@ export default function OrdersPage() {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
   })
 
-  /* 매핑 모달 열기 - 내 상품 로드 + 복합키 수집 */
-  const openMapping = async () => {
-    // 상품 로드 (캐시 우선)
-    setProductsLoading(true)
-    let prods = loadMyProductsFromCache()
-    if (prods.length === 0) {
-      try {
-        const res = await fetch('/api/pm-products')
-        if (res.ok) {
-          const json = await res.json() as unknown
-          prods = Array.isArray(json) ? (json as MyProduct[]) : []
-        }
-      } catch {}
-    }
-    setMyProducts(prods)
-    setProductsLoading(false)
-
-    // 주문 상품+옵션 키 수집
+  /* 매핑 모달 열기 - 즉시 표시, 상품은 백그라운드 로드 */
+  const openMapping = () => {
+    // 주문 상품+옵션 키 수집 (동기)
     const keySet: Record<string, boolean> = {}
     orders.forEach(o => {
       o.items.forEach(i => {
@@ -373,7 +374,27 @@ export default function OrdersPage() {
     setDraftMappings(draft)
     setMappingFilter('all')
     setMappingSearch('')
-    setShowMapping(true)
+    setShowMapping(true)   // 즉시 모달 표시
+
+    // 상품이 아직 없으면 백그라운드에서 로드
+    if (myProducts.length === 0) {
+      setProductsLoading(true)
+      const fetchProds = async () => {
+        let prods = loadMyProductsFromCache()
+        if (prods.length === 0) {
+          try {
+            const res = await fetch('/api/pm-products')
+            if (res.ok) {
+              const json = await res.json() as unknown
+              prods = Array.isArray(json) ? (json as MyProduct[]) : []
+            }
+          } catch {}
+        }
+        setMyProducts(prods)
+        setProductsLoading(false)
+      }
+      fetchProds()
+    }
   }
 
   /* 매핑에서 내 상품 선택 시 */
