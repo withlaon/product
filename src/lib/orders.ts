@@ -59,8 +59,12 @@ export function clearSelectedForInvoice() {
 
 /* ─── 매핑 타입 ──────────────────────────────────────────── */
 export interface ProductMapping {
-  abbreviation: string  // 상품약어
-  loca: string          // LOCA 위치코드
+  abbreviation: string       // 상품약어 (내 상품의 abbr 또는 수동 입력)
+  loca: string               // LOCA 위치코드 (내 상품의 loca 또는 수동 입력)
+  product_id?: string        // 연결된 내 상품 ID
+  product_code?: string      // 연결된 내 상품 코드
+  my_product_name?: string   // 연결된 내 상품명
+  my_option_name?: string    // 연결된 내 상품 옵션명
 }
 
 export type MappingStore = Record<string, ProductMapping>  // key: product_name

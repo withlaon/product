@@ -6,12 +6,136 @@ import {
   ShoppingCart, Calendar, Package, Map, Printer,
   Truck, X, Save, ChevronLeft, ChevronRight,
   BarChart2, ListFilter, CheckSquare, Square,
+  ChevronDown, Link2, Link2Off, Search, AlertCircle,
 } from 'lucide-react'
 import {
   loadOrders, saveOrders, loadMappings, saveMappings, extractColor,
   saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
 } from '@/lib/orders'
 import type { Order, MappingStore } from '@/lib/orders'
+
+/* ─── 내 상품 타입 (상품관리에서 로드) ─────────────────── */
+interface MyProductOption {
+  name: string
+  size: string
+  korean_name: string
+}
+interface MyProduct {
+  id: string
+  code: string
+  name: string
+  abbr: string
+  loca: string
+  options: MyProductOption[]
+}
+
+const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
+const PRODUCTS_CACHE_TTL = 10 * 60 * 1000
+
+function loadMyProductsFromCache(): MyProduct[] {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as { ts: number; data: MyProduct[] }
+    if (Date.now() - parsed.ts < PRODUCTS_CACHE_TTL && Array.isArray(parsed.data)) {
+      return parsed.data
+    }
+  } catch {}
+  return []
+}
+
+/* ─── 상품 검색 콤보박스 컴포넌트 ──────────────────────── */
+function ProductCombobox({
+  products,
+  value,
+  onChange,
+}: {
+  products: MyProduct[]
+  value: string
+  onChange: (productId: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const [search, setSearch] = useState('')
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const searchRef = useRef<HTMLInputElement>(null)
+
+  const selected = products.find(p => p.id === value)
+  const filtered = search.trim()
+    ? products.filter(p =>
+        p.name.toLowerCase().includes(search.toLowerCase()) ||
+        p.code.toLowerCase().includes(search.toLowerCase()) ||
+        p.abbr.toLowerCase().includes(search.toLowerCase())
+      )
+    : products
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) {
+        setOpen(false); setSearch('')
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  useEffect(() => {
+    if (open) setTimeout(() => searchRef.current?.focus(), 30)
+  }, [open])
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
+      <div
+        onClick={() => setOpen(v => !v)}
+        style={{
+          height: 34, borderRadius: 8, border: `1.5px solid ${open ? '#2563eb' : '#e2e8f0'}`,
+          padding: '0 10px', fontSize: 12, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4,
+          background: 'white', transition: 'border-color 150ms',
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, color: selected ? '#0f172a' : '#94a3b8', fontWeight: selected ? 700 : 400, fontSize: 11.5 }}>
+          {selected ? `[${selected.code}] ${selected.name}` : '상품 선택...'}
+        </span>
+        <ChevronDown size={11} style={{ color: '#94a3b8', flexShrink: 0, transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 150ms' }} />
+      </div>
+      {open && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 3px)', left: 0, right: 0, background: 'white', border: '1.5px solid #e2e8f0', borderRadius: 10, boxShadow: '0 8px 24px rgba(0,0,0,0.14)', zIndex: 50, overflow: 'hidden' }}>
+          <div style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Search size={12} style={{ color: '#94a3b8', flexShrink: 0 }} />
+            <input ref={searchRef} value={search} onChange={e => setSearch(e.target.value)}
+              placeholder="상품명·코드 검색..."
+              style={{ flex: 1, border: 'none', outline: 'none', fontSize: 12, background: 'transparent' }}
+            />
+          </div>
+          <div style={{ maxHeight: 180, overflowY: 'auto' }}>
+            {value && (
+              <div onClick={() => { onChange(''); setOpen(false); setSearch('') }}
+                style={{ padding: '7px 10px', cursor: 'pointer', fontSize: 11.5, color: '#dc2626', borderBottom: '1px solid #f8fafc', display: 'flex', alignItems: 'center', gap: 5 }}
+                onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
+                onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+              >
+                <Link2Off size={11} /> 연결 해제
+              </div>
+            )}
+            {filtered.length === 0 ? (
+              <div style={{ padding: '14px 10px', fontSize: 12, color: '#94a3b8', textAlign: 'center' }}>상품이 없습니다</div>
+            ) : filtered.map(p => (
+              <div key={p.id} onClick={() => { onChange(p.id); setOpen(false); setSearch('') }}
+                style={{ padding: '7px 10px', cursor: 'pointer', borderBottom: '1px solid #f8fafc', background: p.id === value ? '#eff6ff' : 'transparent', transition: 'background 80ms' }}
+                onMouseEnter={e => { if (p.id !== value) e.currentTarget.style.background = '#f8fafc' }}
+                onMouseLeave={e => { if (p.id !== value) e.currentTarget.style.background = 'transparent' }}
+              >
+                <span style={{ fontFamily: 'monospace', fontSize: 11, fontWeight: 800, color: '#2563eb', marginRight: 6 }}>[{p.code}]</span>
+                <span style={{ fontSize: 12, fontWeight: p.id === value ? 800 : 600, color: '#0f172a' }}>{p.name}</span>
+                {p.abbr && <span style={{ fontSize: 10.5, color: '#94a3b8', marginLeft: 5 }}>· {p.abbr}</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
 
 /* ─── 하위 호환 re-export (product-edit-transfer가 import 함) ── */
 export { loadOrders, saveOrders } from '@/lib/orders'
@@ -152,6 +276,10 @@ export default function OrdersPage() {
   const [showMapping, setShowMapping] = useState(false)
   const [draftMappings, setDraftMappings] = useState<MappingStore>({})
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null)
+  const [myProducts, setMyProducts]       = useState<MyProduct[]>([])
+  const [productsLoading, setProductsLoading] = useState(false)
+  const [mappingFilter, setMappingFilter]     = useState<'all' | 'unmapped'>('all')
+  const [mappingSearch, setMappingSearch]     = useState('')
 
   useEffect(() => {
     setOrders(loadOrders())
@@ -213,8 +341,24 @@ export default function OrdersPage() {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
   })
 
-  /* 매핑 모달 열기 - 상품명+옵션 복합키 */
-  const openMapping = () => {
+  /* 매핑 모달 열기 - 내 상품 로드 + 복합키 수집 */
+  const openMapping = async () => {
+    // 상품 로드 (캐시 우선)
+    setProductsLoading(true)
+    let prods = loadMyProductsFromCache()
+    if (prods.length === 0) {
+      try {
+        const res = await fetch('/api/pm-products')
+        if (res.ok) {
+          const json = await res.json() as unknown
+          prods = Array.isArray(json) ? (json as MyProduct[]) : []
+        }
+      } catch {}
+    }
+    setMyProducts(prods)
+    setProductsLoading(false)
+
+    // 주문 상품+옵션 키 수집
     const keySet: Record<string, boolean> = {}
     orders.forEach(o => {
       o.items.forEach(i => {
@@ -227,7 +371,48 @@ export default function OrdersPage() {
       draft[key] = mappings[key] ?? { abbreviation: '', loca: '' }
     })
     setDraftMappings(draft)
+    setMappingFilter('all')
+    setMappingSearch('')
     setShowMapping(true)
+  }
+
+  /* 매핑에서 내 상품 선택 시 */
+  const handleProductSelect = (key: string, productId: string) => {
+    if (!productId) {
+      setDraftMappings(prev => ({
+        ...prev,
+        [key]: {
+          ...prev[key],
+          product_id: undefined,
+          product_code: undefined,
+          my_product_name: undefined,
+          my_option_name: undefined,
+        },
+      }))
+      return
+    }
+    const p = myProducts.find(p => p.id === productId)
+    if (!p) return
+    setDraftMappings(prev => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        product_id: p.id,
+        product_code: p.code,
+        my_product_name: p.name,
+        my_option_name: undefined,
+        abbreviation: p.abbr || prev[key].abbreviation,
+        loca: p.loca || prev[key].loca,
+      },
+    }))
+  }
+
+  /* 매핑에서 옵션 선택 시 */
+  const handleOptionSelect = (key: string, optName: string) => {
+    setDraftMappings(prev => ({
+      ...prev,
+      [key]: { ...prev[key], my_option_name: optName },
+    }))
   }
 
   const saveMapping = () => {
@@ -512,81 +697,178 @@ export default function OrdersPage() {
       </div>
 
       {/* ── 매핑 모달 ── */}
-      {showMapping && (
+      {showMapping && (() => {
+        const allEntries = Object.entries(draftMappings)
+        const filteredEntries = allEntries.filter(([key, m]) => {
+          const [productName, option] = splitMappingKey(key)
+          const searchLower = mappingSearch.toLowerCase()
+          if (mappingSearch && !productName.toLowerCase().includes(searchLower) && !option.toLowerCase().includes(searchLower)) return false
+          if (mappingFilter === 'unmapped' && m.product_id) return false
+          return true
+        })
+        const mappedCount = allEntries.filter(([, m]) => !!m.product_id).length
+        return (
         <div
-          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.55)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.6)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
           onClick={() => setShowMapping(false)}
         >
           <div
-            style={{ background: 'white', borderRadius: 18, padding: 28, width: '100%', maxWidth: 680, maxHeight: '80vh', overflow: 'auto', boxShadow: '0 24px 60px rgba(0,0,0,0.18)' }}
+            style={{ background: 'white', borderRadius: 20, width: '100%', maxWidth: 1100, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.22)', overflow: 'hidden' }}
             onClick={e => e.stopPropagation()}
           >
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-              <div>
-                <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 2 }}>상품 매핑 설정</h2>
-                <p style={{ fontSize: 12, color: '#94a3b8' }}>상품약어와 LOCA 위치코드를 입력하세요</p>
-              </div>
-              <button onClick={() => setShowMapping(false)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <X size={14} style={{ color: '#94a3b8' }} />
-              </button>
-            </div>
-
             {/* 헤더 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px 100px', gap: 10, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, marginBottom: 8 }}>
-              {['상품명', '옵션', '약어 (상품약어)', 'LOCA'].map(h => (
-                <span key={h} style={{ fontSize: 11, fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
-              ))}
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 20 }}>
-              {Object.keys(draftMappings).length === 0 ? (
-                <p style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8', fontSize: 13 }}>
-                  주문관리에 등록된 상품이 없습니다.
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexShrink: 0 }}>
+              <div>
+                <h2 style={{ fontSize: 17, fontWeight: 900, color: '#0f172a', marginBottom: 4 }}>상품 매핑 설정</h2>
+                <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>
+                  주문서 상품과 <strong style={{ color: '#2563eb' }}>내 상품</strong>을 연결하면 약어·LOCA가 자동으로 채워집니다
+                  {myProducts.length === 0 && !productsLoading && (
+                    <span style={{ color: '#f59e0b', marginLeft: 8 }}><AlertCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />상품관리에 상품이 없습니다</span>
+                  )}
                 </p>
-              ) : (
-                Object.entries(draftMappings).map(([key, m]) => {
-                  const [productName, option] = splitMappingKey(key)
-                  return (
-                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px 100px', gap: 10, alignItems: 'center', padding: '8px 12px', borderRadius: 8, background: '#fafafa', border: '1px solid #f1f5f9' }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={productName}>
-                        {productName}
-                      </span>
-                      <span style={{ fontSize: 11.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={option}>
-                        {option || <span style={{ color: '#cbd5e1' }}>—</span>}
-                      </span>
-                      <input
-                        value={m.abbreviation}
-                        onChange={e => setDraftMappings(prev => ({ ...prev, [key]: { ...prev[key], abbreviation: e.target.value } }))}
-                        placeholder="약어"
-                        style={{ height: 32, borderRadius: 7, border: '1.5px solid #e2e8f0', padding: '0 10px', fontSize: 12, fontWeight: 600, outline: 'none', width: '100%' }}
-                        onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
-                        onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
-                      />
-                      <input
-                        value={m.loca}
-                        onChange={e => setDraftMappings(prev => ({ ...prev, [key]: { ...prev[key], loca: e.target.value } }))}
-                        placeholder="LOCA"
-                        style={{ height: 32, borderRadius: 7, border: '1.5px solid #e2e8f0', padding: '0 10px', fontSize: 12, fontWeight: 600, outline: 'none', width: '100%', fontFamily: 'monospace' }}
-                        onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
-                        onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
-                      />
-                    </div>
-                  )
-                })
-              )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                <div style={{ textAlign: 'right' }}>
+                  <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>연결 현황</p>
+                  <p style={{ fontSize: 14, fontWeight: 900, color: '#2563eb', margin: 0 }}>{mappedCount} / {allEntries.length}</p>
+                </div>
+                <button onClick={() => setShowMapping(false)} style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <X size={15} style={{ color: '#94a3b8' }} />
+                </button>
+              </div>
             </div>
 
-            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-              <button onClick={() => setShowMapping(false)} style={{ padding: '9px 18px', borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
-                취소
-              </button>
-              <button onClick={saveMapping} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 18px', borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
-                <Save size={13} />저장
-              </button>
+            {/* 툴바: 검색 + 필터 */}
+            <div style={{ padding: '12px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: '#fafafa' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, maxWidth: 320, border: '1.5px solid #e2e8f0', borderRadius: 9, padding: '0 10px', background: 'white', height: 34 }}>
+                <Search size={13} style={{ color: '#94a3b8', flexShrink: 0 }} />
+                <input value={mappingSearch} onChange={e => setMappingSearch(e.target.value)}
+                  placeholder="주문서 상품명 검색..."
+                  style={{ flex: 1, border: 'none', outline: 'none', fontSize: 12, background: 'transparent' }}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {(['all', 'unmapped'] as const).map(f => (
+                  <button key={f} onClick={() => setMappingFilter(f)}
+                    style={{ padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1.5px solid', borderColor: mappingFilter === f ? '#2563eb' : '#e2e8f0', background: mappingFilter === f ? '#eff6ff' : 'white', color: mappingFilter === f ? '#2563eb' : '#64748b' }}
+                  >
+                    {f === 'all' ? `전체 (${allEntries.length})` : `미연결 (${allEntries.length - mappedCount})`}
+                  </button>
+                ))}
+              </div>
+              {productsLoading && <span style={{ fontSize: 12, color: '#94a3b8' }}>상품 불러오는 중...</span>}
+            </div>
+
+            {/* 컬럼 헤더 */}
+            <div style={{ padding: '0 24px', flexShrink: 0 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 140px 240px 180px 90px 80px', gap: 10, padding: '9px 10px', background: '#f8fafc', borderRadius: 8, margin: '10px 0 4px' }}>
+                {[
+                  { label: '주문서 상품명', sub: '쇼핑몰에서 가져온 상품명' },
+                  { label: '주문 옵션', sub: '' },
+                  { label: '내 상품 연결', sub: '상품관리에 등록된 상품' },
+                  { label: '내 옵션 선택', sub: '' },
+                  { label: '약어', sub: '자동 입력' },
+                  { label: 'LOCA', sub: '자동 입력' },
+                ].map(col => (
+                  <div key={col.label}>
+                    <span style={{ fontSize: 10.5, fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{col.label}</span>
+                    {col.sub && <span style={{ fontSize: 9.5, color: '#cbd5e1', marginLeft: 4 }}>{col.sub}</span>}
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* 매핑 행들 */}
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px 8px' }}>
+              {filteredEntries.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
+                  <Package size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
+                  <p style={{ fontSize: 13 }}>{allEntries.length === 0 ? '주문관리에 등록된 상품이 없습니다.' : '검색 결과가 없습니다.'}</p>
+                </div>
+              ) : filteredEntries.map(([key, m]) => {
+                const [productName, option] = splitMappingKey(key)
+                const selectedProduct = myProducts.find(p => p.id === m.product_id)
+                const isMapped = !!m.product_id
+                return (
+                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 140px 240px 180px 90px 80px', gap: 10, alignItems: 'center', padding: '9px 10px', borderRadius: 10, marginBottom: 4, background: isMapped ? '#f0fdf4' : '#fafafa', border: `1.5px solid ${isMapped ? '#bbf7d0' : '#f1f5f9'}`, transition: 'background 150ms' }}>
+                    {/* 주문서 상품명 */}
+                    <div style={{ minWidth: 0 }}>
+                      <p style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={productName}>{productName}</p>
+                      {isMapped && (
+                        <span style={{ fontSize: 10.5, color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
+                          <Link2 size={10} />연결됨
+                        </span>
+                      )}
+                    </div>
+
+                    {/* 주문 옵션 */}
+                    <span style={{ fontSize: 11.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={option}>
+                      {option || <span style={{ color: '#cbd5e1' }}>—</span>}
+                    </span>
+
+                    {/* 내 상품 선택 */}
+                    <ProductCombobox
+                      products={myProducts}
+                      value={m.product_id ?? ''}
+                      onChange={pid => handleProductSelect(key, pid)}
+                    />
+
+                    {/* 내 옵션 선택 */}
+                    <select
+                      value={m.my_option_name ?? ''}
+                      disabled={!selectedProduct}
+                      onChange={e => handleOptionSelect(key, e.target.value)}
+                      style={{ height: 34, borderRadius: 8, border: '1.5px solid #e2e8f0', padding: '0 8px', fontSize: 12, outline: 'none', width: '100%', background: !selectedProduct ? '#f8fafc' : 'white', color: !selectedProduct ? '#94a3b8' : '#0f172a', cursor: !selectedProduct ? 'not-allowed' : 'pointer' }}
+                    >
+                      <option value="">-- 선택 --</option>
+                      {selectedProduct?.options.map(opt => {
+                        const label = `${opt.korean_name || opt.name}${opt.size && opt.size !== 'FREE' ? ' / ' + opt.size : ''}`
+                        return <option key={opt.name + opt.size} value={opt.name}>{label}</option>
+                      })}
+                    </select>
+
+                    {/* 약어 */}
+                    <input
+                      value={m.abbreviation}
+                      onChange={e => setDraftMappings(prev => ({ ...prev, [key]: { ...prev[key], abbreviation: e.target.value } }))}
+                      placeholder="약어"
+                      style={{ height: 34, borderRadius: 8, border: '1.5px solid #e2e8f0', padding: '0 8px', fontSize: 12, fontWeight: 700, outline: 'none', width: '100%' }}
+                      onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
+                      onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                    />
+
+                    {/* LOCA */}
+                    <input
+                      value={m.loca}
+                      onChange={e => setDraftMappings(prev => ({ ...prev, [key]: { ...prev[key], loca: e.target.value } }))}
+                      placeholder="LOCA"
+                      style={{ height: 34, borderRadius: 8, border: '1.5px solid #e2e8f0', padding: '0 8px', fontSize: 12, fontWeight: 700, outline: 'none', width: '100%', fontFamily: 'monospace' }}
+                      onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
+                      onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                    />
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* 하단 버튼 */}
+            <div style={{ padding: '14px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'white' }}>
+              <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>
+                약어·LOCA는 내 상품 선택 후 자동 입력되며, 직접 수정도 가능합니다
+              </p>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button onClick={() => setShowMapping(false)} style={{ padding: '9px 20px', borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                  취소
+                </button>
+                <button onClick={saveMapping} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 20px', borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                  <Save size={13} />저장
+                </button>
+              </div>
             </div>
           </div>
         </div>
-      )}
+        )
+      })()}
 
       {/* ── 주문 상세 모달 ── */}
       {selectedOrder && (
