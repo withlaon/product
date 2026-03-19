@@ -43,7 +43,9 @@ export async function GET(req: NextRequest) {
     const id = new URL(req.url).searchParams.get('id')
 
     if (id) {
-      const res = await sbFetch(`${TABLE}?select=basic_info&id=eq.${encodeURIComponent(id)}`, {
+      const full = new URL(req.url).searchParams.get('full')
+      const selectCols = full ? '*' : 'basic_info'
+      const res = await sbFetch(`${TABLE}?select=${selectCols}&id=eq.${encodeURIComponent(id)}`, {
         headers: { Accept: 'application/vnd.pgrst.object+json' },
       })
       if (!res.ok) {
@@ -92,8 +94,17 @@ export async function GET(req: NextRequest) {
     }
 
     const arr = Array.isArray(data) ? data : []
-    return NextResponse.json(arr, {
-      headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=60' },
+
+    // 목록 조회 시 options 내 base64 image 제거 (데이터 크기 대폭 감소)
+    const stripped = arr.map((p: Record<string, unknown>) => ({
+      ...p,
+      options: ((p.options as Record<string, unknown>[] | null) ?? []).map(
+        ({ image: _img, ...rest }: Record<string, unknown>) => rest
+      ),
+    }))
+
+    return NextResponse.json(stripped, {
+      headers: { 'Cache-Control': 'public, max-age=1800, stale-while-revalidate=60' },
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

@@ -114,7 +114,7 @@ const CATS_STORAGE_KEY = 'pm_categories_v1'
 
 // 캐시 상수를 컴포넌트 바깥에 두어 useState 초기화 함수에서도 참조 가능
 const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
-const PRODUCTS_CACHE_TTL = 10 * 60 * 1000 // 10분
+const PRODUCTS_CACHE_TTL = 30 * 60 * 1000 // 30분
 
 /** TTL 관계없이 저장된 캐시 데이터 반환 (스테일 포함) */
 function loadProductsAnyCached(): Product[] {
@@ -433,6 +433,16 @@ async function pmGetBasicInfo(id: string) {
   return json?.basic_info ?? null
 }
 
+/** 이미지 포함 전체 상품 데이터 조회 (수정 모달용) */
+async function pmGetFullProduct(id: string): Promise<Product | null> {
+  try {
+    const res = await fetch(`${PM_API}?id=${id}&full=1`)
+    if (!res.ok) return null
+    const json = await res.json()
+    return json ? rowToProduct(json) : null
+  } catch { return null }
+}
+
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */
 export default function ProductsPage() {
   // 스테일 캐시 포함 즉시 초기화 → 첫 렌더부터 목록 표시 (SSR 단계에서는 빈 배열, useEffect에서 덮어씀)
@@ -475,6 +485,8 @@ export default function ProductsPage() {
   const [loading, setLoading]     = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [loadErrorMsg, setLoadErrorMsg] = useState('')
+  const [refreshKey, setRefreshKey] = useState(0)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 })
   const handleOptImage  = useOptImageUpload(setForm)
@@ -501,6 +513,15 @@ export default function ProductsPage() {
     ))
   }
 
+  /* ── 수동 새로고침 ── */
+  const handleRefresh = () => {
+    try { localStorage.removeItem(PRODUCTS_CACHE_KEY) } catch {}
+    setRefreshKey(k => k + 1)
+    setLoading(true)
+    setLoadError(false)
+    setLoadErrorMsg('')
+  }
+
   /* ── 상품 로드 ── */
   useEffect(() => {
     const saved = loadSavedCats()
@@ -511,6 +532,11 @@ export default function ProductsPage() {
     if (anyCache.length > 0) {
       setProducts(anyCache)
       setLoading(false)
+      setIsRefreshing(false)
+
+      // 신선한 캐시(30분 이내)가 있으면 서버 요청 완전 스킵
+      if (hasFreshCache()) return
+      setIsRefreshing(true)
     }
 
     let done = false // 중복 상태 업데이트 방지
@@ -519,6 +545,7 @@ export default function ProductsPage() {
       if (done) return
       done = true
       clearTimeout(safetyTimer)
+      setIsRefreshing(false)
       if (loaded && loaded.length >= 0) {
         setProducts(loaded)
         setLoadError(false)
@@ -542,7 +569,7 @@ export default function ProductsPage() {
 
     // 안전 타임아웃: 최대 58초 (Disk IO 스로틀 환경 대응)
     const safetyTimer = setTimeout(() => {
-      finish(null, 'Supabase Disk IO 예산 부족으로 응답 지연 중입니다.\n잠시 후 다시 시도하거나 Supabase 플랜을 업그레이드하세요.')
+      finish(null, 'Supabase 응답 지연 중입니다.\n잠시 후 새로고침 버튼을 눌러주세요.')
     }, 58000)
 
     // 타임아웃을 걸 수 있는 fetch 래퍼
@@ -625,7 +652,7 @@ export default function ProductsPage() {
 
     return () => { done = true; clearTimeout(safetyTimer) }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [refreshKey])
 
   const allCats = useMemo(
     () => ['전체', ...extraCats.filter(c => !deletedCats.includes(c))],
@@ -700,23 +727,30 @@ export default function ProductsPage() {
     setBasicInfoTarget(null)
   }
 
-  /* ── 수정 모달 열기 ── */
-  const openEdit = (p: Product) => {
+  /* ── 수정 모달 열기 (이미지 포함 전체 데이터 로드) ── */
+  const openEdit = async (p: Product) => {
+    const initOptions = (prod: Product) => prod.options.map(o => ({
+      name: o.name, size: o.size ?? 'FREE',
+      korean_name: o.korean_name || getKoreanColor(o.name),
+      chinese_name: o.chinese_name || '',
+      barcode: o.barcode, image: o.image ?? '',
+      ordered: o.ordered, received: o.received, sold: o.sold,
+      current_stock: o.current_stock, defective: o.defective,
+    }))
     setEditForm({
       code: p.code, name: p.name, abbr: p.abbr ?? '', category: p.category, newCat: '',
       supplier: p.supplier, loca: p.loca,
       cost_price: String(p.cost_price), cost_currency: p.cost_currency,
       status: p.status,
-      options: p.options.map(o => ({
-        name: o.name, size: o.size ?? 'FREE',
-        korean_name: o.korean_name || getKoreanColor(o.name),
-        chinese_name: o.chinese_name || '',
-        barcode: o.barcode, image: o.image,
-        ordered: o.ordered, received: o.received, sold: o.sold,
-        current_stock: o.current_stock, defective: o.defective,
-      })),
+      options: initOptions(p),
     })
     setIsEdit(p)
+    // 이미지 포함 전체 데이터 백그라운드 로드
+    const full = await pmGetFullProduct(p.id)
+    if (full) {
+      setEditForm(prev => prev ? { ...prev, options: initOptions(full) } : prev)
+      setIsEdit(full)
+    }
   }
 
   const [editSaving, setEditSaving] = useState(false)
@@ -1568,6 +1602,16 @@ export default function ProductsPage() {
             </Button>
             <input ref={importInputRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleImportExcel}/>
             <Button size="sm" onClick={() => setIsAdd(true)}><Plus size={13}/>상품 등록</Button>
+            <button
+              onClick={handleRefresh}
+              disabled={loading || isRefreshing}
+              title="캐시를 초기화하고 최신 데이터를 불러옵니다"
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', borderRadius:7, border:'1px solid #e2e8f0', background: isRefreshing ? '#f1f5f9' : 'white', color:'#64748b', fontSize:12, fontWeight:700, cursor: (loading || isRefreshing) ? 'not-allowed' : 'pointer', opacity: (loading || isRefreshing) ? 0.6 : 1 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" style={isRefreshing ? { animation:'spin 1s linear infinite' } : {}}>
+                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/>
+              </svg>
+              {isRefreshing ? '동기화 중...' : '새로고침'}
+            </button>
           </div>
         </div>
       </div>
