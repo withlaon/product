@@ -1,0 +1,36 @@
+---
+description: 코드 수정 후 자동으로 git commit & push 실행
+alwaysApply: true
+---
+
+# 자동 Git Push 규칙
+
+코드를 수정한 후에는 **반드시** 아래 절차를 따라 GitHub에 자동 푸시한다.
+
+## 수정 완료 후 실행 순서
+
+1. `git add` — 변경된 파일 스테이징
+2. `git commit -m "..."` — 변경 내용을 간결하게 영문으로 커밋 메시지 작성
+3. `git push origin main` — GitHub에 푸시
+
+## 커밋 메시지 형식
+
+```
+<type>: <short description>
+```
+
+- `feat`: 새 기능
+- `fix`: 버그 수정
+- `refactor`: 리팩토링
+- `style`: UI/스타일 변경
+- `chore`: 설정·의존성 등 기타
+
+## 작업 디렉토리
+
+항상 `d:\PRODUCT\product-manager` 기준으로 실행한다.
+
+## 주의 사항
+
+- heredoc(`<<'EOF'`) 문법은 PowerShell에서 지원 안 됨 → `git commit -m "..."` 한 줄 형식만 사용
+- 빌드 오류가 있으면 수정 후 푸시
+- 사용자가 명시적으로 "푸시하지 마" 라고 하지 않는 한 항상 푸시
