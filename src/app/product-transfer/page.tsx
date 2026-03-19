@@ -9,7 +9,7 @@ import {
 } from 'lucide-react'
 import {
   loadOrders, saveOrders, loadMappings, saveMappings, extractColor,
-  saveSelectedForInvoice, STATUS_MAP,
+  saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
 } from '@/lib/orders'
 import type { Order, MappingStore } from '@/lib/orders'
 
@@ -60,7 +60,7 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
   const rows: PickRow[] = []
   for (const order of orders) {
     for (const item of order.items) {
-      const m = mappings[item.product_name] ?? { abbreviation: '', loca: '' }
+      const m = lookupMapping(mappings, item.product_name, item.option)
       rows.push({
         order_number: order.order_number,
         customer_name: order.customer_name,
@@ -213,12 +213,18 @@ export default function OrdersPage() {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
   })
 
-  /* 매핑 모달 열기 */
+  /* 매핑 모달 열기 - 상품명+옵션 복합키 */
   const openMapping = () => {
-    const allProducts = Array.from(new Set(orders.flatMap(o => o.items.map(i => i.product_name))))
+    const keySet: Record<string, boolean> = {}
+    orders.forEach(o => {
+      o.items.forEach(i => {
+        const key = makeMappingKey(i.product_name, i.option ?? '')
+        keySet[key] = true
+      })
+    })
     const draft: MappingStore = {}
-    allProducts.forEach(name => {
-      draft[name] = mappings[name] ?? { abbreviation: '', loca: '' }
+    Object.keys(keySet).forEach(key => {
+      draft[key] = mappings[key] ?? { abbreviation: '', loca: '' }
     })
     setDraftMappings(draft)
     setShowMapping(true)
@@ -526,8 +532,8 @@ export default function OrdersPage() {
             </div>
 
             {/* 헤더 */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px 100px', gap: 10, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, marginBottom: 8 }}>
-              {['상품명', '약어 (상품약어)', 'LOCA'].map(h => (
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px 100px', gap: 10, padding: '8px 12px', background: '#f8fafc', borderRadius: 8, marginBottom: 8 }}>
+              {['상품명', '옵션', '약어 (상품약어)', 'LOCA'].map(h => (
                 <span key={h} style={{ fontSize: 11, fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
               ))}
             </div>
@@ -538,27 +544,35 @@ export default function OrdersPage() {
                   주문관리에 등록된 상품이 없습니다.
                 </p>
               ) : (
-                Object.entries(draftMappings).map(([name, m]) => (
-                  <div key={name} style={{ display: 'grid', gridTemplateColumns: '1fr 130px 100px', gap: 10, alignItems: 'center', padding: '6px 12px', borderRadius: 8, background: '#fafafa', border: '1px solid #f1f5f9' }}>
-                    <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={name}>{name}</span>
-                    <input
-                      value={m.abbreviation}
-                      onChange={e => setDraftMappings(prev => ({ ...prev, [name]: { ...prev[name], abbreviation: e.target.value } }))}
-                      placeholder="약어"
-                      style={{ height: 32, borderRadius: 7, border: '1.5px solid #e2e8f0', padding: '0 10px', fontSize: 12, fontWeight: 600, outline: 'none', width: '100%' }}
-                      onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
-                      onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
-                    />
-                    <input
-                      value={m.loca}
-                      onChange={e => setDraftMappings(prev => ({ ...prev, [name]: { ...prev[name], loca: e.target.value } }))}
-                      placeholder="LOCA"
-                      style={{ height: 32, borderRadius: 7, border: '1.5px solid #e2e8f0', padding: '0 10px', fontSize: 12, fontWeight: 600, outline: 'none', width: '100%', fontFamily: 'monospace' }}
-                      onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
-                      onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
-                    />
-                  </div>
-                ))
+                Object.entries(draftMappings).map(([key, m]) => {
+                  const [productName, option] = splitMappingKey(key)
+                  return (
+                    <div key={key} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 130px 100px', gap: 10, alignItems: 'center', padding: '8px 12px', borderRadius: 8, background: '#fafafa', border: '1px solid #f1f5f9' }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={productName}>
+                        {productName}
+                      </span>
+                      <span style={{ fontSize: 11.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={option}>
+                        {option || <span style={{ color: '#cbd5e1' }}>—</span>}
+                      </span>
+                      <input
+                        value={m.abbreviation}
+                        onChange={e => setDraftMappings(prev => ({ ...prev, [key]: { ...prev[key], abbreviation: e.target.value } }))}
+                        placeholder="약어"
+                        style={{ height: 32, borderRadius: 7, border: '1.5px solid #e2e8f0', padding: '0 10px', fontSize: 12, fontWeight: 600, outline: 'none', width: '100%' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
+                        onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                      />
+                      <input
+                        value={m.loca}
+                        onChange={e => setDraftMappings(prev => ({ ...prev, [key]: { ...prev[key], loca: e.target.value } }))}
+                        placeholder="LOCA"
+                        style={{ height: 32, borderRadius: 7, border: '1.5px solid #e2e8f0', padding: '0 10px', fontSize: 12, fontWeight: 600, outline: 'none', width: '100%', fontFamily: 'monospace' }}
+                        onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
+                        onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
+                      />
+                    </div>
+                  )
+                })
               )}
             </div>
 

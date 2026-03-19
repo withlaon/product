@@ -1,37 +1,170 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import * as XLSX from 'xlsx'
 import {
-  Send, CheckCircle2, Search, Package, Truck, Clock, RefreshCw,
+  Send, CheckCircle2, Search, Package, Truck, Download, FileDown,
 } from 'lucide-react'
-import { loadOrders, saveOrders, STATUS_MAP } from '@/lib/orders'
+import {
+  loadOrders, saveOrders, loadMappings, lookupMapping, channelToMp,
+} from '@/lib/orders'
 import type { Order } from '@/lib/orders'
+import { loadAllDayData } from '@/app/order-registration/page'
 
-const SEND_KEY = 'pm_invoice_sent_v1'
+/* ─── 쇼핑몰별 다운로드 설정 ────────────────────────────── */
+const DOWNLOAD_MALLS = [
+  { id: 'marketplus',   label: '마켓플러스', color: '#e11d48', bg: '#fff1f2' },
+  { id: 'tossshopping', label: '토스쇼핑',   color: '#4f46e5', bg: '#eef2ff' },
+  { id: 'gsshop',       label: '지에스샵',   color: '#059669', bg: '#ecfdf5' },
+  { id: 'always',       label: '올웨이즈',   color: '#d97706', bg: '#fffbeb' },
+] as const
 
-function loadSentIds(): string[] {
-  try { return JSON.parse(localStorage.getItem(SEND_KEY) ?? '[]') } catch { return [] }
+type DownloadMallId = typeof DOWNLOAD_MALLS[number]['id']
+
+/* ─── Excel 다운로드 헬퍼 ────────────────────────────────── */
+function triggerExcelDownload(rows: Record<string, unknown>[], filename: string) {
+  const ws  = XLSX.utils.json_to_sheet(rows)
+  const wb  = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '송장')
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+  const blob = new Blob([out], { type: 'application/octet-stream' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
 }
-function markSent(ids: string[]) {
-  try {
-    const prev = loadSentIds()
-    localStorage.setItem(SEND_KEY, JSON.stringify([...new Set([...prev, ...ids])]))
-  } catch {}
+
+function todayStr() {
+  return new Date().toISOString().slice(0, 10)
 }
 
+/* ─── 마켓플러스 송장 파일 생성 ─────────────────────────── */
+function downloadMarketPlusInvoice(allOrders: Order[]) {
+  const mappings = loadMappings()
+  // import_source = 'marketplus' 인 배송중 주문
+  const mpOrders = allOrders.filter(o =>
+    o.status === 'shipped' && o.tracking_number &&
+    o.extra_data?.['import_source'] === 'marketplus'
+  )
+
+  if (mpOrders.length === 0) {
+    alert('마켓플러스 배송처리된 주문이 없습니다.')
+    return
+  }
+
+  const rows = mpOrders.map(o => {
+    const item   = o.items[0]
+    const option = item?.option ?? ''
+    const pname  = item?.product_name ?? ''
+    const m      = lookupMapping(mappings, pname, option)
+    const ed     = o.extra_data ?? {}
+
+    return {
+      '매출경로':                          ed['매출경로'] ?? channelToMp(o.channel),
+      '주문번호':                          ed['주문번호'] ?? o.order_number,
+      '품목별 주문번호':                   ed['품목별_주문번호'] ?? o.order_number,
+      '상품명(관리용)':                    m.abbreviation || String(ed['상품명관리용'] ?? ''),
+      '상품명(한국어 쇼핑몰)':             pname,
+      '상품옵션':                          option,
+      '수량':                              item?.quantity ?? 1,
+      '주문자명':                          String(ed['주문자명'] ?? o.customer_name),
+      '수령인':                            o.customer_name,
+      '수령인 전화번호':                   o.customer_phone ?? '',
+      '수령인 우편번호':                   String(ed['수령인_우편번호'] ?? ''),
+      '수령인 주소':                       o.shipping_address,
+      '수령인 상세 주소':                  String(ed['수령인_상세주소'] ?? ''),
+      '배송메시지':                        String(ed['배송메시지'] ?? o.memo ?? ''),
+      '총 결제금액(KRW)':                  String(ed['총결제금액'] ?? o.total_amount ?? ''),
+      '총 실결제금액(최초정보) (KRW)':     String(ed['총실결제금액'] ?? ''),
+      '배송비 정보':                       String(ed['배송비정보'] ?? ''),
+      '배송비 추가결제':                   String(ed['배송비추가결제'] ?? ''),
+      '택배사':                            o.carrier ?? '',
+      '송장번호':                          o.tracking_number ?? '',
+    }
+  })
+
+  triggerExcelDownload(rows, `마켓플러스_송장_${todayStr()}.xlsx`)
+}
+
+/* ─── 일반 쇼핑몰 송장 파일 생성 ────────────────────────── */
+function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, allOrders: Order[]) {
+  // 해당 쇼핑몰의 배송중 주문
+  const mallOrders = allOrders.filter(o =>
+    o.status === 'shipped' && o.tracking_number &&
+    o.extra_data?.['import_source'] === mallLabel
+  )
+
+  if (mallOrders.length === 0) {
+    alert(`${mallLabel} 배송처리된 주문이 없습니다.`)
+    return
+  }
+
+  // DayData에서 raw_rows 가져오기
+  const allDayData = loadAllDayData(mallId)
+  const trackingMap: Record<string, { carrier: string; tracking: string }> = {}
+  mallOrders.forEach(o => {
+    trackingMap[o.order_number] = {
+      carrier:  o.carrier  ?? '',
+      tracking: o.tracking_number ?? '',
+    }
+  })
+
+  // raw_rows가 있으면 원본 형식 + 택배사/송장번호 추가
+  const rows: Record<string, unknown>[] = []
+  let usedRaw = false
+
+  for (const dayData of allDayData) {
+    for (const raw of dayData.raw_rows ?? []) {
+      const orderNum = String(
+        raw['주문번호'] ?? raw['order_number'] ?? raw['OrderNumber'] ?? ''
+      )
+      const tInfo = trackingMap[orderNum]
+      if (tInfo) {
+        rows.push({ ...raw, '택배사': tInfo.carrier, '송장번호': tInfo.tracking })
+        usedRaw = true
+      }
+    }
+  }
+
+  // raw_rows 없으면 기본 형식으로 생성
+  if (!usedRaw || rows.length === 0) {
+    mallOrders.forEach(o => {
+      const item = o.items[0]
+      rows.push({
+        '주문번호':   o.order_number,
+        '주문일':     o.order_date,
+        '쇼핑몰':     o.channel,
+        '상품명':     item?.product_name ?? '',
+        '상품코드':   item?.sku ?? '',
+        '옵션':       item?.option ?? '',
+        '수량':       item?.quantity ?? 1,
+        '판매가':     item?.unit_price ?? 0,
+        '수취인':     o.customer_name,
+        '연락처':     o.customer_phone ?? '',
+        '배송주소':   o.shipping_address,
+        '메모':       o.memo ?? '',
+        '택배사':     o.carrier ?? '',
+        '송장번호':   o.tracking_number ?? '',
+      })
+    })
+  }
+
+  triggerExcelDownload(rows, `${mallLabel}_송장_${todayStr()}.xlsx`)
+}
+
+/* ─── 페이지 ─────────────────────────────────────────────── */
 export default function InvoiceSendPage() {
-  const [orders, setOrders]     = useState<Order[]>([])
-  const [search, setSearch]     = useState('')
-  const [sentIds, setSentIds]   = useState<string[]>([])
-  const [sending, setSending]   = useState<Record<string, boolean>>({})
-  const [checked, setChecked]   = useState<Set<string>>(new Set())
+  const [orders, setOrders]   = useState<Order[]>([])
+  const [search, setSearch]   = useState('')
+  const [checked, setChecked] = useState<Set<string>>(new Set())
+  const [downloading, setDownloading] = useState<string | null>(null)
 
   useEffect(() => {
     setOrders(loadOrders())
-    setSentIds(loadSentIds())
   }, [])
 
-  /* 송장 등록 완료된 주문 (배송중 상태) */
   const shippedOrders = useMemo(() =>
     orders.filter(o => o.status === 'shipped' && o.tracking_number),
   [orders])
@@ -50,32 +183,33 @@ export default function InvoiceSendPage() {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
   })
   const allChecked = filtered.length > 0 && filtered.every(o => checked.has(o.id))
-  const toggleAll = () => {
+  const toggleAll  = () => {
     if (allChecked) setChecked(prev => { const n = new Set(prev); filtered.forEach(o => n.delete(o.id)); return n })
-    else setChecked(prev => { const n = new Set(prev); filtered.forEach(o => n.add(o.id)); return n })
+    else            setChecked(prev => { const n = new Set(prev); filtered.forEach(o => n.add(o.id)); return n })
   }
 
-  /* 전송 처리 (실제 API 연동 전 로컬 처리) */
-  const handleSend = async (ids: string[]) => {
-    if (ids.length === 0) return alert('전송할 주문을 선택하세요.')
-    ids.forEach(id => setSending(prev => ({ ...prev, [id]: true })))
-
-    // 실제 API 호출 위치 (현재는 1초 딜레이로 시뮬레이션)
-    await new Promise(r => setTimeout(r, 900))
-
-    const updated = orders.map(o =>
-      ids.includes(o.id) ? { ...o, status: 'shipped' as const } : o
-    )
-    saveOrders(updated)
-    setOrders(updated)
-    markSent(ids)
-    setSentIds(loadSentIds())
-    setChecked(prev => { const n = new Set(prev); ids.forEach(id => n.delete(id)); return n })
-    ids.forEach(id => setSending(prev => { const n = { ...prev }; delete n[id]; return n }))
+  const handleDownload = (mallId: DownloadMallId, mallLabel: string) => {
+    setDownloading(mallId)
+    try {
+      if (mallId === 'marketplus') {
+        downloadMarketPlusInvoice(orders)
+      } else {
+        downloadMallInvoice(mallId, mallLabel, orders)
+      }
+    } finally {
+      setTimeout(() => setDownloading(null), 800)
+    }
   }
 
-  const pendingCount  = filtered.filter(o => !sentIds.includes(o.id)).length
-  const sentCount     = shippedOrders.filter(o => sentIds.includes(o.id)).length
+  const pendingCount = shippedOrders.length
+  const mallCounts   = useMemo(() => {
+    const c: Record<string, number> = {}
+    shippedOrders.forEach(o => {
+      const src = String(o.extra_data?.['import_source'] ?? o.channel)
+      c[src] = (c[src] ?? 0) + 1
+    })
+    return c
+  }, [shippedOrders])
 
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto' }}>
@@ -83,9 +217,9 @@ export default function InvoiceSendPage() {
       {/* KPI */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
         {[
-          { label: '전송 대기',   value: pendingCount,                  color: '#d97706', bg: '#fffbeb' },
-          { label: '전송 완료',   value: sentCount,                     color: '#059669', bg: '#ecfdf5' },
-          { label: '송장 등록 완료', value: shippedOrders.length,        color: '#7c3aed', bg: '#f5f3ff' },
+          { label: '송장 등록 완료',  value: shippedOrders.length,                             color: '#7c3aed', bg: '#f5f3ff' },
+          { label: '배송완료',        value: orders.filter(o => o.status === 'delivered').length, color: '#059669', bg: '#ecfdf5' },
+          { label: '전체 주문',       value: orders.length,                                    color: '#2563eb', bg: '#eff6ff' },
         ].map(k => (
           <div key={k.label} className="pm-card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
             <div style={{ width: 40, height: 40, borderRadius: 12, background: k.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -99,34 +233,73 @@ export default function InvoiceSendPage() {
         ))}
       </div>
 
-      {/* 검색 + 액션 바 */}
-      <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      {/* 쇼핑몰별 파일 다운로드 */}
+      <div className="pm-card" style={{ padding: '16px 20px', marginBottom: 14 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+          <FileDown size={15} style={{ color: '#475569' }} />
+          <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>쇼핑몰별 송장 파일 다운로드</span>
+          <span style={{ fontSize: 11.5, color: '#94a3b8' }}>· 배송처리된 주문 기준 · 파일명: 마켓명_송장_{todayStr()}.xlsx</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+          {DOWNLOAD_MALLS.map(mall => {
+            const count = mallCounts[mall.id === 'marketplus' ? 'marketplus' : mall.label] ?? 0
+            const isLoading = downloading === mall.id
+            return (
+              <button
+                key={mall.id}
+                onClick={() => handleDownload(mall.id, mall.label)}
+                disabled={isLoading}
+                style={{
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
+                  padding: '14px 12px', borderRadius: 12,
+                  border: `1.5px solid ${mall.color}30`,
+                  background: isLoading ? `${mall.color}08` : mall.bg,
+                  cursor: isLoading ? 'not-allowed' : 'pointer',
+                  transition: 'all 150ms ease',
+                  opacity: isLoading ? 0.7 : 1,
+                }}
+                onMouseEnter={e => { if (!isLoading) e.currentTarget.style.background = `${mall.color}15` }}
+                onMouseLeave={e => { if (!isLoading) e.currentTarget.style.background = mall.bg }}
+              >
+                <div style={{ width: 36, height: 36, borderRadius: 10, background: `${mall.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  {isLoading
+                    ? <Download size={16} style={{ color: mall.color, animation: 'spin 1s linear infinite' }} />
+                    : <Download size={16} style={{ color: mall.color }} />
+                  }
+                </div>
+                <div style={{ textAlign: 'center' }}>
+                  <p style={{ fontSize: 13, fontWeight: 800, color: mall.color }}>{mall.label}</p>
+                  <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
+                    {count > 0 ? `${count}건 대기` : '주문 없음'}
+                  </p>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* 검색 */}
+      <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
         <Search size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="주문번호 · 수취인 · 운송장번호 검색..."
-          style={{ flex: 1, height: 34, fontSize: 13, border: 'none', outline: 'none', background: 'transparent', minWidth: 200 }}
+          style={{ flex: 1, height: 34, fontSize: 13, border: 'none', outline: 'none', background: 'transparent' }}
         />
         {checked.size > 0 && (
           <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>
             {checked.size}건 선택
           </span>
         )}
-        <button
-          onClick={() => handleSend(checked.size > 0 ? Array.from(checked) : filtered.filter(o => !sentIds.includes(o.id)).map(o => o.id))}
-          style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 16px', background: '#4f46e5', color: 'white', borderRadius: 9, fontSize: 12.5, fontWeight: 800, border: 'none', cursor: 'pointer' }}
-        >
-          <Send size={13} />
-          {checked.size > 0 ? `선택 ${checked.size}건 전송` : '미전송 전체 전송'}
-        </button>
       </div>
 
-      {/* 목록 */}
+      {/* 주문 목록 */}
       <div className="pm-card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '12px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Truck size={15} style={{ color: '#64748b' }} />
-          <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>송장 전송 목록</span>
+          <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>송장 등록 완료 주문</span>
           <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>({filtered.length}건)</span>
         </div>
 
@@ -142,78 +315,35 @@ export default function InvoiceSendPage() {
           </div>
         ) : (
           <div>
-            {/* 헤더 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: '32px 140px 72px 90px 1fr 160px 90px 100px',
-              gap: 10, padding: '8px 20px',
-              background: '#f8fafc', borderBottom: '1px solid #f1f5f9',
-            }}>
-              <span
-                onClick={toggleAll}
-                style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 900, color: '#94a3b8' }}
-              >
-                □
+            <div style={{ display: 'grid', gridTemplateColumns: '32px 140px 72px 90px 1fr 160px 90px', gap: 10, padding: '8px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+              <span onClick={toggleAll} style={{ cursor: 'pointer', fontSize: 10.5, fontWeight: 900, color: allChecked ? '#2563eb' : '#94a3b8' }}>
+                {allChecked ? '☑' : '☐'}
               </span>
-              {['주문번호', '날짜', '채널', '상품명', '운송장번호', '수취인', '전송상태'].map(h => (
+              {['주문번호', '날짜', '채널', '상품명', '운송장번호', '수취인'].map(h => (
                 <span key={h} style={{ fontSize: 10.5, fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
               ))}
             </div>
 
             {filtered.map(order => {
-              const isSent    = sentIds.includes(order.id)
-              const isSending = sending[order.id]
-              const isChk     = checked.has(order.id)
+              const isChk = checked.has(order.id)
+              const importSrc = String(order.extra_data?.['import_source'] ?? order.channel)
+              const mallDef   = DOWNLOAD_MALLS.find(m => m.id === importSrc || m.label === importSrc)
               return (
-                <div
-                  key={order.id}
-                  style={{
-                    display: 'grid',
-                    gridTemplateColumns: '32px 140px 72px 90px 1fr 160px 90px 100px',
-                    gap: 10, padding: '11px 20px',
-                    borderBottom: '1px solid #f8fafc',
-                    alignItems: 'center',
-                    background: isSent ? '#f0fdf4' : isChk ? '#eff6ff' : 'transparent',
-                    transition: 'background 200ms',
-                    cursor: isSent ? 'default' : 'pointer',
-                  }}
-                  onClick={() => !isSent && toggleOne(order.id)}
+                <div key={order.id}
+                  style={{ display: 'grid', gridTemplateColumns: '32px 140px 72px 90px 1fr 160px 90px', gap: 10, padding: '11px 20px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: isChk ? '#eff6ff' : 'transparent', transition: 'background 100ms', cursor: 'pointer' }}
+                  onClick={() => toggleOne(order.id)}
                 >
-                  <span style={{ fontSize: 14, color: isChk ? '#2563eb' : '#cbd5e1' }}>
-                    {isChk ? '☑' : '☐'}
-                  </span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#2563eb', fontFamily: 'monospace' }}>
-                    {order.order_number}
-                  </span>
+                  <span style={{ fontSize: 14, color: isChk ? '#2563eb' : '#cbd5e1' }}>{isChk ? '☑' : '☐'}</span>
+                  <span style={{ fontSize: 11, fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.order_number}</span>
                   <span style={{ fontSize: 11, color: '#64748b' }}>{order.order_date}</span>
-                  <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {order.channel}
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: mallDef?.color ?? '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {mallDef?.label ?? order.channel}
                   </span>
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {order.items[0]?.product_name}
                   </span>
-                  <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#334155', fontWeight: 700 }}>
-                    {order.tracking_number}
-                  </span>
+                  <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#334155', fontWeight: 700 }}>{order.tracking_number}</span>
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
-                  <span>
-                    {isSending ? (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: '#d97706' }}>
-                        <RefreshCw size={12} />전송 중...
-                      </span>
-                    ) : isSent ? (
-                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 800, color: '#059669', background: '#dcfce7', padding: '3px 8px', borderRadius: 6 }}>
-                        <CheckCircle2 size={12} />전송완료
-                      </span>
-                    ) : (
-                      <button
-                        onClick={e => { e.stopPropagation(); handleSend([order.id]) }}
-                        style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 10px', background: '#4f46e5', color: 'white', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800 }}
-                      >
-                        <Send size={12} />전송
-                      </button>
-                    )}
-                  </span>
                 </div>
               )
             })}

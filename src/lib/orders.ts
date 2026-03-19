@@ -22,6 +22,7 @@ export interface Order {
   carrier?: string
   memo?: string
   uploaded_at: string
+  extra_data?: Record<string, unknown>  // 쇼핑몰별 추가 원본 데이터
 }
 
 /* ─── 주문 스토리지 ──────────────────────────────────────── */
@@ -75,6 +76,64 @@ export function loadMappings(): MappingStore {
 
 export function saveMappings(m: MappingStore) {
   try { localStorage.setItem(MAPPING_KEY, JSON.stringify(m)) } catch {}
+}
+
+/** 매핑 키: 상품명 + 옵션 복합키 (없으면 상품명만) */
+export function makeMappingKey(product_name: string, option?: string): string {
+  return option ? `${product_name}|||${option}` : product_name
+}
+
+/** 매핑 조회 (복합키 → 상품명만 순으로 폴백) */
+export function lookupMapping(mappings: MappingStore, product_name: string, option?: string): ProductMapping {
+  if (option) {
+    const key = makeMappingKey(product_name, option)
+    if (mappings[key]) return mappings[key]
+  }
+  if (mappings[product_name]) return mappings[product_name]
+  return { abbreviation: '', loca: '' }
+}
+
+/** 매핑 키에서 [상품명, 옵션] 분리 */
+export function splitMappingKey(key: string): [string, string] {
+  const idx = key.indexOf('|||')
+  if (idx === -1) return [key, '']
+  return [key.slice(0, idx), key.slice(idx + 3)]
+}
+
+/* ─── 마켓플러스 채널 매핑 ─────────────────────────────── */
+export const MP_CHANNEL_MAP: Record<string, string> = {
+  '네이버 페이': '카페24',
+  '네이버페이':  '카페24',
+}
+
+/** 마켓플러스 매출경로 → 시스템 channel */
+export function mpToChannel(매출경로: string): string {
+  return MP_CHANNEL_MAP[매출경로] ?? 매출경로
+}
+
+/** 시스템 channel → 마켓플러스 매출경로 */
+export function channelToMp(channel: string): string {
+  for (const [mp, ch] of Object.entries(MP_CHANNEL_MAP)) {
+    if (ch === channel) return mp
+  }
+  return channel
+}
+
+/* ─── Excel 다운로드 헬퍼 ────────────────────────────────── */
+export function downloadExcel(rows: Record<string, unknown>[], filename: string) {
+  if (typeof window === 'undefined') return
+  // 동적 import로 사용 (호출 측에서 import * as XLSX 사용)
+  import('xlsx').then(XLSX => {
+    const ws  = XLSX.utils.json_to_sheet(rows)
+    const wb  = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '송장')
+    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+    const blob = new Blob([out], { type: 'application/octet-stream' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url; a.download = filename; a.click()
+    URL.revokeObjectURL(url)
+  })
 }
 
 /* ─── 색상 추출 (옵션명에서 한글 색상 추출) ─────────────── */
