@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
-export const maxDuration = 25   // Pro 플랜: 300s 가능, Hobby: 10s 한계
+export const maxDuration = 55   // Disk IO 스로틀 상태에서 충분한 시간
 
 const SUPABASE_URL  = (process.env.NEXT_PUBLIC_SUPABASE_URL  ?? '').trim()
 const SERVICE_KEY   = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
 const TABLE         = 'pm_products'
-const TIMEOUT_MS    = 20000  // 서버→Supabase 타임아웃 20s
+const TIMEOUT_MS    = 50000  // Disk IO 고갈 상태 대응: 50s
 
 /** AbortController + timeout 을 붙인 native fetch */
 async function sbFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -54,14 +54,26 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(data)
     }
 
-    const res = await sbFetch(`${TABLE}?select=${SELECT_COLS}&order=code.asc`)
+    // next.revalidate: 300 → Vercel 엣지에 5분 캐시 (IO 반복 쿼리 방지)
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/${TABLE}?select=${SELECT_COLS}&order=code.asc`,
+      {
+        headers: {
+          apikey:         SERVICE_KEY,
+          Authorization:  `Bearer ${SERVICE_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        next: { revalidate: 300 },
+      }
+    )
     if (!res.ok) {
       const txt = await res.text().catch(() => '')
       return NextResponse.json({ error: `${res.status}: ${txt}` }, { status: res.status })
     }
     const data = await res.json()
     return NextResponse.json(Array.isArray(data) ? data : [], {
-      headers: { 'Cache-Control': 'no-store' },
+      headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=60' },
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)

@@ -540,10 +540,10 @@ export default function ProductsPage() {
       setLoading(false)
     }
 
-    // 안전 타임아웃: 최대 28초 후 강제 종료 (무한 대기 방지)
+    // 안전 타임아웃: 최대 58초 (Disk IO 스로틀 환경 대응)
     const safetyTimer = setTimeout(() => {
-      finish(null, '요청 시간 초과(28s). 네트워크/Supabase 연결을 확인하세요.')
-    }, 28000)
+      finish(null, 'Supabase Disk IO 예산 부족으로 응답 지연 중입니다.\n잠시 후 다시 시도하거나 Supabase 플랜을 업그레이드하세요.')
+    }, 58000)
 
     // 타임아웃을 걸 수 있는 fetch 래퍼
     const timedFetch = (url: string, ms: number): Promise<Response> => {
@@ -560,8 +560,8 @@ export default function ProductsPage() {
       ])
 
     const runLoad = async () => {
-      const API_TIMEOUT    = 23000   // 클라이언트→API route (서버 20s + 네트워크 여유)
-      const DIRECT_TIMEOUT = 20000   // 브라우저→Supabase 직접
+      const API_TIMEOUT    = 55000   // 서버 50s + 여유 (Disk IO 스로틀 대응)
+      const DIRECT_TIMEOUT = 50000   // 브라우저→Supabase 직접
 
       let apiResult:  Product[] | null = null
       let dbResult:   Product[] | null = null
@@ -1601,7 +1601,7 @@ export default function ProductsPage() {
                       </svg>
                       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
                       <p style={{ fontSize:13.5, fontWeight:700, color:'#64748b' }}>상품 목록을 불러오는 중입니다...</p>
-                      <p style={{ fontSize:11.5, color:'#94a3b8' }}>처음 연결 시 최대 20초 소요될 수 있습니다</p>
+                      <p style={{ fontSize:11.5, color:'#94a3b8' }}>Disk IO 과부하로 최대 1분 소요될 수 있습니다</p>
                     </div>
                   </td>
                 </tr>
