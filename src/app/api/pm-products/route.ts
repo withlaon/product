@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server'
 
 export const runtime = 'nodejs'
-export const maxDuration = 10
+export const maxDuration = 25   // Pro 플랜: 300s 가능, Hobby: 10s 한계
 
 const SUPABASE_URL  = (process.env.NEXT_PUBLIC_SUPABASE_URL  ?? '').trim()
 const SERVICE_KEY   = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
 const TABLE         = 'pm_products'
-const TIMEOUT_MS    = 9000   // Vercel Hobby 10s 제한 내에 완료
+const TIMEOUT_MS    = 20000  // 서버→Supabase 타임아웃 20s
 
 /** AbortController + timeout 을 붙인 native fetch */
 async function sbFetch(path: string, init: RequestInit = {}): Promise<Response> {

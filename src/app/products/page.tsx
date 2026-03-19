@@ -540,10 +540,10 @@ export default function ProductsPage() {
       setLoading(false)
     }
 
-    // 안전 타임아웃: 최대 18초 후 강제 종료 (무한 대기 방지)
+    // 안전 타임아웃: 최대 28초 후 강제 종료 (무한 대기 방지)
     const safetyTimer = setTimeout(() => {
-      finish(null, '요청 시간 초과(18s). 네트워크/Supabase 연결을 확인하세요.')
-    }, 18000)
+      finish(null, '요청 시간 초과(28s). 네트워크/Supabase 연결을 확인하세요.')
+    }, 28000)
 
     // 타임아웃을 걸 수 있는 fetch 래퍼
     const timedFetch = (url: string, ms: number): Promise<Response> => {
@@ -560,7 +560,8 @@ export default function ProductsPage() {
       ])
 
     const runLoad = async () => {
-      const PER_TIMEOUT = 8000
+      const API_TIMEOUT    = 23000   // 클라이언트→API route (서버 20s + 네트워크 여유)
+      const DIRECT_TIMEOUT = 20000   // 브라우저→Supabase 직접
 
       let apiResult:  Product[] | null = null
       let dbResult:   Product[] | null = null
@@ -569,22 +570,19 @@ export default function ProductsPage() {
 
       // ── API route (service_role key, RLS 우회) ──
       const apiFetch = async () => {
-        for (let i = 0; i < 2; i++) {
-          if (done) return
-          try {
-            if (i > 0) await new Promise(r => setTimeout(r, 1200))
-            const res = await timedFetch('/api/pm-products', PER_TIMEOUT)
-            if (res.ok) {
-              const raw = await res.json()
-              if (Array.isArray(raw)) { apiResult = raw.map(rowToProduct); return }
-              apiErr = `API 응답형식 오류: ${JSON.stringify(raw).slice(0, 80)}`
-            } else {
-              const body = await res.text().catch(() => '')
-              apiErr = `API HTTP ${res.status}: ${body.slice(0, 80)}`
-            }
-          } catch (e) {
-            apiErr = `API: ${e instanceof Error ? e.message : String(e)}`
+        if (done) return
+        try {
+          const res = await timedFetch('/api/pm-products', API_TIMEOUT)
+          if (res.ok) {
+            const raw = await res.json()
+            if (Array.isArray(raw)) { apiResult = raw.map(rowToProduct); return }
+            apiErr = `API 응답형식 오류: ${JSON.stringify(raw).slice(0, 80)}`
+          } else {
+            const body = await res.text().catch(() => '')
+            apiErr = `API HTTP ${res.status}: ${body.slice(0, 80)}`
           }
+        } catch (e) {
+          apiErr = `API: ${e instanceof Error ? e.message : String(e)}`
         }
       }
 
@@ -598,7 +596,7 @@ export default function ProductsPage() {
             .order('code', { ascending: true })
             .then(r => r)
 
-          const result = await timedSupabaseQuery(dbPromise, PER_TIMEOUT)
+          const result = await timedSupabaseQuery(dbPromise, DIRECT_TIMEOUT)
           const { data, error } = result as { data: unknown[] | null; error: { message: string } | null }
           if (!error && Array.isArray(data)) {
             dbResult = data.map(rowToProduct)
@@ -610,7 +608,7 @@ export default function ProductsPage() {
         }
       }
 
-      // ── API route 와 직접 Supabase 를 병렬 실행, 먼저 성공하면 바로 적용 ──
+      // ── 병렬 실행: 둘 중 하나라도 성공하면 사용 ──
       await Promise.all([apiFetch(), directFetch()])
 
       if (done) return  // 안전 타이머가 이미 실행한 경우
@@ -1603,6 +1601,7 @@ export default function ProductsPage() {
                       </svg>
                       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
                       <p style={{ fontSize:13.5, fontWeight:700, color:'#64748b' }}>상품 목록을 불러오는 중입니다...</p>
+                      <p style={{ fontSize:11.5, color:'#94a3b8' }}>처음 연결 시 최대 20초 소요될 수 있습니다</p>
                     </div>
                   </td>
                 </tr>
