@@ -7,9 +7,29 @@ import {
   LayoutDashboard, Package, Warehouse,
   Settings,
   PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, ShoppingCart, Truck, GitMerge,
+  ClipboardList,
 } from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
-const navGroups = [
+interface NavChild {
+  label: string
+  href: string
+  icon: LucideIcon
+}
+
+interface NavItem {
+  label: string
+  href: string
+  icon: LucideIcon
+  children?: NavChild[]
+}
+
+interface NavGroup {
+  label: string
+  items: NavItem[]
+}
+
+const navGroups: NavGroup[] = [
   {
     label: '메인',
     items: [{ label: '대시보드', href: '/dashboard', icon: LayoutDashboard }],
@@ -18,7 +38,12 @@ const navGroups = [
     label: '상품 · 재고',
     items: [
       { label: '상품관리',     href: '/products',              icon: Package },
-      { label: '주문관리',     href: '/product-transfer',      icon: ShoppingCart },
+      {
+        label: '주문관리',     href: '/product-transfer',      icon: ShoppingCart,
+        children: [
+          { label: '주문서등록', href: '/order-registration', icon: ClipboardList },
+        ],
+      },
       { label: '송장등록',     href: '/product-edit-transfer', icon: Truck },
       { label: '재고관리',     href: '/inventory',             icon: Warehouse },
       { label: '발주/입고관리', href: '/purchase',              icon: PackagePlus },
@@ -123,7 +148,10 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
 
             <ul className="space-y-0.5">
               {group.items.map((item) => {
-                const isActive = pathname === item.href || pathname.startsWith(item.href + '/')
+                const hasChildren = !collapsed && item.children && item.children.length > 0
+                const isActive = pathname === item.href
+                const isParentOfActive = hasChildren && item.children!.some(c => pathname === c.href || pathname.startsWith(c.href + '/'))
+                const isHighlighted = isActive || isParentOfActive
                 return (
                   <li key={item.href}>
                     <Link
@@ -137,20 +165,19 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
                         justifyContent: collapsed ? 'center' : undefined,
                         gap: collapsed ? undefined : 9,
                         padding: collapsed ? undefined : '0 10px',
-                        background: isActive
+                        background: isHighlighted
                           ? 'linear-gradient(90deg, rgba(59,130,246,0.18) 0%, rgba(59,130,246,0.08) 100%)'
                           : 'transparent',
                         transition: 'background 150ms ease, transform 100ms ease',
                       }}
                       onMouseEnter={e => {
-                        if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
+                        if (!isHighlighted) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'
                       }}
                       onMouseLeave={e => {
-                        if (!isActive) e.currentTarget.style.background = 'transparent'
+                        if (!isHighlighted) e.currentTarget.style.background = 'transparent'
                       }}
                     >
-                      {/* 활성 인디케이터 */}
-                      {isActive && !collapsed && (
+                      {isHighlighted && !collapsed && (
                         <span
                           className="absolute left-0 top-1/2 -translate-y-1/2 rounded-r-full"
                           style={{ width: 3, height: 20, background: '#60a5fa' }}
@@ -159,10 +186,10 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
 
                       <item.icon
                         size={15}
-                        strokeWidth={isActive ? 2.4 : 1.8}
+                        strokeWidth={isHighlighted ? 2.4 : 1.8}
                         style={{
                           flexShrink: 0,
-                          color: isActive ? '#60a5fa' : 'rgba(255,255,255,0.28)',
+                          color: isHighlighted ? '#60a5fa' : 'rgba(255,255,255,0.28)',
                           transition: 'color 150ms ease',
                         }}
                       />
@@ -171,7 +198,7 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
                         <span
                           className="text-[14.5px] font-extrabold flex-1 truncate"
                           style={{
-                            color: isActive ? '#f1f5f9' : 'rgba(255,255,255,0.42)',
+                            color: isHighlighted ? '#f1f5f9' : 'rgba(255,255,255,0.42)',
                             transition: 'color 150ms ease',
                           }}
                         >
@@ -179,11 +206,10 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
                         </span>
                       )}
 
-                      {isActive && !collapsed && (
+                      {isHighlighted && !collapsed && (
                         <ChevronRight size={11} style={{ color: 'rgba(96,165,250,0.45)', flexShrink: 0 }} />
                       )}
 
-                      {/* 툴팁 (접힘 상태) */}
                       {collapsed && (
                         <span
                           className="absolute pointer-events-none"
@@ -210,6 +236,60 @@ export function Sidebar({ collapsed, onCollapse, mobileOpen, onMobileClose }: Si
                         </span>
                       )}
                     </Link>
+
+                    {/* 서브 메뉴 아이템 */}
+                    {hasChildren && (
+                      <ul className="mt-0.5 space-y-0.5" style={{ paddingLeft: 14 }}>
+                        {item.children!.map((child) => {
+                          const isChildActive = pathname === child.href || pathname.startsWith(child.href + '/')
+                          return (
+                            <li key={child.href}>
+                              <Link
+                                href={child.href}
+                                className="relative flex items-center rounded-xl"
+                                style={{
+                                  height: 32,
+                                  width: '100%',
+                                  gap: 8,
+                                  padding: '0 10px',
+                                  background: isChildActive
+                                    ? 'rgba(59,130,246,0.14)'
+                                    : 'transparent',
+                                  transition: 'background 150ms ease',
+                                  borderLeft: '1.5px solid rgba(255,255,255,0.07)',
+                                  paddingLeft: 12,
+                                }}
+                                onMouseEnter={e => {
+                                  if (!isChildActive) e.currentTarget.style.background = 'rgba(255,255,255,0.04)'
+                                }}
+                                onMouseLeave={e => {
+                                  if (!isChildActive) e.currentTarget.style.background = 'transparent'
+                                }}
+                              >
+                                <child.icon
+                                  size={13}
+                                  strokeWidth={isChildActive ? 2.4 : 1.8}
+                                  style={{
+                                    flexShrink: 0,
+                                    color: isChildActive ? '#93c5fd' : 'rgba(255,255,255,0.22)',
+                                    transition: 'color 150ms ease',
+                                  }}
+                                />
+                                <span
+                                  className="text-[13px] font-bold flex-1 truncate"
+                                  style={{
+                                    color: isChildActive ? '#bfdbfe' : 'rgba(255,255,255,0.32)',
+                                    transition: 'color 150ms ease',
+                                  }}
+                                >
+                                  {child.label}
+                                </span>
+                              </Link>
+                            </li>
+                          )
+                        })}
+                      </ul>
+                    )}
                   </li>
                 )
               })}
