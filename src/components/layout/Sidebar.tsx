@@ -48,7 +48,7 @@ const navGroups: NavGroup[] = [
       {
         label: '송장등록',     href: '/product-edit-transfer', icon: Truck,
         children: [
-          { label: '송장출력용', href: '/product-edit-transfer/print', icon: Printer },
+          { label: '송장입력', href: '/product-edit-transfer/print', icon: Printer },
           { label: '송장전송용', href: '/product-edit-transfer/send',  icon: Send },
         ],
       },

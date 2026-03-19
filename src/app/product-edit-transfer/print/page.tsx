@@ -1,16 +1,29 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import {
-  Truck, CheckCircle2, Search, Save, Package, X, Printer,
-  CheckSquare, Square, Trash2, FileDown,
+  Truck, CheckCircle2, Search, Save, Package, Printer,
+  CheckSquare, Square, Trash2, FileDown, Upload,
 } from 'lucide-react'
 import {
   loadOrders, saveOrders, loadSelectedForInvoice, clearSelectedForInvoice,
   STATUS_MAP, loadMappings, lookupMapping,
 } from '@/lib/orders'
 import type { Order } from '@/lib/orders'
+
+/** [색상=베이지, 사이즈=FREE] → [베이지,FREE] 변환 */
+function formatOption(option: string): string {
+  if (!option) return ''
+  const inner = option.replace(/^\[|\]$/g, '').trim()
+  const parts = inner.split(',').map(part => {
+    const eq = part.indexOf('=')
+    return eq !== -1 ? part.slice(eq + 1).trim() : part.trim()
+  })
+  const result = parts.join(',')
+  // 원본이 [] 형식이었으면 [] 유지, 아니면 그대로
+  return option.startsWith('[') ? `[${result}]` : result
+}
 
 const CARRIERS = ['CJ대한통운', '롯데택배', '한진택배', '우체국택배', '로젠택배', '쿠팡로켓', '직접입력']
 
@@ -26,6 +39,7 @@ export default function InvoicePrintPage() {
   const [filterSelected, setFilterSelected] = useState(false)
   const [selectedIds, setSelectedIds]   = useState<string[]>([])
   const [checkedPrint, setCheckedPrint] = useState<Set<string>>(new Set())
+  const bulkFileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     setOrders(loadOrders())
@@ -121,6 +135,60 @@ export default function InvoicePrintPage() {
     }), 2500)
   }
 
+  /* CJ 송장파일 일괄 업로드 → 운송장번호 자동입력 */
+  const handleBulkInvoiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    e.target.value = ''
+
+    const reader = new FileReader()
+    reader.onload = evt => {
+      try {
+        const wb   = XLSX.read(evt.target?.result, { type: 'array' })
+        const ws   = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' }) as unknown[][]
+
+        // 헤더 제외, H열(index 7) = 운송장번호, U열(index 20) = 받는분, V열(index 21) = 전화번호
+        const dataRows = rows.slice(1).filter(r => String(r[7] ?? '').trim())
+
+        // 전화번호 정규화 (숫자만 추출)
+        const normalizePhone = (p: string) => String(p ?? '').replace(/\D/g, '')
+
+        // 현재 목록 복사 후 매핑
+        let updated = [...orders]
+        let matchCount = 0
+        const newEdits: Record<string, { carrier: string; tracking: string }> = { ...edits }
+
+        dataRows.forEach(row => {
+          const tracking  = String(row[7] ?? '').trim()
+          const excelPhone = normalizePhone(String(row[21] ?? ''))
+          const excelName  = String(row[20] ?? '').trim()
+
+          if (!tracking) return
+
+          // 전화번호로 매칭, 없으면 이름으로 매칭
+          const match = filtered.find(o => {
+            const oPhone = normalizePhone(o.customer_phone ?? '')
+            if (oPhone && excelPhone && oPhone === excelPhone) return true
+            if (excelName && o.customer_name === excelName) return true
+            return false
+          })
+
+          if (match && !newEdits[match.id]?.tracking) {
+            newEdits[match.id] = { carrier: newEdits[match.id]?.carrier ?? 'CJ대한통운', tracking }
+            matchCount++
+          }
+        })
+
+        setEdits(newEdits)
+        alert(`${matchCount}건 운송장번호가 자동 입력되었습니다.\n확인 후 [일괄 저장] 버튼을 눌러 저장하세요.`)
+      } catch {
+        alert('파일을 읽는 중 오류가 발생했습니다.')
+      }
+    }
+    reader.readAsArrayBuffer(file)
+  }
+
   /* 선택 항목 삭제 */
   const handleDelete = () => {
     if (checkedPrint.size === 0) return
@@ -145,7 +213,7 @@ export default function InvoicePrintPage() {
       const opt     = item?.option ?? ''
       const m       = lookupMapping(mappings, pname, opt)
       const abbr    = m.abbreviation || pname
-      const 품목명  = abbr + (opt ? `[${opt}]` : '')
+      const 품목명  = abbr + (opt ? formatOption(opt.startsWith('[') ? opt : `[${opt}]`) : '')
       return {
         '보내는분성명':           SENDER_NAME,
         '보내는분전화번호':       SENDER_PHONE,
@@ -292,11 +360,20 @@ export default function InvoicePrintPage() {
           {checkedCount > 0 ? `선택 ${checkedCount}건 다운로드` : '전체 다운로드'}
         </button>
 
+        {/* 일괄등록: CJ 송장파일 업로드 */}
+        <button
+          onClick={() => bulkFileRef.current?.click()}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#2563eb', color: 'white', borderRadius: 9, fontSize: 12, fontWeight: 800, border: 'none', cursor: 'pointer' }}
+        >
+          <Upload size={13} />일괄등록 (파일업로드)
+        </button>
+        <input ref={bulkFileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleBulkInvoiceUpload} />
+        {/* 일괄 저장 */}
         <button
           onClick={handleSaveAll}
           style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#059669', color: 'white', borderRadius: 9, fontSize: 12, fontWeight: 800, border: 'none', cursor: 'pointer' }}
         >
-          <Save size={13} />일괄 등록
+          <Save size={13} />일괄 저장
         </button>
         <button
           onClick={printInvoices}

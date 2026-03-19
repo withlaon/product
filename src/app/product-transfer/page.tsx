@@ -604,8 +604,15 @@ export default function OrdersPage() {
       const item    = order.items[0]
       const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
       const abbr    = mapping.abbreviation || item?.product_name || ''
-      const optName = item?.option || ''
-      const itemLabel = abbr ? (optName ? `${abbr}[${optName}]` : abbr) : optName
+      const optRaw  = item?.option || ''
+      // [색상=베이지, 사이즈=FREE] → [베이지,FREE] 변환
+      const formatOpt = (opt: string) => {
+        if (!opt) return ''
+        const inner = opt.replace(/^\[|\]$/g, '').trim()
+        const parts = inner.split(',').map(p => { const eq = p.indexOf('='); return eq !== -1 ? p.slice(eq+1).trim() : p.trim() })
+        return opt.startsWith('[') ? `[${parts.join(',')}]` : `[${parts.join(',')}]`
+      }
+      const itemLabel = abbr ? (optRaw ? `${abbr}${formatOpt(optRaw)}` : abbr) : optRaw
 
       return [
         SENDER_NAME,
