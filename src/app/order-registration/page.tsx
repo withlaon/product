@@ -5,6 +5,7 @@ import * as XLSX from 'xlsx'
 import {
   Upload, ChevronLeft, ChevronRight, Package,
   CheckCircle2, AlertCircle, Store, FileSpreadsheet,
+  CheckSquare, Square, Trash2,
 } from 'lucide-react'
 import {
   loadOrders, saveOrders, toOrderDate,
@@ -268,6 +269,7 @@ export default function OrderRegistrationPage() {
   const [importing, setImporting]       = useState(false)
   const [importMsg, setImportMsg]       = useState<{ text: string; ok: boolean } | null>(null)
   const [selectedOrder, setSelectedOrder] = useState<RegOrder | null>(null)
+  const [checkedIds, setCheckedIds]     = useState<Set<string>>(new Set())
   const fileRef = useRef<HTMLInputElement>(null)
 
   const isToday   = currentDate === today
@@ -277,7 +279,40 @@ export default function OrderRegistrationPage() {
     if (!selectedMall) return
     setDayData(loadDayData(selectedMall, currentDate))
     setImportMsg(null)
+    setCheckedIds(new Set())
   }, [selectedMall, currentDate])
+
+  const orders = dayData?.orders ?? []
+  const allChecked = orders.length > 0 && orders.every(o => checkedIds.has(o.id))
+  const toggleAll = () => {
+    if (allChecked) {
+      setCheckedIds(new Set())
+    } else {
+      setCheckedIds(new Set(orders.map(o => o.id)))
+    }
+  }
+  const toggleOne = (id: string) => setCheckedIds(prev => {
+    const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
+  })
+
+  /* 선택 항목 삭제 */
+  const handleDeleteChecked = () => {
+    if (checkedIds.size === 0 || !selectedMall || !dayData) return
+    if (!confirm(`선택된 ${checkedIds.size}건을 삭제하시겠습니까?`)) return
+
+    const remaining = dayData.orders.filter(o => !checkedIds.has(o.id))
+    const newData: DayData = { ...dayData, orders: remaining }
+    saveDayData(newData)
+    setDayData(newData)
+    setCheckedIds(new Set())
+
+    // pm_orders_v1 에서도 제거
+    const mainOrders = loadOrders()
+    const deletedIds = new Set(
+      dayData.orders.filter(o => checkedIds.has(o.id)).map(o => o.id)
+    )
+    saveOrders(mainOrders.filter(o => !deletedIds.has(o.id)))
+  }
 
   const handleMallSelect = (mall: MallId) => {
     setSelectedMall(mall)
@@ -515,7 +550,15 @@ export default function OrderRegistrationPage() {
                 </div>
               )}
               {dayData && dayData.orders.length > 0 && (
-                <span style={{ marginLeft: 'auto', fontSize: 12.5, color: '#94a3b8', fontWeight: 700 }}>총 {dayData.orders.length}건</span>
+                <>
+                  <span style={{ fontSize: 12.5, color: '#94a3b8', fontWeight: 700, marginLeft: 'auto' }}>총 {dayData.orders.length}건</span>
+                  {checkedIds.size > 0 && (
+                    <button onClick={handleDeleteChecked}
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: '#fef2f2', color: '#dc2626', borderRadius: 8, fontSize: 12, fontWeight: 800, border: '1.5px solid #fecaca', cursor: 'pointer' }}>
+                      <Trash2 size={12} />선택 삭제 ({checkedIds.size})
+                    </button>
+                  )}
+                </>
               )}
             </div>
 
@@ -544,7 +587,12 @@ export default function OrderRegistrationPage() {
               ) : (
                 <div style={{ flex: 1, overflow: 'auto' }}>
                   {/* 테이블 헤더 */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 110px 70px 90px', gap: 12, padding: '10px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', position: 'sticky', top: 0, zIndex: 1 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 2fr 110px 70px 90px', gap: 10, padding: '10px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', position: 'sticky', top: 0, zIndex: 1 }}>
+                    <span onClick={toggleAll} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                      {allChecked
+                        ? <CheckSquare size={14} style={{ color: '#2563eb' }} />
+                        : <Square size={14} style={{ color: '#cbd5e1' }} />}
+                    </span>
                     {['주문번호', '상품명', '수취인', '수량', '상태'].map(h => (
                       <span key={h} style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
                     ))}
@@ -553,15 +601,20 @@ export default function OrderRegistrationPage() {
                   {dayData.orders.map((order, idx) => {
                     const st = STATUS_MAP[order.status] ?? STATUS_MAP.pending
                     const totalQty = order.items.reduce((s, i) => s + i.quantity, 0)
-                    // 마켓플러스: 실제 채널 표시
                     const displayChannel = order.extra_data?.['매출경로'] ? String(order.extra_data['매출경로']) : ''
+                    const isChk = checkedIds.has(order.id)
                     return (
-                      <div key={order.id} onClick={() => setSelectedOrder(order)}
-                        style={{ display: 'grid', gridTemplateColumns: '1fr 2fr 110px 70px 90px', gap: 12, padding: '13px 20px', borderBottom: idx < dayData.orders.length - 1 ? '1px solid #f8fafc' : 'none', alignItems: 'center', cursor: 'pointer', transition: 'background 100ms' }}
-                        onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
-                        onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                      <div key={order.id}
+                        style={{ display: 'grid', gridTemplateColumns: '36px 1fr 2fr 110px 70px 90px', gap: 10, padding: '12px 20px', borderBottom: idx < dayData.orders.length - 1 ? '1px solid #f8fafc' : 'none', alignItems: 'center', background: isChk ? '#eff6ff' : 'transparent', transition: 'background 100ms' }}
+                        onMouseEnter={e => { if (!isChk) e.currentTarget.style.background = '#f8fafc' }}
+                        onMouseLeave={e => { if (!isChk) e.currentTarget.style.background = 'transparent' }}
                       >
-                        <div>
+                        <span onClick={e => { e.stopPropagation(); toggleOne(order.id) }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
+                          {isChk
+                            ? <CheckSquare size={14} style={{ color: '#2563eb' }} />
+                            : <Square size={14} style={{ color: '#cbd5e1' }} />}
+                        </span>
+                        <div onClick={() => setSelectedOrder(order)} style={{ cursor: 'pointer', overflow: 'hidden' }}>
                           <span style={{ fontSize: 11.5, fontWeight: 800, color: activeMall?.color ?? '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                             {order.order_number}
                           </span>
@@ -569,14 +622,14 @@ export default function OrderRegistrationPage() {
                             <span style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600 }}>{displayChannel}</span>
                           )}
                         </div>
-                        <div style={{ overflow: 'hidden' }}>
-                          <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        <div onClick={() => setSelectedOrder(order)} style={{ cursor: 'pointer', overflow: 'hidden' }}>
+                          <p style={{ fontSize: 13, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
                             {order.items[0]?.product_name}
                             {order.items.length > 1 && <span style={{ fontSize: 11.5, color: '#94a3b8', marginLeft: 4 }}>외 {order.items.length - 1}건</span>}
                           </p>
-                          {order.items[0]?.option && <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 1 }}>{order.items[0].option}</p>}
+                          {order.items[0]?.option && <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 1, margin: '1px 0 0' }}>{order.items[0].option}</p>}
                         </div>
-                        <span style={{ fontSize: 13, fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
+                        <span onClick={() => setSelectedOrder(order)} style={{ cursor: 'pointer', fontSize: 13, fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
                         <span style={{ fontSize: 13, fontWeight: 800, color: '#475569', textAlign: 'center' }}>{totalQty}</span>
                         <span style={{ fontSize: 11.5, fontWeight: 800, color: st.color, background: st.bg, padding: '3px 8px', borderRadius: 6, textAlign: 'center', display: 'block' }}>{st.label}</span>
                       </div>
