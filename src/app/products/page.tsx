@@ -519,38 +519,47 @@ export default function ProductsPage() {
     const saved = loadSavedCats()
     if (saved && saved.length > 0) setExtraCats(saved)
 
+    // SSR에서는 localStorage가 없으므로 useEffect에서 캐시 즉시 표시
+    const anyCache = loadProductsAnyCached()
+    if (anyCache.length > 0) {
+      setProducts(anyCache)
+      setLoading(false)
+    }
+
     const MAX_RETRY = 2
     const FETCH_TIMEOUT = 12000
 
-    const loadFromServer = async (attempt: number = 0): Promise<void> => {
-      try {
-        const res = await fetchWithTimeout('/api/pm-products', FETCH_TIMEOUT)
-        if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const raw = await res.json()
-        if (!Array.isArray(raw)) throw new Error('invalid response')
+    // for 루프 방식으로 재시도 (finally 즉시 실행 버그 방지)
+    const loadFromServer = async (): Promise<void> => {
+      for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+        try {
+          if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt))
+          const res = await fetchWithTimeout('/api/pm-products', FETCH_TIMEOUT)
+          if (!res.ok) throw new Error(`HTTP ${res.status}`)
+          const raw = await res.json()
+          if (!Array.isArray(raw)) throw new Error('invalid response')
 
-        const loaded = raw.map(rowToProduct)
-        setProducts(loaded)
-        setLoadError(false)
-        autoMarkSoldout(loaded)
-        try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
-        const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
-        setExtraCats(prev => {
-          const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
-          const merged = [...new Set([...base, ...dbCats])]
-          saveCats(merged); return merged
-        })
-      } catch (e) {
-        if (attempt < MAX_RETRY) {
-          // 자동 재시도 (지수 백오프)
-          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
-          return loadFromServer(attempt + 1)
+          const loaded = raw.map(rowToProduct)
+          setProducts(loaded)
+          setLoadError(false)
+          autoMarkSoldout(loaded)
+          try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
+          const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
+          setExtraCats(prev => {
+            const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
+            const merged = [...new Set([...base, ...dbCats])]
+            saveCats(merged); return merged
+          })
+          setLoading(false)
+          return // 성공 시 종료
+        } catch (e) {
+          if (attempt === MAX_RETRY) {
+            console.error('상품 로드 실패:', e)
+            if (loadProductsAnyCached().length === 0) setLoadError(true)
+            setLoading(false)
+          }
+          // 아직 재시도 남아있으면 loop 계속
         }
-        console.error('상품 로드 실패:', e)
-        // 캐시 데이터가 없는 경우에만 에러 표시
-        if (loadProductsAnyCached().length === 0) setLoadError(true)
-      } finally {
-        setLoading(false)
       }
     }
 
