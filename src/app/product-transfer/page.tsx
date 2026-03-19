@@ -8,6 +8,7 @@ import {
   BarChart2, ListFilter, CheckSquare, Square,
   ChevronDown, Link2, Link2Off, Search, AlertCircle,
 } from 'lucide-react'
+import * as XLSX from 'xlsx'
 import {
   loadOrders, saveOrders, loadMappings, saveMappings, extractColor,
   saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
@@ -579,6 +580,60 @@ export default function OrdersPage() {
     router.push('/product-edit-transfer/print')
   }
 
+  /* CJ 송장출력 파일 다운로드 */
+  const handleCJInvoiceDownload = () => {
+    const targets = checked.size > 0
+      ? orders.filter(o => checked.has(o.id))
+      : displayOrders
+    if (targets.length === 0) return alert('다운로드할 주문이 없습니다.')
+
+    const now = new Date()
+    const dateStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
+
+    const SENDER_NAME    = '위드라온'
+    const SENDER_PHONE   = '070-8949-7469'
+    const SENDER_ADDRESS = '경기도 부천시 소사구 성주로 96, 제일빌딩 5층'
+
+    const header = [
+      '보내는분성명','보내는분전화번호','보내는분주소(전체, 분할)',
+      '받는분성명','받는분전화번호','받는분주소(전체, 분할)',
+      '품목명','내품수량','배송메세지1','고객주문번호','운송장번호',
+    ]
+
+    const rows = targets.map(order => {
+      const item    = order.items[0]
+      const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
+      const abbr    = mapping.abbreviation || item?.product_name || ''
+      const optName = item?.option || ''
+      const itemLabel = abbr ? (optName ? `${abbr}[${optName}]` : abbr) : optName
+
+      return [
+        SENDER_NAME,
+        SENDER_PHONE,
+        SENDER_ADDRESS,
+        order.customer_name ?? '',
+        order.customer_phone ?? '',
+        order.shipping_address ?? '',
+        itemLabel,
+        item?.quantity ?? 1,
+        order.memo ?? '',
+        '',   // 고객주문번호 공란
+        '',   // 운송장번호 공란
+      ]
+    })
+
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+    // 열 너비 설정
+    ws['!cols'] = [
+      {wch:12},{wch:15},{wch:40},
+      {wch:10},{wch:15},{wch:50},
+      {wch:25},{wch:8},{wch:30},{wch:15},{wch:15},
+    ]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '송장출력')
+    XLSX.writeFile(wb, `CJ송장출력_${dateStr}.xlsx`)
+  }
+
   /* KPI */
   const todayCount   = orders.filter(o => o.order_date === today).length
   const monthCount   = orders.filter(o => o.order_date.startsWith(curYM)).length
@@ -780,9 +835,9 @@ export default function OrdersPage() {
             <Printer size={13} />피킹리스트 출력
           </button>
 
-          {/* 송장등록으로 이동 */}
-          <button onClick={goToInvoice} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#7c3aed', color: 'white', borderRadius: 9, fontSize: 12.5, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
-            <Truck size={13} />송장등록 이동
+          {/* CJ 송장출력 파일 다운로드 */}
+          <button onClick={handleCJInvoiceDownload} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#7c3aed', color: 'white', borderRadius: 9, fontSize: 12.5, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+            <Truck size={13} />CJ송장출력 파일
           </button>
         </div>
       </div>
