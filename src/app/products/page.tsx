@@ -116,6 +116,17 @@ const CATS_STORAGE_KEY = 'pm_categories_v1'
 const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
 const PRODUCTS_CACHE_TTL = 10 * 60 * 1000 // 10분
 
+/** TTL 관계없이 저장된 캐시 데이터 반환 (스테일 포함) */
+function loadProductsAnyCached(): Product[] {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
+    if (!raw) return []
+    const { data: cached } = JSON.parse(raw)
+    if (Array.isArray(cached) && cached.length > 0) return cached
+  } catch {}
+  return []
+}
+
 function loadProductsFromCache(): Product[] {
   try {
     const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
@@ -133,6 +144,20 @@ function hasFreshCache(): boolean {
     const { ts, data: cached } = JSON.parse(raw)
     return Date.now() - ts < PRODUCTS_CACHE_TTL && Array.isArray(cached) && cached.length > 0
   } catch { return false }
+}
+
+/** fetch with AbortController timeout */
+async function fetchWithTimeout(url: string, ms: number): Promise<Response> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), ms)
+  try {
+    const res = await fetch(url, { signal: controller.signal })
+    clearTimeout(timer)
+    return res
+  } catch (e) {
+    clearTimeout(timer)
+    throw e
+  }
 }
 
 function loadSavedCats(): string[] | null {
@@ -423,8 +448,8 @@ async function pmGetBasicInfo(id: string) {
 
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */
 export default function ProductsPage() {
-  // 캐시에서 즉시 초기화 → KPI 숫자가 첫 렌더부터 표시됨
-  const [products, setProducts]   = useState<Product[]>(() => loadProductsFromCache())
+  // 스테일 캐시 포함 즉시 초기화 → 첫 렌더부터 목록 표시
+  const [products, setProducts]   = useState<Product[]>(() => loadProductsAnyCached())
   const [extraCats, setExtraCats] = useState<string[]>(INIT_EXTRA_CATS)
   const [activeTab, setActiveTab]     = useState('전체')
   const [searchInput, setSearchInput] = useState('')
@@ -460,7 +485,9 @@ export default function ProductsPage() {
   const [addErrors, setAddErrors] = useState<Set<string>>(new Set())
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addDbError, setAddDbError] = useState('')
-  const [loading, setLoading] = useState(() => !hasFreshCache())
+  // 저장된 캐시(스테일 포함)가 있으면 로딩 표시 안 함
+  const [loading, setLoading]   = useState(() => loadProductsAnyCached().length === 0)
+  const [loadError, setLoadError] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 })
   const handleOptImage  = useOptImageUpload(setForm)
@@ -489,44 +516,45 @@ export default function ProductsPage() {
 
   /* ── 상품 로드 (서버 API → RLS 우회) ── */
   useEffect(() => {
-    const load = async () => {
-      const saved = loadSavedCats()
-      if (saved && saved.length > 0) setExtraCats(saved)
+    const saved = loadSavedCats()
+    if (saved && saved.length > 0) setExtraCats(saved)
 
-      // 캐시가 신선하면 즉시 표시
-      const hasFresh = hasFreshCache()
-      if (hasFresh) {
-        const cached = loadProductsFromCache()
-        if (cached.length > 0) {
-          setProducts(cached)
-          setLoading(false)
-        }
-      }
+    const MAX_RETRY = 2
+    const FETCH_TIMEOUT = 12000
 
-      // 항상 서버 API로 최신 데이터 fetch (service role key → RLS 우회)
+    const loadFromServer = async (attempt: number = 0): Promise<void> => {
       try {
-        const res = await fetch('/api/pm-products')
-        if (res.ok) {
-          const raw = await res.json()
-          if (Array.isArray(raw)) {
-            const loaded = raw.map(rowToProduct)
-            setProducts(loaded)
-            autoMarkSoldout(loaded)
-            try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
-            const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
-            setExtraCats(prev => {
-              const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
-              const merged = [...new Set([...base, ...dbCats])]
-              saveCats(merged); return merged
-            })
-          }
-        }
+        const res = await fetchWithTimeout('/api/pm-products', FETCH_TIMEOUT)
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const raw = await res.json()
+        if (!Array.isArray(raw)) throw new Error('invalid response')
+
+        const loaded = raw.map(rowToProduct)
+        setProducts(loaded)
+        setLoadError(false)
+        autoMarkSoldout(loaded)
+        try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
+        const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
+        setExtraCats(prev => {
+          const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
+          const merged = [...new Set([...base, ...dbCats])]
+          saveCats(merged); return merged
+        })
       } catch (e) {
+        if (attempt < MAX_RETRY) {
+          // 자동 재시도 (지수 백오프)
+          await new Promise(r => setTimeout(r, 1500 * (attempt + 1)))
+          return loadFromServer(attempt + 1)
+        }
         console.error('상품 로드 실패:', e)
+        // 캐시 데이터가 없는 경우에만 에러 표시
+        if (loadProductsAnyCached().length === 0) setLoadError(true)
+      } finally {
+        setLoading(false)
       }
-      setLoading(false)
     }
-    load()
+
+    loadFromServer()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
@@ -1504,6 +1532,22 @@ export default function ProductsPage() {
                       </svg>
                       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
                       <p style={{ fontSize:13.5, fontWeight:700, color:'#64748b' }}>상품 목록을 불러오는 중입니다...</p>
+                    </div>
+                  </td>
+                </tr>
+              )}
+              {!loading && loadError && (
+                <tr>
+                  <td colSpan={11} style={{ textAlign:'center', padding:'3.5rem 1rem' }}>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
+                      <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                      </svg>
+                      <p style={{ fontSize:13.5, fontWeight:700, color:'#64748b' }}>상품 목록을 불러오지 못했습니다</p>
+                      <button
+                        onClick={() => { setLoading(true); setLoadError(false); window.location.reload() }}
+                        style={{ padding:'6px 18px', background:'#3b82f6', color:'#fff', border:'none', borderRadius:6, fontSize:13, fontWeight:600, cursor:'pointer' }}
+                      >다시 시도</button>
                     </div>
                   </td>
                 </tr>

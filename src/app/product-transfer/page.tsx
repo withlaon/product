@@ -32,17 +32,38 @@ interface MyProduct {
 
 const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
 const PRODUCTS_CACHE_TTL = 10 * 60 * 1000
+const FETCH_TIMEOUT = 12000
 
-function loadMyProductsFromCache(): MyProduct[] {
+/** 스테일 캐시 포함 반환 - TTL이 지나도 일단 보여줌 */
+function loadMyProductsFromCache(allowStale = true): MyProduct[] {
   try {
     const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
     if (!raw) return []
     const parsed = JSON.parse(raw) as { ts: number; data: MyProduct[] }
-    if (Date.now() - parsed.ts < PRODUCTS_CACHE_TTL && Array.isArray(parsed.data)) {
-      return parsed.data
-    }
+    if (!Array.isArray(parsed.data) || parsed.data.length === 0) return []
+    const isFresh = Date.now() - parsed.ts < PRODUCTS_CACHE_TTL
+    if (isFresh || allowStale) return parsed.data
   } catch {}
   return []
+}
+
+function saveProductsToCache(data: MyProduct[]) {
+  try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })) } catch {}
+}
+
+async function fetchProductsWithTimeout(): Promise<MyProduct[]> {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT)
+  try {
+    const res = await fetch('/api/pm-products', { signal: controller.signal })
+    clearTimeout(timer)
+    if (!res.ok) return []
+    const json = await res.json() as unknown
+    return Array.isArray(json) ? (json as MyProduct[]) : []
+  } catch {
+    clearTimeout(timer)
+    return []
+  }
 }
 
 /* ─── 상품 검색 콤보박스 컴포넌트 ──────────────────────── */
@@ -288,18 +309,29 @@ export default function OrdersPage() {
     setOrders(loadOrders())
     setMappings(loadMappings())
 
-    // 상품 목록을 마운트 시 미리 로드 (캐시 우선, 없으면 API)
+    // 상품 목록을 마운트 시 미리 로드 (스테일 캐시 포함)
     const preFetch = async () => {
-      let prods = loadMyProductsFromCache()
-      if (prods.length > 0) { setMyProducts(prods); return }
-      try {
-        const res = await fetch('/api/pm-products')
-        if (res.ok) {
-          const json = await res.json() as unknown
-          prods = Array.isArray(json) ? (json as MyProduct[]) : []
+      // 스테일 캐시도 즉시 표시
+      const stale = loadMyProductsFromCache(true)
+      if (stale.length > 0) setMyProducts(stale)
+
+      // 캐시가 만료됐으면 백그라운드에서 신선한 데이터 재로드
+      const isFresh = (() => {
+        try {
+          const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
+          if (!raw) return false
+          const { ts } = JSON.parse(raw) as { ts: number }
+          return Date.now() - ts < PRODUCTS_CACHE_TTL
+        } catch { return false }
+      })()
+
+      if (!isFresh) {
+        const prods = await fetchProductsWithTimeout()
+        if (prods.length > 0) {
           setMyProducts(prods)
+          saveProductsToCache(prods)
         }
-      } catch {}
+      }
     }
     preFetch()
   }, [])
@@ -394,24 +426,23 @@ export default function OrdersPage() {
     setAutoMapResult(null)
     setShowMapping(true)   // 즉시 모달 표시
 
-    // 상품이 아직 없으면 백그라운드에서 로드
+    // 상품이 없으면 백그라운드에서 로드
     if (myProducts.length === 0) {
       setProductsLoading(true)
-      const fetchProds = async () => {
-        let prods = loadMyProductsFromCache()
-        if (prods.length === 0) {
-          try {
-            const res = await fetch('/api/pm-products')
-            if (res.ok) {
-              const json = await res.json() as unknown
-              prods = Array.isArray(json) ? (json as MyProduct[]) : []
-            }
-          } catch {}
+      ;(async () => {
+        const cached = loadMyProductsFromCache(true)
+        if (cached.length > 0) {
+          setMyProducts(cached)
+          setProductsLoading(false)
+          return
         }
-        setMyProducts(prods)
+        const prods = await fetchProductsWithTimeout()
+        if (prods.length > 0) {
+          setMyProducts(prods)
+          saveProductsToCache(prods)
+        }
         setProductsLoading(false)
-      }
-      fetchProds()
+      })()
     }
   }
 
@@ -850,18 +881,20 @@ export default function OrdersPage() {
             <div style={{ padding: '10px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: '#fafafa', flexWrap: 'wrap' }}>
               {/* 자동매핑 버튼 */}
               <button
-                onClick={() => { setAutoMapResult(null); handleAutoMap() }}
-                disabled={myProducts.length === 0 || productsLoading}
+                onClick={() => { if (myProducts.length > 0) { setAutoMapResult(null); handleAutoMap() } }}
+                disabled={productsLoading && myProducts.length === 0}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 6,
-                  padding: '6px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: myProducts.length === 0 ? 'not-allowed' : 'pointer', border: 'none',
-                  background: myProducts.length === 0 ? '#e2e8f0' : 'linear-gradient(135deg,#2563eb,#7c3aed)',
-                  color: myProducts.length === 0 ? '#94a3b8' : 'white',
+                  padding: '6px 14px', borderRadius: 8, fontSize: 12.5, fontWeight: 800,
+                  cursor: (productsLoading && myProducts.length === 0) ? 'not-allowed' : 'pointer',
+                  border: 'none',
+                  background: (productsLoading && myProducts.length === 0) ? '#e2e8f0' : 'linear-gradient(135deg,#2563eb,#7c3aed)',
+                  color: (productsLoading && myProducts.length === 0) ? '#94a3b8' : 'white',
                   boxShadow: myProducts.length > 0 ? '0 2px 8px rgba(37,99,235,0.3)' : 'none',
                   flexShrink: 0,
                 }}
               >
-                ✨ 자동매핑
+                {productsLoading && myProducts.length === 0 ? '⏳ 상품 로딩중...' : '✨ 자동매핑'}
               </button>
 
               <div style={{ width: 1, height: 20, background: '#e2e8f0', flexShrink: 0 }} />
