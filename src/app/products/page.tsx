@@ -1246,7 +1246,7 @@ export default function ProductsPage() {
           const isActive = statusFilter === c.filterKey
           return (
             <button key={c.label}
-              onClick={() => { setStatusFilter(isActive ? '전체' : c.filterKey); setShowList(true) }}
+              onClick={() => { setStatusFilter(isActive ? '전체' : c.filterKey); setShowList(true); clearSearch() }}
               className="pm-card p-4 flex items-center gap-3"
               style={{
                 cursor:'pointer', textAlign:'left', border:'none', width:'100%',
@@ -1298,7 +1298,7 @@ export default function ProductsPage() {
                   </button>
                 </div>
               ) : (
-                <button onClick={() => { setActiveTab(cat); setShowList(true) }} style={{
+                <button onClick={() => { setActiveTab(cat); setShowList(true); clearSearch() }} style={{
                   padding: cat==='전체' ? '12px 14px' : '12px 10px 12px 16px',
                   fontSize:13, fontWeight:800,
                   color: activeTab===cat ? '#2563eb' : '#94a3b8',

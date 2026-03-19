@@ -169,6 +169,37 @@ function parseMarketPlusRow(row: Record<string, unknown>, idx: number, today: st
   }
 }
 
+/* ─── 상품 캐시에서 채널 판매가 조회 ────────────────────── */
+interface CachedProductPrice {
+  name: string
+  abbr: string
+  channel_prices: Array<{ channel: string; price: number }>
+}
+
+function lookupChannelPrice(
+  products: CachedProductPrice[],
+  productName: string,
+  channel: string,
+): number {
+  const lowerName = productName.toLowerCase()
+  const p =
+    products.find(p => p.name === productName) ??
+    products.find(p => p.abbr && p.abbr === productName) ??
+    products.find(p => p.name.toLowerCase().includes(lowerName) || lowerName.includes(p.name.toLowerCase()))
+  if (!p) return 0
+  return p.channel_prices.find(cp => cp.channel === channel)?.price ?? 0
+}
+
+function loadCachedProductsForPrice(): CachedProductPrice[] {
+  try {
+    const raw = localStorage.getItem('pm_products_cache_v1')
+    if (!raw) return []
+    const parsed = JSON.parse(raw) as { ts: number; data: CachedProductPrice[] }
+    if (Date.now() - parsed.ts < 10 * 60 * 1000 && Array.isArray(parsed.data)) return parsed.data
+  } catch {}
+  return []
+}
+
 /* ─── 일반 쇼핑몰 파싱 ──────────────────────────────────── */
 function parseGenericRow(row: Record<string, unknown>, idx: number, today: string, mallLabel: string): RegOrder {
   const orderNum  = String(row['주문번호'] ?? row['order_number'] ?? row['OrderNumber'] ?? `AUTO-${Date.now()}-${idx}`)
@@ -262,6 +293,22 @@ export default function OrderRegistrationPage() {
           }
           return parseGenericRow(row, idx, today, mallLabel)
         })
+
+        // 판매가 = 0 인 항목: 상품관리 캐시에서 채널 판매가 보정
+        const cachedProds = loadCachedProductsForPrice()
+        if (cachedProds.length > 0) {
+          orders.forEach(o => {
+            o.items.forEach(item => {
+              if (!item.unit_price) {
+                const channel = isMarketPlus
+                  ? mpToChannel(String(o.extra_data?.['매출경로'] ?? ''))
+                  : mallLabel
+                const price = lookupChannelPrice(cachedProds, item.product_name, channel)
+                if (price > 0) item.unit_price = price
+              }
+            })
+          })
+        }
 
         // 마켓플러스: 매핑 자동 업데이트 (abbreviation만, loca는 유지)
         if (isMarketPlus && Object.keys(autoMappingUpdates).length > 0) {
