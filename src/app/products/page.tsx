@@ -465,6 +465,9 @@ export default function ProductsPage() {
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
 
+  // 옵션 이미지 lazy load: 페이지별로 필요 시 로드
+  const [pageImages, setPageImages] = useState<Record<string, string[]>>({})
+
   // 기본정보 팝업 상태
   const [basicInfoTarget, setBasicInfoTarget] = useState<Product | null>(null)
   const [basicInfoForm, setBasicInfoForm]     = useState<BasicInfo>({...DEF_BASIC_INFO})
@@ -839,6 +842,22 @@ export default function ProductsPage() {
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+
+  // 현재 페이지 상품의 옵션 이미지를 lazy load
+  useEffect(() => {
+    if (paginated.length === 0) return
+    const toLoad = paginated.filter(p => !pageImages[p.id] && p.options.length > 0)
+    if (toLoad.length === 0) return
+    let cancelled = false
+    Promise.all(toLoad.map(async p => {
+      const full = await pmGetFullProduct(p.id)
+      if (!cancelled && full) {
+        setPageImages(prev => ({ ...prev, [p.id]: full.options.map(o => o.image ?? '') }))
+      }
+    }))
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, paginated.map(p => p.id).join(',')])
 
   const doSearch    = () => { setSearch(searchInput); setPage(1) }
   const clearSearch = () => { setSearch(''); setSearchInput(''); setPage(1) }
@@ -1751,10 +1770,10 @@ export default function ProductsPage() {
                             background: optLow ? 'rgba(239,68,68,0.03)' : 'transparent',
                           }}>
                             <div style={{ width:28, height:28, borderRadius:6, overflow:'hidden', background:'#f1f5f9', flexShrink:0 }}>
-                              {opt.image
-                                ? <img src={opt.image} alt={opt.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                              {(() => { const img = pageImages[p.id]?.[i] || opt.image || ''; return img
+                                ? <img src={img} alt={opt.name} style={{ width:'100%', height:'100%', objectFit:'cover' }} />
                                 : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}><ImageIcon size={11} color="#cbd5e1" /></div>
-                              }
+                              })()}
                             </div>
                             <span style={{ display:'flex', flexDirection:'column', gap:1, overflow:'hidden' }}>
                               <span style={{ display:'flex', alignItems:'center', gap:4, overflow:'hidden' }}>

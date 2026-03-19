@@ -45,13 +45,7 @@ const navGroups: NavGroup[] = [
         ],
       },
       { label: 'CS관리',       href: '/cs-management',         icon: HeadphonesIcon },
-      {
-        label: '송장등록',     href: '/product-edit-transfer', icon: Truck,
-        children: [
-          { label: '송장입력', href: '/product-edit-transfer/print', icon: Printer },
-          { label: '송장전송용', href: '/product-edit-transfer/send',  icon: Send },
-        ],
-      },
+      { label: '송장등록관리', href: '/product-edit-transfer/print', icon: Truck },
       { label: '출고내역',     href: '/product-edit-transfer/history', icon: History },
       { label: '재고관리',     href: '/inventory',             icon: Warehouse },
       { label: '발주/입고관리', href: '/purchase',              icon: PackagePlus },

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import {
   Send, CheckCircle2, Search, Package, Truck, Download, FileDown,
@@ -162,6 +163,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, allOrder
 
 /* ─── 페이지 ─────────────────────────────────────────────── */
 export default function InvoiceSendPage() {
+  const router = useRouter()
   const [orders, setOrders]   = useState<Order[]>([])
   const [search, setSearch]   = useState('')
   const [checked, setChecked] = useState<Set<string>>(new Set())
@@ -245,6 +247,25 @@ export default function InvoiceSendPage() {
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto' }}>
 
+      {/* 내부 탭 네비게이션 */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#f1f5f9', borderRadius: 12, padding: 4, width: 'fit-content' }}>
+        {[
+          { label: '송장입력',  path: '/product-edit-transfer/print' },
+          { label: '송장전송용', path: '/product-edit-transfer/send'  },
+        ].map(t => (
+          <button key={t.path}
+            onClick={() => router.push(t.path)}
+            style={{
+              padding: '7px 20px', borderRadius: 9, border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 800,
+              background: t.path.includes('send') ? '#1e293b' : 'transparent',
+              color:      t.path.includes('send') ? 'white'   : '#64748b',
+              transition: 'all 150ms',
+            }}
+          >{t.label}</button>
+        ))}
+      </div>
+
       {/* KPI */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
         {[
@@ -271,7 +292,7 @@ export default function InvoiceSendPage() {
           <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>쇼핑몰별 송장 파일 다운로드</span>
           <span style={{ fontSize: 11.5, color: '#94a3b8' }}>· 배송처리된 주문 기준 · 파일명: 마켓명_송장_{todayStr()}.xlsx</span>
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
           {DOWNLOAD_MALLS.map(mall => {
             const count = mallCounts[mall.id === 'marketplus' ? 'marketplus' : mall.label] ?? 0
             const isLoading = downloading === mall.id
@@ -281,8 +302,8 @@ export default function InvoiceSendPage() {
                 onClick={() => handleDownload(mall.id, mall.label)}
                 disabled={isLoading}
                 style={{
-                  display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8,
-                  padding: '14px 12px', borderRadius: 12,
+                  display: 'flex', alignItems: 'center', gap: 10,
+                  padding: '10px 18px', borderRadius: 12,
                   border: `1.5px solid ${mall.color}30`,
                   background: isLoading ? `${mall.color}08` : mall.bg,
                   cursor: isLoading ? 'not-allowed' : 'pointer',
@@ -292,14 +313,14 @@ export default function InvoiceSendPage() {
                 onMouseEnter={e => { if (!isLoading) e.currentTarget.style.background = `${mall.color}15` }}
                 onMouseLeave={e => { if (!isLoading) e.currentTarget.style.background = mall.bg }}
               >
-                <div style={{ width: 36, height: 36, borderRadius: 10, background: `${mall.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 32, height: 32, borderRadius: 9, background: `${mall.color}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                   {isLoading
-                    ? <Download size={16} style={{ color: mall.color, animation: 'spin 1s linear infinite' }} />
-                    : <Download size={16} style={{ color: mall.color }} />
+                    ? <Download size={14} style={{ color: mall.color, animation: 'spin 1s linear infinite' }} />
+                    : <Download size={14} style={{ color: mall.color }} />
                   }
                 </div>
-                <div style={{ textAlign: 'center' }}>
-                  <p style={{ fontSize: 13, fontWeight: 800, color: mall.color }}>{mall.label}</p>
+                <div style={{ textAlign: 'left' }}>
+                  <p style={{ fontSize: 13, fontWeight: 800, color: mall.color, margin: 0 }}>{mall.label}</p>
                   <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>
                     {count > 0 ? `${count}건 대기` : '주문 없음'}
                   </p>

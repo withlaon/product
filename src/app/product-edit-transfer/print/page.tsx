@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import {
   Truck, CheckCircle2, Search, Save, Package, Printer,
@@ -32,6 +33,7 @@ const SENDER_PHONE   = '070-8949-7469'
 const SENDER_ADDRESS = '경기도 부천시 소사구 성주로 96, 제일빌딩 5층'
 
 export default function InvoicePrintPage() {
+  const router = useRouter()
   const [orders, setOrders]             = useState<Order[]>([])
   const [search, setSearch]             = useState('')
   const [saved, setSaved]               = useState<Record<string, boolean>>({})
@@ -153,35 +155,44 @@ export default function InvoicePrintPage() {
 
         // 전화번호 정규화 (숫자만 추출)
         const normalizePhone = (p: string) => String(p ?? '').replace(/\D/g, '')
+        // 주소 앞 15자 비교 (도로명/지번 차이 허용)
+        const addrKey = (a: string) => a.trim().replace(/\s+/g, ' ').slice(0, 15)
 
         // 현재 목록 복사 후 매핑
-        let updated = [...orders]
         let matchCount = 0
         const newEdits: Record<string, { carrier: string; tracking: string }> = { ...edits }
 
         dataRows.forEach(row => {
-          const tracking  = String(row[7] ?? '').trim()
+          const tracking   = String(row[7]  ?? '').trim()
           const excelPhone = normalizePhone(String(row[21] ?? ''))
           const excelName  = String(row[20] ?? '').trim()
+          const excelAddr  = addrKey(String(row[23] ?? ''))
 
           if (!tracking) return
 
-          // 전화번호로 매칭, 없으면 이름으로 매칭
-          const match = filtered.find(o => {
+          // 매칭 기준: ① 전화번호 일치 ② 이름+주소 일치
+          // → 동일 조건인 주문 전부에 동일 운송장번호 적용
+          const matches = filtered.filter(o => {
             const oPhone = normalizePhone(o.customer_phone ?? '')
             if (oPhone && excelPhone && oPhone === excelPhone) return true
-            if (excelName && o.customer_name === excelName) return true
+            if (excelName && o.customer_name === excelName) {
+              const oAddr = addrKey(o.shipping_address)
+              if (!excelAddr) return true
+              return oAddr === excelAddr || oAddr.startsWith(excelAddr.slice(0,10)) || excelAddr.startsWith(oAddr.slice(0,10))
+            }
             return false
           })
 
-          if (match && !newEdits[match.id]?.tracking) {
-            newEdits[match.id] = { carrier: newEdits[match.id]?.carrier ?? 'CJ대한통운', tracking }
-            matchCount++
-          }
+          matches.forEach(match => {
+            if (!newEdits[match.id]?.tracking) {
+              newEdits[match.id] = { carrier: newEdits[match.id]?.carrier ?? 'CJ대한통운', tracking }
+              matchCount++
+            }
+          })
         })
 
         setEdits(newEdits)
-        alert(`${matchCount}건 운송장번호가 자동 입력되었습니다.\n확인 후 [일괄 저장] 버튼을 눌러 저장하세요.`)
+        alert(`${matchCount}건 운송장번호가 자동 입력되었습니다.\n(동일 주문자+주소의 주문은 같은 운송장번호 적용)\n확인 후 [일괄 저장] 버튼을 눌러 저장하세요.`)
       } catch {
         alert('파일을 읽는 중 오류가 발생했습니다.')
       }
@@ -296,6 +307,25 @@ export default function InvoicePrintPage() {
 
   return (
     <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+
+      {/* 내부 탭 네비게이션 */}
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#f1f5f9', borderRadius: 12, padding: 4, width: 'fit-content' }}>
+        {[
+          { label: '송장입력',  path: '/product-edit-transfer/print' },
+          { label: '송장전송용', path: '/product-edit-transfer/send'  },
+        ].map(t => (
+          <button key={t.path}
+            onClick={() => router.push(t.path)}
+            style={{
+              padding: '7px 20px', borderRadius: 9, border: 'none', cursor: 'pointer',
+              fontSize: 13, fontWeight: 800,
+              background: t.path.includes('print') ? '#1e293b' : 'transparent',
+              color:      t.path.includes('print') ? 'white'    : '#64748b',
+              transition: 'all 150ms',
+            }}
+          >{t.label}</button>
+        ))}
+      </div>
 
       {/* KPI */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
