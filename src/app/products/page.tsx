@@ -448,8 +448,8 @@ async function pmGetBasicInfo(id: string) {
 
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */
 export default function ProductsPage() {
-  // 스테일 캐시 포함 즉시 초기화 → 첫 렌더부터 목록 표시
-  const [products, setProducts]   = useState<Product[]>(() => loadProductsAnyCached())
+  // 스테일 캐시 포함 즉시 초기화 → 첫 렌더부터 목록 표시 (SSR 단계에서는 빈 배열, useEffect에서 덮어씀)
+  const [products, setProducts]   = useState<Product[]>([])
   const [extraCats, setExtraCats] = useState<string[]>(INIT_EXTRA_CATS)
   const [activeTab, setActiveTab]     = useState('전체')
   const [searchInput, setSearchInput] = useState('')
@@ -485,9 +485,9 @@ export default function ProductsPage() {
   const [addErrors, setAddErrors] = useState<Set<string>>(new Set())
   const [addSubmitting, setAddSubmitting] = useState(false)
   const [addDbError, setAddDbError] = useState('')
-  // 저장된 캐시(스테일 포함)가 있으면 로딩 표시 안 함
-  const [loading, setLoading]   = useState(() => loadProductsAnyCached().length === 0)
+  const [loading, setLoading]     = useState(true)
   const [loadError, setLoadError] = useState(false)
+  const [loadErrorMsg, setLoadErrorMsg] = useState('')
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 })
   const handleOptImage  = useOptImageUpload(setForm)
@@ -514,53 +514,82 @@ export default function ProductsPage() {
     ))
   }
 
-  /* ── 상품 로드 (서버 API → RLS 우회) ── */
+  /* ── 상품 로드 ── */
   useEffect(() => {
     const saved = loadSavedCats()
     if (saved && saved.length > 0) setExtraCats(saved)
 
-    // SSR에서는 localStorage가 없으므로 useEffect에서 캐시 즉시 표시
+    // SSR에서 localStorage 없으므로 useEffect에서 캐시 즉시 표시
     const anyCache = loadProductsAnyCached()
     if (anyCache.length > 0) {
       setProducts(anyCache)
       setLoading(false)
     }
 
-    const MAX_RETRY = 2
     const FETCH_TIMEOUT = 12000
 
-    // for 루프 방식으로 재시도 (finally 즉시 실행 버그 방지)
+    const applyLoaded = (loaded: Product[]) => {
+      setProducts(loaded)
+      setLoadError(false)
+      setLoadErrorMsg('')
+      autoMarkSoldout(loaded)
+      try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
+      const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
+      setExtraCats(prev => {
+        const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
+        const merged = [...new Set([...base, ...dbCats])]
+        saveCats(merged); return merged
+      })
+      setLoading(false)
+    }
+
     const loadFromServer = async (): Promise<void> => {
-      for (let attempt = 0; attempt <= MAX_RETRY; attempt++) {
+      // ── 1단계: 서버 API route (service role key, RLS 우회) ──
+      let apiError = ''
+      for (let attempt = 0; attempt <= 2; attempt++) {
         try {
           if (attempt > 0) await new Promise(r => setTimeout(r, 1500 * attempt))
           const res = await fetchWithTimeout('/api/pm-products', FETCH_TIMEOUT)
-          if (!res.ok) throw new Error(`HTTP ${res.status}`)
-          const raw = await res.json()
-          if (!Array.isArray(raw)) throw new Error('invalid response')
-
-          const loaded = raw.map(rowToProduct)
-          setProducts(loaded)
-          setLoadError(false)
-          autoMarkSoldout(loaded)
-          try { localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: loaded })) } catch {}
-          const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
-          setExtraCats(prev => {
-            const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
-            const merged = [...new Set([...base, ...dbCats])]
-            saveCats(merged); return merged
-          })
-          setLoading(false)
-          return // 성공 시 종료
-        } catch (e) {
-          if (attempt === MAX_RETRY) {
-            console.error('상품 로드 실패:', e)
-            if (loadProductsAnyCached().length === 0) setLoadError(true)
-            setLoading(false)
+          if (res.ok) {
+            const raw = await res.json()
+            if (Array.isArray(raw)) {
+              applyLoaded(raw.map(rowToProduct))
+              return
+            }
+            apiError = `응답 형식 오류: ${JSON.stringify(raw).slice(0, 120)}`
+          } else {
+            const body = await res.text().catch(() => '')
+            apiError = `HTTP ${res.status}: ${body.slice(0, 120)}`
           }
-          // 아직 재시도 남아있으면 loop 계속
+        } catch (e) {
+          apiError = e instanceof Error ? e.message : String(e)
         }
       }
+
+      // ── 2단계: 직접 Supabase 클라이언트 폴백 (anon key) ──
+      try {
+        const { data, error } = await supabase
+          .from('pm_products')
+          .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,registered_malls,created_at')
+          .order('code', { ascending: true })
+
+        if (!error && Array.isArray(data)) {
+          applyLoaded(data.map(rowToProduct))
+          return
+        }
+        const directErr = error ? error.message : 'no data'
+        const finalMsg = `서버 API: ${apiError} / 직접쿼리: ${directErr}`
+        console.error('상품 로드 실패:', finalMsg)
+        setLoadErrorMsg(finalMsg)
+      } catch (e) {
+        const finalMsg = `서버 API: ${apiError} / 직접쿼리: ${e instanceof Error ? e.message : String(e)}`
+        console.error('상품 로드 실패:', finalMsg)
+        setLoadErrorMsg(finalMsg)
+      }
+
+      // 캐시가 없을 때만 에러 UI 표시 (캐시 있으면 기존 데이터 유지)
+      if (loadProductsAnyCached().length === 0) setLoadError(true)
+      setLoading(false)
     }
 
     loadFromServer()
@@ -1547,21 +1576,24 @@ export default function ProductsPage() {
               )}
               {!loading && loadError && (
                 <tr>
-                  <td colSpan={11} style={{ textAlign:'center', padding:'3.5rem 1rem' }}>
-                    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12 }}>
+                  <td colSpan={11} style={{ textAlign:'center', padding:'3rem 1rem' }}>
+                    <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:12, maxWidth:520, margin:'0 auto' }}>
                       <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                         <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
                       </svg>
                       <p style={{ fontSize:13.5, fontWeight:700, color:'#64748b' }}>상품 목록을 불러오지 못했습니다</p>
+                      {loadErrorMsg && (
+                        <pre style={{ fontSize:11, color:'#ef4444', background:'#fff1f2', border:'1px solid #fecaca', borderRadius:8, padding:'10px 14px', textAlign:'left', whiteSpace:'pre-wrap', wordBreak:'break-all', width:'100%' }}>{loadErrorMsg}</pre>
+                      )}
                       <button
-                        onClick={() => { setLoading(true); setLoadError(false); window.location.reload() }}
+                        onClick={() => { setLoading(true); setLoadError(false); setLoadErrorMsg(''); window.location.reload() }}
                         style={{ padding:'6px 18px', background:'#3b82f6', color:'#fff', border:'none', borderRadius:6, fontSize:13, fontWeight:600, cursor:'pointer' }}
                       >다시 시도</button>
                     </div>
                   </td>
                 </tr>
               )}
-              {!loading && filtered.length === 0 && (
+              {!loading && !loadError && filtered.length === 0 && (
                 <tr>
                   <td colSpan={11} style={{ textAlign:'center', padding:'3.5rem 1rem', color:'#94a3b8' }}>
                     <div style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:10 }}>
