@@ -521,9 +521,22 @@ export default function OrdersPage() {
         <span style={{ fontSize: 12, fontWeight: 700, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
           {order.channel}
         </span>
-        <span style={{ fontSize: 11.5, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {item?.sku || '-'}
-        </span>
+        <div style={{ overflow: 'hidden' }}>
+          <p style={{ fontSize: 11, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+            {item?.sku || '-'}
+          </p>
+          {item && (() => {
+            const m = lookupMapping(mappings, item.product_name, item.option)
+            const abbr = m.abbreviation
+            const opt  = item.option
+            if (!abbr && !opt) return null
+            return (
+              <p style={{ fontSize: 10.5, color: '#475569', fontWeight: 700, margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {abbr}{opt ? `[${opt}]` : ''}
+              </p>
+            )
+          })()}
+        </div>
         <div style={{ overflow: 'hidden' }}>
           <p style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {item?.product_name}

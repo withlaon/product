@@ -200,6 +200,36 @@ function loadCachedProductsForPrice(): CachedProductPrice[] {
   return []
 }
 
+/* ─── 토스쇼핑 전용 파싱 ─────────────────────────────────── */
+function parseTossShoppingRow(row: Record<string, unknown>, idx: number): RegOrder {
+  const orderNum = String(row['주문번호'] ?? `AUTO-TOSS-${Date.now()}-${idx}`)
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
+    order_number: orderNum,
+    customer_name:    String(row['수령인명'] ?? row['구매자명'] ?? '-'),
+    customer_phone:   String(row['수령인 연락처'] ?? row['구매자 연락처'] ?? ''),
+    shipping_address: String(row['주소'] ?? ''),
+    items: [{
+      product_name: String(row['상품명'] ?? '-'),
+      sku:          String(row['옵션코드'] ?? row['상품코드'] ?? ''),
+      quantity:     Number(row['수량'] ?? 1),
+      unit_price:   Number(row['거래금액'] ?? 0),
+      option:       String(row['옵션'] ?? ''),
+    }],
+    total_amount: Number(row['거래금액'] ?? 0),
+    status: 'pending',
+    memo: String(row['요청사항'] ?? ''),
+    extra_data: {
+      import_source:   '토스쇼핑',
+      주문번호:        orderNum,
+      주문상품번호:    String(row['주문상품번호'] ?? ''),
+      우편번호:        String(row['우편번호'] ?? ''),
+      발송기한:        String(row['발송기한'] ?? ''),
+      택배사코드:      String(row['택배사코드'] ?? ''),
+    },
+  }
+}
+
 /* ─── 일반 쇼핑몰 파싱 ──────────────────────────────────── */
 function parseGenericRow(row: Record<string, unknown>, idx: number, today: string, mallLabel: string): RegOrder {
   const orderNum  = String(row['주문번호'] ?? row['order_number'] ?? row['OrderNumber'] ?? `AUTO-${Date.now()}-${idx}`)
@@ -276,9 +306,10 @@ export default function OrderRegistrationPage() {
           return
         }
 
-        const mallLabel    = MALLS.find(m => m.id === selectedMall)!.label
-        const isMarketPlus = selectedMall === 'marketplus'
-        const uploadedAt   = new Date().toISOString()
+        const mallLabel      = MALLS.find(m => m.id === selectedMall)!.label
+        const isMarketPlus   = selectedMall === 'marketplus'
+        const isTossShopping = selectedMall === 'tossshopping'
+        const uploadedAt     = new Date().toISOString()
 
         // 마켓플러스: 자동 매핑 수집
         const autoMappingUpdates: Record<string, string> = {}
@@ -291,6 +322,7 @@ export default function OrderRegistrationPage() {
             }
             return order
           }
+          if (isTossShopping) return parseTossShoppingRow(row, idx)
           return parseGenericRow(row, idx, today, mallLabel)
         })
 
@@ -358,8 +390,9 @@ export default function OrderRegistrationPage() {
 
         const existingMain = loadOrders()
         // 같은 import_source+날짜 이전 업로드 제거
+        const importSrc = isMarketPlus ? 'marketplus' : mallLabel  // tossshopping = '토스쇼핑'
         const filtered = existingMain.filter(o =>
-          !(o.extra_data?.['import_source'] === (isMarketPlus ? 'marketplus' : mallLabel) && o.order_date === today)
+          !(o.extra_data?.['import_source'] === importSrc && o.order_date === today)
         )
         saveOrders([...filtered, ...syncOrders])
 

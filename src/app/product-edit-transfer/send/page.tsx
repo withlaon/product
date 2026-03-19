@@ -122,7 +122,12 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, allOrder
       )
       const tInfo = trackingMap[orderNum]
       if (tInfo) {
-        rows.push({ ...raw, '택배사': tInfo.carrier, '송장번호': tInfo.tracking })
+        // 토스쇼핑: 원본 파일의 택배사코드·송장번호 컬럼에 직접 채움
+        if (mallId === 'tossshopping') {
+          rows.push({ ...raw, '택배사코드': tInfo.carrier, '송장번호': tInfo.tracking })
+        } else {
+          rows.push({ ...raw, '택배사': tInfo.carrier, '송장번호': tInfo.tracking })
+        }
         usedRaw = true
       }
     }
