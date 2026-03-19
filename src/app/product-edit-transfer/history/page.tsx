@@ -6,7 +6,10 @@ import { loadShippedOrders, saveShippedOrders, loadOrders, saveOrders } from '@/
 import type { ShippedOrder } from '@/lib/orders'
 
 /* ─── 날짜 유틸 ─────────────────────────────────────────── */
-function getToday() { return new Date().toISOString().slice(0, 10) }
+function getToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 function getCurYM() {
   const n = new Date()
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
@@ -17,9 +20,9 @@ function fmtDate(d: string) {
   return `${d.replace(/-/g, '년 ').replace(/-/, '월 ')}일 (${wd})`
 }
 function shiftDate(d: string, delta: number) {
-  const dt = new Date(d + 'T00:00:00')
-  dt.setDate(dt.getDate() + delta)
-  return dt.toISOString().slice(0, 10)
+  const [y, m, day] = d.split('-').map(Number)
+  const dt = new Date(y, m - 1, day + delta)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 function shiftMonth(ym: string, delta: number) {
   const [y, m] = ym.split('-').map(Number)

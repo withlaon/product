@@ -54,25 +54,45 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(data)
     }
 
-    // next.revalidate: 300 → Vercel 엣지에 5분 캐시 (IO 반복 쿼리 방지)
-    const res = await fetch(
-      `${SUPABASE_URL}/rest/v1/${TABLE}?select=${SELECT_COLS}&order=code.asc`,
+    // RPC 함수 우선 시도 (statement_timeout 120s 설정됨 → 57014 오류 우회)
+    const rpcHeaders: Record<string, string> = {
+      apikey:         SERVICE_KEY,
+      Authorization:  `Bearer ${SERVICE_KEY}`,
+      'Content-Type': 'application/json',
+    }
+    let data: unknown = null
+    const rpcRes = await fetch(
+      `${SUPABASE_URL}/rest/v1/rpc/get_pm_products_all`,
       {
-        headers: {
-          apikey:         SERVICE_KEY,
-          Authorization:  `Bearer ${SERVICE_KEY}`,
-          'Content-Type': 'application/json',
-        },
+        method: 'POST',
+        headers: rpcHeaders,
+        body: '{}',
         signal: AbortSignal.timeout(TIMEOUT_MS),
         next: { revalidate: 300 },
       }
-    )
-    if (!res.ok) {
-      const txt = await res.text().catch(() => '')
-      return NextResponse.json({ error: `${res.status}: ${txt}` }, { status: res.status })
+    ).catch(() => null)
+
+    if (rpcRes && rpcRes.ok) {
+      data = await rpcRes.json()
+    } else {
+      // RPC 없으면 직접 테이블 조회 (fallback)
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/${TABLE}?select=${SELECT_COLS}&order=code.asc`,
+        {
+          headers: { ...rpcHeaders },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+          next: { revalidate: 300 },
+        }
+      )
+      if (!res.ok) {
+        const txt = await res.text().catch(() => '')
+        return NextResponse.json({ error: `${res.status}: ${txt}` }, { status: res.status })
+      }
+      data = await res.json()
     }
-    const data = await res.json()
-    return NextResponse.json(Array.isArray(data) ? data : [], {
+
+    const arr = Array.isArray(data) ? data : []
+    return NextResponse.json(arr, {
       headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=60' },
     })
   } catch (e) {

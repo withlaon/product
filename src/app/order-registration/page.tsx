@@ -97,7 +97,10 @@ export function loadAllDayData(mall: MallId): DayData[] {
 }
 
 /* ─── 유틸리티 ───────────────────────────────────────────── */
-function getToday() { return new Date().toISOString().slice(0, 10) }
+function getToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function formatDateKo(dateStr: string): string {
   const [y, m, d] = dateStr.split('-')
@@ -110,9 +113,9 @@ function getDayOfWeek(dateStr: string): string {
 }
 
 function addDays(dateStr: string, delta: number): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  d.setDate(d.getDate() + delta)
-  return d.toISOString().slice(0, 10)
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dt = new Date(y, m - 1, d + delta)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
 /* ─── 마켓플러스 전용 파싱 ───────────────────────────────── */

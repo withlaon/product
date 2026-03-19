@@ -165,12 +165,15 @@ export { ORDERS_KEY } from '@/lib/orders'
 export type { Order } from '@/lib/orders'
 
 /* ─── 유틸 ──────────────────────────────────────────────── */
-function getToday() { return new Date().toISOString().slice(0, 10) }
+function getToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
 
 function addDays(d: string, n: number) {
-  const dt = new Date(d + 'T00:00:00')
-  dt.setDate(dt.getDate() + n)
-  return dt.toISOString().slice(0, 10)
+  const [y, m, day] = d.split('-').map(Number)
+  const dt = new Date(y, m - 1, day + n)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
 function addMonths(ym: string, n: number) {
