@@ -42,17 +42,17 @@ const navGroups: NavGroup[] = [
         label: '주문관리',     href: '/product-transfer',      icon: ShoppingCart,
         children: [
           { label: '주문서등록', href: '/order-registration', icon: ClipboardList },
-          { label: 'CS관리',    href: '/cs-management',       icon: HeadphonesIcon },
         ],
       },
+      { label: 'CS관리',       href: '/cs-management',         icon: HeadphonesIcon },
       {
         label: '송장등록',     href: '/product-edit-transfer', icon: Truck,
         children: [
-          { label: '송장출력용', href: '/product-edit-transfer/print',   icon: Printer },
-          { label: '송장전송용', href: '/product-edit-transfer/send',    icon: Send },
-          { label: '출고내역',   href: '/product-edit-transfer/history', icon: History },
+          { label: '송장출력용', href: '/product-edit-transfer/print', icon: Printer },
+          { label: '송장전송용', href: '/product-edit-transfer/send',  icon: Send },
         ],
       },
+      { label: '출고내역',     href: '/product-edit-transfer/history', icon: History },
       { label: '재고관리',     href: '/inventory',             icon: Warehouse },
       { label: '발주/입고관리', href: '/purchase',              icon: PackagePlus },
     ],
