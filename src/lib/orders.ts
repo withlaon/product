@@ -61,6 +61,7 @@ export function clearSelectedForInvoice() {
 export interface ProductMapping {
   abbreviation: string       // 상품약어 (내 상품의 abbr 또는 수동 입력)
   loca: string               // LOCA 위치코드 (내 상품의 loca 또는 수동 입력)
+  barcode?: string           // 옵션 바코드 (내 상품 옵션 선택 시 자동 입력)
   product_id?: string        // 연결된 내 상품 ID
   product_code?: string      // 연결된 내 상품 코드
   my_product_name?: string   // 연결된 내 상품명

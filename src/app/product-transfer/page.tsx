@@ -19,6 +19,7 @@ interface MyProductOption {
   name: string
   size: string
   korean_name: string
+  barcode?: string
 }
 interface MyProduct {
   id: string
@@ -344,6 +345,21 @@ export default function OrdersPage() {
 
   const displayOrders = viewMode === 'daily' ? dailyOrders : monthOrders
 
+  /* 매핑 모달용 - useMemo로 렌더 분리 */
+  const mappingAllEntries = useMemo(() => Object.entries(draftMappings), [draftMappings])
+  const mappingMappedCount = useMemo(() => mappingAllEntries.filter(([, m]) => !!m.product_id).length, [mappingAllEntries])
+  const mappingFilteredEntries = useMemo(() => {
+    const searchLower = mappingSearch.toLowerCase()
+    return mappingAllEntries.filter(([key, m]) => {
+      if (mappingFilter === 'unmapped' && m.product_id) return false
+      if (searchLower) {
+        const [productName, option] = splitMappingKey(key)
+        if (!productName.toLowerCase().includes(searchLower) && !option.toLowerCase().includes(searchLower)) return false
+      }
+      return true
+    })
+  }, [mappingAllEntries, mappingFilter, mappingSearch])
+
   /* 전체 선택 */
   const allChecked = displayOrders.length > 0 && displayOrders.every(o => checked.has(o.id))
   const toggleAll = () => {
@@ -408,6 +424,7 @@ export default function OrdersPage() {
           product_code: undefined,
           my_product_name: undefined,
           my_option_name: undefined,
+          barcode: undefined,
         },
       }))
       return
@@ -422,17 +439,21 @@ export default function OrdersPage() {
         product_code: p.code,
         my_product_name: p.name,
         my_option_name: undefined,
+        barcode: undefined,
         abbreviation: p.abbr || prev[key].abbreviation,
         loca: p.loca || prev[key].loca,
       },
     }))
   }
 
-  /* 매핑에서 옵션 선택 시 */
+  /* 매핑에서 옵션 선택 시 (바코드 자동 채움) */
   const handleOptionSelect = (key: string, optName: string) => {
+    const m = draftMappings[key]
+    const product = myProducts.find(p => p.id === m?.product_id)
+    const opt = product?.options.find(o => o.name === optName)
     setDraftMappings(prev => ({
       ...prev,
-      [key]: { ...prev[key], my_option_name: optName },
+      [key]: { ...prev[key], my_option_name: optName, barcode: opt?.barcode ?? prev[key].barcode },
     }))
   }
 
@@ -718,31 +739,21 @@ export default function OrdersPage() {
       </div>
 
       {/* ── 매핑 모달 ── */}
-      {showMapping && (() => {
-        const allEntries = Object.entries(draftMappings)
-        const filteredEntries = allEntries.filter(([key, m]) => {
-          const [productName, option] = splitMappingKey(key)
-          const searchLower = mappingSearch.toLowerCase()
-          if (mappingSearch && !productName.toLowerCase().includes(searchLower) && !option.toLowerCase().includes(searchLower)) return false
-          if (mappingFilter === 'unmapped' && m.product_id) return false
-          return true
-        })
-        const mappedCount = allEntries.filter(([, m]) => !!m.product_id).length
-        return (
+      {showMapping && (
         <div
           style={{ position: 'fixed', inset: 0, background: 'rgba(2,6,23,0.6)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '20px' }}
           onClick={() => setShowMapping(false)}
         >
           <div
-            style={{ background: 'white', borderRadius: 20, width: '100%', maxWidth: 1100, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.22)', overflow: 'hidden' }}
+            style={{ background: 'white', borderRadius: 20, width: '100%', maxWidth: 1200, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 32px 80px rgba(0,0,0,0.22)', overflow: 'hidden' }}
             onClick={e => e.stopPropagation()}
           >
             {/* 헤더 */}
-            <div style={{ padding: '20px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexShrink: 0 }}>
+            <div style={{ padding: '18px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexShrink: 0 }}>
               <div>
-                <h2 style={{ fontSize: 17, fontWeight: 900, color: '#0f172a', marginBottom: 4 }}>상품 매핑 설정</h2>
+                <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', marginBottom: 3 }}>상품 매핑 설정</h2>
                 <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>
-                  주문서 상품과 <strong style={{ color: '#2563eb' }}>내 상품</strong>을 연결하면 약어·LOCA가 자동으로 채워집니다
+                  주문서 상품과 <strong style={{ color: '#2563eb' }}>내 상품</strong>을 연결하면 바코드·약어·LOCA가 자동으로 채워집니다
                   {myProducts.length === 0 && !productsLoading && (
                     <span style={{ color: '#f59e0b', marginLeft: 8 }}><AlertCircle size={12} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />상품관리에 상품이 없습니다</span>
                   )}
@@ -751,7 +762,7 @@ export default function OrdersPage() {
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
                 <div style={{ textAlign: 'right' }}>
                   <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>연결 현황</p>
-                  <p style={{ fontSize: 14, fontWeight: 900, color: '#2563eb', margin: 0 }}>{mappedCount} / {allEntries.length}</p>
+                  <p style={{ fontSize: 14, fontWeight: 900, color: '#2563eb', margin: 0 }}>{mappingMappedCount} / {mappingAllEntries.length}</p>
                 </div>
                 <button onClick={() => setShowMapping(false)} style={{ width: 34, height: 34, borderRadius: 9, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <X size={15} style={{ color: '#94a3b8' }} />
@@ -759,10 +770,10 @@ export default function OrdersPage() {
               </div>
             </div>
 
-            {/* 툴바: 검색 + 필터 */}
-            <div style={{ padding: '12px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: '#fafafa' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, maxWidth: 320, border: '1.5px solid #e2e8f0', borderRadius: 9, padding: '0 10px', background: 'white', height: 34 }}>
-                <Search size={13} style={{ color: '#94a3b8', flexShrink: 0 }} />
+            {/* 툴바 */}
+            <div style={{ padding: '10px 24px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0, background: '#fafafa' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flex: 1, maxWidth: 300, border: '1.5px solid #e2e8f0', borderRadius: 9, padding: '0 10px', background: 'white', height: 32 }}>
+                <Search size={12} style={{ color: '#94a3b8', flexShrink: 0 }} />
                 <input value={mappingSearch} onChange={e => setMappingSearch(e.target.value)}
                   placeholder="주문서 상품명 검색..."
                   style={{ flex: 1, border: 'none', outline: 'none', fontSize: 12, background: 'transparent' }}
@@ -771,9 +782,9 @@ export default function OrdersPage() {
               <div style={{ display: 'flex', gap: 6 }}>
                 {(['all', 'unmapped'] as const).map(f => (
                   <button key={f} onClick={() => setMappingFilter(f)}
-                    style={{ padding: '5px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1.5px solid', borderColor: mappingFilter === f ? '#2563eb' : '#e2e8f0', background: mappingFilter === f ? '#eff6ff' : 'white', color: mappingFilter === f ? '#2563eb' : '#64748b' }}
+                    style={{ padding: '4px 12px', borderRadius: 7, fontSize: 12, fontWeight: 700, cursor: 'pointer', border: '1.5px solid', borderColor: mappingFilter === f ? '#2563eb' : '#e2e8f0', background: mappingFilter === f ? '#eff6ff' : 'white', color: mappingFilter === f ? '#2563eb' : '#64748b' }}
                   >
-                    {f === 'all' ? `전체 (${allEntries.length})` : `미연결 (${allEntries.length - mappedCount})`}
+                    {f === 'all' ? `전체 (${mappingAllEntries.length})` : `미연결 (${mappingAllEntries.length - mappingMappedCount})`}
                   </button>
                 ))}
               </div>
@@ -782,48 +793,46 @@ export default function OrdersPage() {
 
             {/* 컬럼 헤더 */}
             <div style={{ padding: '0 24px', flexShrink: 0 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 140px 240px 180px 90px 80px', gap: 10, padding: '9px 10px', background: '#f8fafc', borderRadius: 8, margin: '10px 0 4px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 130px 220px 155px 120px 80px 70px', gap: 8, padding: '8px 10px', background: '#f8fafc', borderRadius: 8, margin: '8px 0 3px' }}>
                 {[
-                  { label: '주문서 상품명', sub: '쇼핑몰에서 가져온 상품명' },
-                  { label: '주문 옵션', sub: '' },
-                  { label: '내 상품 연결', sub: '상품관리에 등록된 상품' },
-                  { label: '내 옵션 선택', sub: '' },
-                  { label: '약어', sub: '자동 입력' },
-                  { label: 'LOCA', sub: '자동 입력' },
+                  { label: '주문서 상품명' },
+                  { label: '주문 옵션' },
+                  { label: '내 상품 연결' },
+                  { label: '내 옵션 선택' },
+                  { label: '바코드' },
+                  { label: '약어' },
+                  { label: 'LOCA' },
                 ].map(col => (
-                  <div key={col.label}>
-                    <span style={{ fontSize: 10.5, fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{col.label}</span>
-                    {col.sub && <span style={{ fontSize: 9.5, color: '#cbd5e1', marginLeft: 4 }}>{col.sub}</span>}
-                  </div>
+                  <span key={col.label} style={{ fontSize: 10.5, fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{col.label}</span>
                 ))}
               </div>
             </div>
 
             {/* 매핑 행들 */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px 8px' }}>
-              {filteredEntries.length === 0 ? (
+            <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px 10px' }}>
+              {mappingFilteredEntries.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
                   <Package size={32} style={{ marginBottom: 12, opacity: 0.4 }} />
-                  <p style={{ fontSize: 13 }}>{allEntries.length === 0 ? '주문관리에 등록된 상품이 없습니다.' : '검색 결과가 없습니다.'}</p>
+                  <p style={{ fontSize: 13 }}>{mappingAllEntries.length === 0 ? '주문관리에 등록된 상품이 없습니다.' : '검색 결과가 없습니다.'}</p>
                 </div>
-              ) : filteredEntries.map(([key, m]) => {
+              ) : mappingFilteredEntries.map(([key, m]) => {
                 const [productName, option] = splitMappingKey(key)
                 const selectedProduct = myProducts.find(p => p.id === m.product_id)
                 const isMapped = !!m.product_id
                 return (
-                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 140px 240px 180px 90px 80px', gap: 10, alignItems: 'center', padding: '9px 10px', borderRadius: 10, marginBottom: 4, background: isMapped ? '#f0fdf4' : '#fafafa', border: `1.5px solid ${isMapped ? '#bbf7d0' : '#f1f5f9'}`, transition: 'background 150ms' }}>
+                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 130px 220px 155px 120px 80px 70px', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 9, marginBottom: 3, background: isMapped ? '#f0fdf4' : '#fafafa', border: `1.5px solid ${isMapped ? '#bbf7d0' : '#f1f5f9'}` }}>
                     {/* 주문서 상품명 */}
                     <div style={{ minWidth: 0 }}>
-                      <p style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={productName}>{productName}</p>
+                      <p style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={productName}>{productName}</p>
                       {isMapped && (
-                        <span style={{ fontSize: 10.5, color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 3, marginTop: 2 }}>
-                          <Link2 size={10} />연결됨
+                        <span style={{ fontSize: 10, color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2, marginTop: 1 }}>
+                          <Link2 size={9} />연결됨
                         </span>
                       )}
                     </div>
 
                     {/* 주문 옵션 */}
-                    <span style={{ fontSize: 11.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={option}>
+                    <span style={{ fontSize: 11, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={option}>
                       {option || <span style={{ color: '#cbd5e1' }}>—</span>}
                     </span>
 
@@ -839,7 +848,7 @@ export default function OrdersPage() {
                       value={m.my_option_name ?? ''}
                       disabled={!selectedProduct}
                       onChange={e => handleOptionSelect(key, e.target.value)}
-                      style={{ height: 34, borderRadius: 8, border: '1.5px solid #e2e8f0', padding: '0 8px', fontSize: 12, outline: 'none', width: '100%', background: !selectedProduct ? '#f8fafc' : 'white', color: !selectedProduct ? '#94a3b8' : '#0f172a', cursor: !selectedProduct ? 'not-allowed' : 'pointer' }}
+                      style={{ height: 34, borderRadius: 8, border: '1.5px solid #e2e8f0', padding: '0 8px', fontSize: 11.5, outline: 'none', width: '100%', background: !selectedProduct ? '#f8fafc' : 'white', color: !selectedProduct ? '#94a3b8' : '#0f172a', cursor: !selectedProduct ? 'not-allowed' : 'pointer' }}
                     >
                       <option value="">-- 선택 --</option>
                       {selectedProduct?.options.map(opt => {
@@ -847,6 +856,13 @@ export default function OrdersPage() {
                         return <option key={opt.name + opt.size} value={opt.name}>{label}</option>
                       })}
                     </select>
+
+                    {/* 바코드 (옵션 선택 후 자동) */}
+                    <div style={{ height: 34, borderRadius: 8, border: '1.5px solid #e2e8f0', padding: '0 8px', display: 'flex', alignItems: 'center', background: '#f8fafc', overflow: 'hidden' }}>
+                      <span style={{ fontSize: 11, fontFamily: 'monospace', color: m.barcode ? '#0f172a' : '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={m.barcode}>
+                        {m.barcode || '—'}
+                      </span>
+                    </div>
 
                     {/* 약어 */}
                     <input
@@ -873,23 +889,22 @@ export default function OrdersPage() {
             </div>
 
             {/* 하단 버튼 */}
-            <div style={{ padding: '14px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'white' }}>
-              <p style={{ fontSize: 12, color: '#94a3b8', margin: 0 }}>
-                약어·LOCA는 내 상품 선택 후 자동 입력되며, 직접 수정도 가능합니다
+            <div style={{ padding: '12px 24px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexShrink: 0, background: 'white' }}>
+              <p style={{ fontSize: 11.5, color: '#94a3b8', margin: 0 }}>
+                내 상품 옵션 선택 시 바코드·약어·LOCA가 자동 입력되며, 직접 수정도 가능합니다
               </p>
               <div style={{ display: 'flex', gap: 8 }}>
-                <button onClick={() => setShowMapping(false)} style={{ padding: '9px 20px', borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
+                <button onClick={() => setShowMapping(false)} style={{ padding: '8px 18px', borderRadius: 10, border: '1px solid #e2e8f0', background: 'white', color: '#64748b', fontSize: 13, fontWeight: 700, cursor: 'pointer' }}>
                   취소
                 </button>
-                <button onClick={saveMapping} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '9px 20px', borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                <button onClick={saveMapping} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '8px 18px', borderRadius: 10, border: 'none', background: '#2563eb', color: 'white', fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
                   <Save size={13} />저장
                 </button>
               </div>
             </div>
           </div>
         </div>
-        )
-      })()}
+      )}
 
       {/* ── 주문 상세 모달 ── */}
       {selectedOrder && (
