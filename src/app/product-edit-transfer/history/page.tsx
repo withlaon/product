@@ -78,8 +78,12 @@ export default function ShippingHistoryPage() {
   const [selDate, setSelDate]       = useState(today)
   const [selMonth, setSelMonth]     = useState(curYM)
   const [checked, setChecked]       = useState<Set<string>>(new Set())
+  const [mappings, setMappings]     = useState<ReturnType<typeof loadMappings>>([])
 
-  useEffect(() => { setShipped(loadShippedOrders()) }, [])
+  useEffect(() => {
+    setShipped(loadShippedOrders())
+    setMappings(loadMappings())
+  }, [])
 
   /* 날짜/월별 필터 */
   const displayOrders = useMemo(() => {
@@ -332,7 +336,7 @@ export default function ShippingHistoryPage() {
               <span onClick={toggleAll} style={{ cursor: 'pointer', fontSize: 13, color: allChecked ? '#2563eb' : '#cbd5e1' }}>
                 {allChecked ? '☑' : '☐'}
               </span>
-              {['주문번호', '출고일', '쇼핑몰', '상품코드', '상품명/옵션', '판매가', '운송장번호'].map(h => (
+              {['주문번호', '출고일', '쇼핑몰', '바코드', '상품명/옵션', '판매가', '운송장번호'].map(h => (
                 <span key={h} style={{ fontSize: 10.5, fontWeight: 900, color: '#94a3b8', letterSpacing: '0.04em' }}>{h}</span>
               ))}
             </div>
@@ -343,7 +347,8 @@ export default function ShippingHistoryPage() {
               const isDelivered = (o as ShippedOrder & { status?: string }).status === 'delivered'
               const item  = o.items[0]
               const ms    = mallStyle(o.channel)
-              const sku   = item?.sku ?? ''
+              const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
+              const barcode = mapping.barcode ?? item?.sku ?? ''
               const optLabel = item?.option ? `[${item.option}]` : ''
 
               return (
@@ -380,9 +385,9 @@ export default function ShippingHistoryPage() {
                     </span>
                   </span>
 
-                  {/* 상품코드 */}
+                  {/* 바코드 */}
                   <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {sku}
+                    {barcode || '-'}
                   </span>
 
                   {/* 상품명/옵션 */}
