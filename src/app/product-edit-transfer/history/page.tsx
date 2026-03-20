@@ -1,9 +1,32 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw } from 'lucide-react'
-import { loadShippedOrders, saveShippedOrders, loadOrders, saveOrders } from '@/lib/orders'
+import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck } from 'lucide-react'
+import {
+  loadShippedOrders, saveShippedOrders, loadOrders, saveOrders,
+  loadMappings, lookupMapping,
+} from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
+
+/* 로컬 캐시에서 상품 목록 로드 (바코드 기준 재고차감용) */
+type CachedOption = { barcode?: string; name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
+type CachedProduct = { id: string; options: CachedOption[] }
+function loadCachedProducts(): CachedProduct[] {
+  try {
+    const raw = localStorage.getItem('pm_products_cache_v1')
+    if (!raw) return []
+    const { data } = JSON.parse(raw)
+    return Array.isArray(data) ? data : []
+  } catch { return [] }
+}
+function saveCachedProducts(products: CachedProduct[]) {
+  try {
+    const raw = localStorage.getItem('pm_products_cache_v1')
+    if (!raw) return
+    const parsed = JSON.parse(raw)
+    localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ...parsed, data: products }))
+  } catch {}
+}
 
 /* ─── 날짜 유틸 ─────────────────────────────────────────── */
 function getToday() {
@@ -101,6 +124,87 @@ export default function ShippingHistoryPage() {
     setChecked(new Set())
   }
 
+  /* 출고확정: 바코드 기준 재고차감 + status → delivered */
+  const [isConfirming, setIsConfirming] = useState(false)
+  const handleConfirmShipping = async () => {
+    if (checked.size === 0) return
+    const toConfirm = displayOrders.filter(o => checked.has(o.id))
+    if (!confirm(`선택한 ${toConfirm.length}건을 출고확정하시겠습니까?\n바코드 기준으로 상품 재고가 차감됩니다.`)) return
+    setIsConfirming(true)
+    try {
+      const mappings = loadMappings()
+      const products = loadCachedProducts()
+
+      // 재고 차감 계산
+      const stockChanges: Record<string, Record<number, number>> = {} // productId → { optionIdx → newStock }
+      const notFound: string[] = []
+
+      toConfirm.forEach(order => {
+        const item = order.items[0]
+        if (!item) return
+        const mapping = lookupMapping(mappings, item.product_name ?? '', item.option)
+        const barcode = mapping.barcode
+        if (!barcode) { notFound.push(item.product_name ?? '?'); return }
+        let found = false
+        products.forEach(product => {
+          product.options.forEach((opt, i) => {
+            if (opt.barcode === barcode && !found) {
+              found = true
+              const cur = opt.current_stock !== undefined
+                ? opt.current_stock
+                : Math.max(0, (opt.received ?? 0) - (opt.sold ?? 0))
+              const qty = item.quantity ?? 1
+              if (!stockChanges[product.id]) stockChanges[product.id] = {}
+              stockChanges[product.id][i] = (stockChanges[product.id][i] ?? cur) - qty
+            }
+          })
+        })
+        if (!found) notFound.push(item.product_name ?? '?')
+      })
+
+      // 캐시 업데이트
+      const updatedProducts = products.map(p => {
+        const changes = stockChanges[p.id]
+        if (!changes) return p
+        return {
+          ...p,
+          options: p.options.map((o, i) =>
+            i in changes ? { ...o, current_stock: Math.max(0, changes[i]) } : o
+          ),
+        }
+      })
+      saveCachedProducts(updatedProducts)
+
+      // Supabase 업데이트 (변경된 상품만)
+      const changedIds = Object.keys(stockChanges)
+      await Promise.all(changedIds.map(async productId => {
+        const product = updatedProducts.find(p => p.id === productId)
+        if (!product) return
+        await fetch('/api/pm-products', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: productId, options: product.options }),
+        })
+      }))
+
+      // 출고내역 status → delivered
+      const confirmedIds = new Set(toConfirm.map(o => o.id))
+      const updatedShipped = shipped.map(o =>
+        confirmedIds.has(o.id) ? { ...o, status: 'delivered' as const } : o
+      )
+      saveShippedOrders(updatedShipped)
+      setShipped(updatedShipped)
+      setChecked(new Set())
+
+      const msg = notFound.length > 0
+        ? `${toConfirm.length}건 출고확정 완료.\n재고 미차감 상품(바코드 없음): ${[...new Set(notFound)].join(', ')}`
+        : `${toConfirm.length}건 출고확정 완료. 재고가 차감되었습니다.`
+      alert(msg)
+    } finally {
+      setIsConfirming(false)
+    }
+  }
+
   return (
     <div style={{ maxWidth: 1080, margin: '0 auto' }}>
 
@@ -160,12 +264,19 @@ export default function ShippingHistoryPage() {
 
         <div style={{ flex: 1 }} />
 
-        {/* 출고취소 버튼 */}
+        {/* 선택 액션 버튼 */}
         {checked.size > 0 && (
           <>
             <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>
               {checked.size}건 선택
             </span>
+            <button
+              onClick={handleConfirmShipping}
+              disabled={isConfirming}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: isConfirming ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer' }}
+            >
+              <PackageCheck size={13} /> {isConfirming ? '처리중...' : '출고확정'}
+            </button>
             <button
               onClick={handleCancelShipping}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
@@ -197,7 +308,7 @@ export default function ShippingHistoryPage() {
             </p>
             {shipped.length === 0 && (
               <p style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>
-                송장전송용 탭에서 출고확정 버튼을 눌러 출고내역을 등록하세요
+                송장입력 탭에서 운송장번호를 저장하면 자동으로 출고내역에 등록됩니다
               </p>
             )}
           </div>
@@ -220,7 +331,8 @@ export default function ShippingHistoryPage() {
 
             {/* 행 */}
             {displayOrders.map(o => {
-              const isChk = checked.has(o.id)
+              const isChk      = checked.has(o.id)
+              const isDelivered = (o as ShippedOrder & { status?: string }).status === 'delivered'
               const item  = o.items[0]
               const ms    = mallStyle(o.channel)
               const sku   = item?.sku ?? ''
@@ -236,7 +348,7 @@ export default function ShippingHistoryPage() {
                     gap: 8, padding: '11px 20px',
                     borderBottom: '1px solid #f8fafc',
                     alignItems: 'center',
-                    background: isChk ? '#eff6ff' : 'transparent',
+                    background: isChk ? '#eff6ff' : isDelivered ? '#f0fdf4' : 'transparent',
                     cursor: 'pointer',
                     transition: 'background 100ms',
                   }}
@@ -282,10 +394,17 @@ export default function ShippingHistoryPage() {
                     {item?.unit_price ? item.unit_price.toLocaleString() : '-'}
                   </span>
 
-                  {/* 운송장번호 */}
-                  <span style={{ fontSize: 11.5, fontFamily: 'monospace', color: '#334155', fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {o.tracking_number ?? '-'}
-                  </span>
+                  {/* 운송장번호 + 확정뱃지 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
+                    <span style={{ fontSize: 11.5, fontFamily: 'monospace', color: '#334155', fontWeight: 700, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                      {o.tracking_number ?? '-'}
+                    </span>
+                    {isDelivered && (
+                      <span style={{ fontSize: 10, fontWeight: 800, color: '#059669', background: '#dcfce7', padding: '1px 6px', borderRadius: 4, width: 'fit-content' }}>
+                        출고확정
+                      </span>
+                    )}
+                  </div>
                 </div>
               )
             })}

@@ -10,8 +10,9 @@ import {
 import {
   loadOrders, saveOrders, loadSelectedForInvoice, clearSelectedForInvoice,
   STATUS_MAP, loadMappings, lookupMapping,
+  loadShippedOrders, saveShippedOrders,
 } from '@/lib/orders'
-import type { Order } from '@/lib/orders'
+import type { Order, ShippedOrder } from '@/lib/orders'
 
 /** [색상=베이지, 사이즈=FREE] → [베이지,FREE] 변환 */
 function formatOption(option: string): string {
@@ -42,6 +43,8 @@ export default function InvoicePrintPage() {
   const [selectedIds, setSelectedIds]   = useState<string[]>([])
   const [checkedPrint, setCheckedPrint] = useState<Set<string>>(new Set())
   const bulkFileRef = useRef<HTMLInputElement>(null)
+  // 날짜 필터
+  const [dateFilter, setDateFilter] = useState('')
 
   useEffect(() => {
     setOrders(loadOrders())
@@ -69,14 +72,16 @@ export default function InvoicePrintPage() {
   [needInvoice, filterSelected, selectedIds])
 
   const filtered = useMemo(() => {
+    let list = baseList
+    if (dateFilter) list = list.filter(o => o.order_date === dateFilter)
     const q = search.trim().toLowerCase()
-    if (!q) return baseList
-    return baseList.filter(o =>
+    if (!q) return list
+    return list.filter(o =>
       o.order_number.toLowerCase().includes(q) ||
       o.customer_name.toLowerCase().includes(q) ||
       o.items[0]?.product_name?.toLowerCase().includes(q)
     )
-  }, [baseList, search])
+  }, [baseList, search, dateFilter])
 
   /* 체크박스 */
   const allPrintChecked = filtered.length > 0 && filtered.every(o => checkedPrint.has(o.id))
@@ -97,6 +102,17 @@ export default function InvoicePrintPage() {
   const setEdit = (id: string, field: 'carrier' | 'tracking', value: string) =>
     setEdits(prev => ({ ...prev, [id]: { ...getEdit(id), [field]: value } }))
 
+  /** 운송장 저장 후 출고내역(pm_shipped_orders_v1)에 자동 등록 */
+  const addToShippedHistory = (shippedOrders: Order[]) => {
+    const now = new Date().toISOString()
+    const existing = loadShippedOrders()
+    const existingIds = new Set(existing.map(o => o.id))
+    const newEntries: ShippedOrder[] = shippedOrders
+      .filter(o => !existingIds.has(o.id))
+      .map(o => ({ ...o, status: 'shipped' as const, shipped_at: now }))
+    if (newEntries.length > 0) saveShippedOrders([...existing, ...newEntries])
+  }
+
   const handleSave = (order: Order) => {
     const edit = getEdit(order.id)
     if (!edit.tracking.trim()) return
@@ -107,6 +123,9 @@ export default function InvoicePrintPage() {
     )
     saveOrders(updated)
     setOrders(updated)
+    // 출고내역에 자동 추가
+    const saved_order = updated.find(o => o.id === order.id)
+    if (saved_order) addToShippedHistory([saved_order])
     setSaved(prev => ({ ...prev, [order.id]: true }))
     setTimeout(() => setSaved(prev => ({ ...prev, [order.id]: false })), 2000)
   }
@@ -115,6 +134,7 @@ export default function InvoicePrintPage() {
     let updated = [...orders]
     let count = 0
     const newSaved: Record<string, boolean> = {}
+    const savedOrderIds: string[] = []
     filtered.forEach(order => {
       const edit = getEdit(order.id)
       if (!edit.tracking.trim()) return
@@ -124,11 +144,15 @@ export default function InvoicePrintPage() {
           : o
       )
       newSaved[order.id] = true
+      savedOrderIds.push(order.id)
       count++
     })
     if (count === 0) return alert('입력된 운송장번호가 없습니다.')
     saveOrders(updated)
     setOrders(updated)
+    // 출고내역에 자동 추가
+    const savedOrders = updated.filter(o => savedOrderIds.includes(o.id))
+    addToShippedHistory(savedOrders)
     setSaved(prev => ({ ...prev, ...newSaved }))
     setTimeout(() => setSaved(prev => {
       const n = { ...prev }
@@ -309,7 +333,7 @@ export default function InvoicePrintPage() {
     <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
       {/* 내부 탭 네비게이션 */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#f1f5f9', borderRadius: 12, padding: 4, width: 'fit-content' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#f1f5f9', borderRadius: 14, padding: 5, width: 'fit-content' }}>
         {[
           { label: '송장입력',  path: '/product-edit-transfer/print' },
           { label: '송장전송용', path: '/product-edit-transfer/send'  },
@@ -317,8 +341,8 @@ export default function InvoicePrintPage() {
           <button key={t.path}
             onClick={() => router.push(t.path)}
             style={{
-              padding: '7px 20px', borderRadius: 9, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 800,
+              padding: '10px 28px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              fontSize: 15, fontWeight: 900,
               background: t.path.includes('print') ? '#1e293b' : 'transparent',
               color:      t.path.includes('print') ? 'white'    : '#64748b',
               transition: 'all 150ms',
@@ -346,7 +370,7 @@ export default function InvoicePrintPage() {
         ))}
       </div>
 
-      {/* 검색 + 액션 바 */}
+      {/* 검색 + 날짜필터 + 액션 바 */}
       <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Search size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
         <input
@@ -355,6 +379,16 @@ export default function InvoicePrintPage() {
           placeholder="주문번호 · 수취인 · 상품명 검색..."
           style={{ flex: 1, height: 34, fontSize: 13, border: 'none', outline: 'none', background: 'transparent', minWidth: 160 }}
         />
+        {/* 날짜 필터 */}
+        <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+          style={{ height: 32, fontSize: 12.5, fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: dateFilter ? '#0f172a' : '#94a3b8', cursor: 'pointer', outline: 'none' }}
+        />
+        {dateFilter && (
+          <button onClick={() => setDateFilter('')}
+            style={{ padding: '4px 10px', borderRadius: 7, background: '#f1f5f9', color: '#64748b', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            전체
+          </button>
+        )}
 
         {selectedIds.length > 0 && (
           <button

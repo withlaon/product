@@ -168,6 +168,7 @@ export default function InvoiceSendPage() {
   const [search, setSearch]   = useState('')
   const [checked, setChecked] = useState<Set<string>>(new Set())
   const [downloading, setDownloading] = useState<string | null>(null)
+  const [dateFilter, setDateFilter]   = useState('')
 
   useEffect(() => {
     setOrders(loadOrders())
@@ -178,14 +179,16 @@ export default function InvoiceSendPage() {
   [orders])
 
   const filtered = useMemo(() => {
+    let list = shippedOrders
+    if (dateFilter) list = list.filter(o => (o.order_date ?? '').slice(0,10) === dateFilter)
     const q = search.trim().toLowerCase()
-    if (!q) return shippedOrders
-    return shippedOrders.filter(o =>
+    if (!q) return list
+    return list.filter(o =>
       o.order_number.toLowerCase().includes(q) ||
       o.customer_name.toLowerCase().includes(q) ||
       (o.tracking_number ?? '').toLowerCase().includes(q)
     )
-  }, [shippedOrders, search])
+  }, [shippedOrders, search, dateFilter])
 
   const toggleOne = (id: string) => setChecked(prev => {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
@@ -248,7 +251,7 @@ export default function InvoiceSendPage() {
     <div style={{ maxWidth: 1080, margin: '0 auto' }}>
 
       {/* 내부 탭 네비게이션 */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#f1f5f9', borderRadius: 12, padding: 4, width: 'fit-content' }}>
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#f1f5f9', borderRadius: 14, padding: 5, width: 'fit-content' }}>
         {[
           { label: '송장입력',  path: '/product-edit-transfer/print' },
           { label: '송장전송용', path: '/product-edit-transfer/send'  },
@@ -256,8 +259,8 @@ export default function InvoiceSendPage() {
           <button key={t.path}
             onClick={() => router.push(t.path)}
             style={{
-              padding: '7px 20px', borderRadius: 9, border: 'none', cursor: 'pointer',
-              fontSize: 13, fontWeight: 800,
+              padding: '10px 28px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              fontSize: 15, fontWeight: 900,
               background: t.path.includes('send') ? '#1e293b' : 'transparent',
               color:      t.path.includes('send') ? 'white'   : '#64748b',
               transition: 'all 150ms',
@@ -332,14 +335,23 @@ export default function InvoiceSendPage() {
       </div>
 
       {/* 검색 */}
-      <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10 }}>
+      <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
         <Search size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="주문번호 · 수취인 · 운송장번호 검색..."
-          style={{ flex: 1, height: 34, fontSize: 13, border: 'none', outline: 'none', background: 'transparent' }}
+          style={{ flex: 1, height: 34, fontSize: 13, border: 'none', outline: 'none', background: 'transparent', minWidth: 140 }}
         />
+        <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+          style={{ height: 32, fontSize: 12.5, fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: dateFilter ? '#0f172a' : '#94a3b8', cursor: 'pointer', outline: 'none' }}
+        />
+        {dateFilter && (
+          <button onClick={() => setDateFilter('')}
+            style={{ padding: '4px 10px', borderRadius: 7, background: '#f1f5f9', color: '#64748b', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+            전체
+          </button>
+        )}
         {checked.size > 0 && (
           <>
             <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>

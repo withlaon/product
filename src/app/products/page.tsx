@@ -443,6 +443,23 @@ async function pmGetFullProduct(id: string): Promise<Product | null> {
   } catch { return null }
 }
 
+/** 현재 페이지 상품들의 옵션이미지 배치 조회 (1 API 호출) */
+async function pmGetPageImages(ids: string[]): Promise<Record<string, string[]>> {
+  if (ids.length === 0) return {}
+  try {
+    const res = await fetch(`${PM_API}?imageIds=${ids.join(',')}`)
+    if (!res.ok) return {}
+    const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
+    const result: Record<string, string[]> = {}
+    if (Array.isArray(data)) {
+      data.forEach(row => {
+        result[row.id] = (row.options ?? []).map(o => o.image ?? '')
+      })
+    }
+    return result
+  } catch { return {} }
+}
+
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */
 export default function ProductsPage() {
   // 스테일 캐시 포함 즉시 초기화 → 첫 렌더부터 목록 표시 (SSR 단계에서는 빈 배열, useEffect에서 덮어씀)
@@ -843,21 +860,26 @@ export default function ProductsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // 현재 페이지 상품의 옵션 이미지를 lazy load
+  // 현재 페이지 상품의 옵션 이미지를 lazy load (배치 1회 호출)
   useEffect(() => {
     if (paginated.length === 0) return
-    const toLoad = paginated.filter(p => !pageImages[p.id] && p.options.length > 0)
+    const toLoad = paginated.filter(p => !(p.id in pageImages)).map(p => p.id)
     if (toLoad.length === 0) return
     let cancelled = false
-    Promise.all(toLoad.map(async p => {
-      const full = await pmGetFullProduct(p.id)
-      if (!cancelled && full) {
-        setPageImages(prev => ({ ...prev, [p.id]: full.options.map(o => o.image ?? '') }))
+    // 로딩 예약 표시 (undefined → null 로 변경해서 중복 호출 방지)
+    setPageImages(prev => {
+      const next = { ...prev }
+      toLoad.forEach(id => { if (!(id in next)) next[id] = [] })
+      return next
+    })
+    pmGetPageImages(toLoad).then(images => {
+      if (!cancelled && Object.keys(images).length > 0) {
+        setPageImages(prev => ({ ...prev, ...images }))
       }
-    }))
+    })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, paginated.map(p => p.id).join(',')])
+  }, [page, products.length])
 
   const doSearch    = () => { setSearch(searchInput); setPage(1) }
   const clearSearch = () => { setSearch(''); setSearchInput(''); setPage(1) }

@@ -56,6 +56,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(data)
     }
 
+    // 이미지 배치 조회: ?imageIds=id1,id2,...
+    const imageIds = new URL(req.url).searchParams.get('imageIds')
+    if (imageIds) {
+      const ids = imageIds.split(',').map(s => s.trim()).filter(Boolean)
+      if (ids.length === 0) return NextResponse.json([])
+      const res = await fetch(
+        `${SUPABASE_URL}/rest/v1/${TABLE}?select=id,options&id=in.(${ids.join(',')})`,
+        {
+          headers: {
+            apikey:        SERVICE_KEY,
+            Authorization: `Bearer ${SERVICE_KEY}`,
+            'Content-Type': 'application/json',
+          },
+          signal: AbortSignal.timeout(TIMEOUT_MS),
+        }
+      )
+      if (!res.ok) return NextResponse.json([])
+      const data = await res.json()
+      return NextResponse.json(Array.isArray(data) ? data : [])
+    }
+
     // RPC 함수 우선 시도 (statement_timeout 120s 설정됨 → 57014 오류 우회)
     const rpcHeaders: Record<string, string> = {
       apikey:         SERVICE_KEY,
