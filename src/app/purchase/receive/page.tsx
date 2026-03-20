@@ -1,5 +1,6 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -11,7 +12,7 @@ import {
   fmtMonthLabel, fmtDayLabel,
   syncProductQty, DateNav,
 } from '../_shared'
-import { Edit2, Trash2, X, Plus, PackagePlus, CheckCircle2 } from 'lucide-react'
+import { Edit2, Trash2, X, Plus, PackagePlus, CheckCircle2, Upload } from 'lucide-react'
 
 export default function ReceiveManagePage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
@@ -29,6 +30,7 @@ export default function ReceiveManagePage() {
   /* 입고 등록 모달 */
   const [isAdd, setIsAdd] = useState(false)
   const [form, setForm]   = useState({ order_date:'', supplier:'', items:[{ product_code:'', option_name:'', barcode:'', qty:'' }] })
+  const fileInputRef      = useRef<HTMLInputElement>(null)
 
   const loadPurchases = useCallback(async () => {
     const { data } = await supabase.from('pm_purchases').select('*').order('order_date', { ascending:false })
@@ -85,6 +87,69 @@ export default function ReceiveManagePage() {
     await supabase.from('pm_purchases').delete().eq('id', p.id)
     await loadPurchases(); await loadProducts()
     setDeleteTarget(null); setSaving(false)
+  }
+
+  /* ── 입고 파일 업로드 파싱 ── */
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const wb   = XLSX.read(ev.target?.result, { type: 'binary' })
+        const ws   = wb.Sheets[wb.SheetNames[0]]
+        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
+        if (!rows.length) return
+
+        // 헤더 자동 감지 — 컬럼명 후보 매핑
+        const COL = {
+          product_code: ['상품코드','product_code','상품 코드','코드'],
+          option_name:  ['옵션명','option_name','옵션','옵션 명','옵션이름'],
+          barcode:      ['바코드','barcode','바 코드','BARCODE'],
+          qty:          ['입고수량','수량','입고 수량','qty','QTY','Qty','입고량'],
+          order_date:   ['입고일','입고일자','날짜','date','입고 일자'],
+          supplier:     ['구매처','공급처','supplier','거래처'],
+        }
+        const headers = Object.keys(rows[0])
+        const findCol = (keys: string[]) => headers.find(h => keys.map(k=>k.toLowerCase()).includes(h.toLowerCase())) ?? ''
+
+        const cCode = findCol(COL.product_code)
+        const cOpt  = findCol(COL.option_name)
+        const cBar  = findCol(COL.barcode)
+        const cQty  = findCol(COL.qty)
+        const cDate = findCol(COL.order_date)
+        const cSup  = findCol(COL.supplier)
+
+        const items = rows
+          .map(row => ({
+            product_code: String(row[cCode] ?? '').trim(),
+            option_name:  String(row[cOpt]  ?? '').trim(),
+            barcode:      String(row[cBar]  ?? '').trim(),
+            qty:          String(row[cQty]  ?? '').trim(),
+          }))
+          .filter(i => i.product_code || i.barcode)
+
+        if (!items.length) {
+          alert('파싱 가능한 행이 없습니다. 상품코드 또는 바코드 컬럼이 있는지 확인하세요.')
+          return
+        }
+
+        const dateVal    = cDate ? String(rows[0][cDate] ?? '').slice(0,10) : ''
+        const supplierVal = cSup ? String(rows[0][cSup] ?? '').trim() : ''
+
+        setForm(f => ({
+          order_date: dateVal || f.order_date,
+          supplier:   supplierVal || f.supplier,
+          items,
+        }))
+      } catch (err) {
+        console.error(err)
+        alert('파일 파싱 오류가 발생했습니다.')
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = ''
+      }
+    }
+    reader.readAsBinaryString(file)
   }
 
   /* ── 입고 직접 등록 ── */
@@ -199,6 +264,19 @@ export default function ReceiveManagePage() {
 
       {/* ── 입고 등록 모달 ── */}
       <Modal isOpen={isAdd} onClose={()=>setIsAdd(false)} title="입고 등록" size="xl">
+        {/* 파일 업로드 영역 */}
+        <div style={{ marginBottom:14, padding:'10px 14px', background:'#f8fafc', borderRadius:8, border:'1px dashed #cbd5e1', display:'flex', alignItems:'center', gap:10 }}>
+          <Upload size={15} style={{ color:'#64748b', flexShrink:0 }} />
+          <div style={{ flex:1 }}>
+            <p style={{ fontSize:12, fontWeight:800, color:'#334155', marginBottom:2 }}>입고 파일 업로드 (선택)</p>
+            <p style={{ fontSize:10.5, color:'#94a3b8' }}>상품코드·바코드·옵션명·입고수량 컬럼이 포함된 엑셀 파일을 업로드하면 자동으로 채워집니다</p>
+          </div>
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }} onChange={handleFileUpload} />
+          <button onClick={()=>fileInputRef.current?.click()}
+            style={{ fontSize:12, fontWeight:800, color:'#0ea5e9', background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:7, padding:'6px 14px', cursor:'pointer', whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:5 }}>
+            <Upload size={12}/>파일 선택
+          </button>
+        </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
           <div><L>입고일 *</L><Input type="date" value={form.order_date} onChange={e=>setForm(f=>({...f,order_date:e.target.value}))}/></div>
           <div><L>구매처</L><Input placeholder="구매처" value={form.supplier} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))}/></div>

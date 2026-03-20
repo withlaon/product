@@ -650,7 +650,6 @@ export default function ProductsPage() {
 
   // 옵션 이미지 lazy load: localStorage 캐시에서 즉시 초기화, 미캐시 상품만 API 조회
   const [pageImages, setPageImages] = useState<Record<string, string[]>>(() => loadImgCache())
-  const loadingIdsRef = useRef<Set<string>>(new Set())
 
   // 기본정보 팝업 상태
   const [basicInfoTarget, setBasicInfoTarget] = useState<Product | null>(null)
@@ -1064,34 +1063,6 @@ export default function ProductsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgLoadKey])
 
-  // 다음 페이지 이미지 사전 로딩 (현재 페이지 로딩 완료 후 600ms)
-  useEffect(() => {
-    if (page >= totalPages) return
-    const timer = setTimeout(() => {
-      const cached = loadImgCache()
-      const nextPageIds = filtered
-        .slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-        .map(p => p.id)
-      // 캐시에 있는 항목은 state에만 반영
-      const inCache = nextPageIds.filter(id => id in cached)
-      if (inCache.length > 0) {
-        const result: Record<string, string[]> = {}
-        inCache.forEach(id => { result[id] = cached[id] })
-        setPageImages(prev => ({ ...prev, ...result }))
-      }
-      // 캐시 미스 항목만 Supabase 호출 (병렬)
-      const toPreload = nextPageIds.filter(id => !(id in cached) && !loadingIdsRef.current.has(id))
-      toPreload.forEach(id => {
-        loadingIdsRef.current.add(id)
-        pmGetOneImage(id).then(images => {
-          loadingIdsRef.current.delete(id)
-          if (Object.keys(images).length > 0) setPageImages(prev => ({ ...prev, ...images }))
-        })
-      })
-    }, 600)
-    return () => clearTimeout(timer)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, products.length, totalPages])
 
   const doSearch    = () => { setSearch(searchInput); setPage(1) }
   const clearSearch = () => { setSearch(''); setSearchInput(''); setPage(1) }
