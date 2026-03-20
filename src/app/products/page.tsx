@@ -349,31 +349,97 @@ function ChannelPriceModal({
 }
 
 /* ─── 쇼핑몰 매핑 모달 ──────────────────────────────────────── */
-interface MappingRow { mall:string; productId:string; productName:string; price:string }
+const LOCAL_MAPPING_KEY  = 'pm_channel_mappings_v2'
+const LOCAL_CHANNEL_KEY  = 'pm_mall_channels_v5'
+
+interface LocalMappedRow {
+  mall_product_id: string; mall_product_name: string; mall_option: string
+  matched_product_id: string | null; matched_product_name: string | null
+  matched_option: string | null; matched_barcode: string | null
+  mall_price: number | null; status: 'matched' | 'unmatched'
+}
+function loadMallChannels(): { key: string; name: string }[] {
+  try {
+    const raw = localStorage.getItem(LOCAL_CHANNEL_KEY)
+    if (!raw) return PRICE_CHANNELS.map(n => ({ key: n, name: n }))
+    const arr = JSON.parse(raw)
+    const active = Array.isArray(arr) ? arr.filter((c: { active: boolean }) => c.active) : []
+    return active.length > 0
+      ? active.map((c: { key: string; name: string }) => ({ key: c.key, name: c.name }))
+      : PRICE_CHANNELS.map(n => ({ key: n, name: n }))
+  } catch { return PRICE_CHANNELS.map(n => ({ key: n, name: n })) }
+}
+function loadLocalMappings(): Record<string, LocalMappedRow[]> {
+  try { const r = localStorage.getItem(LOCAL_MAPPING_KEY); return r ? JSON.parse(r) : {} }
+  catch { return {} }
+}
+function saveLocalMappings(data: Record<string, LocalMappedRow[]>) {
+  try { localStorage.setItem(LOCAL_MAPPING_KEY, JSON.stringify(data)) } catch {}
+}
+
+interface MappingRow { mallKey:string; mall:string; productId:string; productName:string; price:string }
 function MallMappingModal({
   product, onClose, onSave,
 }: { product: Product; onClose: () => void; onSave: (cp: ChannelPrice[], rm: (string|{mall:string;code:string})[]) => void }) {
+  const channels = useMemo(() => loadMallChannels(), [])
+  const existingMappings = useMemo(() => loadLocalMappings(), [])
+
   const [rows, setRows] = useState<MappingRow[]>(() =>
-    PRICE_CHANNELS.map(ch => {
-      const priceEntry = product.channel_prices.find(cp => cp.channel === ch)
+    channels.map(ch => {
+      const priceEntry = product.channel_prices.find(cp => cp.channel === ch.name)
       const mallEntry  = (product.registered_malls ?? []).find(m =>
-        typeof m === 'object' ? m.mall === ch : m === ch
+        typeof m === 'object' ? m.mall === ch.name : m === ch.name
       )
+      // localStorage pm_channel_mappings_v2 에서도 기존 매핑 조회
+      const localRow = (existingMappings[ch.key] || []).find(r => r.matched_product_id === product.id)
       return {
-        mall: ch,
-        productId:   typeof mallEntry === 'object' ? (mallEntry.code || '') : '',
-        productName: '',
-        price:       priceEntry ? String(priceEntry.price) : '',
+        mallKey:     ch.key,
+        mall:        ch.name,
+        productId:   typeof mallEntry === 'object'
+          ? (mallEntry.code || localRow?.mall_product_id || '')
+          : (localRow?.mall_product_id || ''),
+        productName: localRow?.mall_product_name || '',
+        price: priceEntry
+          ? String(priceEntry.price)
+          : (localRow?.mall_price ? String(localRow.mall_price) : ''),
       }
     })
   )
+
   const handleSave = () => {
-    const cp  = rows.filter(r => r.price && Number(r.price) > 0)
-                    .map(r => ({ channel: r.mall, price: Number(r.price) }))
-    const rm  = rows.filter(r => r.productId.trim())
-                    .map(r => ({ mall: r.mall, code: r.productId.trim() }))
+    const cp = rows.filter(r => r.price && Number(r.price) > 0)
+                   .map(r => ({ channel: r.mall, price: Number(r.price) }))
+    const rm = rows.filter(r => r.productId.trim())
+                   .map(r => ({ mall: r.mall, code: r.productId.trim() }))
+
+    // localStorage pm_channel_mappings_v2 도 동기화
+    const allMaps = { ...existingMappings }
+    for (const row of rows) {
+      const mallRows = [...(allMaps[row.mallKey] || [])]
+      if (row.productId.trim()) {
+        const idx = mallRows.findIndex(r => r.matched_product_id === product.id)
+        const entry: LocalMappedRow = {
+          mall_product_id:   row.productId.trim(),
+          mall_product_name: row.productName || product.name,
+          mall_option:       '',
+          matched_product_id:   product.id,
+          matched_product_name: product.name,
+          matched_option:   null,
+          matched_barcode:  null,
+          mall_price: row.price && Number(row.price) > 0 ? Number(row.price) : null,
+          status: 'matched',
+        }
+        if (idx >= 0) mallRows[idx] = entry; else mallRows.push(entry)
+      } else {
+        // productId 비어있으면 해당 상품의 매핑 제거
+        mallRows.splice(0, mallRows.length, ...mallRows.filter(r => r.matched_product_id !== product.id))
+      }
+      allMaps[row.mallKey] = mallRows
+    }
+    saveLocalMappings(allMaps)
     onSave(cp, rm)
   }
+
   const thS: React.CSSProperties = { fontSize:10.5, fontWeight:800, color:'#64748b', padding:'4px 0' }
   return (
     <Modal isOpen onClose={onClose} title={`쇼핑몰 매핑 — ${product.name}`} size="xl">
@@ -381,7 +447,7 @@ function MallMappingModal({
         {['쇼핑몰','상품ID','쇼핑몰 상품명 (참고)','판매가'].map(h => <span key={h} style={thS}>{h}</span>)}
       </div>
       {rows.map((row, i) => (
-        <div key={row.mall} style={{ display:'grid', gridTemplateColumns:'130px 1fr 1.5fr 120px', gap:8, marginBottom:6, alignItems:'center' }}>
+        <div key={row.mallKey} style={{ display:'grid', gridTemplateColumns:'130px 1fr 1.5fr 120px', gap:8, marginBottom:6, alignItems:'center' }}>
           <span style={{ fontSize:12.5, fontWeight:800, color:'#334155', background:'#f1f5f9', padding:'6px 10px', borderRadius:7, textAlign:'center' }}>{row.mall}</span>
           <Input placeholder="상품ID" value={row.productId}
             onChange={e => { const r=[...rows]; r[i]={...r[i],productId:e.target.value}; setRows(r) }}/>
@@ -395,7 +461,7 @@ function MallMappingModal({
         </div>
       ))}
       <p style={{ fontSize:11, color:'#94a3b8', marginTop:10 }}>
-        * 상품ID를 입력한 쇼핑몰은 쇼핑몰 등록현황에 자동 표시됩니다.
+        * 상품ID 입력한 쇼핑몰 → 쇼핑몰 등록현황 표시 + 매핑관리탭에도 자동 반영됩니다.
       </p>
       <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
         <Button variant="outline" onClick={onClose}>취소</Button>
@@ -1000,39 +1066,36 @@ export default function ProductsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // 현재 페이지 이미지 로드: 인메모리 캐시 즉시 반영 + 미캐시 상품 1회 배치 fetch
+  // 현재 페이지 이미지 로드: paginated 상품 ID 변경 시마다 즉시 실행
+  // imgLoadKey: 현재 페이지에 표시되는 상품 ID 목록 (문자열) → deps 비교에 사용
+  const imgLoadKey = paginated.map(p => p.id).join(',')
   useEffect(() => {
-    if (paginated.length === 0) return
-    const toLoad = paginated
-      .filter(p => !(p.id in pageImages) && !loadingIdsRef.current.has(p.id))
-      .map(p => p.id)
-    if (toLoad.length === 0) return
+    if (!imgLoadKey) return
+    const pids = imgLoadKey.split(',').filter(Boolean)
+    const mem  = loadImgCache()
 
-    // 메모리 캐시 히트 → 즉시 상태 반영
-    const mem = loadImgCache()
-    const fromMem: Record<string, string[]> = {}
+    // 캐시 적중 → 즉시 state 반영
+    const fromCache: Record<string, string[]> = {}
     const toFetch: string[] = []
-    toLoad.forEach(id => {
-      if (id in mem) fromMem[id] = mem[id]
+    pids.forEach(id => {
+      if (id in mem) fromCache[id] = mem[id]
       else toFetch.push(id)
     })
-    if (Object.keys(fromMem).length > 0) {
-      setPageImages(prev => ({ ...prev, ...fromMem }))
+    if (Object.keys(fromCache).length > 0) {
+      setPageImages(prev => ({ ...prev, ...fromCache }))
     }
     if (toFetch.length === 0) return
 
-    // 미캐시 상품: 단 1회 배치 REST 요청 (네트워크 왕복 최소화)
+    // 미캐시 상품: Supabase 배치 fetch (mergeImgCache 내부 호출됨)
     let cancelled = false
-    toFetch.forEach(id => loadingIdsRef.current.add(id))
     pmGetPageImages(toFetch).then(images => {
-      toFetch.forEach(id => loadingIdsRef.current.delete(id))
       if (!cancelled && Object.keys(images).length > 0) {
         setPageImages(prev => ({ ...prev, ...images }))
       }
     })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, products.length])
+  }, [imgLoadKey])
 
   // 다음 페이지 이미지 사전 로딩 (현재 페이지 로딩 완료 후 600ms)
   useEffect(() => {
@@ -1156,7 +1219,22 @@ export default function ProductsPage() {
 
   const handleDelete = async (id: string) => {
     const { error } = await pmDelete(id)
-    if (!error) { setProducts(prev => prev.filter(p => p.id !== id)); invalidateProductsCache() }
+    if (!error) {
+      setProducts(prev => prev.filter(p => p.id !== id))
+      invalidateProductsCache()
+      // pm_channel_mappings_v2 에서 해당 상품 매핑 해제
+      try {
+        const allMaps = loadLocalMappings()
+        for (const key of Object.keys(allMaps)) {
+          allMaps[key] = allMaps[key].map(r =>
+            r.matched_product_id === id
+              ? { ...r, matched_product_id: null, matched_product_name: null, matched_option: null, matched_barcode: null, status: 'unmatched' as const }
+              : r
+          )
+        }
+        saveLocalMappings(allMaps)
+      } catch { /* 무시 */ }
+    }
   }
 
   /* ── 파일 input ref ── */

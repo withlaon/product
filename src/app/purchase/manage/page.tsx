@@ -24,6 +24,7 @@ interface QualOpt {
   image: string
   currentStock: number
   unreceived: number
+  sold: number          // 누적 판매수량
   reason: 'lowStock' | 'unreceived' | 'both'
 }
 interface SelectedOpt extends QualOpt { qty: string }
@@ -57,19 +58,11 @@ export default function PurchaseManagePage() {
   }, [])
 
   const loadProducts = useCallback(async () => {
-    const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    if (!url || !key) return
-    try {
-      const res = await fetch(
-        `${url}/rest/v1/pm_products?select=id,code,name,abbr,status,options`,
-        { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-      )
-      if (res.ok) {
-        const data = await res.json()
-        setProducts(data as PmProduct[])
-      }
-    } catch { /* ignore */ }
+    // supabase 클라이언트로 직접 조회 (이미지 포함 전체 options)
+    const { data } = await supabase
+      .from('pm_products')
+      .select('id,code,name,abbr,status,options')
+    if (data) setProducts(data as PmProduct[])
   }, [])
 
   useEffect(() => { loadPurchases(); loadProducts() }, [loadPurchases, loadProducts])
@@ -87,13 +80,20 @@ export default function PurchaseManagePage() {
     return map
   }, [purchases])
 
-  /* ── 발주 추천 목록 (재고 ≤ 2 또는 미입고 > 0) ── */
+  /* ── 발주 추천 목록 ──
+     조건 1: 판매중 상품 중 현재고 ≤ 2 (삭제예정 제외)
+     조건 2: 미입고 발주가 있는 상품 (발주등록일 이후 판매 발생)
+  ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const result: QualOpt[] = []
     for (const prod of products) {
-      if (prod.status === 'pending_delete') continue
+      // 삭제예정 제외, 판매중/품절만 포함
+      if (prod.status === 'pending_delete' || prod.status === 'cancelled') continue
       for (const opt of prod.options) {
-        const stock = opt.current_stock ?? Math.max(0, (opt.received || 0) - (opt.sold || 0) - (opt.defective || 0))
+        const rcv   = opt.received || 0
+        const sold  = opt.sold     || 0
+        const def   = opt.defective || 0
+        const stock = opt.current_stock ?? Math.max(0, rcv - sold - def)
         const unr   = unreceivedMap[opt.barcode || ''] || 0
         const isLow = stock <= 2
         const hasUnr = unr > 0
@@ -108,6 +108,7 @@ export default function PurchaseManagePage() {
           image:        opt.image || '',
           currentStock: stock,
           unreceived:   unr,
+          sold,
           reason:       isLow && hasUnr ? 'both' : isLow ? 'lowStock' : 'unreceived',
         })
       }
@@ -247,7 +248,7 @@ export default function PurchaseManagePage() {
       </div>
 
       {/* ── 2단 메인 레이아웃 ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 10, flex: 1, overflow: 'hidden' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '3fr 2fr', gap: 10, flex: 1, overflow: 'hidden' }}>
 
         {/* ◀ 왼쪽: 발주 추천 목록 ── */}
         <div className="pm-card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
@@ -277,8 +278,8 @@ export default function PurchaseManagePage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                   <tr>
-                    {['', '이미지', '상품약어 / 옵션', '바코드', '미입고', '현재고', '선택'].map(h => (
-                      <th key={h} style={{ padding: '7px 8px', fontWeight: 800, color: '#64748b', fontSize: 10.5, textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
+                    {['', '이미지', '상품약어 / 바코드', '판매수량', '미입고', '현재고', ''].map(h => (
+                      <th key={h} style={{ padding: '7px 6px', fontWeight: 800, color: '#64748b', fontSize: 10, textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -289,47 +290,48 @@ export default function PurchaseManagePage() {
                     return (
                       <tr key={opt.key} style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer', transition: 'background 0.15s' }}
                         onClick={() => toggleSelect(opt)}>
-                        {/* 상태 표시 */}
-                        <td style={{ padding: '6px 4px 6px 8px', textAlign: 'center' }}>
-                          {opt.reason === 'lowStock' && <span style={{ fontSize: 9, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>재고↓</span>}
-                          {opt.reason === 'unreceived' && <span style={{ fontSize: 9, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>미입고</span>}
-                          {opt.reason === 'both' && <span style={{ fontSize: 9, background: '#fef2f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>↓미입고</span>}
+                        {/* 상태 배지 */}
+                        <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 36 }}>
+                          {opt.reason === 'lowStock' && <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>재고↓</span>}
+                          {opt.reason === 'unreceived' && <span style={{ fontSize: 8.5, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>미입고</span>}
+                          {opt.reason === 'both' && <span style={{ fontSize: 8.5, background: '#fef2f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>둘다</span>}
                         </td>
                         {/* 이미지 */}
-                        <td style={{ padding: '4px 6px', textAlign: 'center' }}>
+                        <td style={{ padding: '4px 5px', textAlign: 'center', width: 48 }}>
                           {opt.image
-                            ? <img src={opt.image} alt="" style={{ width: 40, height: 40, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0' }} />
-                            : <div style={{ width: 40, height: 40, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Package size={16} style={{ color: '#cbd5e1' }} />
+                            ? <img src={opt.image} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block' }} />
+                            : <div style={{ width: 38, height: 38, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Package size={14} style={{ color: '#cbd5e1' }} />
                               </div>
                           }
                         </td>
-                        {/* 상품약어/옵션 */}
-                        <td style={{ padding: '6px 8px' }}>
-                          <p style={{ fontSize: 12, fontWeight: 800, color: '#1e293b', marginBottom: 2, lineHeight: 1.2 }}>{opt.prodAbbr}</p>
-                          <p style={{ fontSize: 11, color: '#64748b', fontFamily: 'monospace' }}>{opt.optName}</p>
+                        {/* 상품약어 + 바코드 */}
+                        <td style={{ padding: '5px 6px' }}>
+                          <p style={{ fontSize: 12, fontWeight: 800, color: '#1e293b', marginBottom: 1, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{opt.prodAbbr}</p>
+                          <p style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{opt.optName}</p>
+                          <p style={{ fontSize: 9.5, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{opt.barcode || '-'}</p>
                         </td>
-                        {/* 바코드 */}
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                          <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#475569', background: '#f8fafc', padding: '2px 6px', borderRadius: 4 }}>{opt.barcode || '-'}</span>
+                        {/* 판매수량 */}
+                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 48 }}>
+                          <span style={{ fontSize: 12, fontWeight: 900, color: opt.sold > 0 ? '#6366f1' : '#94a3b8' }}>{opt.sold > 0 ? opt.sold : '-'}</span>
                         </td>
                         {/* 미입고 */}
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                          <span style={{ fontSize: 13, fontWeight: 900, color: opt.unreceived > 0 ? '#d97706' : '#94a3b8' }}>{opt.unreceived || '-'}</span>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 44 }}>
+                          <span style={{ fontSize: 12, fontWeight: 900, color: opt.unreceived > 0 ? '#d97706' : '#94a3b8' }}>{opt.unreceived > 0 ? opt.unreceived : '-'}</span>
                         </td>
                         {/* 현재고 */}
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
-                          <span style={{ fontSize: 13, fontWeight: 900, color: stockColor(opt.currentStock), background: stockBg(opt.currentStock), padding: '2px 8px', borderRadius: 99 }}>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 44 }}>
+                          <span style={{ fontSize: 12, fontWeight: 900, color: stockColor(opt.currentStock), background: stockBg(opt.currentStock), padding: '2px 7px', borderRadius: 99 }}>
                             {opt.currentStock}
                           </span>
                         </td>
                         {/* 선택 체크 */}
-                        <td style={{ padding: '6px 8px', textAlign: 'center' }}>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 30 }}>
                           <div style={{
-                            width: 20, height: 20, borderRadius: 5, border: `2px solid ${sel ? '#2563eb' : '#cbd5e1'}`,
-                            background: sel ? '#2563eb' : 'white', display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                            width: 18, height: 18, borderRadius: 4, border: `2px solid ${sel ? '#2563eb' : '#cbd5e1'}`,
+                            background: sel ? '#2563eb' : 'white', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto',
                           }}>
-                            {sel && <svg width="10" height="8" viewBox="0 0 10 8" fill="none"><path d="M1 4L4 7L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            {sel && <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4L4 7L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
                           </div>
                         </td>
                       </tr>
