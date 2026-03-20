@@ -314,8 +314,8 @@ export default function DashboardPage() {
         ))}
       </div>
 
-      {/* ── 중단: 차트 + 우측 패널 ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 330px', gap:10, flex:'1 1 0', minHeight:0, maxHeight:280 }}>
+      {/* ── 중단: 차트(2/3) + 우측 패널(더 넓게) ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'2fr 3fr', gap:10, flex:'1 1 0', minHeight:0 }}>
 
         {/* 월별 선 그래프 */}
         <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
@@ -336,27 +336,15 @@ export default function DashboardPage() {
                 <line x1="0" y1="2" x2="14" y2="2" stroke="#818cf8" strokeWidth="1" strokeDasharray="4 2"/>
               </svg>매출
             </span>
-            {/* 오른쪽: 통계 + 월 네비 */}
-            <div style={{ display:'flex', alignItems:'center', gap:8, marginLeft:'auto' }}>
-              {/* 통계 */}
-              <div style={{ display:'flex', alignItems:'center', gap:8, background:'#f8fafc', borderRadius:8, padding:'4px 10px' }}>
-                <div style={{ textAlign:'center' }}>
-                  <p style={{ fontSize:8,color:'#94a3b8',fontWeight:700,lineHeight:1.2 }}>주문수</p>
-                  <p style={{ fontSize:13,fontWeight:900,color:'#2563eb',lineHeight:1.1 }}>{monthTotal}건</p>
-                </div>
-                <div style={{ width:1,height:22,background:'#e2e8f0' }}/>
-                <div style={{ textAlign:'center' }}>
-                  <p style={{ fontSize:8,color:'#94a3b8',fontWeight:700,lineHeight:1.2 }}>매출</p>
-                  <p style={{ fontSize:13,fontWeight:900,color:'#7c3aed',lineHeight:1.1 }}>₩{fmtMoney(monthRevSel)}</p>
-                </div>
-              </div>
+            {/* 오른쪽: 월 네비 + 통계 가로 배치 */}
+            <div style={{ display:'flex', alignItems:'center', gap:6, marginLeft:'auto' }}>
               {/* 월 네비 */}
-              <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:2 }}>
                 <button onClick={() => setSelMonth(m => shiftMonth(m,-1))}
                   style={{ width:22,height:22,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
                   <ChevronLeft size={11} />
                 </button>
-                <span style={{ fontSize:11,fontWeight:800,color:'#0f172a',minWidth:66,textAlign:'center' }}>
+                <span style={{ fontSize:11,fontWeight:800,color:'#0f172a',minWidth:62,textAlign:'center' }}>
                   {selMonth.replace('-','년 ')}월
                 </span>
                 <button onClick={() => setSelMonth(m => shiftMonth(m,1))}
@@ -364,6 +352,14 @@ export default function DashboardPage() {
                   style={{ width:22,height:22,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:selMonth>=curYM?'not-allowed':'pointer',opacity:selMonth>=curYM?0.4:1,display:'flex',alignItems:'center',justifyContent:'center' }}>
                   <ChevronRight size={11} />
                 </button>
+              </div>
+              {/* 통계: 주문수 | 매출 가로 한 줄 */}
+              <div style={{ display:'flex', alignItems:'center', gap:5, background:'#f8fafc', borderRadius:7, padding:'4px 10px', border:'1px solid #f1f5f9' }}>
+                <span style={{ fontSize:9, color:'#94a3b8', fontWeight:700 }}>주문수</span>
+                <span style={{ fontSize:13, fontWeight:900, color:'#3b82f6' }}>{monthTotal}건</span>
+                <span style={{ color:'#e2e8f0', fontSize:13, margin:'0 1px' }}>|</span>
+                <span style={{ fontSize:9, color:'#94a3b8', fontWeight:700 }}>매출</span>
+                <span style={{ fontSize:13, fontWeight:900, color:'#7c3aed' }}>₩{fmtMoney(monthRevSel)}</span>
               </div>
             </div>
           </div>
@@ -385,24 +381,24 @@ export default function DashboardPage() {
 
           {/* 재고 부족 */}
           <div className="pm-card" style={{ overflow:'hidden', flex:1, minHeight:0 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 13px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-                <AlertTriangle size={13} color="#d97706" />
-                <span style={{ fontSize:13,fontWeight:900,color:'#0f172a' }}>재고 부족</span>
-                <span style={{ background:lowStock.length>0?'#fef3c7':'#f1f5f9', color:lowStock.length>0?'#d97706':'#94a3b8', fontSize:10.5,fontWeight:800,padding:'1px 7px',borderRadius:99 }}>{lowStock.length}</span>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <AlertTriangle size={14} color="#d97706" />
+                <span style={{ fontSize:13.5,fontWeight:900,color:'#0f172a' }}>재고 부족</span>
+                <span style={{ background:lowStock.length>0?'#fef3c7':'#f1f5f9', color:lowStock.length>0?'#d97706':'#94a3b8', fontSize:11,fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{lowStock.length}</span>
               </div>
-              <Link href="/inventory" style={{ fontSize:10.5,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
+              <Link href="/inventory" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
             </div>
             <div style={{ overflow:'hidden' }}>
               {lowStock.length === 0
-                ? <p style={{ padding:'7px 13px',fontSize:11.5,color:'#94a3b8',fontWeight:600 }}>재고 부족 없음</p>
-                : lowStock.slice(0,3).map((item,i) => (
-                  <div key={i} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'6px 13px',borderBottom:'1px solid #f8fafc' }}>
+                ? <p style={{ padding:'8px 16px',fontSize:12,color:'#94a3b8',fontWeight:600 }}>재고 부족 없음</p>
+                : lowStock.slice(0,4).map((item,i) => (
+                  <div key={i} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 16px',borderBottom:'1px solid #f8fafc' }}>
                     <div style={{ overflow:'hidden',minWidth:0 }}>
-                      <p style={{ fontSize:12,fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
-                      <p style={{ fontSize:10.5,color:'#94a3b8' }}>{item.oName}</p>
+                      <p style={{ fontSize:12.5,fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
+                      <p style={{ fontSize:11,color:'#94a3b8' }}>{item.oName}</p>
                     </div>
-                    <span style={{ fontSize:17,fontWeight:900,color:item.stock<=1?'#dc2626':'#d97706',flexShrink:0,marginLeft:8 }}>{item.stock}</span>
+                    <span style={{ fontSize:20,fontWeight:900,color:item.stock<=1?'#dc2626':'#d97706',flexShrink:0,marginLeft:10 }}>{item.stock}</span>
                   </div>
                 ))}
             </div>
@@ -410,21 +406,21 @@ export default function DashboardPage() {
 
           {/* 품절 */}
           <div className="pm-card" style={{ overflow:'hidden', flex:1, minHeight:0 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 13px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-                <Package size={13} color="#dc2626" />
-                <span style={{ fontSize:13,fontWeight:900,color:'#0f172a' }}>품절</span>
-                <span style={{ background:soldOut.length>0?'#fee2e2':'#f1f5f9', color:soldOut.length>0?'#dc2626':'#94a3b8', fontSize:10.5,fontWeight:800,padding:'1px 7px',borderRadius:99 }}>{soldOut.length}</span>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <Package size={14} color="#dc2626" />
+                <span style={{ fontSize:13.5,fontWeight:900,color:'#0f172a' }}>품절</span>
+                <span style={{ background:soldOut.length>0?'#fee2e2':'#f1f5f9', color:soldOut.length>0?'#dc2626':'#94a3b8', fontSize:11,fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{soldOut.length}</span>
               </div>
-              <Link href="/inventory" style={{ fontSize:10.5,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
+              <Link href="/inventory" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
             </div>
             <div style={{ overflow:'hidden' }}>
               {soldOut.length === 0
-                ? <p style={{ padding:'7px 13px',fontSize:11.5,color:'#94a3b8',fontWeight:600 }}>품절 없음</p>
-                : soldOut.slice(0,3).map((item,i) => (
-                  <div key={i} style={{ padding:'6px 13px',borderBottom:'1px solid #f8fafc' }}>
-                    <p style={{ fontSize:12,fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
-                    <p style={{ fontSize:10.5,color:'#94a3b8' }}>{item.oName}</p>
+                ? <p style={{ padding:'8px 16px',fontSize:12,color:'#94a3b8',fontWeight:600 }}>품절 없음</p>
+                : soldOut.slice(0,4).map((item,i) => (
+                  <div key={i} style={{ padding:'7px 16px',borderBottom:'1px solid #f8fafc' }}>
+                    <p style={{ fontSize:12.5,fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
+                    <p style={{ fontSize:11,color:'#94a3b8' }}>{item.oName}</p>
                   </div>
                 ))}
             </div>
@@ -432,21 +428,21 @@ export default function DashboardPage() {
 
           {/* 미처리 CS */}
           <div className="pm-card" style={{ overflow:'hidden', flex:1, minHeight:0 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 13px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-                <MessageSquare size={13} color="#be123c" />
-                <span style={{ fontSize:13,fontWeight:900,color:'#0f172a' }}>미처리 CS</span>
-                <span style={{ background:openCs.length>0?'#fee2e2':'#f1f5f9', color:openCs.length>0?'#dc2626':'#94a3b8', fontSize:10.5,fontWeight:800,padding:'1px 7px',borderRadius:99 }}>{openCs.length}</span>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <MessageSquare size={14} color="#be123c" />
+                <span style={{ fontSize:13.5,fontWeight:900,color:'#0f172a' }}>미처리 CS</span>
+                <span style={{ background:openCs.length>0?'#fee2e2':'#f1f5f9', color:openCs.length>0?'#dc2626':'#94a3b8', fontSize:11,fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{openCs.length}</span>
               </div>
-              <Link href="/cs-management" style={{ fontSize:10.5,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
+              <Link href="/cs-management" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
             </div>
             <div style={{ overflow:'hidden' }}>
               {openCs.length === 0
-                ? <p style={{ padding:'7px 13px',fontSize:11.5,color:'#94a3b8',fontWeight:600 }}>처리할 CS 없음</p>
-                : openCs.slice(0,3).map((c,i) => (
-                  <div key={i} style={{ padding:'6px 13px',borderBottom:'1px solid #f8fafc' }}>
-                    <p style={{ fontSize:12,fontWeight:700,color:'#0f172a' }}>{String(c['customer_name']??c['title']??`CS #${i+1}`)}</p>
-                    <p style={{ fontSize:10,color:'#94a3b8' }}>{c.created_at?.slice(0,10)??''}</p>
+                ? <p style={{ padding:'8px 16px',fontSize:12,color:'#94a3b8',fontWeight:600 }}>처리할 CS 없음</p>
+                : openCs.slice(0,4).map((c,i) => (
+                  <div key={i} style={{ padding:'7px 16px',borderBottom:'1px solid #f8fafc' }}>
+                    <p style={{ fontSize:12.5,fontWeight:700,color:'#0f172a' }}>{String(c['customer_name']??c['title']??`CS #${i+1}`)}</p>
+                    <p style={{ fontSize:10.5,color:'#94a3b8' }}>{c.created_at?.slice(0,10)??''}</p>
                   </div>
                 ))}
             </div>
