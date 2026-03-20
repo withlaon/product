@@ -21,6 +21,25 @@ import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, 
 // 출고내역 기반 판매수량 집계 기준일 (발주 이력이 없을 경우 기본값)
 const SHIP_BASE_DATE = '2026-03-18'
 
+// Sheet3 컬러 코드 → 영문색상명 맵
+const COLOR_EN_MAP: Record<string, string> = {
+  BD:'BURGANDY',BE:'BEIGE',BG:'BLUE GREEN',BI:'BLUE INDIGO',BK:'BLACK',BL:'BLUE',BN:'BLUE GREEN',
+  BR:'BROWN',CA:'CHARCOAL',CB:'COBALT BLUE',CG:'CHARCOAL GREY',CH:'CHOCOLATE',CL:'CORAL',CM:'CAMEL',
+  CO:'COCOA',CP:'CHERRYPINK',CR:'CREAM',DB:'DARK BROWN',DE:'DARK BEIGE',DG:'DARK GREY',DI:'DARK INDIGO',
+  DN:'DARK GREEN',DO:'DARK ORANGE',DP:'DARK PINK',DU:'DARK BLUE',GN:'GREEN',GO:'GOLD',GP:'LIGHT PURPLE',
+  GR:'GREY',IP:'INDIAN PINK',IV:'IVORY',KB:'KHAKI BEIGE',KH:'KHAKI',KN:'KHAKI BROWN',LB:'LIGHT BEIGE',
+  LE:'LEMON',LG:'LIGHT GREY',LK:'LIGHT KHAKI',LM:'LIME',LN:'LIGHT MINT',LO:'LIGHT BROWN',LP:'LIGHT PINK',
+  LU:'LIGHT BLUE',LV:'LIGHT VILOET',LY:'LIGHT YELLOW',MC:'MOCHA',MG:'M/GREY',MN:'MINT',MT:'MUSTARD',
+  MU:'MULTI',NA:'NAVY',OG:'OLIVE GREEN',OL:'OLIVE',OR:'ORANGE',OT:'OATMEAL',PC:'PEACH',PK:'PINK',
+  PU:'PURPLE',RB:'RED BROWN',RD:'RED',SB:'SKY BLUE',SI:'SILVER',VI:'VIOLET',WH:'WHITE',WM:'WHITE MELANGE',
+  WN:'WINE',YE:'YELLOW',YG:'YELLOW GREEN',
+}
+
+// 상품약어에서 앞의 "숫자_" 제거 (예: "112_벨 숄더백" → "벨 숄더백")
+function stripCodePrefix(abbr?: string): string {
+  return (abbr || '').replace(/^\d+_/, '').trim()
+}
+
 /* ── 발주 추천 옵션 타입 ── */
 interface QualOpt {
   key: string
@@ -308,24 +327,101 @@ export default function PurchaseManagePage() {
     }
   }
 
-  /* ── 발주서 Excel 다운로드 ── */
-  const handleDownloadOrderSheet = () => {
+  /* ── 발주서 Excel 다운로드 (YNM 템플릿 사용) ── */
+  const handleDownloadOrderSheet = async () => {
     if (!selectedOpts.length) return alert('선택된 상품이 없습니다.')
-    const rows = selectedOpts.map(s => ({
-      '발주일':   orderDate,
-      '구매처':   orderSupplier || '-',
-      '상품약어': s.prodAbbr,
-      '옵션명':   s.optName,
-      '바코드':   s.barcode,
-      '발주수량': Number(s.qty) || 0,
-      '현재고':   s.currentStock,
-    }))
-    const ws = XLSX.utils.json_to_sheet(rows)
-    const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, '발주서')
-    const d  = new Date()
-    const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
-    XLSX.writeFile(wb, `발주서_${ds}.xlsx`)
+
+    // 전체 product 정보 접근 (localStorage 캐시에는 category, cost_price 등 full data 포함)
+    type FullProduct = PmProduct & {
+      category?: string; cost_price?: number; cost_currency?: string; supplier?: string
+    }
+    const fullProducts = products as unknown as FullProduct[]
+
+    try {
+      // ① 템플릿 파일 로드
+      const res = await fetch('/purchase-order-template.xls')
+      if (!res.ok) throw new Error('템플릿 파일을 찾을 수 없습니다.')
+      const buf = await res.arrayBuffer()
+      const wb  = XLSX.read(buf, { type: 'array' })
+
+      const ws1Name = wb.SheetNames[0] // 주문장
+      const ws2Name = wb.SheetNames[1] // 스티커작업 리스트
+      const ws1 = wb.Sheets[ws1Name]
+      const ws2 = wb.Sheets[ws2Name]
+
+      // ② 각 선택 상품 → 행 데이터 구성
+      const sheet1Rows: (string | number)[][] = []
+      for (const s of selectedOpts) {
+        const prod = fullProducts.find(p => p.id === s.prodId)
+        if (!prod) continue
+        const opt  = prod.options.find(o => o.barcode === s.barcode)
+        if (!opt) continue
+
+        const colorCode   = (opt.name || '').toUpperCase()
+        const englishName = COLOR_EN_MAP[colorCode] || ''
+        const koreanName  = (opt as PmOption & { korean_name?: string }).korean_name || opt.name || ''
+        const chineseName = (opt as PmOption & { chinese_name?: string }).chinese_name || ''
+        const imgVal      = qualImages[s.barcode] || s.image || ''
+        const abbrClean   = stripCodePrefix(prod.abbr || prod.name)
+
+        sheet1Rows.push([
+          prod.code        || '',   // A: 품번
+          colorCode,                // B: 색상코드
+          englishName,              // C: 영문색상명
+          koreanName,               // D: 한글색상명
+          chineseName,              // E: 중국색상
+          s.barcode        || '',   // F: 바코드
+          abbrClean,                // G: 상품명(15자이내)
+          'F',                      // H: 중국사이즈 (고정)
+          'FFF',                    // I: 리블리크사이즈 (고정)
+          prod.category    || '',   // J: 품목
+          imgVal,                   // K: 이미지 (URL 또는 빈값)
+          prod.supplier    || '',   // L: URL (구매처 사이트)
+          prod.cost_price  ?? '',   // M: 단가
+          Number(s.qty)    || 0,    // N: 부족수량
+        ])
+      }
+
+      // ③ Sheet1 셀에 데이터 입력 (row 2부터, 1행 헤더 유지)
+      sheet1Rows.forEach((row, ri) => {
+        row.forEach((val, ci) => {
+          const cellRef = XLSX.utils.encode_cell({ r: ri + 1, c: ci })
+          ws1[cellRef] = { v: val, t: typeof val === 'number' ? 'n' : 's' }
+        })
+      })
+      // Sheet1 범위 갱신
+      const r1 = XLSX.utils.decode_range(ws1['!ref'] || 'A1')
+      r1.e.r = Math.max(r1.e.r, sheet1Rows.length)
+      r1.e.c = Math.max(r1.e.c, 13)
+      ws1['!ref'] = XLSX.utils.encode_range(r1)
+
+      // ④ Sheet2 (스티커작업 리스트): A상품명, B품번, C색상, D리블리크사이즈(FFF), E바코드, F부족수량
+      sheet1Rows.forEach((row, ri) => {
+        const s2row = [
+          row[6],   // A: 상품명 = Sheet1 G(상품명)
+          row[0],   // B: 품번   = Sheet1 A(품번)
+          row[3],   // C: 색상   = Sheet1 D(한글색상명)
+          'FFF',    // D: 리블리크사이즈 고정
+          row[5],   // E: 바코드 = Sheet1 F(바코드)
+          row[13],  // F: 부족수량
+        ]
+        s2row.forEach((val, ci) => {
+          const cellRef = XLSX.utils.encode_cell({ r: ri + 1, c: ci })
+          ws2[cellRef] = { v: val, t: typeof val === 'number' ? 'n' : 's' }
+        })
+      })
+      const r2 = XLSX.utils.decode_range(ws2['!ref'] || 'A1')
+      r2.e.r = Math.max(r2.e.r, sheet1Rows.length)
+      r2.e.c = Math.max(r2.e.c, 5)
+      ws2['!ref'] = XLSX.utils.encode_range(r2)
+
+      // ⑤ 다운로드
+      const d  = new Date()
+      const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
+      XLSX.writeFile(wb, `YNM_온라인 오더리스트_가방_${ds}.xlsx`)
+    } catch (e: unknown) {
+      alert('다운로드 오류: ' + (e instanceof Error ? e.message : String(e)))
+    }
   }
 
   /* ── 발주 등록 ── */
@@ -508,7 +604,7 @@ export default function PurchaseManagePage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                   <tr>
-                    {['', '이미지', '약어 / 옵션 / 바코드', '판매', '미입고', '현재고', ''].map(h => (
+                    {['', '약어 / 옵션 / 바코드', '판매', '미입고', '현재고', '이미지', ''].map(h => (
                       <th key={h} style={{ padding: '7px 6px', fontWeight: 800, color: '#64748b', fontSize: 10, textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -521,22 +617,13 @@ export default function PurchaseManagePage() {
                       <tr key={opt.key} style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer', transition: 'background 0.15s' }}
                         onClick={() => toggleSelect(opt)}>
                         {/* 상태 배지 */}
-                        <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 36 }}>
+                        <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 48, flexShrink: 0 }}>
                           {opt.reason === 'lowStock'   && <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>재고↓</span>}
                           {opt.reason === 'unreceived' && <span style={{ fontSize: 8.5, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>미입고</span>}
                           {opt.reason === 'both'       && <span style={{ fontSize: 8.5, background: '#fef2f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>재고↓미입고</span>}
                           {opt.reason === 'sold'       && <span style={{ fontSize: 8.5, background: '#eff6ff', color: '#6366f1', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>판매</span>}
                         </td>
-                        {/* 이미지 */}
-                        <td style={{ padding: '4px 5px', textAlign: 'center', width: 48 }}>
-                          {(() => { const img = qualImages[opt.barcode] || opt.image; return img
-                            ? <img src={img} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block', margin: '0 auto' }} />
-                            : <div style={{ width: 38, height: 38, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Package size={14} style={{ color: '#cbd5e1' }} />
-                              </div>
-                          })()}
-                        </td>
-                        {/* 약어 · 옵션 · 바코드 (한 줄) */}
+                        {/* 약어 · 옵션 · 바코드 (이미지보다 앞에 → 더 넓게) */}
                         <td style={{ padding: '5px 6px', minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
                             <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.prodAbbr}</span>
@@ -547,18 +634,27 @@ export default function PurchaseManagePage() {
                           </div>
                         </td>
                         {/* 판매수량 */}
-                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 48 }}>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
                           <span style={{ fontSize: 12, fontWeight: 900, color: opt.sold > 0 ? '#6366f1' : '#94a3b8' }}>{opt.sold > 0 ? opt.sold : '-'}</span>
                         </td>
                         {/* 미입고 */}
-                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 44 }}>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
                           <span style={{ fontSize: 12, fontWeight: 900, color: opt.unreceived > 0 ? '#d97706' : '#94a3b8' }}>{opt.unreceived > 0 ? opt.unreceived : '-'}</span>
                         </td>
                         {/* 현재고 */}
-                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 44 }}>
-                          <span style={{ fontSize: 12, fontWeight: 900, color: stockColor(opt.currentStock), background: stockBg(opt.currentStock), padding: '2px 7px', borderRadius: 99 }}>
+                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
+                          <span style={{ fontSize: 12, fontWeight: 900, color: stockColor(opt.currentStock), background: stockBg(opt.currentStock), padding: '2px 6px', borderRadius: 99 }}>
                             {opt.currentStock}
                           </span>
+                        </td>
+                        {/* 이미지 (오른쪽으로 이동) */}
+                        <td style={{ padding: '4px 5px', textAlign: 'center', width: 46 }}>
+                          {(() => { const img = qualImages[opt.barcode] || opt.image; return img
+                            ? <img src={img} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block', margin: '0 auto' }} />
+                            : <div style={{ width: 36, height: 36, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Package size={14} style={{ color: '#cbd5e1' }} />
+                              </div>
+                          })()}
                         </td>
                         {/* 선택 체크 */}
                         <td style={{ padding: '5px 6px', textAlign: 'center', width: 30 }}>
