@@ -54,16 +54,18 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       />
 
       <div
-        className="flex flex-col min-h-screen"
+        className="flex flex-col"
         style={{
           marginLeft: sidebarW,
           transition: 'margin-left 300ms cubic-bezier(0.4,0,0.2,1)',
+          height: '100vh',
+          overflow: 'hidden',
         }}
       >
         <Header onMenuClick={() => setMobileOpen(true)} />
         <main
           className="flex-1 p-4 md:p-5"
-          style={{ background: 'var(--color-bg)', width: '100%', minWidth: 0 }}
+          style={{ background: 'var(--color-bg)', width: '100%', minWidth: 0, overflow: 'auto', height: 0 }}
         >
           {children}
         </main>
