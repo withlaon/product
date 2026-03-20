@@ -692,35 +692,64 @@ export default function ProductsPage() {
     total: number; done: number; migrated: number; errors: number; finished: boolean
   } | null>(null)
 
+  // 클라이언트 사이드 마이그레이션: base64 → Supabase Storage URL
+  // 서버 API 대신 클라이언트에서 직접 처리 (서버 타임아웃 없음)
   async function startImageMigration() {
+    if (products.length === 0) {
+      alert('먼저 상품 목록을 불러와주세요.')
+      return
+    }
     setMigrating(true)
-    setMigrateResult({ total: 0, done: 0, migrated: 0, errors: 0, finished: false })
-    let offset = 0
-    const limit = 5
+    setMigrateResult({ total: products.length, done: 0, migrated: 0, errors: 0, finished: false })
+
     let totalMigrated = 0
     let totalErrors   = 0
-    let grandTotal    = 0
-    try {
-      while (true) {
-        const res  = await fetch('/api/pm-migrate-images', {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body:    JSON.stringify({ offset, limit }),
-        })
-        if (!res.ok) break
-        const data = await res.json()
-        grandTotal    = data.total    ?? grandTotal
-        totalMigrated += data.migrated ?? 0
-        totalErrors   += data.errors   ?? 0
-        const done     = offset + (data.processed ?? 0)
-        setMigrateResult({ total: grandTotal, done, migrated: totalMigrated, errors: totalErrors, finished: !!data.done })
-        if (data.done || !data.processed) break
-        offset = data.nextOffset
-      }
-    } catch { /* ignore */ }
+
+    for (let i = 0; i < products.length; i++) {
+      const product = products[i]
+      try {
+        // 이미지가 포함된 전체 옵션 조회 (캐시된 API 사용)
+        const res = await fetch(`${PM_API}?imageIds=${product.id}`)
+        if (!res.ok) { totalErrors++; continue }
+
+        const arr = await res.json() as Array<{ id: string; options?: Array<{ image?: string; [k: string]: unknown }> }>
+        const fullOpts = arr.find(p => p.id === product.id)?.options ?? []
+        const hasBase64 = fullOpts.some(o => (o.image ?? '').startsWith('data:'))
+
+        if (!hasBase64) {
+          setMigrateResult({ total: products.length, done: i + 1, migrated: totalMigrated, errors: totalErrors, finished: false })
+          continue
+        }
+
+        // 각 옵션 이미지 압축 → Storage 업로드
+        const newOpts = await Promise.all(
+          fullOpts.map(async (opt, j) => {
+            const img = opt.image ?? ''
+            if (!img.startsWith('data:')) return opt
+            try {
+              const compressed = await compressImage(img, 200, 0.7)
+              const path = `${product.id}/${j}.jpg`
+              const url  = await uploadToStorage(compressed, path)
+              if (url) { totalMigrated++; return { ...opt, image: url } }
+              else { totalErrors++; return opt }
+            } catch { totalErrors++; return opt }
+          })
+        )
+
+        // DB 업데이트
+        const { error: updateErr } = await supabase
+          .from('pm_products')
+          .update({ options: newOpts })
+          .eq('id', product.id)
+        if (updateErr) totalErrors++
+
+      } catch { totalErrors++ }
+
+      setMigrateResult({ total: products.length, done: i + 1, migrated: totalMigrated, errors: totalErrors, finished: false })
+    }
+
     setMigrateResult(prev => prev ? { ...prev, finished: true } : null)
     setMigrating(false)
-    // 마이그레이션 완료 후 캐시 초기화 및 상품 재로딩
     try { localStorage.removeItem('pm_products_cache_v1') } catch {}
     handleRefresh()
   }
