@@ -1,9 +1,14 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
+import {
+  loadShippedOrders, loadMappings, lookupMapping,
+  type ShippedOrder, type MappingStore,
+} from '@/lib/orders'
 import {
   Purchase, PurchaseItem, PmProduct, PmOption, PurchaseStatus, DateMode,
   ST, isUnresolved,
@@ -11,7 +16,10 @@ import {
   fmtMonthLabel, fmtDayLabel,
   syncProductQty, DateNav,
 } from '../_shared'
-import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, ChevronUp, AlertTriangle, Package } from 'lucide-react'
+import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, ChevronUp, AlertTriangle, Package, FileDown } from 'lucide-react'
+
+// 출고내역 기반 판매수량 집계 기준일 (발주 이력이 없을 경우 기본값)
+const SHIP_BASE_DATE = '2026-03-18'
 
 /* ── 발주 추천 옵션 타입 ── */
 interface QualOpt {
@@ -60,6 +68,9 @@ export default function PurchaseManagePage() {
   const [loadError, setLoadError] = useState('')
   // 추천 목록 옵션이미지: 바코드 → base64 (별도 비동기 로딩)
   const [qualImages, setQualImages] = useState<Record<string, string>>({})
+  // 출고내역 + 매핑 (판매수량 계산용)
+  const [shippedOrders, setShippedOrders] = useState<ShippedOrder[]>([])
+  const [mappings,      setMappings]      = useState<MappingStore>({})
 
   // 상품관리 탭과 동일한 localStorage 캐시 키 / TTL
   const SHARED_CACHE_KEY = 'pm_products_cache_v1'
@@ -98,7 +109,48 @@ export default function PurchaseManagePage() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { loadPurchases(); loadProducts() }, [loadPurchases, loadProducts])
+  useEffect(() => {
+    loadPurchases()
+    loadProducts()
+    setShippedOrders(loadShippedOrders())
+    setMappings(loadMappings())
+  }, [loadPurchases, loadProducts])
+
+  /* ── 출고내역 기반 판매수량 맵 (바코드 → 마지막 발주일 이후 판매수량) ──
+     - 발주 이력이 있는 바코드: 해당 바코드의 마지막 발주일 이후 판매 누적
+     - 발주 이력이 없는 바코드: SHIP_BASE_DATE 이후 판매 누적
+     - 발주에 포함된 바코드는 발주일 이후로 카운터 리셋(누적 재시작)
+  ── */
+  const shipSoldMap = useMemo(() => {
+    // ① 바코드별 마지막 발주일 계산
+    const lastOrderByBarcode: Record<string, string> = {}
+    for (const p of purchases) {
+      if (p.status === 'cancelled') continue
+      for (const item of p.items) {
+        const bc = item.barcode
+        if (!bc) continue
+        if (!lastOrderByBarcode[bc] || p.order_date > lastOrderByBarcode[bc]) {
+          lastOrderByBarcode[bc] = p.order_date
+        }
+      }
+    }
+
+    // ② 출고내역 → 바코드별 판매수량 집계 (기준일 이후만)
+    const map: Record<string, number> = {}
+    for (const order of shippedOrders) {
+      const shippedDate = (order.shipped_at || '').slice(0, 10) || order.order_date
+      for (const item of order.items) {
+        // 매핑으로 바코드 조회
+        const bc = lookupMapping(mappings, item.product_name, item.option).barcode
+        if (!bc) continue
+        const base = lastOrderByBarcode[bc] || SHIP_BASE_DATE
+        if (shippedDate > base) {
+          map[bc] = (map[bc] || 0) + item.quantity
+        }
+      }
+    }
+    return map
+  }, [purchases, shippedOrders, mappings])
 
   /* ── 바코드별 미입고 수량 계산 ── */
   const unreceivedMap = useMemo(() => {
@@ -114,20 +166,21 @@ export default function PurchaseManagePage() {
   }, [purchases])
 
   /* ── 발주 추천 목록 ──
-     조건 1: 판매중 상품 중 현재고 ≤ 2 (재고 부족)
-     조건 2: 미입고 발주가 있는 상품
-     조건 3: 판매 이력이 있는 상품 (sold > 0) — 최근 발주일 이후 판매 포함
+     조건 1: 판매중 상품 중 현재고 ≤ 2 (재고 부족) — pm_products 기준
+     조건 2: 미입고 발주가 있는 상품 — pm_purchases 기준
+     조건 3: 마지막 발주일(또는 SHIP_BASE_DATE) 이후 판매 이력 — 출고내역 기준
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const result: QualOpt[] = []
     for (const prod of products) {
       if (prod.status === 'pending_delete') continue
       for (const opt of prod.options) {
-        const rcv   = opt.received || 0
-        const sold  = opt.sold     || 0
-        const def   = opt.defective || 0
-        const stock = opt.current_stock ?? Math.max(0, rcv - sold - def)
+        // 현재고 / 미입고: pm_products 기준
+        const stock = opt.current_stock ?? 0
         const unr   = unreceivedMap[opt.barcode || ''] || 0
+        // 판매수량: 출고내역 기준 (마지막 발주일 이후)
+        const sold  = shipSoldMap[opt.barcode || ''] || 0
+
         const isLow  = stock <= 2
         const hasUnr = unr > 0
         const hasSold = sold > 0
@@ -152,7 +205,7 @@ export default function PurchaseManagePage() {
       }
     }
     return result.sort((a, b) => a.currentStock - b.currentStock)
-  }, [products, unreceivedMap])
+  }, [products, unreceivedMap, shipSoldMap])
 
   // 추천 목록 확정 후 해당 상품 이미지만 별도 로딩 (barcode → image)
   // 추천 목록 이미지 로딩: API 라우트 경유 (service role → RLS 우회)
@@ -188,6 +241,26 @@ export default function PurchaseManagePage() {
     } else {
       setSelectedOpts(prev => [...prev, { ...opt, qty: '1' }])
     }
+  }
+
+  /* ── 발주서 Excel 다운로드 ── */
+  const handleDownloadOrderSheet = () => {
+    if (!selectedOpts.length) return alert('선택된 상품이 없습니다.')
+    const rows = selectedOpts.map(s => ({
+      '발주일':   orderDate,
+      '구매처':   orderSupplier || '-',
+      '상품약어': s.prodAbbr,
+      '옵션명':   s.optName,
+      '바코드':   s.barcode,
+      '발주수량': Number(s.qty) || 0,
+      '현재고':   s.currentStock,
+    }))
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '발주서')
+    const d  = new Date()
+    const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
+    XLSX.writeFile(wb, `발주서_${ds}.xlsx`)
   }
 
   /* ── 발주 등록 ── */
@@ -350,7 +423,7 @@ export default function PurchaseManagePage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                   <tr>
-                    {['', '이미지', '상품약어 / 바코드', '판매수량', '미입고', '현재고', ''].map(h => (
+                    {['', '이미지', '약어 / 옵션 / 바코드', '판매', '미입고', '현재고', ''].map(h => (
                       <th key={h} style={{ padding: '7px 6px', fontWeight: 800, color: '#64748b', fontSize: 10, textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -463,8 +536,8 @@ export default function PurchaseManagePage() {
                     {/* 상품 정보 */}
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <p style={{ fontSize: 11.5, fontWeight: 800, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.prodAbbr}</p>
-                      <p style={{ fontSize: 10.5, color: '#64748b', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.optName}</p>
-                      <p style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>현재고 {s.currentStock}</p>
+                      <p style={{ fontSize: 10.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.optName}</p>
+                      <p style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.barcode || '-'}</p>
                     </div>
                     {/* 수량 입력 */}
                     <Input type="number" min="1" value={s.qty}
@@ -495,6 +568,10 @@ export default function PurchaseManagePage() {
                   <PackagePlus size={14} style={{ marginRight: 4 }} />
                   {saving ? '등록 중...' : '발주 등록'}
                 </Button>
+                <button onClick={handleDownloadOrderSheet}
+                  style={{ marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
+                  <FileDown size={14} />발주서 다운
+                </button>
               </div>
             </>
           )}
