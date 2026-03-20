@@ -576,6 +576,7 @@ export default function ProductsPage() {
   const autoMarkSoldout = async (loaded: Product[]) => {
     const toSoldout = loaded.filter(p =>
       p.status !== 'soldout' &&
+      p.status !== 'pending_delete' &&
       p.options.length > 0 &&
       p.options.every(o => optStock(o) === 0)
     )
@@ -901,7 +902,8 @@ export default function ProductsPage() {
       } else if (statusFilter === '__soldout__') {
         mSt = p.status === 'active' && p.options.some(o => optStock(o) === 0) && !p.options.every(o => optStock(o) === 0)
       } else if (statusFilter === '__fully_soldout__') {
-        mSt = p.options.length > 0 && p.options.every(o => optStock(o) === 0)
+        mSt = (p.status === 'soldout' || p.status === 'pending_delete') &&
+              p.options.length > 0 && p.options.every(o => optStock(o) === 0)
       } else if (statusFilter !== '전체') {
         mSt = p.status === statusFilter
       }
@@ -937,6 +939,35 @@ export default function ProductsPage() {
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, products.length])
+
+  // 다음 페이지 이미지 사전 로딩 (현재 페이지 로딩 후 800ms 뒤)
+  useEffect(() => {
+    if (page >= totalPages) return
+    const timer = setTimeout(() => {
+      const nextPageProducts = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+      const notCached = nextPageProducts
+        .map(p => p.id)
+        .filter(id => !loadingIdsRef.current.has(id))
+      if (notCached.length === 0) return
+      // localStorage 캐시 직접 확인해서 이미 캐시된 항목 제외
+      const cached = loadImgCache()
+      const toPreload = notCached.filter(id => !(id in cached))
+      if (toPreload.length === 0) {
+        // 캐시에 다 있으면 state만 업데이트
+        const result: Record<string, string[]> = {}
+        notCached.forEach(id => { if (id in cached) result[id] = cached[id] })
+        if (Object.keys(result).length > 0) setPageImages(prev => ({ ...prev, ...result }))
+        return
+      }
+      toPreload.forEach(id => loadingIdsRef.current.add(id))
+      pmGetPageImages(toPreload).then(images => {
+        toPreload.forEach(id => loadingIdsRef.current.delete(id))
+        if (Object.keys(images).length > 0) setPageImages(prev => ({ ...prev, ...images }))
+      })
+    }, 800)
+    return () => clearTimeout(timer)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, products.length, totalPages])
 
   const doSearch    = () => { setSearch(searchInput); setPage(1) }
   const clearSearch = () => { setSearch(''); setSearchInput(''); setPage(1) }
@@ -1457,9 +1488,10 @@ export default function ProductsPage() {
       bg:'#fff1f2', activeBg:'#be123c', color:'#be123c', activeColor:'white', icon:AlertTriangle,
     },
     {
-      // 모든 옵션 재고 0개 (전체 품절)
+      // 모든 옵션 재고 0개 (전체 품절) - 삭제예정 포함
       label:'품절', filterKey:'__fully_soldout__',
       value: catProducts.filter(p =>
+        (p.status === 'soldout' || p.status === 'pending_delete') &&
         p.options.length > 0 && p.options.every(o => optStock(o) === 0)
       ).length,
       bg:'#fef2f2', activeBg:'#991b1b', color:'#991b1b', activeColor:'white', icon:X,
