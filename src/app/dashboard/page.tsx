@@ -5,14 +5,18 @@ import Link from 'next/link'
 import {
   Package, ShoppingCart, AlertTriangle, TrendingUp,
   Truck, MessageSquare, RefreshCw, ChevronLeft, ChevronRight,
+  ClipboardList,
 } from 'lucide-react'
 import { loadOrders, loadShippedOrders } from '@/lib/orders'
 import type { Order, ShippedOrder } from '@/lib/orders'
+import { supabase } from '@/lib/supabase'
 
 /* ── 헬퍼 ─────────────────────────────────────────────────── */
 interface CachedOption { name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
 interface CachedProduct { id: string; name?: string; status?: string; options: CachedOption[] }
 interface CsItem { id: string; status?: string; created_at?: string; [k: string]: unknown }
+interface PurchaseItem { ordered: number; received: number }
+interface Purchase { id: string; order_date: string; status: string; items: PurchaseItem[] }
 
 function loadCachedProducts(): CachedProduct[] {
   try { const { data } = JSON.parse(localStorage.getItem('pm_products_cache_v1') ?? '{}'); return Array.isArray(data) ? data : [] } catch { return [] }
@@ -96,10 +100,10 @@ function LineChart({ data }: { data: ChartPoint[] }) {
   const tip      = tipIdx !== null ? data[tipIdx] : null
   const tipX     = tipIdx !== null ? xPos(tipIdx) : 0
   const tipXPct  = tipX / W * 100
-  const dotR     = Math.max(2, H * 0.018)
-  const dotRHov  = dotR + 2
-  const sw       = Math.max(1, H * 0.013)   // 주문수 선 두께 (높이 기반)
-  const swAmt    = Math.max(0.8, H * 0.009) // 매출 선 두께
+  const dotR     = Math.max(1.5, H * 0.013)
+  const dotRHov  = dotR + 1.5
+  const sw       = Math.max(0.8, H * 0.008)   // 주문수 선 두께 - 얇게
+  const swAmt    = Math.max(0.6, H * 0.006)   // 매출 선 두께 - 얇게
 
   return (
     <div ref={containerRef} style={{ position:'relative', width:'100%', height:'100%' }}>
@@ -208,12 +212,13 @@ export default function DashboardPage() {
   const today = getToday()
   const curYM = getCurYM()
 
-  const [orders,   setOrders]   = useState<Order[]>([])
-  const [shipped,  setShipped]  = useState<ShippedOrder[]>([])
-  const [products, setProducts] = useState<CachedProduct[]>([])
-  const [csItems,  setCsItems]  = useState<CsItem[]>([])
-  const [loading,  setLoading]  = useState(true)
-  const [selMonth, setSelMonth] = useState(curYM)
+  const [orders,    setOrders]    = useState<Order[]>([])
+  const [shipped,   setShipped]   = useState<ShippedOrder[]>([])
+  const [products,  setProducts]  = useState<CachedProduct[]>([])
+  const [csItems,   setCsItems]   = useState<CsItem[]>([])
+  const [purchases, setPurchases] = useState<Purchase[]>([])
+  const [loading,   setLoading]   = useState(true)
+  const [selMonth,  setSelMonth]  = useState(curYM)
 
   _selMonthForChart = selMonth
 
@@ -223,6 +228,9 @@ export default function DashboardPage() {
     setProducts(loadCachedProducts())
     setCsItems(loadCsItems())
     setLoading(false)
+    // 발주 데이터 Supabase 비동기 로드
+    supabase.from('pm_purchases').select('id,order_date,status,items')
+      .then(({ data }) => { if (data) setPurchases(data as Purchase[]) })
   }, [])
 
   /* ── KPI ── */
@@ -248,6 +256,23 @@ export default function DashboardPage() {
     }).map(o => ({ pName: p.name??'', oName: o.name??'' })))
     .slice(0, 5)
   , [products])
+
+  /* ── 발주/입고/미입고 ── */
+  const purchaseStats = useMemo(() => {
+    // 이번달 발주 수량 합계
+    const monthOrdered = purchases
+      .filter(p => p.order_date?.slice(0,7) === curYM)
+      .reduce((s, p) => s + p.items.reduce((ss, i) => ss + (i.ordered || 0), 0), 0)
+    // 이번달 입고 수량 합계 (이번달 발주 중 received)
+    const monthReceived = purchases
+      .filter(p => p.order_date?.slice(0,7) === curYM)
+      .reduce((s, p) => s + p.items.reduce((ss, i) => ss + (i.received || 0), 0), 0)
+    // 미입고: 전체 미완료 발주의 미입고 수량 (월 무관 누적)
+    const unresolved = purchases
+      .filter(p => p.status !== 'completed' && p.status !== 'cancelled')
+      .reduce((s, p) => s + p.items.reduce((ss, i) => ss + Math.max(0, (i.ordered||0) - (i.received||0)), 0), 0)
+    return { ordered: monthOrdered, received: monthReceived, unresolved }
+  }, [purchases, curYM])
 
   /* ── 배송 현황 ── */
   const needInvoice    = useMemo(() => orders.filter(o => !o.tracking_number && o.status !== 'cancelled' && o.status !== 'delivered').length, [orders])
@@ -291,8 +316,8 @@ export default function DashboardPage() {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:10, height:'100%', overflow:'hidden' }}>
 
-      {/* ── KPI ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, flexShrink:0 }}>
+      {/* ── KPI (5열) ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8, flexShrink:0 }}>
         {[
           { title:'전체 상품',  value: products.length?`${products.length}개`:'0', sub:`재고부족 ${lowStock.length} · 품절 ${soldOut.length}`, icon:Package,       bg:'#eff6ff', ic:'#2563eb', href:'/products' },
           { title:'오늘 주문',  value: todayOrders.length?`${todayOrders.length}건`:'0', sub: todayOrders.length?`미처리 ${todayOrders.filter(o=>o.status==='pending'||o.status==='confirmed').length}건`:'주문없음', icon:ShoppingCart, bg:'#ecfdf5', ic:'#059669', href:'/product-transfer' },
@@ -300,22 +325,41 @@ export default function DashboardPage() {
           { title:'이번달 매출', value: monthRevenue>0?`₩${fmtMoney(monthRevenue)}`:'₩0', sub:`${curYM.replace('-','년 ')}월`, icon:TrendingUp, bg:'#f5f3ff', ic:'#7c3aed', href:'/product-transfer' },
         ].map(s => (
           <Link key={s.title} href={s.href} style={{ textDecoration:'none' }}>
-            <div className="pm-card" style={{ padding:'10px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:10 }}>
-              <div style={{ width:36,height:36,borderRadius:11,background:s.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-                <s.icon size={17} color={s.ic} strokeWidth={2} />
+            <div className="pm-card" style={{ padding:'9px 12px', cursor:'pointer', display:'flex', alignItems:'center', gap:9 }}>
+              <div style={{ width:34,height:34,borderRadius:10,background:s.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+                <s.icon size={16} color={s.ic} strokeWidth={2} />
               </div>
               <div>
-                <p style={{ fontSize:10,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.05em' }}>{s.title}</p>
-                <p style={{ fontSize:20,fontWeight:900,color:'#0f172a',lineHeight:1.1 }}>{s.value}</p>
-                <p style={{ fontSize:10,color:'#94a3b8',fontWeight:600 }}>{s.sub}</p>
+                <p style={{ fontSize:9.5,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em' }}>{s.title}</p>
+                <p style={{ fontSize:18,fontWeight:900,color:'#0f172a',lineHeight:1.1 }}>{s.value}</p>
+                <p style={{ fontSize:9.5,color:'#94a3b8',fontWeight:600 }}>{s.sub}</p>
               </div>
             </div>
           </Link>
         ))}
+        {/* 발주 현황 카드 */}
+        <Link href="/purchase" style={{ textDecoration:'none' }}>
+          <div className="pm-card" style={{ padding:'9px 12px', cursor:'pointer', display:'flex', alignItems:'center', gap:9 }}>
+            <div style={{ width:34,height:34,borderRadius:10,background:'#f0f9ff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+              <ClipboardList size={16} color="#0369a1" strokeWidth={2} />
+            </div>
+            <div style={{ minWidth:0 }}>
+              <p style={{ fontSize:9.5,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em' }}>발주 현황</p>
+              <p style={{ fontSize:18,fontWeight:900,color:'#0f172a',lineHeight:1.1 }}>{purchaseStats.ordered}<span style={{ fontSize:11,fontWeight:700,marginLeft:1 }}>개</span></p>
+              <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:1 }}>
+                <span style={{ fontSize:9,color:'#0369a1',fontWeight:700 }}>입고 {purchaseStats.received}</span>
+                <span style={{ color:'#e2e8f0',fontSize:10 }}>|</span>
+                <span style={{ fontSize:9,color:purchaseStats.unresolved>0?'#dc2626':'#94a3b8',fontWeight:700 }}>
+                  미입고 {purchaseStats.unresolved}
+                </span>
+              </div>
+            </div>
+          </div>
+        </Link>
       </div>
 
-      {/* ── 중단: 차트(2/3) + 우측 패널(더 넓게) ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'2fr 3fr', gap:10, flex:'1 1 0', minHeight:0 }}>
+      {/* ── 중단: 차트(1.5배 가로) + 우측 패널 ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'3fr 2fr', gap:10, flex:'1 1 0', minHeight:0 }}>
 
         {/* 월별 선 그래프 */}
         <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
