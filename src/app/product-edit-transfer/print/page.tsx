@@ -6,6 +6,7 @@ import * as XLSX from 'xlsx'
 import {
   Truck, CheckCircle2, Search, Save, Package, Printer,
   CheckSquare, Square, Trash2, FileDown, Upload,
+  ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
   loadOrders, saveOrders, loadSelectedForInvoice, clearSelectedForInvoice,
@@ -27,6 +28,17 @@ function formatOption(option: string): string {
   return option.startsWith('[') ? `[${result}]` : result
 }
 
+function getToday() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+function shiftDate(dateStr: string, delta: number): string {
+  if (!dateStr) return dateStr
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dt = new Date(y, m - 1, d + delta)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
 const CARRIERS = ['CJ대한통운', '롯데택배', '한진택배', '우체국택배', '로젠택배', '쿠팡로켓', '직접입력']
 
 const SENDER_NAME    = '위드라온'
@@ -43,8 +55,11 @@ export default function InvoicePrintPage() {
   const [selectedIds, setSelectedIds]   = useState<string[]>([])
   const [checkedPrint, setCheckedPrint] = useState<Set<string>>(new Set())
   const bulkFileRef = useRef<HTMLInputElement>(null)
-  // 날짜 필터
-  const [dateFilter, setDateFilter] = useState('')
+  // 날짜 필터 (좌우 네비게이션)
+  const [dateFilter, setDateFilter] = useState(getToday())
+  const [showAllDates, setShowAllDates] = useState(false)
+  // 상태 탭: 'needInvoice' | 'shipped' | 'delivered'
+  const [statusTab, setStatusTab] = useState<'needInvoice' | 'shipped' | 'delivered'>('needInvoice')
 
   useEffect(() => {
     setOrders(loadOrders())
@@ -56,24 +71,27 @@ export default function InvoicePrintPage() {
     }
   }, [])
 
-  /* 송장 미등록 주문만 */
+  /* 상태 탭별 목록 */
   const needInvoice = useMemo(() =>
-    orders.filter(o =>
-      o.status !== 'cancelled' &&
-      o.status !== 'delivered' &&
-      !o.tracking_number
-    ),
+    orders.filter(o => o.status !== 'cancelled' && o.status !== 'delivered' && !o.tracking_number),
   [orders])
+
+  const statusList = useMemo(() => {
+    if (statusTab === 'needInvoice') return needInvoice
+    if (statusTab === 'shipped')     return orders.filter(o => o.status === 'shipped' && !!o.tracking_number)
+    if (statusTab === 'delivered')   return orders.filter(o => o.status === 'delivered')
+    return needInvoice
+  }, [orders, needInvoice, statusTab])
 
   const baseList = useMemo(() =>
     filterSelected && selectedIds.length > 0
-      ? needInvoice.filter(o => selectedIds.includes(o.id))
-      : needInvoice,
-  [needInvoice, filterSelected, selectedIds])
+      ? statusList.filter(o => selectedIds.includes(o.id))
+      : statusList,
+  [statusList, filterSelected, selectedIds])
 
   const filtered = useMemo(() => {
     let list = baseList
-    if (dateFilter) list = list.filter(o => o.order_date === dateFilter)
+    if (!showAllDates && dateFilter) list = list.filter(o => o.order_date === dateFilter)
     const q = search.trim().toLowerCase()
     if (!q) return list
     return list.filter(o =>
@@ -81,7 +99,7 @@ export default function InvoicePrintPage() {
       o.customer_name.toLowerCase().includes(q) ||
       o.items[0]?.product_name?.toLowerCase().includes(q)
     )
-  }, [baseList, search, dateFilter])
+  }, [baseList, search, dateFilter, showAllDates])
 
   /* 체크박스 */
   const allPrintChecked = filtered.length > 0 && filtered.every(o => checkedPrint.has(o.id))
@@ -351,26 +369,38 @@ export default function InvoicePrintPage() {
         ))}
       </div>
 
-      {/* KPI */}
+      {/* 상태 탭 (클릭 가능한 KPI 카드) */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
         {[
-          { label: '송장 미등록', value: needInvoice.length, color: '#dc2626', bg: '#fef2f2' },
-          { label: '배송중',      value: shippedCount,       color: '#7c3aed', bg: '#f5f3ff' },
-          { label: '배송완료',    value: deliveredCount,     color: '#059669', bg: '#ecfdf5' },
-        ].map(k => (
-          <div key={k.label} className="pm-card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: k.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Truck size={18} style={{ color: k.color }} />
-            </div>
-            <div>
-              <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
-              <p style={{ fontSize: 11.5, color: '#94a3b8', fontWeight: 700, marginTop: 3 }}>{k.label}</p>
-            </div>
-          </div>
-        ))}
+          { id: 'needInvoice' as const, label: '송장 미등록', value: needInvoice.length,  color: '#dc2626', bg: '#fef2f2', activeBg: '#fee2e2' },
+          { id: 'shipped'     as const, label: '배송중',      value: shippedCount,        color: '#7c3aed', bg: '#f5f3ff', activeBg: '#ede9fe' },
+          { id: 'delivered'   as const, label: '배송완료',    value: deliveredCount,      color: '#059669', bg: '#ecfdf5', activeBg: '#d1fae5' },
+        ].map(k => {
+          const active = statusTab === k.id
+          return (
+            <button
+              key={k.id}
+              onClick={() => setStatusTab(k.id)}
+              className="pm-card"
+              style={{
+                padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, width: '100%', textAlign: 'left',
+                cursor: 'pointer', border: active ? `2px solid ${k.color}` : '2px solid transparent',
+                background: active ? k.activeBg : undefined, transition: 'all 150ms',
+              }}
+            >
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: k.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <Truck size={18} style={{ color: k.color }} />
+              </div>
+              <div>
+                <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
+                <p style={{ fontSize: 11.5, color: active ? k.color : '#94a3b8', fontWeight: 800, marginTop: 3 }}>{k.label}</p>
+              </div>
+            </button>
+          )
+        })}
       </div>
 
-      {/* 검색 + 날짜필터 + 액션 바 */}
+      {/* 검색 + 날짜 네비게이션 + 액션 바 */}
       <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Search size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
         <input
@@ -379,16 +409,27 @@ export default function InvoicePrintPage() {
           placeholder="주문번호 · 수취인 · 상품명 검색..."
           style={{ flex: 1, height: 34, fontSize: 13, border: 'none', outline: 'none', background: 'transparent', minWidth: 160 }}
         />
-        {/* 날짜 필터 */}
-        <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
-          style={{ height: 32, fontSize: 12.5, fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: dateFilter ? '#0f172a' : '#94a3b8', cursor: 'pointer', outline: 'none' }}
-        />
-        {dateFilter && (
-          <button onClick={() => setDateFilter('')}
-            style={{ padding: '4px 10px', borderRadius: 7, background: '#f1f5f9', color: '#64748b', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
-            전체
-          </button>
+        {/* 날짜 좌우 네비게이션 */}
+        {!showAllDates && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
+            <button onClick={() => setDateFilter(d => shiftDate(d, -1))}
+              style={{ width: 28, height: 28, borderRadius: 7, border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <ChevronLeft size={14} />
+            </button>
+            <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
+              style={{ height: 32, fontSize: 12.5, fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: '#0f172a', cursor: 'pointer', outline: 'none' }}
+            />
+            <button onClick={() => setDateFilter(d => shiftDate(d, 1))}
+              disabled={dateFilter >= getToday()}
+              style={{ width: 28, height: 28, borderRadius: 7, border: '1.5px solid #e2e8f0', background: '#fff', cursor: dateFilter >= getToday() ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: dateFilter >= getToday() ? 0.4 : 1 }}>
+              <ChevronRight size={14} />
+            </button>
+          </div>
         )}
+        <button onClick={() => setShowAllDates(v => !v)}
+          style={{ padding: '4px 10px', borderRadius: 7, background: showAllDates ? '#1e293b' : '#f1f5f9', color: showAllDates ? '#fff' : '#64748b', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+          {showAllDates ? '날짜별' : '전체'}
+        </button>
 
         {selectedIds.length > 0 && (
           <button

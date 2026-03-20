@@ -111,6 +111,24 @@ export default function ShippingHistoryPage() {
     const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
   })
 
+  /* 출고일 변경: 선택 항목의 shipped_at 날짜를 변경 */
+  const [changeDateMode, setChangeDateMode] = useState(false)
+  const [newDate, setNewDate] = useState('')
+  const handleChangeDate = () => {
+    if (!newDate || checked.size === 0) return
+    const updated = shipped.map(o =>
+      checked.has(o.id)
+        ? { ...o, shipped_at: `${newDate}T00:00:00.000Z` }
+        : o
+    )
+    saveShippedOrders(updated)
+    setShipped(updated)
+    setChecked(new Set())
+    setChangeDateMode(false)
+    setNewDate('')
+    alert(`${checked.size}건의 출고일이 ${newDate}로 변경되었습니다.`)
+  }
+
   /* 출고취소: 선택 항목을 출고내역에서 제거하고 pm_orders_v1 상태를 shipped로 복원 */
   const handleCancelShipping = () => {
     if (checked.size === 0) return
@@ -333,6 +351,29 @@ export default function ShippingHistoryPage() {
             >
               <PackageCheck size={13} /> {isConfirming ? '처리중...' : '출고확정'}
             </button>
+            {/* 출고일 변경 */}
+            {!changeDateMode ? (
+              <button
+                onClick={() => { setChangeDateMode(true); setNewDate(selDate) }}
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+              >
+                <ChevronLeft size={13} /> 출고일 변경
+              </button>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
+                  style={{ height: 32, fontSize: 12.5, fontWeight: 700, border: '1.5px solid #f59e0b', borderRadius: 8, padding: '0 8px', outline: 'none' }}
+                />
+                <button onClick={handleChangeDate}
+                  style={{ padding: '6px 12px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+                  적용
+                </button>
+                <button onClick={() => setChangeDateMode(false)}
+                  style={{ padding: '6px 10px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: 8, fontSize: 12, cursor: 'pointer' }}>
+                  취소
+                </button>
+              </div>
+            )}
             <button
               onClick={handleCancelShipping}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
