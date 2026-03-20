@@ -48,7 +48,13 @@ const navGroups: NavGroup[] = [
       { label: '송장등록관리', href: '/product-edit-transfer/print', icon: Truck },
       { label: '출고내역',     href: '/product-edit-transfer/history', icon: History },
       { label: '재고관리',     href: '/inventory',             icon: Warehouse },
-      { label: '발주/입고관리', href: '/purchase',              icon: PackagePlus },
+      {
+        label: '발주/입고관리', href: '/purchase', icon: PackagePlus,
+        children: [
+          { label: '발주관리', href: '/purchase/manage',  icon: PackagePlus },
+          { label: '입고관리', href: '/purchase/receive', icon: Truck },
+        ],
+      },
     ],
   },
   {
