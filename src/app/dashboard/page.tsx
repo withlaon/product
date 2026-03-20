@@ -53,7 +53,7 @@ const MALL_COLORS: Record<string, string> = {
 function mallColor(ch: string) { return MALL_COLORS[ch] ?? '#64748b' }
 
 const STATUS_LABEL: Record<string, string> = {
-  pending: '주문접수', preparing: '상품준비', shipped: '배송중', delivered: '배송완료', cancelled: '취소',
+  pending: '주문접수', confirmed: '상품준비', shipped: '배송중', delivered: '배송완료', cancelled: '취소',
 }
 
 export default function DashboardPage() {
@@ -138,7 +138,7 @@ export default function DashboardPage() {
             title: '오늘 주문',
             value: todayOrders.length > 0 ? `${todayOrders.length}건` : '0',
             sub: todayOrders.length > 0
-              ? `미처리 ${todayOrders.filter(o => o.status === 'pending' || o.status === 'preparing').length}건`
+              ? `미처리 ${todayOrders.filter(o => o.status === 'pending' || o.status === 'confirmed').length}건`
               : '주문이 없습니다',
             icon: ShoppingCart, bg: '#ecfdf5', ic: '#059669', href: '/product-transfer',
           },
