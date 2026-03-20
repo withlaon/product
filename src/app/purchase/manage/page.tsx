@@ -61,18 +61,42 @@ export default function PurchaseManagePage() {
   // 추천 목록 옵션이미지: 바코드 → base64 (별도 비동기 로딩)
   const [qualImages, setQualImages] = useState<Record<string, string>>({})
 
-  // 상품 로딩: API 라우트 사용 (이미지 제외 → 빠름)
+  // 상품관리 탭과 동일한 localStorage 캐시 키 / TTL
+  const SHARED_CACHE_KEY = 'pm_products_cache_v1'
+  const SHARED_CACHE_TTL = 30 * 60 * 1000 // 30분
+
   const loadProducts = useCallback(async () => {
     setLoadError('')
+
+    // ① localStorage 캐시 우선 (상품관리 탭 방문 후 즉시 로딩)
+    try {
+      const raw = localStorage.getItem(SHARED_CACHE_KEY)
+      if (raw) {
+        const { ts, data } = JSON.parse(raw)
+        if (Date.now() - ts < SHARED_CACHE_TTL && Array.isArray(data) && data.length > 0) {
+          setProducts(data as PmProduct[])
+          return
+        }
+      }
+    } catch { /* ignore */ }
+
+    // ② 캐시 미스 → API 라우트 (Vercel 엣지 캐시 적용)
     try {
       const res = await fetch('/api/pm-products')
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setProducts(data as PmProduct[])
     } catch (e: unknown) {
-      setLoadError(e instanceof Error ? e.message : String(e))
+      // ③ 최후 fallback → supabase 클라이언트 직접
+      try {
+        const { data, error } = await supabase.from('pm_products').select('id,code,name,abbr,status,options')
+        if (error) throw new Error(error.message)
+        setProducts((data ?? []) as PmProduct[])
+      } catch (e2: unknown) {
+        setLoadError(e2 instanceof Error ? e2.message : String(e instanceof Error ? e.message : e))
+      }
     }
-  }, [])
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => { loadPurchases(); loadProducts() }, [loadPurchases, loadProducts])
 

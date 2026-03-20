@@ -57,28 +57,50 @@ export async function GET(req: NextRequest) {
     }
 
     // 이미지 배치 조회: ?imageIds=id1,id2,...
+    // 상품 목록 RPC와 동일한 fetch URL → Vercel 5분 캐시 공유 (Supabase 추가 조회 0회)
     const imageIds = new URL(req.url).searchParams.get('imageIds')
     if (imageIds) {
-      const ids = imageIds.split(',').map(s => s.trim()).filter(Boolean)
-      if (ids.length === 0) return NextResponse.json([])
-      const res = await fetch(
-        `${SUPABASE_URL}/rest/v1/${TABLE}?select=id,options&id=in.(${ids.join(',')})`,
+      const ids = new Set(imageIds.split(',').map(s => s.trim()).filter(Boolean))
+      if (ids.size === 0) return NextResponse.json([])
+
+      const rpcHeaders: Record<string, string> = {
+        apikey:         SERVICE_KEY,
+        Authorization:  `Bearer ${SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+      }
+      // 상품 목록과 완전히 동일한 RPC + 동일한 revalidate → Vercel 캐시 히트
+      const rpcRes = await fetch(
+        `${SUPABASE_URL}/rest/v1/rpc/get_pm_products_all`,
         {
-          headers: {
-            apikey:        SERVICE_KEY,
-            Authorization: `Bearer ${SERVICE_KEY}`,
-            'Content-Type': 'application/json',
-          },
+          method: 'POST',
+          headers: rpcHeaders,
+          body: '{}',
           signal: AbortSignal.timeout(TIMEOUT_MS),
-          // Vercel 엣지 캐시: 1시간 (한 번 성공 후 Supabase 재호출 없음)
-          next: { revalidate: 3600 },
+          next: { revalidate: 300 },
         }
-      )
-      if (!res.ok) return NextResponse.json([])
-      const data = await res.json()
-      // 브라우저 & CDN 캐시: 1시간
-      return NextResponse.json(Array.isArray(data) ? data : [], {
-        headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=300' },
+      ).catch(() => null)
+
+      // RPC 실패 시 직접 쿼리 fallback
+      let allData: unknown = null
+      if (rpcRes && rpcRes.ok) {
+        allData = await rpcRes.json()
+      } else {
+        const fbRes = await fetch(
+          `${SUPABASE_URL}/rest/v1/${TABLE}?select=id,options&id=in.(${[...ids].join(',')})`,
+          { headers: rpcHeaders, signal: AbortSignal.timeout(TIMEOUT_MS), next: { revalidate: 300 } }
+        ).catch(() => null)
+        if (fbRes && fbRes.ok) allData = await fbRes.json()
+      }
+
+      const filtered = (Array.isArray(allData) ? allData : [])
+        .filter((p: { id?: string }) => p.id && ids.has(p.id))
+        .map((p: { id: string; options?: Array<{ image?: string }> }) => ({
+          id: p.id,
+          options: p.options ?? [],
+        }))
+
+      return NextResponse.json(filtered, {
+        headers: { 'Cache-Control': 'public, max-age=300, stale-while-revalidate=600' },
       })
     }
 
