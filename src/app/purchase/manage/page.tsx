@@ -133,11 +133,33 @@ export default function PurchaseManagePage() {
   }, [selectedOpts])
 
   /* ── 출고내역 기반 판매수량 맵 (바코드 → 마지막 발주일 이후 판매수량) ──
-     - 발주 이력이 있는 바코드: 해당 바코드의 마지막 발주일 이후 판매 누적
-     - 발주 이력이 없는 바코드: SHIP_BASE_DATE 이후 판매 누적
-     - 발주에 포함된 바코드는 발주일 이후로 카운터 리셋(누적 재시작)
+     바코드 조회 우선순위:
+     1. pm_product_mapping_v1 매핑 (기존)
+     2. pm_products 상품약어(abbr) + 옵션명 직접 매칭 (매핑 없는 경우 폴백)
+     3. OrderItem.sku 직접 사용
   ── */
   const shipSoldMap = useMemo(() => {
+    // ── 옵션 정규화: "색상=베이지, 사이즈=FREE" → "베이지, FREE" ──
+    const extractOptVal = (opt?: string): string => {
+      if (!opt) return ''
+      return opt.split(',')
+        .map(s => { const e = s.indexOf('='); return e >= 0 ? s.slice(e + 1).trim() : s.trim() })
+        .join(', ')
+    }
+    const normStr = (s: string) => s.replace(/\s/g, '').toLowerCase()
+
+    // ── pm_products 기반 약어+옵션 → 바코드 인덱스 ──
+    const abbrOptIdx: Record<string, string> = {}  // key: norm(abbr)+'|||'+norm(optName)
+    const abbrIdx:    Record<string, string> = {}  // key: norm(abbr) (단일 옵션 폴백)
+    for (const prod of products) {
+      const abbr = normStr(prod.abbr || prod.name)
+      for (const opt of prod.options ?? []) {
+        if (!opt.barcode) continue
+        abbrOptIdx[`${abbr}|||${normStr(opt.name)}`] = opt.barcode
+        if (!abbrIdx[abbr]) abbrIdx[abbr] = opt.barcode  // 첫 옵션만 등록
+      }
+    }
+
     // ① 바코드별 마지막 발주일 계산
     const lastOrderByBarcode: Record<string, string> = {}
     for (const p of purchases) {
@@ -156,8 +178,21 @@ export default function PurchaseManagePage() {
     for (const order of shippedOrders) {
       const shippedDate = (order.shipped_at || '').slice(0, 10) || order.order_date
       for (const item of order.items) {
-        // 매핑으로 바코드 조회
-        const bc = lookupMapping(mappings, item.product_name, item.option).barcode
+        // 1. 매핑으로 바코드 조회
+        let bc = lookupMapping(mappings, item.product_name, item.option).barcode || ''
+        // 2. 폴백: 상품약어+옵션명 직접 매칭
+        if (!bc) {
+          const na = normStr(item.product_name)
+          const ov = normStr(extractOptVal(item.option))
+          const oo = normStr(item.option || '')
+          bc = abbrOptIdx[`${na}|||${ov}`]
+            || abbrOptIdx[`${na}|||${oo}`]
+            || abbrIdx[na]
+            || ''
+        }
+        // 3. 폴백: sku 직접 사용
+        if (!bc && item.sku) bc = item.sku
+
         if (!bc) continue
         const base = lastOrderByBarcode[bc] || SHIP_BASE_DATE
         if (shippedDate >= base) {
@@ -166,7 +201,7 @@ export default function PurchaseManagePage() {
       }
     }
     return map
-  }, [purchases, shippedOrders, mappings])
+  }, [products, purchases, shippedOrders, mappings])
 
   /* ── 바코드별 미입고 수량 계산 (pm_products 옵션 기준) ── */
   const unreceivedMap = useMemo(() => {
@@ -223,31 +258,45 @@ export default function PurchaseManagePage() {
     return result.sort((a, b) => a.currentStock - b.currentStock)
   }, [products, unreceivedMap, shipSoldMap])
 
-  // 추천 목록 확정 후 해당 상품 이미지만 별도 로딩 (barcode → image)
-  // 추천 목록 이미지 로딩: API 라우트 경유 (service role → RLS 우회)
+  // 추천 목록 이미지 로딩: qualOpts 내 prodId 목록이 바뀔 때마다 재실행
+  const qualProdIdsKey = useMemo(
+    () => [...new Set(qualOpts.map(o => o.prodId))].sort().join(','),
+    [qualOpts]
+  )
+
   useEffect(() => {
-    if (!qualOpts.length) return
-    const prodIds = [...new Set(qualOpts.map(o => o.prodId))]
+    if (!qualProdIdsKey) return
+    const prodIds = qualProdIdsKey.split(',').filter(Boolean)
     let cancelled = false
 
-    prodIds.forEach(async (pid) => {
-      try {
-        const res = await fetch(`/api/pm-products?imageIds=${pid}`)
-        if (!res.ok || cancelled) return
-        const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
-        if (!Array.isArray(data) || !data[0]) return
-        const imgs: Record<string, string> = {}
-        ;(data[0].options ?? []).forEach(o => {
-          if (o.barcode && o.image) imgs[o.barcode] = o.image
-        })
-        if (!cancelled && Object.keys(imgs).length > 0) {
-          setQualImages(prev => ({ ...prev, ...imgs }))
-        }
-      } catch { /* ignore */ }
-    })
+    // 전체를 한 번에 배치 요청 (최대 20개씩 묶어서)
+    const chunks: string[][] = []
+    for (let i = 0; i < prodIds.length; i += 20) {
+      chunks.push(prodIds.slice(i, i + 20))
+    }
+
+    ;(async () => {
+      for (const chunk of chunks) {
+        if (cancelled) break
+        try {
+          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
+          if (!res.ok || cancelled) continue
+          const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
+          if (!Array.isArray(data)) continue
+          const imgs: Record<string, string> = {}
+          data.forEach(prod => {
+            ;(prod.options ?? []).forEach(o => {
+              if (o.barcode && o.image) imgs[o.barcode] = o.image
+            })
+          })
+          if (!cancelled && Object.keys(imgs).length > 0) {
+            setQualImages(prev => ({ ...prev, ...imgs }))
+          }
+        } catch { /* ignore */ }
+      }
+    })()
     return () => { cancelled = true }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [qualOpts.length])
+  }, [qualProdIdsKey])
 
   const selectedKeys = useMemo(() => new Set(selectedOpts.map(s => s.key)), [selectedOpts])
 
