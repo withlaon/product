@@ -354,12 +354,14 @@ const genBarcode = (code: string, opt: string) =>
 
 const INIT_OPT  = { name:'', size:'FREE', korean_name:'', chinese_name:'', barcode:'', image:'' }
 const INIT_MALL_CAT = { channel:'', category:'', category_code:'' }
+const PRICE_CHANNELS = ['쿠팡', '네이버 스마트스토어', '11번가', '마켓플러스', '토스쇼핑', 'G마켓', '지에스샵', '올웨이즈']
+
 const INIT_FORM = {
   code:'', name:'', abbr:'', category:'', supplier:'', loca:'',
   cost_price:'', cost_currency:'CNY' as CostCurrency,
   newCat:'', status:'active' as ProductStatus,
   options:[{ ...INIT_OPT }],
-  mall_categories: [] as { channel:string; category:string; category_code:string }[],
+  channel_prices: PRICE_CHANNELS.map(ch => ({ channel: ch, price: '' })) as { channel:string; price:string }[],
 }
 
 /* ─── 옵션 이미지 파일→base64 ───────────────────────────────── */
@@ -443,27 +445,33 @@ async function pmGetFullProduct(id: string): Promise<Product | null> {
   } catch { return null }
 }
 
-/* ─── 이미지 localStorage 캐시 (7일 TTL) ─────────────────── */
+/* ─── 이미지 캐시: 인메모리(빠름) + localStorage 7일 TTL ──── */
 const IMG_CACHE_KEY = 'pm_product_images_v1'
 const IMG_CACHE_TTL = 7 * 24 * 60 * 60 * 1000
 
+// 모듈 레벨 메모리 캐시 – JSON 파싱 반복 제거
+let _imgMem: Record<string, string[]> = {}
+let _imgMemLoaded = false
+
 function loadImgCache(): Record<string, string[]> {
-  if (typeof window === 'undefined') return {}
+  if (_imgMemLoaded) return _imgMem
+  _imgMemLoaded = true
+  if (typeof window === 'undefined') return _imgMem
   try {
     const raw = localStorage.getItem(IMG_CACHE_KEY)
-    if (!raw) return {}
+    if (!raw) return _imgMem
     const { data, ts } = JSON.parse(raw) as { data: Record<string, string[]>; ts: number }
-    if (Date.now() - ts > IMG_CACHE_TTL) { localStorage.removeItem(IMG_CACHE_KEY); return {} }
-    return data ?? {}
-  } catch { return {} }
+    if (Date.now() - ts > IMG_CACHE_TTL) { localStorage.removeItem(IMG_CACHE_KEY); return _imgMem }
+    _imgMem = data ?? {}
+  } catch {}
+  return _imgMem
 }
 
 function mergeImgCache(images: Record<string, string[]>) {
+  _imgMem = { ..._imgMem, ...images }
   if (typeof window === 'undefined') return
   try {
-    const existing = loadImgCache()
-    const merged = { ...existing, ...images }
-    localStorage.setItem(IMG_CACHE_KEY, JSON.stringify({ data: merged, ts: Date.now() }))
+    localStorage.setItem(IMG_CACHE_KEY, JSON.stringify({ data: _imgMem, ts: Date.now() }))
   } catch {}
 }
 
@@ -935,7 +943,7 @@ export default function ProductsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // 현재 페이지 이미지 로드: 1개씩 병렬 fetch → 빠른 것부터 바로 표시 (점진적 로딩)
+  // 현재 페이지 이미지 로드: 인메모리 캐시 즉시 반영 + 미캐시 상품 1회 배치 fetch
   useEffect(() => {
     if (paginated.length === 0) return
     const toLoad = paginated
@@ -943,15 +951,27 @@ export default function ProductsPage() {
       .map(p => p.id)
     if (toLoad.length === 0) return
 
-    let cancelled = false
+    // 메모리 캐시 히트 → 즉시 상태 반영
+    const mem = loadImgCache()
+    const fromMem: Record<string, string[]> = {}
+    const toFetch: string[] = []
     toLoad.forEach(id => {
-      loadingIdsRef.current.add(id)
-      pmGetOneImage(id).then(images => {
-        loadingIdsRef.current.delete(id)
-        if (!cancelled && Object.keys(images).length > 0) {
-          setPageImages(prev => ({ ...prev, ...images }))
-        }
-      })
+      if (id in mem) fromMem[id] = mem[id]
+      else toFetch.push(id)
+    })
+    if (Object.keys(fromMem).length > 0) {
+      setPageImages(prev => ({ ...prev, ...fromMem }))
+    }
+    if (toFetch.length === 0) return
+
+    // 미캐시 상품: 단 1회 배치 REST 요청 (네트워크 왕복 최소화)
+    let cancelled = false
+    toFetch.forEach(id => loadingIdsRef.current.add(id))
+    pmGetPageImages(toFetch).then(images => {
+      toFetch.forEach(id => loadingIdsRef.current.delete(id))
+      if (!cancelled && Object.keys(images).length > 0) {
+        setPageImages(prev => ({ ...prev, ...images }))
+      }
     })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -999,60 +1019,61 @@ export default function ProductsPage() {
     setAddErrors(new Set())
     setAddDbError('')
     setAddSubmitting(true)
-    const options: ProductOption[] = form.options.filter(o => o.name.trim()).map(o => ({
-      name: o.name, size: o.size ?? 'FREE',
-      korean_name: o.korean_name || getKoreanColor(o.name),
-      chinese_name: o.chinese_name,
-      barcode: o.barcode || genBarcode(form.code, o.name),
-      image: o.image,
-      ordered: 0, received: 0, sold: 0,
-    }))
-    const costPriceVal = Number(form.cost_price) || 0
-    const payload = {
-      code: form.code.trim(), name: form.name.trim(), abbr: form.abbr.trim(), category: cat, loca: form.loca,
-      cost_price: costPriceVal,
-      cost_currency: form.cost_currency,
-      status: form.status, supplier: form.supplier,
-      options, channel_prices: [],
-      mall_categories: form.mall_categories.filter(m => m.channel && m.category),
-      basic_info: null,
-      registered_malls: [],
-    }
-    const { data, error, code } = await pmInsert(payload)
-    setAddSubmitting(false)
-    if (error) {
-      console.error('상품 등록 오류:', error)
-      if (code === '22P02' || error.includes('integer')) {
-        const intPayload = { ...payload, cost_price: Math.round(payload.cost_price) }
-        const { data: d2, error: e2 } = await pmInsert(intPayload)
-        if (e2) { setAddDbError(`등록 실패: ${e2}`); return }
-        const p = rowToProduct(d2)
+    try {
+      const options: ProductOption[] = form.options.filter(o => o.name.trim()).map(o => ({
+        name: o.name, size: o.size ?? 'FREE',
+        korean_name: o.korean_name || getKoreanColor(o.name),
+        chinese_name: o.chinese_name,
+        barcode: o.barcode || genBarcode(form.code, o.name),
+        image: o.image,
+        ordered: 0, received: 0, sold: 0,
+      }))
+      const costPriceVal = Number(form.cost_price) || 0
+      const channelPrices = form.channel_prices
+        .filter(cp => cp.price !== '' && Number(cp.price) > 0)
+        .map(cp => ({ channel: cp.channel, price: Number(cp.price) }))
+      const payload = {
+        code: form.code.trim(), name: form.name.trim(), abbr: form.abbr.trim(), category: cat, loca: form.loca,
+        cost_price: costPriceVal,
+        cost_currency: form.cost_currency,
+        status: form.status, supplier: form.supplier,
+        options, channel_prices: channelPrices,
+        basic_info: null,
+        registered_malls: [],
+      }
+      const addSuccess = (rawData: unknown) => {
+        const row = Array.isArray(rawData) ? rawData[0] : rawData
+        const p = rowToProduct(row as Record<string, unknown>)
         setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
         if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => { const u=[...prev,cat]; saveCats(u); return u })
-        setIsAdd(false); setForm(INIT_FORM); return
+        setIsAdd(false); setForm(INIT_FORM)
       }
-      if (error.includes('mall_categories') || error.includes('basic_info') || code === '42703') {
-        const { mall_categories: _mc, basic_info: _bi, ...fallback } = payload
-        void _mc; void _bi
-        const { data: d2, error: e2 } = await pmInsert(fallback)
-        if (e2) { setAddDbError(`등록 실패: ${e2}`); return }
-        const p = rowToProduct(d2)
-        setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
-        if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => { const u=[...prev,cat]; saveCats(u); return u })
-        setIsAdd(false); setForm(INIT_FORM); return
+      const { data, error, code } = await pmInsert(payload)
+      if (error) {
+        console.error('상품 등록 오류:', error)
+        // cost_price 정수 변환 재시도
+        if (code === '22P02' || error.includes('integer')) {
+          const { data: d2, error: e2 } = await pmInsert({ ...payload, cost_price: Math.round(costPriceVal) })
+          if (e2) { setAddDbError(`등록 실패: ${e2}`); return }
+          addSuccess(d2); return
+        }
+        // 알 수 없는 컬럼 오류 시 최소 페이로드로 재시도
+        if (error.includes('42703') || error.includes('column') || code === '42703') {
+          const minPayload = { code: payload.code, name: payload.name, abbr: payload.abbr, category: payload.category, loca: payload.loca, cost_price: payload.cost_price, cost_currency: payload.cost_currency, status: payload.status, supplier: payload.supplier, options: payload.options, registered_malls: [] }
+          const { data: d2, error: e2 } = await pmInsert(minPayload)
+          if (e2) { setAddDbError(`등록 실패: ${e2}`); return }
+          addSuccess(d2); return
+        }
+        setAddDbError(`등록 실패: ${error}`)
+        return
       }
-      setAddDbError(`등록 실패: ${error}`)
-      return
+      addSuccess(data)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      setAddDbError(`등록 실패: ${msg}`)
+    } finally {
+      setAddSubmitting(false)
     }
-    const p = rowToProduct(data)
-    setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
-    if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
-      const updated = [...prev, cat]
-      saveCats(updated)
-      return updated
-    })
-    setIsAdd(false)
-    setForm(INIT_FORM)
   }
 
   const handleChannelPriceSave = async (prices: ChannelPrice[]) => {
@@ -2294,48 +2315,31 @@ export default function ProductsPage() {
             </button>
           </div>
 
-          {/* 쇼핑몰 카테고리 매핑 */}
+          {/* 쇼핑몰별 판매가 */}
           <div style={{ gridColumn:'1/-1', marginTop:4 }}>
-            <p style={{ fontSize:12, fontWeight:800, color:'#7e22ce', paddingBottom:6, borderBottom:'1px solid #f3e8ff', marginBottom:10 }}>
-              🛒 쇼핑몰별 카테고리 매핑
+            <p style={{ fontSize:12, fontWeight:800, color:'#0369a1', paddingBottom:6, borderBottom:'1px solid #e0f2fe', marginBottom:10 }}>
+              💰 쇼핑몰별 판매가 <span style={{ fontSize:10.5, fontWeight:600, color:'#94a3b8' }}>(입력 안 할 경우 생략)</span>
             </p>
-            {form.mall_categories.map((mc, i) => (
-              <div key={i} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr auto', gap:8, marginBottom:8 }}>
-                <div>
-                  <Label>쇼핑몰</Label>
-                  <select value={mc.channel} onChange={e=>{const m=[...form.mall_categories];m[i]={...m[i],channel:e.target.value};setForm(f=>({...f,mall_categories:m}))}}
-                    style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'7px 10px', fontSize:12, outline:'none', fontWeight:700 }}>
-                    <option value="">선택</option>
-                    {ACTIVE_CHANNELS.map(c=><option key={c} value={c}>{c}</option>)}
-                  </select>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
+              {form.channel_prices.map((cp, i) => (
+                <div key={cp.channel}>
+                  <label style={{ display:'block', fontSize:10.5, fontWeight:800, color:'#475569', marginBottom:4 }}>{cp.channel}</label>
+                  <div style={{ position:'relative' }}>
+                    <span style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', fontSize:12, color:'#94a3b8', fontWeight:700, pointerEvents:'none' }}>₩</span>
+                    <Input
+                      type="number" placeholder="0" min="0"
+                      value={cp.price}
+                      style={{ paddingLeft:22 }}
+                      onChange={e => {
+                        const cp2 = [...form.channel_prices]
+                        cp2[i] = { ...cp2[i], price: e.target.value }
+                        setForm(f => ({ ...f, channel_prices: cp2 }))
+                      }}
+                    />
+                  </div>
                 </div>
-                <div><Label>카테고리명</Label>
-                  <Input placeholder="여성패션 > 가방" value={mc.category}
-                    onChange={e=>{const m=[...form.mall_categories];m[i]={...m[i],category:e.target.value};setForm(f=>({...f,mall_categories:m}))}}/>
-                </div>
-                <div><Label>카테고리 코드</Label>
-                  <Input placeholder="숫자코드" value={mc.category_code}
-                    onChange={e=>{const m=[...form.mall_categories];m[i]={...m[i],category_code:e.target.value};setForm(f=>({...f,mall_categories:m}))}}/>
-                </div>
-                <div style={{ paddingTop:21 }}>
-                  <button onClick={() => setForm(f=>({...f,mall_categories:f.mall_categories.filter((_,j)=>j!==i)}))}
-                    style={{ width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff1f2',color:'#dc2626',border:'none',borderRadius:8,cursor:'pointer' }}>
-                    <X size={13}/>
-                  </button>
-                </div>
-              </div>
-            ))}
-            <button onClick={() => setForm(f=>({...f,mall_categories:[...f.mall_categories,{...INIT_MALL_CAT}]}))}
-              style={{ fontSize:12,fontWeight:800,color:'#7e22ce',background:'#fdf4ff',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
-              <Plus size={12}/>카테고리 추가
-            </button>
-          </div>
-
-          <div style={{ gridColumn:'1/-1' }}>
-            <p style={{ fontSize:11.5, fontWeight:800, color:'#64748b', background:'#f8fafc', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:8 }}>
-              <Store size={13} color="#94a3b8"/>
-              <span>쇼핑몰별 판매가는 등록 후 상품 목록에서 <strong style={{ color:'#2563eb' }}>쇼핑몰별 판매가</strong> 셀을 클릭하여 설정할 수 있습니다.</span>
-            </p>
+              ))}
+            </div>
           </div>
         </div>
 
