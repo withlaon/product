@@ -131,21 +131,15 @@ export default function PurchaseManagePage() {
   }, [products, unreceivedMap])
 
   // 추천 목록 확정 후 해당 상품 이미지만 별도 로딩 (barcode → image)
+  // 추천 목록 이미지 로딩: API 라우트 경유 (service role → RLS 우회)
   useEffect(() => {
     if (!qualOpts.length) return
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    if (!supabaseUrl || !supabaseKey) return
-
     const prodIds = [...new Set(qualOpts.map(o => o.prodId))]
     let cancelled = false
 
     prodIds.forEach(async (pid) => {
       try {
-        const res = await fetch(
-          `${supabaseUrl}/rest/v1/pm_products?select=id,options&id=eq.${pid}`,
-          { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
-        )
+        const res = await fetch(`/api/pm-products?imageIds=${pid}`)
         if (!res.ok || cancelled) return
         const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
         if (!Array.isArray(data) || !data[0]) return

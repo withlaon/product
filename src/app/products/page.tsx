@@ -598,18 +598,12 @@ function mergeImgCache(images: Record<string, string[]>) {
 }
 
 /**
- * 단일 상품 옵션이미지 조회 (Supabase REST API 직접 호출 - 응답 크기 최소화)
- * 개별 호출 방식으로 배치 실패 문제 방지 + 프로그레시브 표시 지원
+ * 단일 상품 옵션이미지 조회
+ * API 라우트 경유 (service role 키 사용 → RLS 우회, 확실하게 동작)
  */
 async function fetchOneProductImages(id: string): Promise<string[]> {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !key) return []
   try {
-    const res = await fetch(
-      `${url}/rest/v1/pm_products?select=id,options&id=eq.${id}`,
-      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
-    )
+    const res = await fetch(`${PM_API}?imageIds=${id}`)
     if (!res.ok) return []
     const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
     if (!Array.isArray(data) || !data[0]) return []
