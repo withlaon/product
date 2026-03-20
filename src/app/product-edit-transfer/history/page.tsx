@@ -78,7 +78,7 @@ export default function ShippingHistoryPage() {
   const [selDate, setSelDate]       = useState(today)
   const [selMonth, setSelMonth]     = useState(curYM)
   const [checked, setChecked]       = useState<Set<string>>(new Set())
-  const [mappings, setMappings]     = useState<ReturnType<typeof loadMappings>>([])
+  const [mappings, setMappings]     = useState<ReturnType<typeof loadMappings>>({})
 
   useEffect(() => {
     setShipped(loadShippedOrders())
