@@ -599,63 +599,30 @@ function mergeImgCache(images: Record<string, string[]>) {
 
 /**
  * 현재 페이지 상품들의 옵션이미지 배치 조회
- * 브라우저에서 Supabase REST API를 직접 호출 (서버리스 함수 경유 없음)
- * → Vercel timeout 없이 안정적으로 이미지 로드
+ * supabase 클라이언트 직접 사용 (서버리스 함수 경유 없음)
  */
 async function pmGetPageImages(ids: string[]): Promise<Record<string, string[]>> {
   if (ids.length === 0) return {}
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!supabaseUrl || !supabaseKey) {
-    try {
-      const res = await fetch(`${PM_API}?imageIds=${ids.join(',')}`)
-      if (!res.ok) return {}
-      const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
-      const result: Record<string, string[]> = {}
-      if (Array.isArray(data)) {
-        data.forEach(row => { result[row.id] = (row.options ?? []).map(o => o.image ?? '') })
-      }
-      if (Object.keys(result).length > 0) mergeImgCache(result)
-      return result
-    } catch { return {} }
-  }
   try {
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/pm_products?select=id,options&id=in.(${ids.join(',')})`,
-      { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
-    )
-    if (!res.ok) return {}
-    const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
+    const { data, error } = await supabase
+      .from('pm_products')
+      .select('id,options')
+      .in('id', ids)
+    if (error || !Array.isArray(data)) return {}
     const result: Record<string, string[]> = {}
-    if (Array.isArray(data)) {
-      data.forEach(row => { result[row.id] = (row.options ?? []).map(o => o.image ?? '') })
-    }
+    data.forEach(row => {
+      result[row.id] = (row.options ?? []).map((o: { image?: string }) => o.image ?? '')
+    })
     if (Object.keys(result).length > 0) mergeImgCache(result)
     return result
   } catch { return {} }
 }
 
-/** 단일 상품 이미지 fetch (캐시 미스 시 Supabase 직접 호출) */
+/** 단일 상품 이미지 fetch (캐시 미스 시 supabase 클라이언트 사용) */
 async function pmGetOneImage(id: string): Promise<Record<string, string[]>> {
-  // localStorage 캐시 먼저 확인
   const cached = loadImgCache()
   if (id in cached) return { [id]: cached[id] }
-
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!supabaseUrl || !supabaseKey) return pmGetPageImages([id])
-  try {
-    const res = await fetch(
-      `${supabaseUrl}/rest/v1/pm_products?select=id,options&id=eq.${id}`,
-      { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
-    )
-    if (!res.ok) return {}
-    const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
-    if (!Array.isArray(data) || data.length === 0) return {}
-    const imgs = (data[0].options ?? []).map(o => o.image ?? '')
-    mergeImgCache({ [id]: imgs })
-    return { [id]: imgs }
-  } catch { return {} }
+  return pmGetPageImages([id])
 }
 
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */

@@ -25,7 +25,7 @@ interface QualOpt {
   currentStock: number
   unreceived: number
   sold: number          // 누적 판매수량
-  reason: 'lowStock' | 'unreceived' | 'both'
+  reason: 'lowStock' | 'unreceived' | 'both' | 'sold'
 }
 interface SelectedOpt extends QualOpt { qty: string }
 
@@ -57,11 +57,14 @@ export default function PurchaseManagePage() {
     if (data) setPurchases(data as Purchase[])
   }, [])
 
+  const [loadError, setLoadError] = useState('')
+
   const loadProducts = useCallback(async () => {
-    // supabase 클라이언트로 직접 조회 (이미지 포함 전체 options)
-    const { data } = await supabase
+    setLoadError('')
+    const { data, error } = await supabase
       .from('pm_products')
       .select('id,code,name,abbr,status,options')
+    if (error) { setLoadError(error.message); return }
     if (data) setProducts(data as PmProduct[])
   }, [])
 
@@ -81,23 +84,28 @@ export default function PurchaseManagePage() {
   }, [purchases])
 
   /* ── 발주 추천 목록 ──
-     조건 1: 판매중 상품 중 현재고 ≤ 2 (삭제예정 제외)
-     조건 2: 미입고 발주가 있는 상품 (발주등록일 이후 판매 발생)
+     조건 1: 판매중 상품 중 현재고 ≤ 2 (재고 부족)
+     조건 2: 미입고 발주가 있는 상품
+     조건 3: 판매 이력이 있는 상품 (sold > 0) — 최근 발주일 이후 판매 포함
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const result: QualOpt[] = []
     for (const prod of products) {
-      // 삭제예정 제외, 판매중/품절만 포함
-      if (prod.status === 'pending_delete' || prod.status === 'cancelled') continue
+      if (prod.status === 'pending_delete') continue
       for (const opt of prod.options) {
         const rcv   = opt.received || 0
         const sold  = opt.sold     || 0
         const def   = opt.defective || 0
         const stock = opt.current_stock ?? Math.max(0, rcv - sold - def)
         const unr   = unreceivedMap[opt.barcode || ''] || 0
-        const isLow = stock <= 2
+        const isLow  = stock <= 2
         const hasUnr = unr > 0
-        if (!isLow && !hasUnr) continue
+        const hasSold = sold > 0
+        if (!isLow && !hasUnr && !hasSold) continue
+        const reason: QualOpt['reason'] =
+          (isLow && hasUnr) ? 'both' :
+          isLow             ? 'lowStock' :
+          hasUnr            ? 'unreceived' : 'sold'
         result.push({
           key:          `${prod.id}__${opt.barcode || opt.name}`,
           prodId:       prod.id,
@@ -109,7 +117,7 @@ export default function PurchaseManagePage() {
           currentStock: stock,
           unreceived:   unr,
           sold,
-          reason:       isLow && hasUnr ? 'both' : isLow ? 'lowStock' : 'unreceived',
+          reason,
         })
       }
     }
@@ -258,20 +266,28 @@ export default function PurchaseManagePage() {
             <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>발주 추천 목록</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
               <span style={{ fontSize: 11, background: '#fff1f2', color: '#dc2626', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
-                재고≤2: {qualOpts.filter(o => o.reason === 'lowStock' || o.reason === 'both').length}
+                재고↓: {qualOpts.filter(o => o.reason === 'lowStock' || o.reason === 'both').length}
               </span>
               <span style={{ fontSize: 11, background: '#fffbeb', color: '#d97706', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                 미입고: {qualOpts.filter(o => o.reason === 'unreceived' || o.reason === 'both').length}
+              </span>
+              <span style={{ fontSize: 11, background: '#eff6ff', color: '#6366f1', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+                판매: {qualOpts.filter(o => o.reason === 'sold').length}
               </span>
             </div>
           </div>
 
           {/* 목록 */}
+          {loadError && (
+            <div style={{ margin: '12px 14px', padding: '8px 12px', background: '#fff1f2', borderRadius: 6, fontSize: 11, color: '#dc2626' }}>
+              상품 로딩 오류: {loadError}
+            </div>
+          )}
           {qualOpts.length === 0 ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 8 }}>
               <Package size={36} style={{ opacity: 0.2 }} />
-              <p style={{ fontSize: 13, fontWeight: 700 }}>발주가 필요한 상품이 없습니다</p>
-              <p style={{ fontSize: 11, color: '#cbd5e1' }}>재고 2개 이하이거나 미입고 발주가 있는 상품이 여기 표시됩니다</p>
+              <p style={{ fontSize: 13, fontWeight: 700 }}>{products.length === 0 ? '상품 데이터 로딩 중...' : '발주가 필요한 상품이 없습니다'}</p>
+              <p style={{ fontSize: 11, color: '#cbd5e1' }}>{products.length === 0 ? '잠시 후 자동으로 표시됩니다' : '재고 2개 이하 · 미입고 · 판매 이력 상품이 여기 표시됩니다'}</p>
             </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -286,15 +302,16 @@ export default function PurchaseManagePage() {
                 <tbody>
                   {qualOpts.map(opt => {
                     const sel = selectedKeys.has(opt.key)
-                    const rowBg = sel ? '#eff6ff' : opt.reason === 'unreceived' ? '#fffbeb' : undefined
+                    const rowBg = sel ? '#eff6ff' : opt.reason === 'unreceived' ? '#fffbeb' : opt.reason === 'sold' ? '#f8f7ff' : undefined
                     return (
                       <tr key={opt.key} style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer', transition: 'background 0.15s' }}
                         onClick={() => toggleSelect(opt)}>
                         {/* 상태 배지 */}
                         <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 36 }}>
-                          {opt.reason === 'lowStock' && <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>재고↓</span>}
+                          {opt.reason === 'lowStock'   && <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>재고↓</span>}
                           {opt.reason === 'unreceived' && <span style={{ fontSize: 8.5, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>미입고</span>}
-                          {opt.reason === 'both' && <span style={{ fontSize: 8.5, background: '#fef2f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>둘다</span>}
+                          {opt.reason === 'both'       && <span style={{ fontSize: 8.5, background: '#fef2f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>재고↓미입고</span>}
+                          {opt.reason === 'sold'       && <span style={{ fontSize: 8.5, background: '#eff6ff', color: '#6366f1', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>판매</span>}
                         </td>
                         {/* 이미지 */}
                         <td style={{ padding: '4px 5px', textAlign: 'center', width: 48 }}>
