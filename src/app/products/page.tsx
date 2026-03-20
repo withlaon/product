@@ -486,14 +486,50 @@ const INIT_FORM = {
   options:[{ ...INIT_OPT }],
 }
 
-/* ─── 옵션 이미지 파일→base64 ───────────────────────────────── */
+/* ─── 이미지 압축 (Canvas, 200×200, JPEG 70%) ───────────────── */
+async function compressImage(dataUrl: string, maxPx = 200, quality = 0.7): Promise<string> {
+  return new Promise(resolve => {
+    const img = new Image()
+    img.onload = () => {
+      const scale  = Math.min(maxPx / img.width, maxPx / img.height, 1)
+      const canvas = document.createElement('canvas')
+      canvas.width  = Math.round(img.width  * scale)
+      canvas.height = Math.round(img.height * scale)
+      const ctx = canvas.getContext('2d')
+      if (!ctx) { resolve(dataUrl); return }
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+      resolve(canvas.toDataURL('image/jpeg', quality))
+    }
+    img.onerror = () => resolve(dataUrl)
+    img.src = dataUrl
+  })
+}
+
+/** 이미지를 Supabase Storage 에 업로드하고 public URL 반환. 실패 시 null */
+async function uploadToStorage(base64: string, path: string): Promise<string | null> {
+  try {
+    const res = await fetch('/api/pm-upload-image', {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ base64, path }),
+    })
+    if (!res.ok) return null
+    const { url } = await res.json()
+    return url ?? null
+  } catch {
+    return null
+  }
+}
+
+/* ─── 옵션 이미지 파일→압축 base64 (상품 등록 폼용) ─────────── */
 function useOptImageUpload(setForm: React.Dispatch<React.SetStateAction<typeof INIT_FORM>>) {
   return (idx: number, file: File) => {
     const reader = new FileReader()
-    reader.onload = e => {
-      const result = e.target?.result as string ?? ''
+    reader.onload = async e => {
+      const raw        = e.target?.result as string ?? ''
+      const compressed = await compressImage(raw)
       setForm(f => {
-        const opts = f.options.map((o, i) => i === idx ? { ...o, image: result } : o)
+        const opts = f.options.map((o, i) => i === idx ? { ...o, image: compressed } : o)
         return { ...f, options: opts }
       })
     }
@@ -649,6 +685,45 @@ export default function ProductsPage() {
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 })
   const handleOptImage  = useOptImageUpload(setForm)
+
+  // 이미지 마이그레이션 상태
+  const [migrating, setMigrating] = useState(false)
+  const [migrateResult, setMigrateResult] = useState<{
+    total: number; done: number; migrated: number; errors: number; finished: boolean
+  } | null>(null)
+
+  async function startImageMigration() {
+    setMigrating(true)
+    setMigrateResult({ total: 0, done: 0, migrated: 0, errors: 0, finished: false })
+    let offset = 0
+    const limit = 5
+    let totalMigrated = 0
+    let totalErrors   = 0
+    let grandTotal    = 0
+    try {
+      while (true) {
+        const res  = await fetch('/api/pm-migrate-images', {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body:    JSON.stringify({ offset, limit }),
+        })
+        if (!res.ok) break
+        const data = await res.json()
+        grandTotal    = data.total    ?? grandTotal
+        totalMigrated += data.migrated ?? 0
+        totalErrors   += data.errors   ?? 0
+        const done     = offset + (data.processed ?? 0)
+        setMigrateResult({ total: grandTotal, done, migrated: totalMigrated, errors: totalErrors, finished: !!data.done })
+        if (data.done || !data.processed) break
+        offset = data.nextOffset
+      }
+    } catch { /* ignore */ }
+    setMigrateResult(prev => prev ? { ...prev, finished: true } : null)
+    setMigrating(false)
+    // 마이그레이션 완료 후 캐시 초기화 및 상품 재로딩
+    try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+    handleRefresh()
+  }
 
   // 수정 폼 상태
   type EditOptRow = { name:string; size:string; korean_name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number; current_stock?:number; defective?:number }
@@ -1838,6 +1913,17 @@ export default function ProductsPage() {
             </Button>
             <input ref={importInputRef} type="file" accept=".xlsx,.xls" style={{display:'none'}} onChange={handleImportExcel}/>
             <Button size="sm" onClick={() => setIsAdd(true)}><Plus size={13}/>상품 등록</Button>
+            {/* 이미지 Storage 마이그레이션 버튼 */}
+            <button
+              onClick={() => { if (!migrating) startImageMigration() }}
+              disabled={migrating}
+              title="기존 base64 이미지를 Supabase Storage(CDN)로 이전합니다"
+              style={{ display:'flex', alignItems:'center', gap:5, padding:'6px 12px', borderRadius:7, border:'1px solid #e2e8f0', background: migrating ? '#fef3c7' : '#fffbeb', color:'#92400e', fontSize:12, fontWeight:700, cursor: migrating ? 'not-allowed' : 'pointer', opacity: migrating ? 0.8 : 1 }}>
+              {migrating
+                ? <><span style={{ display:'inline-block', width:11, height:11, border:'2px solid rgba(0,0,0,0.2)', borderTopColor:'#92400e', borderRadius:'50%', animation:'spin-slow 0.7s linear infinite', marginRight:4 }}/>
+                    이미지 이전 중{migrateResult ? ` (${migrateResult.done}/${migrateResult.total})` : '...'}</>
+                : <>📦 이미지 Storage 이전</>}
+            </button>
             <button
               onClick={handleRefresh}
               disabled={loading || isRefreshing}
@@ -2204,6 +2290,43 @@ export default function ProductsPage() {
           <button disabled={page===totalPages} onClick={() => setPage(p=>p+1)}
             className="pm-btn pm-btn-ghost pm-btn-sm"
             style={{ height:28, minWidth:40, fontSize:12, opacity:page===totalPages?0.35:1, cursor:page===totalPages?'not-allowed':'pointer' }}>다음</button>
+        </div>
+      )}
+
+      {/* ── 이미지 마이그레이션 결과 모달 ── */}
+      {migrateResult && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.45)', zIndex:9999, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <div style={{ background:'white', borderRadius:14, padding:'28px 32px', minWidth:360, maxWidth:480, boxShadow:'0 20px 60px rgba(0,0,0,0.2)' }}>
+            <div style={{ fontSize:16, fontWeight:700, marginBottom:16, display:'flex', alignItems:'center', gap:8 }}>
+              📦 이미지 Storage 이전
+              {migrating && <span style={{ display:'inline-block', width:14, height:14, border:'2.5px solid #e2e8f0', borderTopColor:'#f59e0b', borderRadius:'50%', animation:'spin-slow 0.7s linear infinite' }}/>}
+            </div>
+            {/* 진행 바 */}
+            <div style={{ background:'#f1f5f9', borderRadius:8, height:10, marginBottom:12, overflow:'hidden' }}>
+              <div style={{
+                height:'100%', borderRadius:8, background: migrateResult.finished ? '#10b981' : '#f59e0b',
+                width: migrateResult.total > 0 ? `${Math.round(migrateResult.done / migrateResult.total * 100)}%` : '0%',
+                transition:'width 0.4s',
+              }}/>
+            </div>
+            <div style={{ fontSize:13, color:'#475569', lineHeight:2, marginBottom:16 }}>
+              <div>전체 상품: <b>{migrateResult.total}</b>개</div>
+              <div>처리 완료: <b>{migrateResult.done}</b>개</div>
+              <div style={{ color:'#10b981' }}>✅ Storage 이전 성공: <b>{migrateResult.migrated}</b>개 이미지</div>
+              {migrateResult.errors > 0 && <div style={{ color:'#ef4444' }}>⚠️ 오류 건수: <b>{migrateResult.errors}</b>개</div>}
+            </div>
+            {migrateResult.finished
+              ? <div style={{ display:'flex', gap:8 }}>
+                  <button onClick={() => setMigrateResult(null)}
+                    style={{ flex:1, padding:'10px 0', borderRadius:8, background:'#10b981', color:'white', border:'none', fontWeight:700, fontSize:13, cursor:'pointer' }}>
+                    완료 (닫기)
+                  </button>
+                </div>
+              : <div style={{ fontSize:12, color:'#94a3b8', textAlign:'center' }}>
+                  처리 중입니다. 창을 닫지 마세요...
+                </div>
+            }
+          </div>
         </div>
       )}
 
@@ -2582,9 +2705,14 @@ export default function ProductsPage() {
                           onChange={e => {
                             const file = e.target.files?.[0]; if (!file) return
                             const reader = new FileReader()
-                            reader.onload = ev => {
-                              const result = ev.target?.result as string ?? ''
-                              setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, image:result} : o) }) : f)
+                            reader.onload = async ev => {
+                              const raw        = ev.target?.result as string ?? ''
+                              const compressed = await compressImage(raw)
+                              // Storage 업로드 시도 (isEdit.id 있으므로 경로 확정 가능)
+                              const path = `${isEdit.id}/${i}_${Date.now()}.jpg`
+                              const url  = await uploadToStorage(compressed, path)
+                              const final = url ?? compressed
+                              setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, image:final} : o) }) : f)
                             }
                             reader.readAsDataURL(file)
                           }}
