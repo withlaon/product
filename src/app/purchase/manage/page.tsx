@@ -144,7 +144,7 @@ export default function PurchaseManagePage() {
         const bc = lookupMapping(mappings, item.product_name, item.option).barcode
         if (!bc) continue
         const base = lastOrderByBarcode[bc] || SHIP_BASE_DATE
-        if (shippedDate > base) {
+        if (shippedDate >= base) {
           map[bc] = (map[bc] || 0) + item.quantity
         }
       }
@@ -152,18 +152,18 @@ export default function PurchaseManagePage() {
     return map
   }, [purchases, shippedOrders, mappings])
 
-  /* ── 바코드별 미입고 수량 계산 ── */
+  /* ── 바코드별 미입고 수량 계산 (pm_products 옵션 기준) ── */
   const unreceivedMap = useMemo(() => {
     const map: Record<string, number> = {}
-    for (const p of purchases) {
-      if (p.status === 'cancelled') continue
-      for (const item of p.items) {
-        const rem = item.ordered - item.received
-        if (rem > 0 && item.barcode) map[item.barcode] = (map[item.barcode] || 0) + rem
+    for (const prod of products) {
+      for (const opt of prod.options ?? []) {
+        if (!opt.barcode) continue
+        const unr = (opt.ordered ?? 0) - (opt.received ?? 0)
+        if (unr > 0) map[opt.barcode] = (map[opt.barcode] || 0) + unr
       }
     }
     return map
-  }, [purchases])
+  }, [products])
 
   /* ── 발주 추천 목록 ──
      조건 1: 판매중 상품 중 현재고 ≤ 2 (재고 부족) — pm_products 기준
@@ -451,11 +451,15 @@ export default function PurchaseManagePage() {
                               </div>
                           })()}
                         </td>
-                        {/* 상품약어 + 바코드 */}
-                        <td style={{ padding: '5px 6px' }}>
-                          <p style={{ fontSize: 12, fontWeight: 800, color: '#1e293b', marginBottom: 1, lineHeight: 1.2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{opt.prodAbbr}</p>
-                          <p style={{ fontSize: 10, color: '#64748b', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{opt.optName}</p>
-                          <p style={{ fontSize: 9.5, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: 140 }}>{opt.barcode || '-'}</p>
+                        {/* 약어 · 옵션 · 바코드 (한 줄) */}
+                        <td style={{ padding: '5px 6px', minWidth: 0 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                            <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.prodAbbr}</span>
+                            <span style={{ fontSize: 10, color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                            <span style={{ fontSize: 10.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{opt.optName}</span>
+                            <span style={{ fontSize: 10, color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                            <span style={{ fontSize: 9.5, color: '#94a3b8', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.barcode || '-'}</span>
+                          </div>
                         </td>
                         {/* 판매수량 */}
                         <td style={{ padding: '5px 6px', textAlign: 'center', width: 48 }}>
