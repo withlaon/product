@@ -467,18 +467,45 @@ function mergeImgCache(images: Record<string, string[]>) {
   } catch {}
 }
 
-/** 현재 페이지 상품들의 옵션이미지 배치 조회 후 localStorage 캐시에 저장 */
+/**
+ * 현재 페이지 상품들의 옵션이미지 배치 조회
+ * 브라우저에서 Supabase REST API를 직접 호출 (서버리스 함수 경유 없음)
+ * → Vercel timeout 없이 안정적으로 이미지 로드
+ */
 async function pmGetPageImages(ids: string[]): Promise<Record<string, string[]>> {
   if (ids.length === 0) return {}
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!supabaseUrl || !supabaseKey) {
+    // fallback: API route 경유
+    try {
+      const res = await fetch(`${PM_API}?imageIds=${ids.join(',')}`)
+      if (!res.ok) return {}
+      const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
+      const result: Record<string, string[]> = {}
+      if (Array.isArray(data)) {
+        data.forEach(row => { result[row.id] = (row.options ?? []).map(o => o.image ?? '') })
+      }
+      if (Object.keys(result).length > 0) mergeImgCache(result)
+      return result
+    } catch { return {} }
+  }
   try {
-    const res = await fetch(`${PM_API}?imageIds=${ids.join(',')}`)
+    // Supabase REST API 직접 호출 (브라우저 → Supabase, 서버리스 없음)
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/pm_products?select=id,options&id=in.(${ids.join(',')})`,
+      {
+        headers: {
+          apikey:        supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      }
+    )
     if (!res.ok) return {}
     const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
     const result: Record<string, string[]> = {}
     if (Array.isArray(data)) {
-      data.forEach(row => {
-        result[row.id] = (row.options ?? []).map(o => o.image ?? '')
-      })
+      data.forEach(row => { result[row.id] = (row.options ?? []).map(o => o.image ?? '') })
     }
     if (Object.keys(result).length > 0) mergeImgCache(result)
     return result
