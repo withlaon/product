@@ -37,13 +37,22 @@ interface QualOpt {
 }
 interface SelectedOpt extends QualOpt { qty: string }
 
+const DRAFT_KEY = 'pm_purchase_draft_v1'
+
 export default function PurchaseManagePage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [products,  setProducts]  = useState<PmProduct[]>([])
   const [saving,    setSaving]    = useState(false)
+  const [saveMsg,   setSaveMsg]   = useState<{ type: 'ok' | 'err'; text: string } | null>(null)
 
-  /* 발주 추천 → 선택 상태 */
-  const [selectedOpts, setSelectedOpts] = useState<SelectedOpt[]>([])
+  /* 발주 추천 → 선택 상태 (localStorage로 탭 이동해도 유지) */
+  const [selectedOpts, setSelectedOpts] = useState<SelectedOpt[]>(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_KEY)
+      if (raw) return JSON.parse(raw) as SelectedOpt[]
+    } catch { /* ignore */ }
+    return []
+  })
   const [orderDate,    setOrderDate]    = useState(getToday())
   const [orderSupplier, setOrderSupplier] = useState('')
 
@@ -115,6 +124,13 @@ export default function PurchaseManagePage() {
     setShippedOrders(loadShippedOrders())
     setMappings(loadMappings())
   }, [loadPurchases, loadProducts])
+
+  // selectedOpts가 바뀔 때마다 localStorage에 저장
+  useEffect(() => {
+    try {
+      localStorage.setItem(DRAFT_KEY, JSON.stringify(selectedOpts))
+    } catch { /* ignore */ }
+  }, [selectedOpts])
 
   /* ── 출고내역 기반 판매수량 맵 (바코드 → 마지막 발주일 이후 판매수량) ──
      - 발주 이력이 있는 바코드: 해당 바코드의 마지막 발주일 이후 판매 누적
@@ -268,6 +284,7 @@ export default function PurchaseManagePage() {
     const valid = selectedOpts.filter(s => s.qty && Number(s.qty) > 0)
     if (!valid.length || !orderDate) return
     setSaving(true)
+    setSaveMsg({ type: 'ok', text: '발주 등록 중...' })
     try {
       const items: PurchaseItem[] = valid.map(s => ({
         product_code: s.prodCode,
@@ -286,13 +303,27 @@ export default function PurchaseManagePage() {
         items,
       }
       await supabase.from('pm_purchases').insert(purchase)
-      const deltas = valid.map(s => ({ prodId: s.prodId, optName: s.optName, orderedDelta: Number(s.qty), receivedDelta: 0 }))
+      // 바코드 기준으로 상품관리탭 발주 수량 카운팅
+      const deltas = valid.map(s => ({
+        prodId:       s.prodId,
+        optName:      s.optName,
+        barcode:      s.barcode,   // 바코드 우선 매칭
+        orderedDelta: Number(s.qty),
+        receivedDelta: 0,
+      }))
+      setSaveMsg({ type: 'ok', text: `상품관리 발주수량 반영 중 (${deltas.length}종)...` })
       await syncProductQty(products, deltas)
       await loadPurchases()
       await loadProducts()
+      localStorage.removeItem(DRAFT_KEY)
       setSelectedOpts([])
       setOrderSupplier('')
       setOrderDate(getToday())
+      setSaveMsg({ type: 'ok', text: '✅ 발주 등록 완료! 상품관리 발주수량에 반영되었습니다.' })
+      setTimeout(() => setSaveMsg(null), 4000)
+    } catch (e: unknown) {
+      setSaveMsg({ type: 'err', text: `❌ 오류: ${e instanceof Error ? e.message : String(e)}` })
+      setTimeout(() => setSaveMsg(null), 5000)
     } finally {
       setSaving(false)
     }
@@ -393,7 +424,7 @@ export default function PurchaseManagePage() {
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <AlertTriangle size={14} style={{ color: '#d97706' }} />
             <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>발주 추천 목록</span>
-            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
               <span style={{ fontSize: 11, background: '#fff1f2', color: '#dc2626', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                 재고↓: {qualOpts.filter(o => o.reason === 'lowStock' || o.reason === 'both').length}
               </span>
@@ -403,6 +434,11 @@ export default function PurchaseManagePage() {
               <span style={{ fontSize: 11, background: '#eff6ff', color: '#6366f1', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                 판매: {qualOpts.filter(o => o.reason === 'sold').length}
               </span>
+              <button
+                onClick={() => { loadPurchases(); loadProducts(); setShippedOrders(loadShippedOrders()); setMappings(loadMappings()) }}
+                style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+                🔄 새로고침
+              </button>
             </div>
           </div>
 
@@ -528,32 +564,39 @@ export default function PurchaseManagePage() {
 
               {/* 선택 상품 목록 */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px' }}>
-                {selectedOpts.map((s, i) => (
-                  <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #f8fafc' }}>
-                    {/* 이미지 */}
-                    {s.image
-                      ? <img src={s.image} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', flexShrink: 0 }} />
-                      : <div style={{ width: 36, height: 36, background: '#f1f5f9', borderRadius: 6, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <Package size={14} style={{ color: '#cbd5e1' }} />
+                {selectedOpts.map((s, i) => {
+                  const img = qualImages[s.barcode] || s.image
+                  return (
+                    <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #f8fafc' }}>
+                      {/* 이미지 (qualImages로 실제 이미지 표시) */}
+                      {img
+                        ? <img src={img} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 7, border: '1px solid #e2e8f0', flexShrink: 0 }} />
+                        : <div style={{ width: 38, height: 38, background: '#f1f5f9', borderRadius: 7, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Package size={14} style={{ color: '#cbd5e1' }} />
+                          </div>
+                      }
+                      {/* 상품 정보: 약어 · 옵션 · 바코드 가로 한 줄 */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                          <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.prodAbbr}</span>
+                          <span style={{ fontSize: 10, color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                          <span style={{ fontSize: 10.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{s.optName}</span>
+                          <span style={{ fontSize: 10, color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                          <span style={{ fontSize: 9.5, color: '#94a3b8', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.barcode || '-'}</span>
                         </div>
-                    }
-                    {/* 상품 정보 */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <p style={{ fontSize: 11.5, fontWeight: 800, color: '#1e293b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.prodAbbr}</p>
-                      <p style={{ fontSize: 10.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.optName}</p>
-                      <p style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.barcode || '-'}</p>
+                      </div>
+                      {/* 수량 입력 */}
+                      <Input type="number" min="1" value={s.qty}
+                        onChange={e => setSelectedOpts(prev => prev.map((o, j) => j === i ? { ...o, qty: e.target.value } : o))}
+                        style={{ width: 64, textAlign: 'center', fontWeight: 800, flexShrink: 0 }} />
+                      {/* 제거 버튼 */}
+                      <button onClick={() => setSelectedOpts(prev => prev.filter((_, j) => j !== i))}
+                        style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff1f2', color: '#dc2626', border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
+                        <X size={11} />
+                      </button>
                     </div>
-                    {/* 수량 입력 */}
-                    <Input type="number" min="1" value={s.qty}
-                      onChange={e => setSelectedOpts(prev => prev.map((o, j) => j === i ? { ...o, qty: e.target.value } : o))}
-                      style={{ width: 64, textAlign: 'center', fontWeight: 800, flexShrink: 0 }} />
-                    {/* 제거 버튼 */}
-                    <button onClick={() => setSelectedOpts(prev => prev.filter((_, j) => j !== i))}
-                      style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff1f2', color: '#dc2626', border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
-                      <X size={11} />
-                    </button>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               {/* 발주 등록 버튼 */}
@@ -562,20 +605,30 @@ export default function PurchaseManagePage() {
                   <span style={{ fontSize: 11.5, color: '#64748b', fontWeight: 700 }}>
                     총 {selectedOpts.reduce((s, o) => s + (Number(o.qty) || 0), 0).toLocaleString()}개
                   </span>
-                  <button onClick={() => setSelectedOpts([])}
+                  <button onClick={() => { localStorage.removeItem(DRAFT_KEY); setSelectedOpts([]) }}
                     style={{ fontSize: 11, color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
                     전체 선택 해제
                   </button>
                 </div>
+                {/* 발주서 다운 → 발주 등록 순서 */}
+                <button onClick={handleDownloadOrderSheet}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 800, fontSize: 13, cursor: 'pointer', marginBottom: 8 }}>
+                  <FileDown size={14} />발주서 다운
+                </button>
                 <Button onClick={handleSubmitOrder} disabled={saving || !orderDate}
                   style={{ width: '100%', fontWeight: 800, height: 40, opacity: (saving || !orderDate) ? 0.6 : 1 }}>
                   <PackagePlus size={14} style={{ marginRight: 4 }} />
                   {saving ? '등록 중...' : '발주 등록'}
                 </Button>
-                <button onClick={handleDownloadOrderSheet}
-                  style={{ marginTop: 8, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 800, fontSize: 13, cursor: 'pointer' }}>
-                  <FileDown size={14} />발주서 다운
-                </button>
+                {/* 상태 메시지 */}
+                {saveMsg && (
+                  <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, fontSize: 12, fontWeight: 700, textAlign: 'center',
+                    background: saveMsg.type === 'ok' ? '#ecfdf5' : '#fff1f2',
+                    color:      saveMsg.type === 'ok' ? '#059669'  : '#dc2626',
+                    border:    `1px solid ${saveMsg.type === 'ok' ? '#a7f3d0' : '#fecaca'}` }}>
+                    {saveMsg.text}
+                  </div>
+                )}
               </div>
             </>
           )}

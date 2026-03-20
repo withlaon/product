@@ -72,7 +72,7 @@ export function fmtDateShort(d: string) {
 ── */
 export async function syncProductQty(
   _products: PmProduct[],   // fallback용 (fresh fetch 실패 시)
-  rows: { prodId: string; optName: string; orderedDelta: number; receivedDelta: number }[]
+  rows: { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }[]
 ) {
   const grouped: Record<string, typeof rows> = {}
   for (const r of rows) {
@@ -93,7 +93,11 @@ export async function syncProductQty(
       ?? []
 
     const updatedOpts = baseOpts.map((opt: PmOption) => {
-      const u = updates.find(u => u.optName === opt.name)
+      // 바코드 우선, 없으면 옵션명으로 매칭
+      const u = updates.find(u =>
+        (u.barcode && u.barcode === opt.barcode) ||
+        (!u.barcode && u.optName === opt.name)
+      )
       if (!u) return opt
       const newOrdered  = Math.max(0, (opt.ordered || 0) + u.orderedDelta)
       const prevStock   = opt.current_stock !== undefined ? opt.current_stock : Math.max(0, (opt.received||0)-(opt.sold||0))
