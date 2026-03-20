@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import Link from 'next/link'
 import {
   Package, ShoppingCart, AlertTriangle, TrendingUp,
@@ -11,7 +11,7 @@ import type { Order, ShippedOrder } from '@/lib/orders'
 
 /* ── 헬퍼 ─────────────────────────────────────────────────── */
 interface CachedOption { name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
-interface CachedProduct { id: string; name?: string; options: CachedOption[] }
+interface CachedProduct { id: string; name?: string; status?: string; options: CachedOption[] }
 interface CsItem { id: string; status?: string; created_at?: string; [k: string]: unknown }
 
 function loadCachedProducts(): CachedProduct[] {
@@ -37,57 +37,137 @@ function daysInMonth(ym: string) {
   const [y, m] = ym.split('-').map(Number)
   return new Date(y, m, 0).getDate()
 }
+function fmtMoney(v: number) {
+  if (v >= 10000000) return `${(v/10000000).toFixed(1)}천만`
+  if (v >= 10000)    return `${Math.round(v/10000)}만`
+  return `${v.toLocaleString()}`
+}
 
-/* ── 미니 바 차트 (SVG) ───────────────────────────────────── */
-function BarChart({ data }: {
-  data: { day: number; count: number; amount: number }[]
-}) {
-  const maxCount  = Math.max(...data.map(d => d.count), 1)
-  const maxAmount = Math.max(...data.map(d => d.amount), 1)
-  const w = 560; const h = 120; const pad = 20
-  const cols = data.length
-  const barW = Math.max(4, Math.floor((w - pad * 2) / (cols * 2.2)))
-  const gap  = Math.floor((w - pad * 2) / cols)
+/* ── 선 그래프 ────────────────────────────────────────────── */
+interface ChartPoint { day: number; count: number; amount: number }
+
+function LineChart({ data }: { data: ChartPoint[] }) {
+  const [tipIdx, setTipIdx] = useState<number | null>(null)
+  const divRef = useRef<HTMLDivElement>(null)
+
+  const W = 540; const H = 140
+  const padL = 38; const padR = 52; const padT = 14; const padB = 22
+  const cW = W - padL - padR
+  const cH = H - padT - padB
+
+  const maxCnt = Math.max(...data.map(d => d.count), 1)
+  const maxAmt = Math.max(...data.map(d => d.amount), 1)
+  const cols   = data.length
+
+  const xPos = (i: number) => cols <= 1 ? padL + cW / 2 : padL + (i / (cols - 1)) * cW
+  const yCnt = (v: number) => padT + cH - (v / maxCnt) * cH
+  const yAmt = (v: number) => padT + cH - (v / maxAmt) * cH
+
+  const cntPath = data.map((d, i) => `${i===0?'M':'L'}${xPos(i).toFixed(1)},${yCnt(d.count).toFixed(1)}`).join(' ')
+  const amtPath = data.map((d, i) => `${i===0?'M':'L'}${xPos(i).toFixed(1)},${yAmt(d.amount).toFixed(1)}`).join(' ')
+
+  // 채우기 path (선 + 하단 닫기)
+  const cntFill = cntPath + ` L${xPos(cols-1).toFixed(1)},${(padT+cH).toFixed(1)} L${padL},${(padT+cH).toFixed(1)} Z`
+  const amtFill = amtPath + ` L${xPos(cols-1).toFixed(1)},${(padT+cH).toFixed(1)} L${padL},${(padT+cH).toFixed(1)} Z`
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (W / rect.width)
+    let nearest = 0; let minDist = Infinity
+    data.forEach((_, i) => { const d = Math.abs(xPos(i) - mx); if (d < minDist) { minDist = d; nearest = i } })
+    setTipIdx(nearest)
+  }
+
+  const tip = tipIdx !== null ? data[tipIdx] : null
+  const tipX = tipIdx !== null ? xPos(tipIdx) : 0
+  const tipXPct = tipX / W * 100
 
   return (
-    <svg width="100%" viewBox={`0 0 ${w} ${h + 28}`} style={{ overflow: 'visible' }}>
-      {/* 기준선 */}
-      {[0.25, 0.5, 0.75, 1].map(r => (
-        <line key={r} x1={pad} y1={h - h * r} x2={w - pad} y2={h - h * r}
-          stroke="#f1f5f9" strokeWidth={1} />
-      ))}
-      {data.map((d, i) => {
-        const x = pad + i * gap + gap / 2
-        const cH = Math.round((d.count / maxCount) * h * 0.85)
-        const aH = Math.round((d.amount / maxAmount) * h * 0.85)
-        return (
-          <g key={i}>
-            {/* 금액 바 (뒤) */}
-            {d.amount > 0 && (
-              <rect x={x - barW + 1} y={h - aH} width={barW} height={aH} rx={2}
-                fill="#818cf8" opacity={0.55} />
-            )}
-            {/* 주문수 바 (앞) */}
-            {d.count > 0 && (
-              <rect x={x} y={h - cH} width={barW} height={cH} rx={2}
-                fill="#2563eb" opacity={0.8} />
-            )}
-            {/* X축 레이블 (5일 간격) */}
-            {(d.day === 1 || d.day % 5 === 0) && (
-              <text x={x} y={h + 16} textAnchor="middle" fontSize={9} fill="#94a3b8" fontWeight={700}>
-                {d.day}
-              </text>
-            )}
-          </g>
-        )
-      })}
-      {/* 범례 */}
-      <rect x={w - 110} y={4} width={10} height={10} rx={2} fill="#2563eb" opacity={0.8} />
-      <text x={w - 96} y={13} fontSize={9} fill="#64748b" fontWeight={700}>주문수</text>
-      <rect x={w - 54} y={4} width={10} height={10} rx={2} fill="#818cf8" opacity={0.55} />
-      <text x={w - 40} y={13} fontSize={9} fill="#64748b" fontWeight={700}>매출액</text>
-    </svg>
+    <div ref={divRef} style={{ position:'relative', width:'100%' }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        style={{ width:'100%', overflow:'visible', cursor:'crosshair' }}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={() => setTipIdx(null)}
+      >
+        {/* 배경 그리드 */}
+        {[0, 0.25, 0.5, 0.75, 1].map(r => (
+          <line key={r} x1={padL} y1={padT + cH - cH*r} x2={W-padR} y2={padT + cH - cH*r}
+            stroke={r===0 ? '#e2e8f0' : '#f1f5f9'} strokeWidth={r===0 ? 1.5 : 1} />
+        ))}
+
+        {/* 매출액 영역 (뒤) */}
+        <defs>
+          <linearGradient id="amtGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#818cf8" stopOpacity={0.15} />
+            <stop offset="100%" stopColor="#818cf8" stopOpacity={0.01} />
+          </linearGradient>
+          <linearGradient id="cntGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#2563eb" stopOpacity={0.12} />
+            <stop offset="100%" stopColor="#2563eb" stopOpacity={0.01} />
+          </linearGradient>
+        </defs>
+        <path d={amtFill} fill="url(#amtGrad)" />
+        <path d={cntFill} fill="url(#cntGrad)" />
+
+        {/* 선 */}
+        <path d={amtPath} fill="none" stroke="#818cf8" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+        <path d={cntPath} fill="none" stroke="#2563eb" strokeWidth={2.5} strokeLinejoin="round" strokeLinecap="round" />
+
+        {/* 포인트 */}
+        {data.map((d, i) => d.count > 0 && (
+          <circle key={`c${i}`} cx={xPos(i)} cy={yCnt(d.count)} r={tipIdx===i?5:2.5} fill="#2563eb" stroke="#fff" strokeWidth={tipIdx===i?2:1} />
+        ))}
+        {data.map((d, i) => d.amount > 0 && (
+          <circle key={`a${i}`} cx={xPos(i)} cy={yAmt(d.amount)} r={tipIdx===i?4:2} fill="#818cf8" stroke="#fff" strokeWidth={tipIdx===i?2:1} />
+        ))}
+
+        {/* 호버 수직선 */}
+        {tipIdx !== null && (
+          <line x1={tipX} y1={padT} x2={tipX} y2={padT+cH} stroke="#64748b" strokeWidth={1} strokeDasharray="3 3" opacity={0.5} />
+        )}
+
+        {/* X축 레이블 */}
+        {data.map((d, i) => (d.day === 1 || d.day % 5 === 0) && (
+          <text key={i} x={xPos(i)} y={H-4} textAnchor="middle" fontSize={9} fill="#94a3b8" fontWeight={700}>{d.day}</text>
+        ))}
+
+        {/* 왼쪽 Y축 (주문수, 파랑) */}
+        <text x={padL-6} y={padT+4}      textAnchor="end" fontSize={9} fill="#2563eb" fontWeight={700}>{maxCnt}</text>
+        <text x={padL-6} y={padT+cH/2+4} textAnchor="end" fontSize={9} fill="#2563eb" fontWeight={600}>{Math.round(maxCnt/2)}</text>
+        <text x={padL-6} y={padT+cH+4}   textAnchor="end" fontSize={9} fill="#2563eb" fontWeight={600}>0</text>
+        <text x={padL-6} y={padT-4}      textAnchor="end" fontSize={8} fill="#2563eb" fontWeight={800}>건</text>
+
+        {/* 오른쪽 Y축 (매출, 보라) */}
+        <text x={W-padR+6} y={padT+4}      textAnchor="start" fontSize={9} fill="#818cf8" fontWeight={700}>{fmtMoney(maxAmt)}</text>
+        <text x={W-padR+6} y={padT+cH/2+4} textAnchor="start" fontSize={9} fill="#818cf8" fontWeight={600}>{fmtMoney(Math.round(maxAmt/2))}</text>
+        <text x={W-padR+6} y={padT+cH+4}   textAnchor="start" fontSize={9} fill="#818cf8" fontWeight={600}>0</text>
+        <text x={W-padR+6} y={padT-4}      textAnchor="start" fontSize={8} fill="#818cf8" fontWeight={800}>원</text>
+      </svg>
+
+      {/* 툴팁 */}
+      {tip && tipIdx !== null && (
+        <div style={{
+          position:'absolute', top:0, pointerEvents:'none', zIndex:20,
+          left: `${tipXPct > 70 ? tipXPct - 16 : tipXPct + 1}%`,
+          transform: tipXPct > 70 ? 'translateX(-100%)' : 'none',
+          background:'#0f172a', borderRadius:8, padding:'7px 11px',
+          boxShadow:'0 4px 12px rgba(0,0,0,0.25)',
+        }}>
+          <p style={{ fontSize:10, color:'#94a3b8', fontWeight:700, marginBottom:3 }}>{selMonthLabel(tip.day)}</p>
+          <p style={{ fontSize:12, color:'#60a5fa', fontWeight:800 }}>📦 {tip.count}건</p>
+          <p style={{ fontSize:12, color:'#a5b4fc', fontWeight:800 }}>💰 ₩{tip.amount.toLocaleString()}</p>
+        </div>
+      )}
+    </div>
   )
+}
+
+// chart 내부에서 쓰기 위한 전역 ref (월 표시용)
+let _selMonthForChart = ''
+function selMonthLabel(day: number) {
+  const [y, m] = _selMonthForChart.split('-')
+  return `${y}.${m}.${String(day).padStart(2,'0')}`
 }
 
 /* ── 대시보드 ─────────────────────────────────────────────── */
@@ -101,6 +181,8 @@ export default function DashboardPage() {
   const [csItems,  setCsItems]  = useState<CsItem[]>([])
   const [loading,  setLoading]  = useState(true)
   const [selMonth, setSelMonth] = useState(curYM)
+
+  _selMonthForChart = selMonth
 
   useEffect(() => {
     setOrders(loadOrders())
@@ -116,12 +198,23 @@ export default function DashboardPage() {
     orders.filter(o => o.order_date?.slice(0,7) === curYM && o.status !== 'cancelled')
           .reduce((s, o) => s + (o.total_amount ?? 0), 0),
   [orders, curYM])
-  const lowStock = useMemo(() => products.flatMap(p =>
-    p.options.filter(o => {
+
+  const lowStock = useMemo(() => products
+    .filter(p => p.status !== 'pending_delete')
+    .flatMap(p => p.options.filter(o => {
       const s = o.current_stock ?? Math.max(0,(o.received??0)-(o.sold??0))
-      return s <= 3
-    }).map(o => ({ pName: p.name??'', oName: o.name??'', stock: o.current_stock ?? Math.max(0,(o.received??0)-(o.sold??0)) }))
-  ).slice(0,4), [products])
+      return s > 0 && s <= 3
+    }).map(o => ({ pName: p.name??'', oName: o.name??'', stock: o.current_stock ?? Math.max(0,(o.received??0)-(o.sold??0)) })))
+  , [products])
+
+  const soldOut = useMemo(() => products
+    .filter(p => p.status !== 'pending_delete')
+    .flatMap(p => p.options.filter(o => {
+      const s = o.current_stock ?? Math.max(0,(o.received??0)-(o.sold??0))
+      return s === 0
+    }).map(o => ({ pName: p.name??'', oName: o.name??'' })))
+    .slice(0, 5)
+  , [products])
 
   /* ── 배송 현황 ── */
   const needInvoice    = useMemo(() => orders.filter(o => !o.tracking_number && o.status !== 'cancelled' && o.status !== 'delivered').length, [orders])
@@ -129,24 +222,20 @@ export default function DashboardPage() {
   const deliveredToday = useMemo(() => shipped.filter(o => (o.shipped_at??'').slice(0,10) === today).length, [shipped, today])
   const totalShipped   = useMemo(() => shipped.length, [shipped])
 
-  /* ── 월별 일자별 집계 ── */
+  /* ── 월별 차트 데이터 ── */
   const chartData = useMemo(() => {
     const days = daysInMonth(selMonth)
-    const monthOrders = orders.filter(o => o.order_date?.slice(0,7) === selMonth && o.status !== 'cancelled')
+    const mo = orders.filter(o => o.order_date?.slice(0,7) === selMonth && o.status !== 'cancelled')
     return Array.from({ length: days }, (_, i) => {
-      const day  = i + 1
+      const day = i + 1
       const date = `${selMonth}-${String(day).padStart(2,'0')}`
-      const dayOrders = monthOrders.filter(o => o.order_date === date)
-      return {
-        day,
-        count:  dayOrders.length,
-        amount: dayOrders.reduce((s,o) => s + (o.total_amount ?? 0), 0),
-      }
+      const dayO = mo.filter(o => o.order_date === date)
+      return { day, count: dayO.length, amount: dayO.reduce((s,o) => s+(o.total_amount??0), 0) }
     })
   }, [orders, selMonth])
 
-  const monthTotal   = useMemo(() => chartData.reduce((s,d) => s + d.count, 0), [chartData])
-  const monthRevSel  = useMemo(() => chartData.reduce((s,d) => s + d.amount, 0), [chartData])
+  const monthTotal  = useMemo(() => chartData.reduce((s,d) => s+d.count, 0), [chartData])
+  const monthRevSel = useMemo(() => chartData.reduce((s,d) => s+d.amount, 0), [chartData])
 
   /* ── CS ── */
   const openCs = useMemo(() => csItems.filter(c => c.status !== 'resolved' && c.status !== 'closed'), [csItems])
@@ -160,32 +249,32 @@ export default function DashboardPage() {
   const maxShip = Math.max(...shippingStats.map(s => s.value), 1)
 
   if (loading) return (
-    <div className="pm-page" style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:300 }}>
+    <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%' }}>
       <RefreshCw size={22} style={{ animation:'spin 1s linear infinite', color:'#94a3b8' }} />
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
     </div>
   )
 
   return (
-    <div style={{ display:'flex', flexDirection:'column', gap:12, height:'100%', overflow:'hidden' }}>
+    <div style={{ display:'flex', flexDirection:'column', gap:10, height:'100%', overflow:'hidden' }}>
 
-      {/* ── KPI 4칸 ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:10, flexShrink:0 }}>
+      {/* ── KPI ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, flexShrink:0 }}>
         {[
-          { title:'전체 상품',  value: products.length ? `${products.length}개` : '0', sub:`재고부족 ${lowStock.length}건`, icon:Package,       bg:'#eff6ff', ic:'#2563eb', href:'/products' },
-          { title:'오늘 주문',  value: todayOrders.length ? `${todayOrders.length}건` : '0', sub: todayOrders.length ? `미처리 ${todayOrders.filter(o=>o.status==='pending'||o.status==='confirmed').length}건` : '주문없음', icon:ShoppingCart, bg:'#ecfdf5', ic:'#059669', href:'/product-transfer' },
-          { title:'재고 부족',  value: lowStock.length ? `${lowStock.length}개` : '0', sub: lowStock.length ? '3개 이하 옵션' : '재고 정상', icon:AlertTriangle, bg:'#fffbeb', ic:'#d97706', href:'/inventory' },
-          { title:'이번달 매출', value: monthRevenue > 0 ? `₩${(monthRevenue/10000).toFixed(0)}만` : '₩0', sub:`${curYM.replace('-','년 ')}월`, icon:TrendingUp, bg:'#f5f3ff', ic:'#7c3aed', href:'/product-transfer' },
+          { title:'전체 상품',  value: products.length?`${products.length}개`:'0', sub:`재고부족 ${lowStock.length} · 품절 ${soldOut.length}`, icon:Package,       bg:'#eff6ff', ic:'#2563eb', href:'/products' },
+          { title:'오늘 주문',  value: todayOrders.length?`${todayOrders.length}건`:'0', sub: todayOrders.length?`미처리 ${todayOrders.filter(o=>o.status==='pending'||o.status==='confirmed').length}건`:'주문없음', icon:ShoppingCart, bg:'#ecfdf5', ic:'#059669', href:'/product-transfer' },
+          { title:'재고 부족',  value: lowStock.length?`${lowStock.length}개`:'0', sub: lowStock.length?'3개 이하 옵션':'재고 정상', icon:AlertTriangle, bg:'#fffbeb', ic:'#d97706', href:'/inventory' },
+          { title:'이번달 매출', value: monthRevenue>0?`₩${fmtMoney(monthRevenue)}`:'₩0', sub:`${curYM.replace('-','년 ')}월`, icon:TrendingUp, bg:'#f5f3ff', ic:'#7c3aed', href:'/product-transfer' },
         ].map(s => (
           <Link key={s.title} href={s.href} style={{ textDecoration:'none' }}>
-            <div className="pm-card" style={{ padding:'12px 16px', cursor:'pointer', display:'flex', alignItems:'center', gap:12 }}>
-              <div style={{ width:38, height:38, borderRadius:12, background:s.bg, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <s.icon size={18} color={s.ic} strokeWidth={2} />
+            <div className="pm-card" style={{ padding:'10px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:36,height:36,borderRadius:11,background:s.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+                <s.icon size={17} color={s.ic} strokeWidth={2} />
               </div>
               <div>
-                <p style={{ fontSize:10, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.05em' }}>{s.title}</p>
-                <p style={{ fontSize:22, fontWeight:900, color:'#0f172a', lineHeight:1.1 }}>{s.value}</p>
-                <p style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600 }}>{s.sub}</p>
+                <p style={{ fontSize:10,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.05em' }}>{s.title}</p>
+                <p style={{ fontSize:20,fontWeight:900,color:'#0f172a',lineHeight:1.1 }}>{s.value}</p>
+                <p style={{ fontSize:10,color:'#94a3b8',fontWeight:600 }}>{s.sub}</p>
               </div>
             </div>
           </Link>
@@ -193,127 +282,149 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 중단: 차트 + 우측 패널 ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 280px', gap:12, flex:1, minHeight:0 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 260px', gap:10, flex:1, minHeight:0 }}>
 
-        {/* 월별 주문 차트 */}
+        {/* 월별 선 그래프 */}
         <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
-          {/* 헤더 */}
-          <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-            <div style={{ width:26, height:26, borderRadius:8, background:'#eff6ff', display:'flex', alignItems:'center', justifyContent:'center' }}>
-              <ShoppingCart size={13} color="#2563eb" />
+          <div style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+            <div style={{ width:24,height:24,borderRadius:8,background:'#eff6ff',display:'flex',alignItems:'center',justifyContent:'center' }}>
+              <ShoppingCart size={12} color="#2563eb" />
             </div>
-            <span style={{ fontSize:13.5, fontWeight:800, color:'#0f172a' }}>월별 주문 현황</span>
+            <span style={{ fontSize:13,fontWeight:800,color:'#0f172a' }}>월별 주문 현황</span>
+            {/* 범례 */}
+            <div style={{ display:'flex', gap:12, marginLeft:4 }}>
+              <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#2563eb', fontWeight:700 }}>
+                <span style={{ width:16,height:2.5,background:'#2563eb',borderRadius:99,display:'inline-block' }}/> 주문수
+              </span>
+              <span style={{ display:'flex', alignItems:'center', gap:4, fontSize:10, color:'#818cf8', fontWeight:700 }}>
+                <span style={{ width:16,height:2.5,background:'#818cf8',borderRadius:99,display:'inline-block' }}/> 매출
+              </span>
+            </div>
+            {/* 월 네비 */}
             <div style={{ display:'flex', alignItems:'center', gap:4, marginLeft:'auto' }}>
-              <button onClick={() => setSelMonth(m => shiftMonth(m, -1))}
-                style={{ width:26, height:26, borderRadius:7, border:'1.5px solid #e2e8f0', background:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <ChevronLeft size={13} />
+              <button onClick={() => setSelMonth(m => shiftMonth(m,-1))}
+                style={{ width:24,height:24,borderRadius:6,border:'1.5px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+                <ChevronLeft size={12} />
               </button>
-              <span style={{ fontSize:13, fontWeight:800, color:'#0f172a', minWidth:80, textAlign:'center' }}>
+              <span style={{ fontSize:12,fontWeight:800,color:'#0f172a',minWidth:72,textAlign:'center' }}>
                 {selMonth.replace('-','년 ')}월
               </span>
-              <button onClick={() => setSelMonth(m => shiftMonth(m, 1))}
+              <button onClick={() => setSelMonth(m => shiftMonth(m,1))}
                 disabled={selMonth >= curYM}
-                style={{ width:26, height:26, borderRadius:7, border:'1.5px solid #e2e8f0', background:'#fff', cursor: selMonth >= curYM ? 'not-allowed' : 'pointer', opacity: selMonth >= curYM ? 0.4 : 1, display:'flex', alignItems:'center', justifyContent:'center' }}>
-                <ChevronRight size={13} />
+                style={{ width:24,height:24,borderRadius:6,border:'1.5px solid #e2e8f0',background:'#fff',cursor:selMonth>=curYM?'not-allowed':'pointer',opacity:selMonth>=curYM?0.4:1,display:'flex',alignItems:'center',justifyContent:'center' }}>
+                <ChevronRight size={12} />
               </button>
             </div>
-            {/* 월 합계 */}
-            <div style={{ display:'flex', gap:16, marginLeft:12 }}>
+            <div style={{ display:'flex', gap:14, marginLeft:8 }}>
               <div style={{ textAlign:'right' }}>
-                <p style={{ fontSize:10, color:'#94a3b8', fontWeight:700 }}>주문수</p>
-                <p style={{ fontSize:15, fontWeight:900, color:'#2563eb', lineHeight:1.2 }}>{monthTotal}건</p>
+                <p style={{ fontSize:9,color:'#94a3b8',fontWeight:700 }}>주문수</p>
+                <p style={{ fontSize:14,fontWeight:900,color:'#2563eb',lineHeight:1.2 }}>{monthTotal}건</p>
               </div>
               <div style={{ textAlign:'right' }}>
-                <p style={{ fontSize:10, color:'#94a3b8', fontWeight:700 }}>매출</p>
-                <p style={{ fontSize:15, fontWeight:900, color:'#7c3aed', lineHeight:1.2 }}>
-                  {monthRevSel > 0 ? `₩${(monthRevSel/10000).toFixed(0)}만` : '₩0'}
-                </p>
+                <p style={{ fontSize:9,color:'#94a3b8',fontWeight:700 }}>매출</p>
+                <p style={{ fontSize:14,fontWeight:900,color:'#7c3aed',lineHeight:1.2 }}>₩{fmtMoney(monthRevSel)}</p>
               </div>
             </div>
           </div>
-          {/* 차트 */}
-          <div style={{ flex:1, padding:'12px 16px 8px', overflow:'hidden' }}>
+          <div style={{ flex:1, padding:'10px 14px 4px', overflow:'hidden', display:'flex', alignItems:'center' }}>
             {monthTotal === 0 ? (
-              <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center', color:'#cbd5e1' }}>
-                <div style={{ textAlign:'center' }}>
-                  <ShoppingCart size={28} style={{ opacity:0.15, margin:'0 auto 8px' }} />
-                  <p style={{ fontSize:12.5, fontWeight:700 }}>{selMonth.replace('-','년 ')}월 주문 없음</p>
-                </div>
+              <div style={{ width:'100%',textAlign:'center',color:'#cbd5e1' }}>
+                <ShoppingCart size={24} style={{ opacity:0.15, margin:'0 auto 6px' }} />
+                <p style={{ fontSize:12,fontWeight:700 }}>{selMonth.replace('-','년 ')}월 주문 없음</p>
               </div>
             ) : (
-              <BarChart data={chartData} />
+              <LineChart data={chartData} />
             )}
           </div>
         </div>
 
-        {/* 우측: 재고부족 + CS + 배송 */}
-        <div style={{ display:'flex', flexDirection:'column', gap:10, minHeight:0, overflow:'hidden' }}>
+        {/* 우측: 재고부족 + 품절 + CS */}
+        <div style={{ display:'flex', flexDirection:'column', gap:8, minHeight:0, overflow:'hidden' }}>
+
           {/* 재고 부족 */}
-          <div className="pm-card" style={{ flex:'0 0 auto', overflow:'hidden' }}>
+          <div className="pm-card" style={{ overflow:'hidden', flexShrink:0 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px', borderBottom:'1px solid #f1f5f9' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <AlertTriangle size={13} color="#d97706" />
-                <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>재고 부족</span>
-                <span style={{ background: lowStock.length > 0 ? '#fef3c7' : '#f1f5f9', color: lowStock.length > 0 ? '#d97706' : '#94a3b8', fontSize:10, fontWeight:800, padding:'1px 7px', borderRadius:99 }}>
-                  {lowStock.length}
-                </span>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <AlertTriangle size={14} color="#d97706" />
+                <span style={{ fontSize:13.5,fontWeight:900,color:'#0f172a' }}>재고 부족</span>
+                <span style={{ background:lowStock.length>0?'#fef3c7':'#f1f5f9', color:lowStock.length>0?'#d97706':'#94a3b8', fontSize:11,fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{lowStock.length}</span>
               </div>
-              <Link href="/inventory" style={{ fontSize:11, fontWeight:700, color:'#2563eb', textDecoration:'none' }}>보기→</Link>
+              <Link href="/inventory" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
             </div>
-            {lowStock.length === 0 ? (
-              <p style={{ padding:'10px 14px', fontSize:11.5, color:'#94a3b8', fontWeight:600 }}>재고 부족 없음</p>
-            ) : lowStock.map((item, i) => (
-              <div key={i} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'7px 14px', borderBottom:'1px solid #f8fafc' }}>
-                <div style={{ overflow:'hidden' }}>
-                  <p style={{ fontSize:11.5, fontWeight:700, color:'#0f172a', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>{item.pName}</p>
-                  <p style={{ fontSize:10.5, color:'#94a3b8' }}>{item.oName}</p>
+            {lowStock.length === 0
+              ? <p style={{ padding:'8px 14px',fontSize:12,color:'#94a3b8',fontWeight:600 }}>재고 부족 없음</p>
+              : lowStock.slice(0,3).map((item,i) => (
+                <div key={i} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 14px',borderBottom:'1px solid #f8fafc' }}>
+                  <div style={{ overflow:'hidden' }}>
+                    <p style={{ fontSize:12.5,fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
+                    <p style={{ fontSize:11,color:'#94a3b8' }}>{item.oName}</p>
+                  </div>
+                  <span style={{ fontSize:18,fontWeight:900,color:item.stock<=1?'#dc2626':'#d97706',flexShrink:0,marginLeft:6 }}>{item.stock}</span>
                 </div>
-                <span style={{ fontSize:16, fontWeight:900, color: item.stock === 0 ? '#dc2626' : '#d97706', flexShrink:0, marginLeft:6 }}>{item.stock}</span>
+              ))}
+          </div>
+
+          {/* 품절 */}
+          <div className="pm-card" style={{ overflow:'hidden', flexShrink:0 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px', borderBottom:'1px solid #f1f5f9' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <Package size={14} color="#dc2626" />
+                <span style={{ fontSize:13.5,fontWeight:900,color:'#0f172a' }}>품절</span>
+                <span style={{ background:soldOut.length>0?'#fee2e2':'#f1f5f9', color:soldOut.length>0?'#dc2626':'#94a3b8', fontSize:11,fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{soldOut.length}</span>
               </div>
-            ))}
+              <Link href="/inventory" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
+            </div>
+            {soldOut.length === 0
+              ? <p style={{ padding:'8px 14px',fontSize:12,color:'#94a3b8',fontWeight:600 }}>품절 없음</p>
+              : soldOut.slice(0,3).map((item,i) => (
+                <div key={i} style={{ padding:'7px 14px',borderBottom:'1px solid #f8fafc' }}>
+                  <p style={{ fontSize:12.5,fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
+                  <p style={{ fontSize:11,color:'#94a3b8' }}>{item.oName}</p>
+                </div>
+              ))}
           </div>
 
           {/* 미처리 CS */}
-          <div className="pm-card" style={{ flex:'0 0 auto', overflow:'hidden' }}>
+          <div className="pm-card" style={{ overflow:'hidden', flex:1 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px', borderBottom:'1px solid #f1f5f9' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <MessageSquare size={13} color="#be123c" />
-                <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>미처리 CS</span>
-                <span style={{ background: openCs.length > 0 ? '#fee2e2' : '#f1f5f9', color: openCs.length > 0 ? '#dc2626' : '#94a3b8', fontSize:10, fontWeight:800, padding:'1px 7px', borderRadius:99 }}>
-                  {openCs.length}
-                </span>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                <MessageSquare size={14} color="#be123c" />
+                <span style={{ fontSize:13.5,fontWeight:900,color:'#0f172a' }}>미처리 CS</span>
+                <span style={{ background:openCs.length>0?'#fee2e2':'#f1f5f9', color:openCs.length>0?'#dc2626':'#94a3b8', fontSize:11,fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{openCs.length}</span>
               </div>
-              <Link href="/cs-management" style={{ fontSize:11, fontWeight:700, color:'#2563eb', textDecoration:'none' }}>보기→</Link>
+              <Link href="/cs-management" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
             </div>
-            {openCs.length === 0 ? (
-              <p style={{ padding:'10px 14px', fontSize:11.5, color:'#94a3b8', fontWeight:600 }}>처리할 CS 없음</p>
-            ) : openCs.slice(0,3).map((c, i) => (
-              <div key={i} style={{ padding:'7px 14px', borderBottom:'1px solid #f8fafc' }}>
-                <p style={{ fontSize:11.5, fontWeight:700, color:'#0f172a' }}>{String(c['customer_name'] ?? c['title'] ?? `CS #${i+1}`)}</p>
-                <p style={{ fontSize:10.5, color:'#94a3b8' }}>{c.created_at?.slice(0,10) ?? ''}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* 배송 현황 (세로) */}
-          <div className="pm-card" style={{ flex:1, overflow:'hidden', display:'flex', flexDirection:'column' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:8, padding:'9px 14px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-              <Truck size={13} color="#7c3aed" />
-              <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>배송 현황</span>
-              <Link href="/product-edit-transfer/print" style={{ fontSize:11, fontWeight:700, color:'#2563eb', textDecoration:'none', marginLeft:'auto' }}>송장관리→</Link>
-            </div>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8, padding:10, flex:1 }}>
-              {shippingStats.map(s => (
-                <div key={s.label} style={{ borderRadius:12, padding:'10px 12px', background:s.bg }}>
-                  <p style={{ fontSize:10.5, fontWeight:700, color:'#475569' }}>{s.label}</p>
-                  <p style={{ fontSize:22, fontWeight:900, color:s.color, lineHeight:1.2 }}>{s.value}</p>
-                  <div style={{ width:'100%', height:3, background:'rgba(0,0,0,0.06)', borderRadius:99, marginTop:6 }}>
-                    <div style={{ width:`${Math.round((s.value/maxShip)*100)}%`, height:'100%', background:s.bar, borderRadius:99, transition:'width 600ms ease' }} />
-                  </div>
+            {openCs.length === 0
+              ? <p style={{ padding:'8px 14px',fontSize:12,color:'#94a3b8',fontWeight:600 }}>처리할 CS 없음</p>
+              : openCs.slice(0,3).map((c,i) => (
+                <div key={i} style={{ padding:'7px 14px',borderBottom:'1px solid #f8fafc' }}>
+                  <p style={{ fontSize:12.5,fontWeight:700,color:'#0f172a' }}>{String(c['customer_name']??c['title']??`CS #${i+1}`)}</p>
+                  <p style={{ fontSize:10.5,color:'#94a3b8' }}>{c.created_at?.slice(0,10)??''}</p>
                 </div>
               ))}
-            </div>
           </div>
+        </div>
+      </div>
+
+      {/* ── 하단: 배송 현황 ── */}
+      <div className="pm-card" style={{ flexShrink:0, padding:0, overflow:'hidden' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 16px', borderBottom:'1px solid #f1f5f9' }}>
+          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+            <Truck size={13} color="#7c3aed" />
+            <span style={{ fontSize:13,fontWeight:800,color:'#0f172a' }}>배송 현황</span>
+          </div>
+          <Link href="/product-edit-transfer/print" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>송장등록관리→</Link>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, padding:'10px 14px' }}>
+          {shippingStats.map(s => (
+            <div key={s.label} style={{ borderRadius:12,padding:'10px 14px',background:s.bg }}>
+              <p style={{ fontSize:11,fontWeight:700,color:'#475569' }}>{s.label}</p>
+              <p style={{ fontSize:26,fontWeight:900,color:s.color,lineHeight:1.2 }}>{s.value}</p>
+              <div style={{ width:'100%',height:3,background:'rgba(0,0,0,0.06)',borderRadius:99,marginTop:6 }}>
+                <div style={{ width:`${Math.round((s.value/maxShip)*100)}%`,height:'100%',background:s.bar,borderRadius:99,transition:'width 600ms ease' }} />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
 
