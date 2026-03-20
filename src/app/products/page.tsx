@@ -477,7 +477,6 @@ async function pmGetPageImages(ids: string[]): Promise<Record<string, string[]>>
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!supabaseUrl || !supabaseKey) {
-    // fallback: API route 경유
     try {
       const res = await fetch(`${PM_API}?imageIds=${ids.join(',')}`)
       if (!res.ok) return {}
@@ -491,15 +490,9 @@ async function pmGetPageImages(ids: string[]): Promise<Record<string, string[]>>
     } catch { return {} }
   }
   try {
-    // Supabase REST API 직접 호출 (브라우저 → Supabase, 서버리스 없음)
     const res = await fetch(
       `${supabaseUrl}/rest/v1/pm_products?select=id,options&id=in.(${ids.join(',')})`,
-      {
-        headers: {
-          apikey:        supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-        },
-      }
+      { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
     )
     if (!res.ok) return {}
     const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
@@ -509,6 +502,29 @@ async function pmGetPageImages(ids: string[]): Promise<Record<string, string[]>>
     }
     if (Object.keys(result).length > 0) mergeImgCache(result)
     return result
+  } catch { return {} }
+}
+
+/** 단일 상품 이미지 fetch (캐시 미스 시 Supabase 직접 호출) */
+async function pmGetOneImage(id: string): Promise<Record<string, string[]>> {
+  // localStorage 캐시 먼저 확인
+  const cached = loadImgCache()
+  if (id in cached) return { [id]: cached[id] }
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!supabaseUrl || !supabaseKey) return pmGetPageImages([id])
+  try {
+    const res = await fetch(
+      `${supabaseUrl}/rest/v1/pm_products?select=id,options&id=eq.${id}`,
+      { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+    )
+    if (!res.ok) return {}
+    const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
+    if (!Array.isArray(data) || data.length === 0) return {}
+    const imgs = (data[0].options ?? []).map(o => o.image ?? '')
+    mergeImgCache({ [id]: imgs })
+    return { [id]: imgs }
   } catch { return {} }
 }
 
@@ -919,52 +935,53 @@ export default function ProductsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // 현재 페이지 상품의 옵션 이미지 로드
-  // - localStorage 캐시에 있으면 즉시 표시 (pageImages 초기값에 이미 포함)
-  // - 캐시에 없는 상품만 API 배치 호출 → 가져온 후 localStorage에 저장
+  // 현재 페이지 이미지 로드: 1개씩 병렬 fetch → 빠른 것부터 바로 표시 (점진적 로딩)
   useEffect(() => {
     if (paginated.length === 0) return
     const toLoad = paginated
       .filter(p => !(p.id in pageImages) && !loadingIdsRef.current.has(p.id))
       .map(p => p.id)
     if (toLoad.length === 0) return
-    toLoad.forEach(id => loadingIdsRef.current.add(id))
+
     let cancelled = false
-    pmGetPageImages(toLoad).then(images => {
-      toLoad.forEach(id => loadingIdsRef.current.delete(id))
-      if (!cancelled && Object.keys(images).length > 0) {
-        setPageImages(prev => ({ ...prev, ...images }))
-      }
+    toLoad.forEach(id => {
+      loadingIdsRef.current.add(id)
+      pmGetOneImage(id).then(images => {
+        loadingIdsRef.current.delete(id)
+        if (!cancelled && Object.keys(images).length > 0) {
+          setPageImages(prev => ({ ...prev, ...images }))
+        }
+      })
     })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, products.length])
 
-  // 다음 페이지 이미지 사전 로딩 (현재 페이지 로딩 후 800ms 뒤)
+  // 다음 페이지 이미지 사전 로딩 (현재 페이지 로딩 완료 후 600ms)
   useEffect(() => {
     if (page >= totalPages) return
     const timer = setTimeout(() => {
-      const nextPageProducts = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
-      const notCached = nextPageProducts
-        .map(p => p.id)
-        .filter(id => !loadingIdsRef.current.has(id))
-      if (notCached.length === 0) return
-      // localStorage 캐시 직접 확인해서 이미 캐시된 항목 제외
       const cached = loadImgCache()
-      const toPreload = notCached.filter(id => !(id in cached))
-      if (toPreload.length === 0) {
-        // 캐시에 다 있으면 state만 업데이트
+      const nextPageIds = filtered
+        .slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE)
+        .map(p => p.id)
+      // 캐시에 있는 항목은 state에만 반영
+      const inCache = nextPageIds.filter(id => id in cached)
+      if (inCache.length > 0) {
         const result: Record<string, string[]> = {}
-        notCached.forEach(id => { if (id in cached) result[id] = cached[id] })
-        if (Object.keys(result).length > 0) setPageImages(prev => ({ ...prev, ...result }))
-        return
+        inCache.forEach(id => { result[id] = cached[id] })
+        setPageImages(prev => ({ ...prev, ...result }))
       }
-      toPreload.forEach(id => loadingIdsRef.current.add(id))
-      pmGetPageImages(toPreload).then(images => {
-        toPreload.forEach(id => loadingIdsRef.current.delete(id))
-        if (Object.keys(images).length > 0) setPageImages(prev => ({ ...prev, ...images }))
+      // 캐시 미스 항목만 Supabase 호출 (병렬)
+      const toPreload = nextPageIds.filter(id => !(id in cached) && !loadingIdsRef.current.has(id))
+      toPreload.forEach(id => {
+        loadingIdsRef.current.add(id)
+        pmGetOneImage(id).then(images => {
+          loadingIdsRef.current.delete(id)
+          if (Object.keys(images).length > 0) setPageImages(prev => ({ ...prev, ...images }))
+        })
       })
-    }, 800)
+    }, 600)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, products.length, totalPages])

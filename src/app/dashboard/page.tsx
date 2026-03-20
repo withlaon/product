@@ -47,13 +47,30 @@ function fmtMoney(v: number) {
 interface ChartPoint { day: number; count: number; amount: number }
 
 function LineChart({ data }: { data: ChartPoint[] }) {
-  const [tipIdx, setTipIdx] = useState<number | null>(null)
-  const divRef = useRef<HTMLDivElement>(null)
+  const [tipIdx, setTipIdx]   = useState<number | null>(null)
+  const [size,   setSize]     = useState({ w: 460, h: 140 })
+  const containerRef          = useRef<HTMLDivElement>(null)
 
-  const W = 540; const H = 96
-  const padL = 30; const padR = 40; const padT = 10; const padB = 16
-  const cW = W - padL - padR
-  const cH = H - padT - padB
+  // 컨테이너 크기 측정 → SVG viewBox를 실제 픽셀에 맞춤 (화면 크기 무관하게 고정 비율)
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      if (width > 10 && height > 10) setSize({ w: Math.round(width), h: Math.round(height) })
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+
+  const W = size.w; const H = size.h
+  // 폰트 크기는 실제 px 기준 (viewBox = 실제 크기이므로 그대로 적용)
+  const fs    = Math.min(11, Math.max(8, H * 0.09))
+  const padL  = Math.round(fs * 4.5)
+  const padR  = Math.round(fs * 4.8)
+  const padT  = 12; const padB = Math.round(fs * 1.9)
+  const cW    = W - padL - padR
+  const cH    = H - padT - padB
 
   const maxCnt = Math.max(...data.map(d => d.count), 1)
   const maxAmt = Math.max(...data.map(d => d.amount), 1)
@@ -65,7 +82,6 @@ function LineChart({ data }: { data: ChartPoint[] }) {
 
   const cntPath = data.map((d, i) => `${i===0?'M':'L'}${xPos(i).toFixed(1)},${yCnt(d.count).toFixed(1)}`).join(' ')
   const amtPath = data.map((d, i) => `${i===0?'M':'L'}${xPos(i).toFixed(1)},${yAmt(d.amount).toFixed(1)}`).join(' ')
-
   const cntFill = cntPath + ` L${xPos(cols-1).toFixed(1)},${(padT+cH).toFixed(1)} L${padL},${(padT+cH).toFixed(1)} Z`
   const amtFill = amtPath + ` L${xPos(cols-1).toFixed(1)},${(padT+cH).toFixed(1)} L${padL},${(padT+cH).toFixed(1)} Z`
 
@@ -77,84 +93,103 @@ function LineChart({ data }: { data: ChartPoint[] }) {
     setTipIdx(nearest)
   }
 
-  const tip = tipIdx !== null ? data[tipIdx] : null
-  const tipX = tipIdx !== null ? xPos(tipIdx) : 0
-  const tipXPct = tipX / W * 100
+  const tip      = tipIdx !== null ? data[tipIdx] : null
+  const tipX     = tipIdx !== null ? xPos(tipIdx) : 0
+  const tipXPct  = tipX / W * 100
+  const dotR     = Math.max(2, H * 0.018)
+  const dotRHov  = dotR + 2
+  const sw       = Math.max(1, H * 0.013)   // 주문수 선 두께 (높이 기반)
+  const swAmt    = Math.max(0.8, H * 0.009) // 매출 선 두께
 
   return (
-    <div ref={divRef} style={{ position:'relative', width:'100%' }}>
+    <div ref={containerRef} style={{ position:'relative', width:'100%', height:'100%' }}>
       <svg
         viewBox={`0 0 ${W} ${H}`}
-        style={{ width:'100%', overflow:'visible', cursor:'crosshair' }}
+        width="100%" height="100%"
+        style={{ display:'block', overflow:'visible', cursor:'crosshair' }}
         onMouseMove={handleMouseMove}
         onMouseLeave={() => setTipIdx(null)}
       >
         <defs>
           <linearGradient id="amtGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#818cf8" stopOpacity={0.10} />
-            <stop offset="100%" stopColor="#818cf8" stopOpacity={0.01} />
+            <stop offset="0%" stopColor="#a78bfa" stopOpacity={0.18} />
+            <stop offset="100%" stopColor="#a78bfa" stopOpacity={0} />
           </linearGradient>
           <linearGradient id="cntGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#2563eb" stopOpacity={0.08} />
-            <stop offset="100%" stopColor="#2563eb" stopOpacity={0.01} />
+            <stop offset="0%" stopColor="#3b82f6" stopOpacity={0.14} />
+            <stop offset="100%" stopColor="#3b82f6" stopOpacity={0} />
           </linearGradient>
         </defs>
 
-        {/* 배경 그리드 */}
-        {[0, 0.5, 1].map(r => (
-          <line key={r} x1={padL} y1={padT + cH - cH*r} x2={W-padR} y2={padT + cH - cH*r}
-            stroke={r===0 ? '#e2e8f0' : '#f1f5f9'} strokeWidth={r===0 ? 1 : 0.8} />
+        {/* 그리드 (0%, 25%, 50%, 75%, 100%) */}
+        {[0, 0.25, 0.5, 0.75, 1].map(r => (
+          <line key={r}
+            x1={padL} y1={padT + cH*(1-r)} x2={W-padR} y2={padT + cH*(1-r)}
+            stroke={r===0 ? '#cbd5e1' : '#f1f5f9'}
+            strokeWidth={r===0 ? 1 : 0.7}
+          />
         ))}
 
         {/* 면적 */}
         <path d={amtFill} fill="url(#amtGrad)" />
         <path d={cntFill} fill="url(#cntGrad)" />
 
-        {/* 선: 주문수=실선, 매출=점선 */}
-        <path d={amtPath} fill="none" stroke="#818cf8" strokeWidth={1} strokeLinejoin="round" strokeLinecap="round" strokeDasharray="5 3" />
-        <path d={cntPath} fill="none" stroke="#2563eb" strokeWidth={1.5} strokeLinejoin="round" strokeLinecap="round" />
+        {/* 매출: 보라 점선 */}
+        <path d={amtPath} fill="none" stroke="#a78bfa" strokeWidth={swAmt}
+          strokeLinejoin="round" strokeLinecap="round" strokeDasharray={`${sw*3} ${sw*2}`} />
+        {/* 주문수: 파란 실선 */}
+        <path d={cntPath} fill="none" stroke="#3b82f6" strokeWidth={sw}
+          strokeLinejoin="round" strokeLinecap="round" />
 
-        {/* 포인트 */}
+        {/* 데이터 포인트 */}
         {data.map((d, i) => d.count > 0 && (
-          <circle key={`c${i}`} cx={xPos(i)} cy={yCnt(d.count)} r={tipIdx===i?4:2} fill="#2563eb" stroke="#fff" strokeWidth={tipIdx===i?1.5:0.8} />
+          <circle key={`c${i}`} cx={xPos(i)} cy={yCnt(d.count)}
+            r={tipIdx===i ? dotRHov : dotR}
+            fill="#3b82f6" stroke="#fff" strokeWidth={tipIdx===i ? 1.5 : 0.8} />
         ))}
         {data.map((d, i) => d.amount > 0 && (
-          <circle key={`a${i}`} cx={xPos(i)} cy={yAmt(d.amount)} r={tipIdx===i?3:1.5} fill="#818cf8" stroke="#fff" strokeWidth={tipIdx===i?1.5:0.8} />
+          <circle key={`a${i}`} cx={xPos(i)} cy={yAmt(d.amount)}
+            r={tipIdx===i ? dotRHov-1 : dotR-0.5}
+            fill="#a78bfa" stroke="#fff" strokeWidth={tipIdx===i ? 1.5 : 0.8} />
         ))}
 
         {/* 호버 수직선 */}
         {tipIdx !== null && (
-          <line x1={tipX} y1={padT} x2={tipX} y2={padT+cH} stroke="#94a3b8" strokeWidth={0.8} strokeDasharray="3 2" />
+          <line x1={tipX} y1={padT} x2={tipX} y2={padT+cH}
+            stroke="#94a3b8" strokeWidth={0.8} strokeDasharray="3 2" opacity={0.6} />
         )}
 
-        {/* X축 레이블 */}
+        {/* X축 날짜 레이블 */}
         {data.map((d, i) => (d.day === 1 || d.day % 5 === 0) && (
-          <text key={i} x={xPos(i)} y={H-2} textAnchor="middle" fontSize={7.5} fill="#94a3b8" fontWeight={600}>{d.day}</text>
+          <text key={i} x={xPos(i)} y={H - padB*0.15} textAnchor="middle"
+            fontSize={fs * 0.82} fill="#94a3b8" fontWeight={500}>{d.day}</text>
         ))}
 
-        {/* 왼쪽 Y축 (주문수, 파랑) - 최대값과 0만 */}
-        <text x={padL-3} y={padT+5}    textAnchor="end" fontSize={7.5} fill="#2563eb" fontWeight={700}>{maxCnt}</text>
-        <text x={padL-3} y={padT+cH+4} textAnchor="end" fontSize={7} fill="#2563eb" opacity={0.5}>0</text>
-        <text x={padL-3} y={padT-2}    textAnchor="end" fontSize={6.5} fill="#2563eb" fontWeight={800}>건</text>
+        {/* 왼쪽 Y축 (주문수) */}
+        <text x={padL-3} y={padT+fs*0.9}    textAnchor="end" fontSize={fs} fill="#3b82f6" fontWeight={700}>{maxCnt}</text>
+        <text x={padL-3} y={padT+cH*0.5+fs*0.4} textAnchor="end" fontSize={fs*0.82} fill="#3b82f6" opacity={0.55}>{Math.round(maxCnt/2)}</text>
+        <text x={padL-3} y={padT+cH+fs*0.4} textAnchor="end" fontSize={fs*0.82} fill="#3b82f6" opacity={0.4}>0</text>
+        <text x={padL-3} y={padT-2}          textAnchor="end" fontSize={fs*0.78} fill="#3b82f6" fontWeight={800}>건</text>
 
-        {/* 오른쪽 Y축 (매출, 보라) - 최대값과 0만 */}
-        <text x={W-padR+3} y={padT+5}    textAnchor="start" fontSize={7.5} fill="#818cf8" fontWeight={700}>{fmtMoney(maxAmt)}</text>
-        <text x={W-padR+3} y={padT+cH+4} textAnchor="start" fontSize={7} fill="#818cf8" opacity={0.5}>0</text>
-        <text x={W-padR+3} y={padT-2}    textAnchor="start" fontSize={6.5} fill="#818cf8" fontWeight={800}>원</text>
+        {/* 오른쪽 Y축 (매출) */}
+        <text x={W-padR+3} y={padT+fs*0.9}    textAnchor="start" fontSize={fs} fill="#a78bfa" fontWeight={700}>{fmtMoney(maxAmt)}</text>
+        <text x={W-padR+3} y={padT+cH*0.5+fs*0.4} textAnchor="start" fontSize={fs*0.82} fill="#a78bfa" opacity={0.55}>{fmtMoney(Math.round(maxAmt/2))}</text>
+        <text x={W-padR+3} y={padT+cH+fs*0.4} textAnchor="start" fontSize={fs*0.82} fill="#a78bfa" opacity={0.4}>0</text>
+        <text x={W-padR+3} y={padT-2}          textAnchor="start" fontSize={fs*0.78} fill="#a78bfa" fontWeight={800}>원</text>
       </svg>
 
       {/* 툴팁 */}
       {tip && tipIdx !== null && (
         <div style={{
-          position:'absolute', top:0, pointerEvents:'none', zIndex:20,
-          left: `${tipXPct > 70 ? tipXPct - 16 : tipXPct + 1}%`,
-          transform: tipXPct > 70 ? 'translateX(-100%)' : 'none',
-          background:'#0f172a', borderRadius:7, padding:'6px 10px',
-          boxShadow:'0 4px 12px rgba(0,0,0,0.22)',
+          position:'absolute', top:'8%', pointerEvents:'none', zIndex:20,
+          left: `${tipXPct > 65 ? tipXPct - 16 : tipXPct + 1}%`,
+          transform: tipXPct > 65 ? 'translateX(-100%)' : 'none',
+          background:'rgba(15,23,42,0.92)', borderRadius:8, padding:'6px 11px',
+          boxShadow:'0 4px 16px rgba(0,0,0,0.28)', backdropFilter:'blur(4px)',
         }}>
-          <p style={{ fontSize:9, color:'#94a3b8', fontWeight:700, marginBottom:2 }}>{selMonthLabel(tip.day)}</p>
-          <p style={{ fontSize:11, color:'#60a5fa', fontWeight:800 }}>주문 {tip.count}건</p>
-          <p style={{ fontSize:11, color:'#a5b4fc', fontWeight:800 }}>₩{tip.amount.toLocaleString()}</p>
+          <p style={{ fontSize:9.5, color:'#94a3b8', fontWeight:700, marginBottom:3 }}>{selMonthLabel(tip.day)}</p>
+          <p style={{ fontSize:11.5, color:'#93c5fd', fontWeight:800, marginBottom:1 }}>📦 {tip.count}건</p>
+          <p style={{ fontSize:11.5, color:'#c4b5fd', fontWeight:800 }}>₩{tip.amount.toLocaleString()}</p>
         </div>
       )}
     </div>
@@ -280,7 +315,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 중단: 차트 + 우측 패널 ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 330px', gap:10, flex:1, minHeight:0 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 330px', gap:10, flex:'1 1 0', minHeight:0, maxHeight:280 }}>
 
         {/* 월별 선 그래프 */}
         <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
@@ -332,11 +367,11 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-          {/* 차트 영역 */}
-          <div style={{ flex:1, padding:'10px 14px 6px', overflow:'hidden', display:'flex', alignItems:'center' }}>
+          {/* 차트 영역: flex:1 + height:100% 체인으로 LineChart가 컨테이너를 완전히 채움 */}
+          <div style={{ flex:1, padding:'8px 12px 6px', overflow:'hidden', minHeight:0 }}>
             {monthTotal === 0 ? (
-              <div style={{ width:'100%',textAlign:'center',color:'#cbd5e1' }}>
-                <ShoppingCart size={22} style={{ opacity:0.15, margin:'0 auto 6px' }} />
+              <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'#cbd5e1' }}>
+                <ShoppingCart size={22} style={{ opacity:0.15, marginBottom:6 }} />
                 <p style={{ fontSize:11,fontWeight:700 }}>{selMonth.replace('-','년 ')}월 주문 없음</p>
               </div>
             ) : (
