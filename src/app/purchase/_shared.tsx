@@ -23,10 +23,13 @@ export interface Purchase {
   items:       PurchaseItem[]
 }
 export interface PmOption {
-  name: string; barcode: string; chinese_name?: string
-  ordered?: number; received?: number; sold?: number; current_stock?: number
+  name: string; barcode: string; chinese_name?: string; korean_name?: string; size?: string
+  image?: string
+  ordered?: number; received?: number; sold?: number; current_stock?: number; defective?: number
 }
-export interface PmProduct { id: string; code: string; name: string; options: PmOption[] }
+export interface PmProduct {
+  id: string; code: string; name: string; abbr?: string; status?: string; options: PmOption[]
+}
 
 /* ── 상태 표시 ── */
 export const ST: Record<PurchaseStatus, { label: string; bg: string; color: string }> = {

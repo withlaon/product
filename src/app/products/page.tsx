@@ -348,6 +348,63 @@ function ChannelPriceModal({
   )
 }
 
+/* ─── 쇼핑몰 매핑 모달 ──────────────────────────────────────── */
+interface MappingRow { mall:string; productId:string; productName:string; price:string }
+function MallMappingModal({
+  product, onClose, onSave,
+}: { product: Product; onClose: () => void; onSave: (cp: ChannelPrice[], rm: (string|{mall:string;code:string})[]) => void }) {
+  const [rows, setRows] = useState<MappingRow[]>(() =>
+    PRICE_CHANNELS.map(ch => {
+      const priceEntry = product.channel_prices.find(cp => cp.channel === ch)
+      const mallEntry  = (product.registered_malls ?? []).find(m =>
+        typeof m === 'object' ? m.mall === ch : m === ch
+      )
+      return {
+        mall: ch,
+        productId:   typeof mallEntry === 'object' ? (mallEntry.code || '') : '',
+        productName: '',
+        price:       priceEntry ? String(priceEntry.price) : '',
+      }
+    })
+  )
+  const handleSave = () => {
+    const cp  = rows.filter(r => r.price && Number(r.price) > 0)
+                    .map(r => ({ channel: r.mall, price: Number(r.price) }))
+    const rm  = rows.filter(r => r.productId.trim())
+                    .map(r => ({ mall: r.mall, code: r.productId.trim() }))
+    onSave(cp, rm)
+  }
+  const thS: React.CSSProperties = { fontSize:10.5, fontWeight:800, color:'#64748b', padding:'4px 0' }
+  return (
+    <Modal isOpen onClose={onClose} title={`쇼핑몰 매핑 — ${product.name}`} size="xl">
+      <div style={{ display:'grid', gridTemplateColumns:'130px 1fr 1.5fr 120px', gap:8, marginBottom:6 }}>
+        {['쇼핑몰','상품ID','쇼핑몰 상품명 (참고)','판매가'].map(h => <span key={h} style={thS}>{h}</span>)}
+      </div>
+      {rows.map((row, i) => (
+        <div key={row.mall} style={{ display:'grid', gridTemplateColumns:'130px 1fr 1.5fr 120px', gap:8, marginBottom:6, alignItems:'center' }}>
+          <span style={{ fontSize:12.5, fontWeight:800, color:'#334155', background:'#f1f5f9', padding:'6px 10px', borderRadius:7, textAlign:'center' }}>{row.mall}</span>
+          <Input placeholder="상품ID" value={row.productId}
+            onChange={e => { const r=[...rows]; r[i]={...r[i],productId:e.target.value}; setRows(r) }}/>
+          <Input placeholder="상품명 (선택)" value={row.productName}
+            onChange={e => { const r=[...rows]; r[i]={...r[i],productName:e.target.value}; setRows(r) }}/>
+          <div style={{ position:'relative' }}>
+            <span style={{ position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',fontSize:12,color:'#94a3b8',fontWeight:700,pointerEvents:'none' }}>₩</span>
+            <Input type="number" placeholder="0" value={row.price} style={{ paddingLeft:22 }}
+              onChange={e => { const r=[...rows]; r[i]={...r[i],price:e.target.value}; setRows(r) }}/>
+          </div>
+        </div>
+      ))}
+      <p style={{ fontSize:11, color:'#94a3b8', marginTop:10 }}>
+        * 상품ID를 입력한 쇼핑몰은 쇼핑몰 등록현황에 자동 표시됩니다.
+      </p>
+      <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+        <Button variant="outline" onClick={onClose}>취소</Button>
+        <Button onClick={handleSave}>매핑 완료</Button>
+      </div>
+    </Modal>
+  )
+}
+
 /* ─── 폼 초기값 ─────────────────────────────────────────────── */
 const genBarcode = (code: string, opt: string) =>
   code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
@@ -361,7 +418,6 @@ const INIT_FORM = {
   cost_price:'', cost_currency:'CNY' as CostCurrency,
   newCat:'', status:'active' as ProductStatus,
   options:[{ ...INIT_OPT }],
-  channel_prices: PRICE_CHANNELS.map(ch => ({ channel: ch, price: '' })) as { channel:string; price:string }[],
 }
 
 /* ─── 옵션 이미지 파일→base64 ───────────────────────────────── */
@@ -553,6 +609,7 @@ export default function ProductsPage() {
   const [detail, setDetail]           = useState<Product | null>(null)
   const [isEdit, setIsEdit]           = useState<Product | null>(null)
   const [channelPriceTarget, setChannelPriceTarget] = useState<Product | null>(null)
+  const [mappingTarget,      setMappingTarget]      = useState<Product | null>(null)
   const [editStatusId, setEditStatusId] = useState<string | null>(null)
   const [hoveredBadge, setHoveredBadge] = useState<string | null>(null)
   const [page, setPage] = useState(1)
@@ -1029,15 +1086,12 @@ export default function ProductsPage() {
         ordered: 0, received: 0, sold: 0,
       }))
       const costPriceVal = Number(form.cost_price) || 0
-      const channelPrices = form.channel_prices
-        .filter(cp => cp.price !== '' && Number(cp.price) > 0)
-        .map(cp => ({ channel: cp.channel, price: Number(cp.price) }))
       const payload = {
         code: form.code.trim(), name: form.name.trim(), abbr: form.abbr.trim(), category: cat, loca: form.loca,
         cost_price: costPriceVal,
         cost_currency: form.cost_currency,
         status: form.status, supplier: form.supplier,
-        options, channel_prices: channelPrices,
+        options, channel_prices: [],
         basic_info: null,
         registered_malls: [],
       }
@@ -1081,6 +1135,13 @@ export default function ProductsPage() {
     const { error } = await pmPatch(channelPriceTarget.id, { channel_prices: prices })
     if (!error) setProducts(prev => prev.map(p => p.id === channelPriceTarget.id ? { ...p, channel_prices: prices } : p))
     setChannelPriceTarget(null)
+  }
+
+  const handleMappingSave = async (cp: ChannelPrice[], rm: (string|{mall:string;code:string})[]) => {
+    if (!mappingTarget) return
+    const { error } = await pmPatch(mappingTarget.id, { channel_prices: cp, registered_malls: rm })
+    if (!error) setProducts(prev => prev.map(p => p.id === mappingTarget!.id ? { ...p, channel_prices: cp, registered_malls: rm } : p))
+    setMappingTarget(null)
   }
 
   const handleStatusChange = async (id: string, status: ProductStatus) => {
@@ -2097,6 +2158,7 @@ export default function ProductsPage() {
                     {/* 관리 */}
                     <td style={{ paddingTop:12 }}>
                       <div style={{ display:'flex', flexDirection:'column', gap:5, alignItems:'center' }}>
+                        <MgmtBtn onClick={() => setMappingTarget(p)} bg="#eff6ff" color="#2563eb" hoverBg="#dbeafe"><Store size={11}/>매핑</MgmtBtn>
                         <MgmtBtn onClick={() => openEdit(p)} bg="#ecfdf5" color="#059669" hoverBg="#d1fae5"><Edit size={11}/>수정</MgmtBtn>
                         <MgmtBtn onClick={() => handleDelete(p.id)} bg="#fff1f2" color="#be123c" hoverBg="#ffe4e6"><Trash2 size={11}/>삭제</MgmtBtn>
                       </div>
@@ -2315,32 +2377,6 @@ export default function ProductsPage() {
             </button>
           </div>
 
-          {/* 쇼핑몰별 판매가 */}
-          <div style={{ gridColumn:'1/-1', marginTop:4 }}>
-            <p style={{ fontSize:12, fontWeight:800, color:'#0369a1', paddingBottom:6, borderBottom:'1px solid #e0f2fe', marginBottom:10 }}>
-              💰 쇼핑몰별 판매가 <span style={{ fontSize:10.5, fontWeight:600, color:'#94a3b8' }}>(입력 안 할 경우 생략)</span>
-            </p>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8 }}>
-              {form.channel_prices.map((cp, i) => (
-                <div key={cp.channel}>
-                  <label style={{ display:'block', fontSize:10.5, fontWeight:800, color:'#475569', marginBottom:4 }}>{cp.channel}</label>
-                  <div style={{ position:'relative' }}>
-                    <span style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', fontSize:12, color:'#94a3b8', fontWeight:700, pointerEvents:'none' }}>₩</span>
-                    <Input
-                      type="number" placeholder="0" min="0"
-                      value={cp.price}
-                      style={{ paddingLeft:22 }}
-                      onChange={e => {
-                        const cp2 = [...form.channel_prices]
-                        cp2[i] = { ...cp2[i], price: e.target.value }
-                        setForm(f => ({ ...f, channel_prices: cp2 }))
-                      }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
 
         {addDbError && (
@@ -2360,6 +2396,10 @@ export default function ProductsPage() {
       {/* ── 쇼핑몰 판매가 편집 모달 ── */}
       {channelPriceTarget && (
         <ChannelPriceModal product={channelPriceTarget} onClose={() => setChannelPriceTarget(null)} onSave={handleChannelPriceSave} />
+      )}
+      {/* ── 쇼핑몰 매핑 모달 ── */}
+      {mappingTarget && (
+        <MallMappingModal product={mappingTarget} onClose={() => setMappingTarget(null)} onSave={handleMappingSave} />
       )}
 
       {/* ── 상품 상세 모달 ── */}
