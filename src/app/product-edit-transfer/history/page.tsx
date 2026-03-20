@@ -1,7 +1,8 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
-import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck } from 'lucide-react'
+import * as XLSX from 'xlsx'
+import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown } from 'lucide-react'
 import {
   loadShippedOrders, saveShippedOrders, loadOrders, saveOrders,
   loadMappings, lookupMapping,
@@ -126,6 +127,49 @@ export default function ShippingHistoryPage() {
     const restored = allOrders.map(o => cancelIds.has(o.id) ? { ...o, status: 'shipped' as const } : o)
     saveOrders(restored)
     setChecked(new Set())
+  }
+
+  /* 출고내역 엑셀 다운로드 */
+  const handleDownloadHistory = () => {
+    const targets = displayOrders
+    if (targets.length === 0) return alert('다운로드할 출고내역이 없습니다.')
+
+    const now = new Date()
+    const dateStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
+
+    const rows = targets.map(o => {
+      const item = o.items[0]
+      const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
+      const barcode = mapping.barcode ?? item?.sku ?? ''
+      return {
+        '출고일':    o.shipped_at ? o.shipped_at.slice(0, 10) : o.order_date,
+        '주문번호':  o.order_number,
+        '쇼핑몰':   o.channel,
+        '바코드':   barcode,
+        '상품명':   item?.product_name ?? '',
+        '옵션':     item?.option ?? '',
+        '수량':     item?.quantity ?? 1,
+        '판매가':   item?.unit_price ?? 0,
+        '수취인':   o.customer_name,
+        '연락처':   o.customer_phone ?? '',
+        '배송주소': o.shipping_address,
+        '택배사':   o.carrier ?? '',
+        '운송장번호': o.tracking_number ?? '',
+        '상태':     (o as ShippedOrder & { status?: string }).status === 'delivered' ? '출고확정' : '출고',
+      }
+    })
+
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '출고내역')
+    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+    const blob = new Blob([out], { type: 'application/octet-stream' })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement('a')
+    a.href = url
+    a.download = `${dateStr}_출고내역.xlsx`
+    a.click()
+    URL.revokeObjectURL(url)
   }
 
   /* 출고확정: 바코드 기준 재고차감 + status → delivered */
@@ -310,6 +354,15 @@ export default function ShippingHistoryPage() {
               : `${selMonth.replace('-', '년 ')}월 출고내역`}
           </span>
           <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>({displayOrders.length}건)</span>
+          <div style={{ flex: 1 }} />
+          {displayOrders.length > 0 && (
+            <button
+              onClick={handleDownloadHistory}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}
+            >
+              <FileDown size={13} /> 엑셀 다운로드
+            </button>
+          )}
         </div>
 
         {displayOrders.length === 0 ? (
