@@ -412,14 +412,16 @@ export default function OrdersPage() {
 
   /* 매핑 모달 열기 - 즉시 표시, 상품은 백그라운드 로드 */
   const openMapping = () => {
-    // 주문 상품+옵션 키 수집 (동기)
+    // 당일 주문만 매핑 대상으로 수집 (이전 날짜 주문 제외)
     const keySet: Record<string, boolean> = {}
-    orders.forEach(o => {
-      o.items.forEach(i => {
-        const key = makeMappingKey(i.product_name, i.option ?? '')
-        keySet[key] = true
+    orders
+      .filter(o => o.order_date === today)
+      .forEach(o => {
+        o.items.forEach(i => {
+          const key = makeMappingKey(i.product_name, i.option ?? '')
+          keySet[key] = true
+        })
       })
-    })
     const draft: MappingStore = {}
     Object.keys(keySet).forEach(key => {
       draft[key] = mappings[key] ?? { abbreviation: '', loca: '' }
