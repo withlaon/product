@@ -262,6 +262,14 @@ export default function ShippingHistoryPage() {
           )}
         </div>
 
+        {/* 날짜 직접 선택 */}
+        <input
+          type="date"
+          value={viewMode === 'daily' ? selDate : ''}
+          onChange={e => { if (e.target.value) { setViewMode('daily'); setSelDate(e.target.value) } }}
+          style={{ height: 32, fontSize: 12.5, fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: '#0f172a', cursor: 'pointer', outline: 'none' }}
+        />
+
         <div style={{ flex: 1 }} />
 
         {/* 선택 액션 버튼 */}

@@ -7,7 +7,7 @@ import {
   Send, CheckCircle2, Search, Package, Truck, Download, FileDown,
 } from 'lucide-react'
 import {
-  loadOrders, saveOrders, loadMappings, lookupMapping, channelToMp,
+  loadOrders, saveOrders,
   loadShippedOrders, saveShippedOrders,
 } from '@/lib/orders'
 import type { Order, ShippedOrder } from '@/lib/orders'
@@ -42,13 +42,12 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10)
 }
 
-/* ─── 마켓플러스 송장 파일 생성 ─────────────────────────── */
+/* ─── 마켓플러스 송장 파일 생성 (형식: 주문번호/품목별주문번호/운송장번호/수량) ── */
 function downloadMarketPlusInvoice(allOrders: Order[]) {
-  const mappings = loadMappings()
-  // import_source = 'marketplus' 인 배송중 주문
+  // import_source = 'marketplus' 또는 channel이 마켓플러스인 배송중 주문
   const mpOrders = allOrders.filter(o =>
     o.status === 'shipped' && o.tracking_number &&
-    o.extra_data?.['import_source'] === 'marketplus'
+    (o.extra_data?.['import_source'] === 'marketplus' || o.channel === '마켓플러스')
   )
 
   if (mpOrders.length === 0) {
@@ -57,33 +56,13 @@ function downloadMarketPlusInvoice(allOrders: Order[]) {
   }
 
   const rows = mpOrders.map(o => {
-    const item   = o.items[0]
-    const option = item?.option ?? ''
-    const pname  = item?.product_name ?? ''
-    const m      = lookupMapping(mappings, pname, option)
-    const ed     = o.extra_data ?? {}
-
+    const item = o.items[0]
+    const ed   = o.extra_data ?? {}
     return {
-      '매출경로':                          ed['매출경로'] ?? channelToMp(o.channel),
-      '주문번호':                          ed['주문번호'] ?? o.order_number,
-      '품목별 주문번호':                   ed['품목별_주문번호'] ?? o.order_number,
-      '상품명(관리용)':                    m.abbreviation || String(ed['상품명관리용'] ?? ''),
-      '상품명(한국어 쇼핑몰)':             pname,
-      '상품옵션':                          option,
-      '수량':                              item?.quantity ?? 1,
-      '주문자명':                          String(ed['주문자명'] ?? o.customer_name),
-      '수령인':                            o.customer_name,
-      '수령인 전화번호':                   o.customer_phone ?? '',
-      '수령인 우편번호':                   String(ed['수령인_우편번호'] ?? ''),
-      '수령인 주소':                       o.shipping_address,
-      '수령인 상세 주소':                  String(ed['수령인_상세주소'] ?? ''),
-      '배송메시지':                        String(ed['배송메시지'] ?? o.memo ?? ''),
-      '총 결제금액(KRW)':                  String(ed['총결제금액'] ?? o.total_amount ?? ''),
-      '총 실결제금액(최초정보) (KRW)':     String(ed['총실결제금액'] ?? ''),
-      '배송비 정보':                       String(ed['배송비정보'] ?? ''),
-      '배송비 추가결제':                   String(ed['배송비추가결제'] ?? ''),
-      '택배사':                            o.carrier ?? '',
-      '송장번호':                          o.tracking_number ?? '',
+      '주문번호':       String(ed['주문번호'] ?? o.order_number),
+      '품목별 주문번호': String(ed['품목별_주문번호'] ?? ed['품목별 주문번호'] ?? o.order_number),
+      '운송장번호':     o.tracking_number ?? '',
+      '수량':          item?.quantity ?? 1,
     }
   })
 
@@ -124,9 +103,9 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, allOrder
       )
       const tInfo = trackingMap[orderNum]
       if (tInfo) {
-        // 토스쇼핑: 원본 파일의 택배사코드·송장번호 컬럼에 직접 채움
         if (mallId === 'tossshopping') {
-          rows.push({ ...raw, '택배사코드': tInfo.carrier, '송장번호': tInfo.tracking })
+          // 토스쇼핑: 원본 파일 구조 그대로 유지 + W열(송장번호)에만 운송장번호 입력
+          rows.push({ ...raw, '송장번호': tInfo.tracking })
         } else {
           rows.push({ ...raw, '택배사': tInfo.carrier, '송장번호': tInfo.tracking })
         }
@@ -158,6 +137,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, allOrder
     })
   }
 
+  // 토스쇼핑은 원본 파일 기반이므로 sheet_to_json 대신 aoa_to_sheet 필요 없음
   triggerExcelDownload(rows, `${mallLabel}_송장_${todayStr()}.xlsx`)
 }
 
