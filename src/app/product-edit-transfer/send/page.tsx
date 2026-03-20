@@ -98,14 +98,18 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, allOrder
 
   for (const dayData of allDayData) {
     for (const raw of dayData.raw_rows ?? []) {
+      // 올웨이즈는 '주문아이디', 토스쇼핑 등은 '주문번호' 사용
       const orderNum = String(
-        raw['주문번호'] ?? raw['order_number'] ?? raw['OrderNumber'] ?? ''
+        raw['주문번호'] ?? raw['주문아이디'] ?? raw['order_number'] ?? raw['OrderNumber'] ?? ''
       )
       const tInfo = trackingMap[orderNum]
       if (tInfo) {
         if (mallId === 'tossshopping') {
-          // 토스쇼핑: 원본 파일 구조 그대로 유지 + W열(송장번호)에만 운송장번호 입력
+          // 토스쇼핑: 원본 파일 구조 그대로 + W열(송장번호)에 운송장번호 입력
           rows.push({ ...raw, '송장번호': tInfo.tracking })
+        } else if (mallId === 'always') {
+          // 올웨이즈: 원본 파일 구조 그대로 + W열(운송장번호)에 운송장번호 입력
+          rows.push({ ...raw, '운송장번호': tInfo.tracking })
         } else {
           rows.push({ ...raw, '택배사': tInfo.carrier, '송장번호': tInfo.tracking })
         }

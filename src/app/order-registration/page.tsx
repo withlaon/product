@@ -234,6 +234,35 @@ function parseTossShoppingRow(row: Record<string, unknown>, idx: number): RegOrd
   }
 }
 
+/* ─── 올웨이즈 전용 파싱 ─────────────────────────────────── */
+function parseAlwaysRow(row: Record<string, unknown>, idx: number): RegOrder {
+  const orderNum = String(row['주문아이디'] ?? `AUTO-ALWAYS-${Date.now()}-${idx}`)
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
+    order_number: orderNum,
+    customer_name:    String(row['수령인'] ?? '-'),
+    customer_phone:   String(row['수령인 연락처'] ?? ''),
+    shipping_address: String(row['주소'] ?? ''),
+    items: [{
+      product_name: String(row['상품명'] ?? '-'),
+      sku:          String(row['판매자 상품코드'] ?? row['상품아이디'] ?? ''),
+      quantity:     Number(row['수량'] ?? 1),
+      unit_price:   Number(row['상품가격'] ?? 0),
+      option:       String(row['옵션'] ?? ''),
+    }],
+    total_amount: Number(row['상품가격'] ?? 0),
+    status: 'pending',
+    memo: String(row['공동현관 비밀번호'] ?? ''),
+    extra_data: {
+      import_source: '올웨이즈',
+      주문아이디:   orderNum,
+      합배송아이디: String(row['합배송아이디'] ?? ''),
+      주문시점:     String(row['주문 시점'] ?? ''),
+      우편번호:     String(row['우편번호'] ?? ''),
+    },
+  }
+}
+
 /* ─── 일반 쇼핑몰 파싱 ──────────────────────────────────── */
 function parseGenericRow(row: Record<string, unknown>, idx: number, today: string, mallLabel: string): RegOrder {
   const orderNum  = String(row['주문번호'] ?? row['order_number'] ?? row['OrderNumber'] ?? `AUTO-${Date.now()}-${idx}`)
@@ -347,6 +376,7 @@ export default function OrderRegistrationPage() {
         const mallLabel      = MALLS.find(m => m.id === selectedMall)!.label
         const isMarketPlus   = selectedMall === 'marketplus'
         const isTossShopping = selectedMall === 'tossshopping'
+        const isAlways       = selectedMall === 'always'
         const uploadedAt     = new Date().toISOString()
 
         // 마켓플러스: 자동 매핑 수집
@@ -361,6 +391,7 @@ export default function OrderRegistrationPage() {
             return order
           }
           if (isTossShopping) return parseTossShoppingRow(row, idx)
+          if (isAlways)       return parseAlwaysRow(row, idx)
           return parseGenericRow(row, idx, today, mallLabel)
         })
 
@@ -428,7 +459,7 @@ export default function OrderRegistrationPage() {
 
         const existingMain = loadOrders()
         // 같은 import_source+날짜 이전 업로드 제거
-        const importSrc = isMarketPlus ? 'marketplus' : mallLabel  // tossshopping = '토스쇼핑'
+        const importSrc = isMarketPlus ? 'marketplus' : mallLabel  // tossshopping='토스쇼핑', always='올웨이즈'
         const filtered = existingMain.filter(o =>
           !(o.extra_data?.['import_source'] === importSrc && o.order_date === today)
         )
