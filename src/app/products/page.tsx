@@ -443,7 +443,31 @@ async function pmGetFullProduct(id: string): Promise<Product | null> {
   } catch { return null }
 }
 
-/** 현재 페이지 상품들의 옵션이미지 배치 조회 (1 API 호출) */
+/* ─── 이미지 localStorage 캐시 (7일 TTL) ─────────────────── */
+const IMG_CACHE_KEY = 'pm_product_images_v1'
+const IMG_CACHE_TTL = 7 * 24 * 60 * 60 * 1000
+
+function loadImgCache(): Record<string, string[]> {
+  if (typeof window === 'undefined') return {}
+  try {
+    const raw = localStorage.getItem(IMG_CACHE_KEY)
+    if (!raw) return {}
+    const { data, ts } = JSON.parse(raw) as { data: Record<string, string[]>; ts: number }
+    if (Date.now() - ts > IMG_CACHE_TTL) { localStorage.removeItem(IMG_CACHE_KEY); return {} }
+    return data ?? {}
+  } catch { return {} }
+}
+
+function mergeImgCache(images: Record<string, string[]>) {
+  if (typeof window === 'undefined') return
+  try {
+    const existing = loadImgCache()
+    const merged = { ...existing, ...images }
+    localStorage.setItem(IMG_CACHE_KEY, JSON.stringify({ data: merged, ts: Date.now() }))
+  } catch {}
+}
+
+/** 현재 페이지 상품들의 옵션이미지 배치 조회 후 localStorage 캐시에 저장 */
 async function pmGetPageImages(ids: string[]): Promise<Record<string, string[]>> {
   if (ids.length === 0) return {}
   try {
@@ -456,6 +480,7 @@ async function pmGetPageImages(ids: string[]): Promise<Record<string, string[]>>
         result[row.id] = (row.options ?? []).map(o => o.image ?? '')
       })
     }
+    if (Object.keys(result).length > 0) mergeImgCache(result)
     return result
   } catch { return {} }
 }
@@ -482,8 +507,9 @@ export default function ProductsPage() {
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
 
-  // 옵션 이미지 lazy load: 페이지별로 필요 시 로드
-  const [pageImages, setPageImages] = useState<Record<string, string[]>>({})
+  // 옵션 이미지 lazy load: localStorage 캐시에서 즉시 초기화, 미캐시 상품만 API 조회
+  const [pageImages, setPageImages] = useState<Record<string, string[]>>(() => loadImgCache())
+  const loadingIdsRef = useRef<Set<string>>(new Set())
 
   // 기본정보 팝업 상태
   const [basicInfoTarget, setBasicInfoTarget] = useState<Product | null>(null)
@@ -770,6 +796,10 @@ export default function ProductsPage() {
     if (full) {
       setEditForm(prev => prev ? { ...prev, options: initOptions(full) } : prev)
       setIsEdit(full)
+      // 이미지 캐시 갱신
+      const imgs = full.options.map(o => o.image ?? '')
+      mergeImgCache({ [p.id]: imgs })
+      setPageImages(prev => ({ ...prev, [p.id]: imgs }))
     }
   }
 
@@ -860,19 +890,19 @@ export default function ProductsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
-  // 현재 페이지 상품의 옵션 이미지를 lazy load (배치 1회 호출)
+  // 현재 페이지 상품의 옵션 이미지 로드
+  // - localStorage 캐시에 있으면 즉시 표시 (pageImages 초기값에 이미 포함)
+  // - 캐시에 없는 상품만 API 배치 호출 → 가져온 후 localStorage에 저장
   useEffect(() => {
     if (paginated.length === 0) return
-    const toLoad = paginated.filter(p => !(p.id in pageImages)).map(p => p.id)
+    const toLoad = paginated
+      .filter(p => !(p.id in pageImages) && !loadingIdsRef.current.has(p.id))
+      .map(p => p.id)
     if (toLoad.length === 0) return
+    toLoad.forEach(id => loadingIdsRef.current.add(id))
     let cancelled = false
-    // 로딩 예약 표시 (undefined → null 로 변경해서 중복 호출 방지)
-    setPageImages(prev => {
-      const next = { ...prev }
-      toLoad.forEach(id => { if (!(id in next)) next[id] = [] })
-      return next
-    })
     pmGetPageImages(toLoad).then(images => {
+      toLoad.forEach(id => loadingIdsRef.current.delete(id))
       if (!cancelled && Object.keys(images).length > 0) {
         setPageImages(prev => ({ ...prev, ...images }))
       }
