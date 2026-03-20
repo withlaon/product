@@ -67,9 +67,11 @@ export function fmtDateShort(d: string) {
   return `${dt.getMonth()+1}/${dt.getDate()}(${['일','월','화','수','목','금','토'][dt.getDay()]})`
 }
 
-/* ── 상품 수량 동기화 ── */
+/* ── 상품 수량 동기화 ──
+   Supabase에서 항상 최신 options를 가져와 업데이트 → 이미지 등 다른 필드 유실 방지
+── */
 export async function syncProductQty(
-  products: PmProduct[],
+  _products: PmProduct[],   // fallback용 (fresh fetch 실패 시)
   rows: { prodId: string; optName: string; orderedDelta: number; receivedDelta: number }[]
 ) {
   const grouped: Record<string, typeof rows> = {}
@@ -79,9 +81,18 @@ export async function syncProductQty(
     grouped[r.prodId].push(r)
   }
   for (const [prodId, updates] of Object.entries(grouped)) {
-    const prod = products.find(p => p.id === prodId)
-    if (!prod) continue
-    const updatedOpts = prod.options.map(opt => {
+    // 항상 DB에서 최신 options 조회 (이미지 포함 전체 필드 보존)
+    const { data: fresh } = await supabase
+      .from('pm_products')
+      .select('id,options')
+      .eq('id', prodId)
+      .single()
+
+    const baseOpts: PmOption[] = fresh?.options
+      ?? _products.find(p => p.id === prodId)?.options
+      ?? []
+
+    const updatedOpts = baseOpts.map((opt: PmOption) => {
       const u = updates.find(u => u.optName === opt.name)
       if (!u) return opt
       const newOrdered  = Math.max(0, (opt.ordered || 0) + u.orderedDelta)

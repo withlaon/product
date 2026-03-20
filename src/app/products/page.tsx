@@ -598,31 +598,23 @@ function mergeImgCache(images: Record<string, string[]>) {
 }
 
 /**
- * 현재 페이지 상품들의 옵션이미지 배치 조회
- * supabase 클라이언트 직접 사용 (서버리스 함수 경유 없음)
+ * 단일 상품 옵션이미지 조회 (Supabase REST API 직접 호출 - 응답 크기 최소화)
+ * 개별 호출 방식으로 배치 실패 문제 방지 + 프로그레시브 표시 지원
  */
-async function pmGetPageImages(ids: string[]): Promise<Record<string, string[]>> {
-  if (ids.length === 0) return {}
+async function fetchOneProductImages(id: string): Promise<string[]> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+  if (!url || !key) return []
   try {
-    const { data, error } = await supabase
-      .from('pm_products')
-      .select('id,options')
-      .in('id', ids)
-    if (error || !Array.isArray(data)) return {}
-    const result: Record<string, string[]> = {}
-    data.forEach(row => {
-      result[row.id] = (row.options ?? []).map((o: { image?: string }) => o.image ?? '')
-    })
-    if (Object.keys(result).length > 0) mergeImgCache(result)
-    return result
-  } catch { return {} }
-}
-
-/** 단일 상품 이미지 fetch (캐시 미스 시 supabase 클라이언트 사용) */
-async function pmGetOneImage(id: string): Promise<Record<string, string[]>> {
-  const cached = loadImgCache()
-  if (id in cached) return { [id]: cached[id] }
-  return pmGetPageImages([id])
+    const res = await fetch(
+      `${url}/rest/v1/pm_products?select=id,options&id=eq.${id}`,
+      { headers: { apikey: key, Authorization: `Bearer ${key}` } }
+    )
+    if (!res.ok) return []
+    const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
+    if (!Array.isArray(data) || !data[0]) return []
+    return (data[0].options ?? []).map(o => o.image ?? '')
+  } catch { return [] }
 }
 
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */
@@ -1030,17 +1022,22 @@ export default function ProductsPage() {
   useEffect(() => { setPage(1) }, [search, activeTab, statusFilter, dateFilter, dateCustom])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
-  const paginated  = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  // useMemo로 안정적인 reference 유지 → imgLoadKey 불필요한 재계산 방지
+  const paginated = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page]
+  )
+  const imgLoadKey = useMemo(() => paginated.map(p => p.id).join(','), [paginated])
 
-  // 현재 페이지 이미지 로드: paginated 상품 ID 변경 시마다 즉시 실행
-  // imgLoadKey: 현재 페이지에 표시되는 상품 ID 목록 (문자열) → deps 비교에 사용
-  const imgLoadKey = paginated.map(p => p.id).join(',')
+  // 현재 페이지 이미지 로드: 상품별 개별 REST API 병렬 호출 (프로그레시브 표시)
   useEffect(() => {
     if (!imgLoadKey) return
     const pids = imgLoadKey.split(',').filter(Boolean)
-    const mem  = loadImgCache()
+    if (!pids.length) return
+    let cancelled = false
 
-    // 캐시 적중 → 즉시 state 반영
+    const mem = loadImgCache()
+    // 캐시 적중 → 즉시 반영
     const fromCache: Record<string, string[]> = {}
     const toFetch: string[] = []
     pids.forEach(id => {
@@ -1052,12 +1049,12 @@ export default function ProductsPage() {
     }
     if (toFetch.length === 0) return
 
-    // 미캐시 상품: Supabase 배치 fetch (mergeImgCache 내부 호출됨)
-    let cancelled = false
-    pmGetPageImages(toFetch).then(images => {
-      if (!cancelled && Object.keys(images).length > 0) {
-        setPageImages(prev => ({ ...prev, ...images }))
-      }
+    // 미캐시 상품: 개별 병렬 fetch → 하나씩 표시 (배치 실패 방지)
+    toFetch.forEach(async (id) => {
+      const imgs = await fetchOneProductImages(id)
+      if (cancelled) return
+      mergeImgCache({ [id]: imgs })
+      setPageImages(prev => ({ ...prev, [id]: imgs }))
     })
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps

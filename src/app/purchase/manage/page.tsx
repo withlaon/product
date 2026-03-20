@@ -58,14 +58,20 @@ export default function PurchaseManagePage() {
   }, [])
 
   const [loadError, setLoadError] = useState('')
+  // 추천 목록 옵션이미지: 바코드 → base64 (별도 비동기 로딩)
+  const [qualImages, setQualImages] = useState<Record<string, string>>({})
 
+  // 상품 로딩: API 라우트 사용 (이미지 제외 → 빠름)
   const loadProducts = useCallback(async () => {
     setLoadError('')
-    const { data, error } = await supabase
-      .from('pm_products')
-      .select('id,code,name,abbr,status,options')
-    if (error) { setLoadError(error.message); return }
-    if (data) setProducts(data as PmProduct[])
+    try {
+      const res = await fetch('/api/pm-products')
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const data = await res.json()
+      setProducts(data as PmProduct[])
+    } catch (e: unknown) {
+      setLoadError(e instanceof Error ? e.message : String(e))
+    }
   }, [])
 
   useEffect(() => { loadPurchases(); loadProducts() }, [loadPurchases, loadProducts])
@@ -123,6 +129,38 @@ export default function PurchaseManagePage() {
     }
     return result.sort((a, b) => a.currentStock - b.currentStock)
   }, [products, unreceivedMap])
+
+  // 추천 목록 확정 후 해당 상품 이미지만 별도 로딩 (barcode → image)
+  useEffect(() => {
+    if (!qualOpts.length) return
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+    if (!supabaseUrl || !supabaseKey) return
+
+    const prodIds = [...new Set(qualOpts.map(o => o.prodId))]
+    let cancelled = false
+
+    prodIds.forEach(async (pid) => {
+      try {
+        const res = await fetch(
+          `${supabaseUrl}/rest/v1/pm_products?select=id,options&id=eq.${pid}`,
+          { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+        )
+        if (!res.ok || cancelled) return
+        const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
+        if (!Array.isArray(data) || !data[0]) return
+        const imgs: Record<string, string> = {}
+        ;(data[0].options ?? []).forEach(o => {
+          if (o.barcode && o.image) imgs[o.barcode] = o.image
+        })
+        if (!cancelled && Object.keys(imgs).length > 0) {
+          setQualImages(prev => ({ ...prev, ...imgs }))
+        }
+      } catch { /* ignore */ }
+    })
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qualOpts.length])
 
   const selectedKeys = useMemo(() => new Set(selectedOpts.map(s => s.key)), [selectedOpts])
 
@@ -315,12 +353,12 @@ export default function PurchaseManagePage() {
                         </td>
                         {/* 이미지 */}
                         <td style={{ padding: '4px 5px', textAlign: 'center', width: 48 }}>
-                          {opt.image
-                            ? <img src={opt.image} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block' }} />
+                          {(() => { const img = qualImages[opt.barcode] || opt.image; return img
+                            ? <img src={img} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block', margin: '0 auto' }} />
                             : <div style={{ width: 38, height: 38, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <Package size={14} style={{ color: '#cbd5e1' }} />
                               </div>
-                          }
+                          })()}
                         </td>
                         {/* 상품약어 + 바코드 */}
                         <td style={{ padding: '5px 6px' }}>
