@@ -938,12 +938,15 @@ export default function ProductsPage() {
 
   const [editSaving, setEditSaving] = useState(false)
 
-  /* ── 수정 저장 ── */
+  const [editSaveError, setEditSaveError] = useState('')
+
+  /* ── 수정 저장 (supabase 클라이언트 직접 호출 - Vercel 크기 제한 우회) ── */
   const handleEditSave = async () => {
     if (!isEdit || !editForm) return
     const cat = editForm.category === '__new__' ? editForm.newCat.trim() : editForm.category
     if (!editForm.code || !editForm.name || !cat) return
     setEditSaving(true)
+    setEditSaveError('')
     const options: ProductOption[] = editForm.options.filter(o => o.name).map(o => ({
       name: o.name, size: o.size ?? 'FREE',
       korean_name: o.korean_name || getKoreanColor(o.name),
@@ -956,33 +959,35 @@ export default function ProductsPage() {
       current_stock: o.current_stock !== undefined ? Number(o.current_stock) : 0,
       defective: Number(o.defective) || 0,
     }))
-    const editCostPriceVal = Number(editForm.cost_price) || 0
     const payload = {
       code: editForm.code, name: editForm.name, abbr: editForm.abbr.trim(), category: cat, loca: editForm.loca,
-      cost_price: editCostPriceVal,
+      cost_price: Number(editForm.cost_price) || 0,
       cost_currency: editForm.cost_currency,
       status: editForm.status, supplier: editForm.supplier,
       options,
     }
-    const { error, code } = await pmPatch(isEdit.id, payload)
-    setEditSaving(false)
-    if (error) {
-      if (code === '22P02' || error.includes('integer')) {
-        const intPayload = { ...payload, cost_price: Math.round(payload.cost_price) }
-        const { error: e2 } = await pmPatch(isEdit.id, intPayload)
-        if (e2) { console.error('수정 오류(int fallback):', e2); return }
-        setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...intPayload, channel_prices: p.channel_prices } : p))
-      } else { console.error('수정 오류:', error); return }
-    } else {
+    try {
+      const { error } = await supabase
+        .from('pm_products')
+        .update(payload)
+        .eq('id', isEdit.id)
+      if (error) {
+        setEditSaveError(error.message)
+        return
+      }
       setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
+      if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
+        const updated = [...prev, cat]
+        saveCats(updated)
+        return updated
+      })
+      setIsEdit(null)
+      setEditForm(null)
+    } catch (e: unknown) {
+      setEditSaveError(e instanceof Error ? e.message : '저장 중 오류가 발생했습니다')
+    } finally {
+      setEditSaving(false)
     }
-    if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
-      const updated = [...prev, cat]
-      saveCats(updated)
-      return updated
-    })
-    setIsEdit(null)
-    setEditForm(null)
   }
   const filtered = useMemo(() => {
     // 등록일 필터 기준일 계산
@@ -2695,8 +2700,13 @@ export default function ProductsPage() {
             </div>
           </div>
 
-          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-            <Button variant="outline" onClick={() => { setIsEdit(null); setEditForm(null); setEditSaving(false) }}>취소</Button>
+          {editSaveError && (
+            <div style={{ marginTop:12, padding:'8px 12px', background:'#fff1f2', borderRadius:7, fontSize:12, color:'#dc2626', fontWeight:700 }}>
+              저장 오류: {editSaveError}
+            </div>
+          )}
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+            <Button variant="outline" onClick={() => { setIsEdit(null); setEditForm(null); setEditSaving(false); setEditSaveError('') }}>취소</Button>
             <Button onClick={handleEditSave} disabled={editSaving} style={{ opacity: editSaving ? 0.6 : 1 }}>
               {editSaving ? '저장 중...' : '저장하기'}
             </Button>
