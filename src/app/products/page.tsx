@@ -597,19 +597,6 @@ function mergeImgCache(images: Record<string, string[]>) {
   } catch {}
 }
 
-/**
- * 단일 상품 옵션이미지 조회
- * API 라우트 경유 (service role 키 사용 → RLS 우회, 확실하게 동작)
- */
-async function fetchOneProductImages(id: string): Promise<string[]> {
-  try {
-    const res = await fetch(`${PM_API}?imageIds=${id}`)
-    if (!res.ok) return []
-    const data = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
-    if (!Array.isArray(data) || !data[0]) return []
-    return (data[0].options ?? []).map(o => o.image ?? '')
-  } catch { return [] }
-}
 
 /* ─── 메인 컴포넌트 ─────────────────────────────────────────── */
 export default function ProductsPage() {
@@ -1048,13 +1035,21 @@ export default function ProductsPage() {
     }
     if (toFetch.length === 0) return
 
-    // 미캐시 상품: 개별 병렬 fetch → 하나씩 표시 (배치 실패 방지)
-    toFetch.forEach(async (id) => {
-      const imgs = await fetchOneProductImages(id)
-      if (cancelled) return
-      mergeImgCache({ [id]: imgs })
-      setPageImages(prev => ({ ...prev, [id]: imgs }))
-    })
+    // 미캐시 상품: 1번 배치 API 호출 (service role, Vercel 엣지 캐시 적용)
+    fetch(`${PM_API}?imageIds=${toFetch.join(',')}`)
+      .then(res => res.ok ? res.json() : [])
+      .then((data: Array<{ id: string; options?: Array<{ image?: string }> }>) => {
+        if (cancelled || !Array.isArray(data)) return
+        const result: Record<string, string[]> = {}
+        data.forEach(row => {
+          result[row.id] = (row.options ?? []).map(o => o.image ?? '')
+        })
+        if (Object.keys(result).length > 0) {
+          mergeImgCache(result)
+          setPageImages(prev => ({ ...prev, ...result }))
+        }
+      })
+      .catch(() => {})
     return () => { cancelled = true }
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [imgLoadKey])

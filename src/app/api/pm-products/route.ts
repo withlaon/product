@@ -70,11 +70,16 @@ export async function GET(req: NextRequest) {
             'Content-Type': 'application/json',
           },
           signal: AbortSignal.timeout(TIMEOUT_MS),
+          // Vercel 엣지 캐시: 1시간 (한 번 성공 후 Supabase 재호출 없음)
+          next: { revalidate: 3600 },
         }
       )
       if (!res.ok) return NextResponse.json([])
       const data = await res.json()
-      return NextResponse.json(Array.isArray(data) ? data : [])
+      // 브라우저 & CDN 캐시: 1시간
+      return NextResponse.json(Array.isArray(data) ? data : [], {
+        headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=300' },
+      })
     }
 
     // RPC 함수 우선 시도 (statement_timeout 120s 설정됨 → 57014 오류 우회)
