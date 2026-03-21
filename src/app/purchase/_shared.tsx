@@ -1,6 +1,5 @@
 /* 발주/입고관리 공통 타입·유틸·컴포넌트 */
 import { ChevronLeft, ChevronRight } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
 
 /* ── 타입 ── */
 export type PurchaseStatus = 'ordered' | 'partial' | 'completed' | 'cancelled'
@@ -111,6 +110,7 @@ export async function syncProductQty(
   _products: PmProduct[],   // fallback용 (fresh fetch 실패 시)
   rows: { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }[]
 ) {
+  const PM_API = '/api/pm-products'
   const grouped: Record<string, typeof rows> = {}
   for (const r of rows) {
     if (!r.prodId) continue
@@ -118,16 +118,15 @@ export async function syncProductQty(
     grouped[r.prodId].push(r)
   }
   for (const [prodId, updates] of Object.entries(grouped)) {
-    // 항상 DB에서 최신 options 조회 (이미지 포함 전체 필드 보존)
-    const { data: fresh } = await supabase
-      .from('pm_products')
-      .select('id,options')
-      .eq('id', prodId)
-      .single()
-
-    const baseOpts: PmOption[] = fresh?.options
-      ?? _products.find(p => p.id === prodId)?.options
-      ?? []
+    // 최신 options API 라우트(SERVICE_ROLE_KEY)로 조회 → RLS 우회
+    let baseOpts: PmOption[] = _products.find(p => p.id === prodId)?.options ?? []
+    try {
+      const res = await fetch(`${PM_API}?id=${encodeURIComponent(prodId)}&full=1`)
+      if (res.ok) {
+        const fresh = await res.json()
+        if (fresh?.options) baseOpts = fresh.options as PmOption[]
+      }
+    } catch { /* fallback to _products */ }
 
     const updatedOpts = baseOpts.map((opt: PmOption) => {
       // 바코드 우선 매칭, 바코드 불일치 시 옵션명으로 fallback
@@ -142,7 +141,12 @@ export async function syncProductQty(
       const newStock    = Math.max(0, prevStock + u.receivedDelta)
       return { ...opt, ordered: newOrdered, received: newReceived, current_stock: newStock }
     })
-    await supabase.from('pm_products').update({ options: updatedOpts }).eq('id', prodId)
+    // PATCH via API 라우트 → SERVICE_ROLE_KEY로 RLS 완전 우회
+    await fetch(PM_API, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: prodId, options: updatedOpts }),
+    })
   }
 }
 

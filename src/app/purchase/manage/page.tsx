@@ -470,6 +470,7 @@ export default function PurchaseManagePage() {
       setSaveMsg({ type: 'ok', text: `상품관리 발주수량 반영 중 (${deltas.length}종)...` })
       await syncProductQty(products, deltas)
       localStorage.removeItem(SHARED_CACHE_KEY)  // 캐시 클리어 → 강제 재로딩
+      localStorage.setItem('pm_products_mapping_signal', Date.now().toString()) // 상품관리탭 실시간 갱신
       await loadPurchases()
       await loadProducts(true)
       localStorage.removeItem(DRAFT_KEY)
