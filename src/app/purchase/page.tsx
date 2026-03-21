@@ -1,14 +1,13 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { supabase } from '@/lib/supabase'
 import {
   Purchase,
-  ST, isUnresolved,
+  ST,
   getThisMonth, shiftMonth,
   fmtMonthLabel, fmtDateShort,
   apiFetchPurchases,
 } from './_shared'
-import { ChevronLeft, ChevronRight, PackagePlus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp } from 'lucide-react'
 
 /* ── 월별 전용 날짜 네비 ── */
 function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) => void }) {
@@ -40,9 +39,12 @@ export default function PurchaseMainPage() {
 
   /* 발주내역 날짜 (월별 전용) */
   const [poMonth, setPoMonth] = useState(getThisMonth())
-
   /* 입고내역 날짜 (월별 전용) */
   const [rcMonth, setRcMonth] = useState(getThisMonth())
+
+  /* 펼친 행 ID */
+  const [expandedPoId, setExpandedPoId] = useState<string | null>(null)
+  const [expandedRcId, setExpandedRcId] = useState<string | null>(null)
 
   const loadPurchases = useCallback(async () => {
     const data = await apiFetchPurchases()
@@ -51,47 +53,36 @@ export default function PurchaseMainPage() {
 
   useEffect(() => {
     loadPurchases()
-    /* 탭 포커스 시 자동 새로고침 (하위 탭에서 변경된 데이터 반영) */
     const onVisible = () => { if (document.visibilityState === 'visible') loadPurchases() }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [loadPurchases])
 
-  /* 발주내역 필터 (월별) */
+  /* 발주내역: status='ordered' + 해당 월 + 오름차순 */
   const poList = useMemo(() =>
-    purchases.filter(p => p.order_date.startsWith(poMonth))
-      .sort((a,b) => b.order_date.localeCompare(a.order_date))
+    purchases
+      .filter(p => p.status === 'ordered' && p.order_date.startsWith(poMonth))
+      .sort((a, b) => a.order_date.localeCompare(b.order_date))
   , [purchases, poMonth])
 
-  /* 미입고 과거 건 (날짜 외 unresolved) */
-  const poUnresolvedOld = useMemo(() =>
-    purchases.filter(p => isUnresolved(p) && !p.order_date.startsWith(poMonth))
-  , [purchases, poMonth])
-
-  const poAll = useMemo(() => {
-    const ids = new Set(poList.map(p => p.id))
-    return [...poList, ...poUnresolvedOld.filter(p => !ids.has(p.id))]
-  }, [poList, poUnresolvedOld])
-
-  /* 입고내역 필터 (월별) */
+  /* 입고내역: status='completed' + 해당 월 + 오름차순 */
   const rcList = useMemo(() =>
     purchases
-      .filter(p => p.status !== 'ordered' && p.status !== 'cancelled')
+      .filter(p => p.status === 'completed')
       .filter(p => {
         const ref = (p.received_at ?? p.order_date).slice(0, rcMonth.length)
         return ref === rcMonth
       })
-      .sort((a,b) => {
-        const aD = (a.received_at ?? a.order_date).slice(0,10)
-        const bD = (b.received_at ?? b.order_date).slice(0,10)
-        return bD.localeCompare(aD)
+      .sort((a, b) => {
+        const aD = (a.received_at ?? a.order_date).slice(0, 10)
+        const bD = (b.received_at ?? b.order_date).slice(0, 10)
+        return aD.localeCompare(bD)
       })
   , [purchases, rcMonth])
 
   /* KPI */
-  const poOrderedQty    = useMemo(() => poList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.ordered,0),0), [poList])
-  const poUnresolvedAll = purchases.filter(isUnresolved)
-  const rcReceivedQty   = useMemo(() => rcList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.received,0),0), [rcList])
+  const poOrderedQty  = useMemo(() => poList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.ordered,0), 0), [poList])
+  const rcReceivedQty = useMemo(() => rcList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.received,0), 0), [rcList])
 
   const thStyle = (align: 'left'|'center' = 'center'): React.CSSProperties => ({
     padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:align, borderBottom:'1px solid #f1f5f9',
@@ -102,46 +93,33 @@ export default function PurchaseMainPage() {
 
   return (
     <div className="pm-page" style={{ display:'flex', flexDirection:'column', height:'100%', gap:0 }}>
-      {/* 2분할 컨텐츠 */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, flex:1, overflow:'hidden' }}>
 
         {/* ── 왼쪽: 발주내역 ── */}
         <div style={{ display:'flex', flexDirection:'column', gap:10, overflow:'hidden' }}>
-          {/* 헤더 */}
           <div className="pm-card" style={{ padding:'10px 14px', flexShrink:0 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
               <span style={{ fontSize:14, fontWeight:900, color:'#0f172a' }}>📦 발주내역</span>
-              <span style={{ fontSize:11, color:'#94a3b8' }}>
-                {poAll.length}건
-                {poUnresolvedOld.length > 0 && (
-                  <span style={{ marginLeft:6, color:'#d97706', fontWeight:700 }}>⚠ 이전 미입고 {poUnresolvedOld.length}건</span>
-                )}
-              </span>
+              <span style={{ fontSize:11, color:'#94a3b8' }}>발주확정 {poList.length}건</span>
             </div>
-            <MonthNav month={poMonth} setMonth={setPoMonth}/>
-            {/* KPI */}
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginTop:10 }}>
+            <MonthNav month={poMonth} setMonth={v => { setPoMonth(v); setExpandedPoId(null) }}/>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:6, marginTop:10 }}>
               <div style={{ background:'#eff6ff', borderRadius:8, padding:'6px 10px' }}>
-                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>이번달 발주</p>
+                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>발주확정 건수</p>
                 <p style={{ fontSize:18, fontWeight:900, color:'#2563eb', lineHeight:1 }}>{poList.length}</p>
               </div>
               <div style={{ background:'#f8fafc', borderRadius:8, padding:'6px 10px' }}>
                 <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>발주 수량</p>
                 <p style={{ fontSize:18, fontWeight:900, color:'#1e293b', lineHeight:1 }}>{poOrderedQty.toLocaleString()}</p>
               </div>
-              <div style={{ background: poUnresolvedAll.length>0?'#fffbeb':'#f8fafc', borderRadius:8, padding:'6px 10px' }}>
-                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>미입고(누적)</p>
-                <p style={{ fontSize:18, fontWeight:900, color:poUnresolvedAll.length>0?'#d97706':'#94a3b8', lineHeight:1 }}>{poUnresolvedAll.length}</p>
-              </div>
             </div>
           </div>
 
-          {/* 발주 목록 */}
           <div className="pm-card" style={{ flex:1, overflow:'auto', padding:0 }}>
-            {poAll.length === 0
+            {poList.length === 0
               ? <div style={{ textAlign:'center', padding:'40px 0', color:'#94a3b8' }}>
                   <PackagePlus size={28} style={{ opacity:0.2, margin:'0 auto 8px' }}/>
-                  <p style={{ fontSize:13, fontWeight:700 }}>발주 내역이 없습니다</p>
+                  <p style={{ fontSize:13, fontWeight:700 }}>발주확정 내역이 없습니다</p>
                 </div>
               : <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                   <thead style={{ position:'sticky', top:0, zIndex:1 }}>
@@ -149,37 +127,59 @@ export default function PurchaseMainPage() {
                       <th style={thStyle('left')}>발주일</th>
                       <th style={thStyle('left')}>구매처</th>
                       <th style={thStyle()}>품목</th>
-                      <th style={thStyle()}>발주</th>
-                      <th style={thStyle()}>입고</th>
-                      <th style={thStyle()}>미입고</th>
-                      <th style={thStyle()}>상태</th>
+                      <th style={thStyle()}>발주수량</th>
+                      <th style={{ ...thStyle(), width:28 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {poAll.map(p => {
-                      const tOrd = p.items.reduce((s,i)=>s+i.ordered,0)
-                      const tRcv = p.items.reduce((s,i)=>s+i.received,0)
-                      const tMis = tOrd - tRcv
-                      const st   = ST[p.status]
-                      const old  = isUnresolved(p) && !p.order_date.startsWith(poMonth)
+                    {poList.map(p => {
+                      const tOrd = p.items.reduce((s,i) => s+i.ordered, 0)
+                      const isOpen = expandedPoId === p.id
                       return (
-                        <tr key={p.id} style={{ borderBottom:'1px solid #f8fafc', background:old?'#fffbeb':undefined }}>
-                          <td style={tdStyle('left')}>
-                            <span style={{ fontSize:11.5, fontWeight:700, color:'#334155' }}>{fmtDateShort(p.order_date)}</span>
-                            <span style={{ display:'block', fontSize:10, color:'#94a3b8' }}>{p.order_date}</span>
-                            {old && <span style={{ fontSize:9.5, fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'1px 5px', borderRadius:99 }}>이전↑</span>}
-                          </td>
-                          <td style={{ ...tdStyle('left'), fontSize:11.5, color:'#475569' }}>{p.supplier||'-'}</td>
-                          <td style={{ ...tdStyle(), color:'#64748b' }}>{p.items.length}건</td>
-                          <td style={{ ...tdStyle(), fontWeight:800, color:'#1e293b' }}>{tOrd.toLocaleString()}</td>
-                          <td style={{ ...tdStyle(), fontWeight:800, color:'#0ea5e9' }}>{tRcv.toLocaleString()}</td>
-                          <td style={{ ...tdStyle(), fontWeight:900, color:tMis>0?'#d97706':'#94a3b8' }}>{tMis.toLocaleString()}</td>
-                          <td style={tdStyle()}>
-                            <span style={{ display:'inline-flex', fontSize:10.5, fontWeight:800, background:st.bg, color:st.color, padding:'2px 7px', borderRadius:99 }}>
-                              {st.label}
-                            </span>
-                          </td>
-                        </tr>
+                        <>
+                          <tr key={p.id}
+                            onClick={() => setExpandedPoId(isOpen ? null : p.id)}
+                            style={{ borderBottom:'1px solid #f8fafc', cursor:'pointer', background:isOpen?'#eff6ff':undefined }}
+                            onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background='#f8fafc' }}
+                            onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background='' }}
+                          >
+                            <td style={tdStyle('left')}>
+                              <span style={{ fontSize:11.5, fontWeight:700, color:'#334155' }}>{fmtDateShort(p.order_date)}</span>
+                              <span style={{ display:'block', fontSize:10, color:'#94a3b8' }}>{p.order_date}</span>
+                            </td>
+                            <td style={{ ...tdStyle('left'), fontSize:11.5, color:'#475569' }}>{p.supplier||'-'}</td>
+                            <td style={{ ...tdStyle(), color:'#64748b' }}>{p.items.length}건</td>
+                            <td style={{ ...tdStyle(), fontWeight:800, color:'#1e293b' }}>{tOrd.toLocaleString()}</td>
+                            <td style={tdStyle()}>
+                              {isOpen ? <ChevronUp size={13} color="#94a3b8"/> : <ChevronDown size={13} color="#94a3b8"/>}
+                            </td>
+                          </tr>
+                          {isOpen && (
+                            <tr key={`${p.id}-detail`}>
+                              <td colSpan={5} style={{ padding:0, background:'#f0f9ff' }}>
+                                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                                  <thead>
+                                    <tr style={{ background:'#dbeafe' }}>
+                                      {['상품코드','옵션명','바코드','발주수량'].map(h => (
+                                        <th key={h} style={{ padding:'4px 8px', fontWeight:800, color:'#1d4ed8', textAlign:'center', fontSize:10 }}>{h}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {p.items.map((item, i) => (
+                                      <tr key={i} style={{ borderBottom:'1px solid #e0f2fe' }}>
+                                        <td style={{ padding:'4px 8px', color:'#334155', fontFamily:'monospace', fontSize:10.5 }}>{item.product_code}</td>
+                                        <td style={{ padding:'4px 8px', color:'#475569', fontSize:10.5 }}>{item.option_name||'-'}</td>
+                                        <td style={{ padding:'4px 8px', color:'#64748b', fontFamily:'monospace', fontSize:10 }}>{item.barcode||'-'}</td>
+                                        <td style={{ padding:'4px 8px', textAlign:'center', fontWeight:800, color:'#1d4ed8' }}>{item.ordered}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </>
                       )
                     })}
                   </tbody>
@@ -190,72 +190,90 @@ export default function PurchaseMainPage() {
 
         {/* ── 오른쪽: 입고내역 ── */}
         <div style={{ display:'flex', flexDirection:'column', gap:10, overflow:'hidden' }}>
-          {/* 헤더 */}
           <div className="pm-card" style={{ padding:'10px 14px', flexShrink:0 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
               <span style={{ fontSize:14, fontWeight:900, color:'#0f172a' }}>✅ 입고내역</span>
-              <span style={{ fontSize:11, color:'#94a3b8' }}>{rcList.length}건</span>
+              <span style={{ fontSize:11, color:'#94a3b8' }}>입고확정 {rcList.length}건</span>
             </div>
-            <MonthNav month={rcMonth} setMonth={setRcMonth}/>
-            {/* KPI */}
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginTop:10 }}>
+            <MonthNav month={rcMonth} setMonth={v => { setRcMonth(v); setExpandedRcId(null) }}/>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:6, marginTop:10 }}>
               <div style={{ background:'#f0fdf4', borderRadius:8, padding:'6px 10px' }}>
-                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>이번달 입고</p>
+                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>입고확정 건수</p>
                 <p style={{ fontSize:18, fontWeight:900, color:'#059669', lineHeight:1 }}>{rcList.length}</p>
               </div>
               <div style={{ background:'#f8fafc', borderRadius:8, padding:'6px 10px' }}>
                 <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>입고 수량</p>
                 <p style={{ fontSize:18, fontWeight:900, color:'#1e293b', lineHeight:1 }}>{rcReceivedQty.toLocaleString()}</p>
               </div>
-              <div style={{ background: poUnresolvedAll.length>0?'#fffbeb':'#f8fafc', borderRadius:8, padding:'6px 10px' }}>
-                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>전체 미입고</p>
-                <p style={{ fontSize:18, fontWeight:900, color:poUnresolvedAll.length>0?'#d97706':'#94a3b8', lineHeight:1 }}>{poUnresolvedAll.length}</p>
-              </div>
             </div>
           </div>
 
-          {/* 입고 목록 */}
           <div className="pm-card" style={{ flex:1, overflow:'auto', padding:0 }}>
             {rcList.length === 0
               ? <div style={{ textAlign:'center', padding:'40px 0', color:'#94a3b8' }}>
                   <PackagePlus size={28} style={{ opacity:0.2, margin:'0 auto 8px' }}/>
-                  <p style={{ fontSize:13, fontWeight:700 }}>입고 내역이 없습니다</p>
+                  <p style={{ fontSize:13, fontWeight:700 }}>입고확정 내역이 없습니다</p>
                 </div>
               : <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                   <thead style={{ position:'sticky', top:0, zIndex:1 }}>
                     <tr style={{ background:'#f8fafc' }}>
-                      <th style={thStyle('left')}>발주일</th>
                       <th style={thStyle('left')}>입고일</th>
                       <th style={thStyle('left')}>구매처</th>
                       <th style={thStyle()}>품목</th>
-                      <th style={thStyle()}>발주</th>
-                      <th style={thStyle()}>입고</th>
-                      <th style={thStyle()}>상태</th>
+                      <th style={thStyle()}>입고수량</th>
+                      <th style={{ ...thStyle(), width:28 }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {rcList.map(p => {
-                      const tOrd = p.items.reduce((s,i)=>s+i.ordered,0)
-                      const tRcv = p.items.reduce((s,i)=>s+i.received,0)
-                      const st   = ST[p.status]
+                      const tRcv  = p.items.reduce((s,i) => s+i.received, 0)
                       const rcDate = p.received_at ? p.received_at.slice(0,10) : p.order_date
+                      const isOpen = expandedRcId === p.id
                       return (
-                        <tr key={p.id} style={{ borderBottom:'1px solid #f8fafc' }}>
-                          <td style={{ ...tdStyle('left'), color:'#94a3b8', fontSize:11 }}>{p.order_date}</td>
-                          <td style={tdStyle('left')}>
-                            <span style={{ fontSize:11.5, fontWeight:700, color:'#334155' }}>{fmtDateShort(rcDate)}</span>
-                            <span style={{ display:'block', fontSize:10, color:'#94a3b8' }}>{rcDate}</span>
-                          </td>
-                          <td style={{ ...tdStyle('left'), fontSize:11.5, color:'#475569' }}>{p.supplier||'-'}</td>
-                          <td style={{ ...tdStyle(), color:'#64748b' }}>{p.items.length}건</td>
-                          <td style={{ ...tdStyle(), fontWeight:800, color:'#1e293b' }}>{tOrd.toLocaleString()}</td>
-                          <td style={{ ...tdStyle(), fontWeight:800, color:'#0ea5e9' }}>{tRcv.toLocaleString()}</td>
-                          <td style={tdStyle()}>
-                            <span style={{ display:'inline-flex', fontSize:10.5, fontWeight:800, background:st.bg, color:st.color, padding:'2px 7px', borderRadius:99 }}>
-                              {st.label}
-                            </span>
-                          </td>
-                        </tr>
+                        <>
+                          <tr key={p.id}
+                            onClick={() => setExpandedRcId(isOpen ? null : p.id)}
+                            style={{ borderBottom:'1px solid #f8fafc', cursor:'pointer', background:isOpen?'#f0fdf4':undefined }}
+                            onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background='#f8fafc' }}
+                            onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background='' }}
+                          >
+                            <td style={tdStyle('left')}>
+                              <span style={{ fontSize:11.5, fontWeight:700, color:'#334155' }}>{fmtDateShort(rcDate)}</span>
+                              <span style={{ display:'block', fontSize:10, color:'#94a3b8' }}>{rcDate}</span>
+                            </td>
+                            <td style={{ ...tdStyle('left'), fontSize:11.5, color:'#475569' }}>{p.supplier||'-'}</td>
+                            <td style={{ ...tdStyle(), color:'#64748b' }}>{p.items.length}건</td>
+                            <td style={{ ...tdStyle(), fontWeight:800, color:'#059669' }}>{tRcv.toLocaleString()}</td>
+                            <td style={tdStyle()}>
+                              {isOpen ? <ChevronUp size={13} color="#94a3b8"/> : <ChevronDown size={13} color="#94a3b8"/>}
+                            </td>
+                          </tr>
+                          {isOpen && (
+                            <tr key={`${p.id}-detail`}>
+                              <td colSpan={5} style={{ padding:0, background:'#f0fdf4' }}>
+                                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                                  <thead>
+                                    <tr style={{ background:'#bbf7d0' }}>
+                                      {['상품코드','옵션명','바코드','입고수량'].map(h => (
+                                        <th key={h} style={{ padding:'4px 8px', fontWeight:800, color:'#166534', textAlign:'center', fontSize:10 }}>{h}</th>
+                                      ))}
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {p.items.map((item, i) => (
+                                      <tr key={i} style={{ borderBottom:'1px solid #dcfce7' }}>
+                                        <td style={{ padding:'4px 8px', color:'#334155', fontFamily:'monospace', fontSize:10.5 }}>{item.product_code}</td>
+                                        <td style={{ padding:'4px 8px', color:'#475569', fontSize:10.5 }}>{item.option_name||'-'}</td>
+                                        <td style={{ padding:'4px 8px', color:'#64748b', fontFamily:'monospace', fontSize:10 }}>{item.barcode||'-'}</td>
+                                        <td style={{ padding:'4px 8px', textAlign:'center', fontWeight:800, color:'#059669' }}>{item.received}</td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </td>
+                            </tr>
+                          )}
+                        </>
                       )
                     })}
                   </tbody>
@@ -263,6 +281,7 @@ export default function PurchaseMainPage() {
             }
           </div>
         </div>
+
       </div>
     </div>
   )

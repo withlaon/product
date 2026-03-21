@@ -7,8 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import {
   Purchase, PurchaseItem, PmProduct,
-  getToday, getThisMonth, shiftMonth,
-  fmtMonthLabel,
+  getToday, shiftDay, fmtDayLabel,
   syncProductQty,
   apiFetchPurchases, apiInsertPurchase, apiUpdatePurchase, apiDeletePurchase,
 } from '../_shared'
@@ -17,26 +16,26 @@ import {
   Upload, ChevronLeft, ChevronRight,
 } from 'lucide-react'
 
-/* ── 월별 전용 날짜 네비 ── */
-function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) => void }) {
-  const thisMonth = getThisMonth()
-  const isFuture  = month >= thisMonth
+/* ── 일별 날짜 네비 ── */
+function DayNav({ day, setDay }: { day: string; setDay: (d: string) => void }) {
+  const today    = getToday()
+  const isFuture = day >= today
   return (
     <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-      <button onClick={() => setMonth(shiftMonth(month, -1))}
+      <button onClick={() => setDay(shiftDay(day, -1))}
         style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #e2e8f0', background:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
         <ChevronLeft size={12}/>
       </button>
-      <span style={{ fontSize:12, fontWeight:800, color:'#0f172a', minWidth:80, textAlign:'center', whiteSpace:'nowrap' }}>
-        {fmtMonthLabel(month)}
+      <span style={{ fontSize:11.5, fontWeight:800, color:'#0f172a', minWidth:120, textAlign:'center', whiteSpace:'nowrap' }}>
+        {fmtDayLabel(day)}
       </span>
-      <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={isFuture}
+      <button onClick={() => setDay(shiftDay(day, 1))} disabled={isFuture}
         style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #e2e8f0', background:'white', cursor:isFuture?'not-allowed':'pointer', opacity:isFuture?0.4:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
         <ChevronRight size={12}/>
       </button>
-      <button onClick={() => setMonth(thisMonth)}
+      <button onClick={() => setDay(today)}
         style={{ fontSize:10.5, fontWeight:700, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:6, padding:'4px 9px', cursor:'pointer' }}>
-        이번달
+        오늘
       </button>
     </div>
   )
@@ -77,8 +76,8 @@ export default function ReceiveManagePage() {
   const [products,  setProducts]  = useState<PmProduct[]>([])
   const [saving,    setSaving]    = useState(false)
 
-  /* 오른쪽 날짜 네비 (월별 전용) */
-  const [month, setMonth] = useState(getThisMonth())
+  /* 오른쪽 날짜 네비 (일별) */
+  const [day, setDay] = useState(getToday())
 
   /* 체크박스 */
   const [selectedKeys,  setSelectedKeys]  = useState<Set<string>>(new Set())
@@ -132,20 +131,20 @@ export default function ReceiveManagePage() {
     return list.sort((a, b) => b.prodCode.localeCompare(a.prodCode))
   }, [products])
 
-  /* ── 오른쪽: 날짜 필터 입고 목록 ── */
+  /* ── 오른쪽: 날짜 필터 입고 목록 (일별) ── */
   const rcPurchases = useMemo(() =>
     purchases
       .filter(p => p.status !== 'ordered' && p.status !== 'cancelled')
       .filter(p => {
-        const ref = (p.received_at ?? p.order_date).slice(0, month.length)
-        return ref === month
+        const ref = (p.received_at ?? p.order_date).slice(0, 10)
+        return ref === day
       })
       .sort((a, b) => {
         const aD = (a.received_at ?? a.order_date).slice(0, 10)
         const bD = (b.received_at ?? b.order_date).slice(0, 10)
-        return bD.localeCompare(aD)
+        return aD.localeCompare(bD)
       })
-  , [purchases, month])
+  , [purchases, day])
 
   /* ── 오른쪽: 펼친 아이템 목록 (상품코드 내림차순) ── */
   const rcItems = useMemo((): RcItem[] => {
@@ -451,7 +450,7 @@ export default function ReceiveManagePage() {
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
         <div style={{ display:'flex', gap:8 }}>
           {[
-            { label:'이번달 입고 건수', value:rcPurchases.length,    color:'#059669', bg:'#f0fdf4' },
+            { label:'당일 입고 건수',   value:rcPurchases.length,    color:'#059669', bg:'#f0fdf4' },
             { label:'입고 수량',        value:kpiQty,                color:'#1e293b', bg:'#f8fafc' },
             { label:'전체 미입고 종류', value:unreceivedList.length, color:unreceivedList.length>0?'#d97706':'#94a3b8', bg:unreceivedList.length>0?'#fffbeb':'#f8fafc' },
           ].map(c => (
@@ -519,7 +518,7 @@ export default function ReceiveManagePage() {
           {/* 날짜 네비 + 입고확정 버튼 */}
           <div style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', flexShrink:0, display:'flex', flexDirection:'column', gap:8 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <MonthNav month={month} setMonth={setMonth}/>
+              <DayNav day={day} setDay={setDay}/>
               <span style={{ fontSize:11, color:'#94a3b8' }}>{rcItems.length}건</span>
             </div>
             <button onClick={handleConfirm} disabled={saving}
@@ -536,7 +535,7 @@ export default function ReceiveManagePage() {
                   <PackagePlus size={32} style={{ opacity:0.2, margin:'0 auto 10px' }}/>
                   <p style={{ fontSize:13, fontWeight:700 }}>입고 내역이 없습니다</p>
                   <p style={{ fontSize:11, color:'#cbd5e1', marginTop:4 }}>
-                    {fmtMonthLabel(month)} 기간에 입고 등록된 항목이 없습니다
+                    {fmtDayLabel(day)} 입고 등록된 항목이 없습니다
                   </p>
                 </div>
               )

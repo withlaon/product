@@ -430,12 +430,12 @@ export default function PurchaseManagePage() {
     }
   }
 
-  /* ── 발주 등록 ── */
+  /* ── 발주 확정 ── */
   const handleSubmitOrder = async () => {
     const valid = selectedOpts.filter(s => s.qty && Number(s.qty) > 0)
     if (!valid.length || !orderDate) return
     setSaving(true)
-    setSaveMsg({ type: 'ok', text: '발주 등록 중...' })
+    setSaveMsg({ type: 'ok', text: '발주 확정 중...' })
     try {
       const items: PurchaseItem[] = valid.map(s => ({
         product_code: s.prodCode,
@@ -453,7 +453,7 @@ export default function PurchaseManagePage() {
         items,
       }
       const { error: insertErr } = await apiInsertPurchase(purchase)
-      if (insertErr) { setSaveMsg({ type: 'err', text: `발주 등록 실패: ${insertErr}` }); setSaving(false); return }
+      if (insertErr) { setSaveMsg({ type: 'err', text: `발주 확정 실패: ${insertErr}` }); setSaving(false); return }
       // 바코드 기준으로 상품관리탭 발주 수량 카운팅
       const deltas = valid.map(s => ({
         prodId:       s.prodId,
@@ -471,7 +471,7 @@ export default function PurchaseManagePage() {
       setSelectedOpts([])
       setOrderSupplier('')
       setOrderDate(getToday())
-      setSaveMsg({ type: 'ok', text: '✅ 발주 등록 완료! 상품관리 발주수량에 반영되었습니다.' })
+      setSaveMsg({ type: 'ok', text: '✅ 발주 확정 완료! 상품관리 발주수량에 반영되었습니다.' })
       setTimeout(() => setSaveMsg(null), 4000)
     } catch (e: unknown) {
       setSaveMsg({ type: 'err', text: `❌ 오류: ${e instanceof Error ? e.message : String(e)}` })
@@ -684,12 +684,12 @@ export default function PurchaseManagePage() {
           )}
         </div>
 
-        {/* ▶ 오른쪽: 발주 등록 ── */}
+        {/* ▶ 오른쪽: 발주 확정 ── */}
         <div className="pm-card" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 }}>
           {/* 패널 헤더 */}
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <PackagePlus size={14} style={{ color: '#2563eb' }} />
-            <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>발주 등록</span>
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>발주 확정</span>
             {selectedOpts.length > 0 && (
               <span style={{ marginLeft: 'auto', fontSize: 11, background: '#eff6ff', color: '#2563eb', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                 {selectedOpts.length}종
@@ -754,7 +754,7 @@ export default function PurchaseManagePage() {
                 })}
               </div>
 
-              {/* 발주 등록 버튼 */}
+              {/* 발주 확정 버튼 */}
               <div style={{ padding: '10px 14px', borderTop: '1px solid #f1f5f9', flexShrink: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
                   <span style={{ fontSize: 11.5, color: '#64748b', fontWeight: 700 }}>
@@ -765,7 +765,7 @@ export default function PurchaseManagePage() {
                     전체 선택 해제
                   </button>
                 </div>
-                {/* 발주서 다운 → 발주 등록 순서 */}
+                {/* 발주서 다운 → 발주 확정 순서 */}
                 <button onClick={handleDownloadOrderSheet}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 800, fontSize: 13, cursor: 'pointer', marginBottom: 8 }}>
                   <FileDown size={14} />발주서 다운
@@ -773,7 +773,7 @@ export default function PurchaseManagePage() {
                 <Button onClick={handleSubmitOrder} disabled={saving || !orderDate}
                   style={{ width: '100%', fontWeight: 800, height: 40, opacity: (saving || !orderDate) ? 0.6 : 1 }}>
                   <PackagePlus size={14} style={{ marginRight: 4 }} />
-                  {saving ? '등록 중...' : '발주 등록'}
+                  {saving ? '확정 중...' : '발주 확정'}
                 </Button>
                 {/* 상태 메시지 */}
                 {saveMsg && (
