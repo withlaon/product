@@ -104,9 +104,18 @@ export async function GET(req: NextRequest) {
     ).catch(() => null)
 
     if (rpcRes && rpcRes.ok) {
-      data = await rpcRes.json()
-    } else {
-      // RPC 없으면 직접 테이블 조회 (fallback)
+      const rpcData = await rpcRes.json()
+      const rpcArr = Array.isArray(rpcData) ? rpcData as Record<string, unknown>[] : []
+      // RPC 응답에 status 필드가 없으면 직접 SELECT fallback (오래된 RPC 정의 대응)
+      const rpcHasStatus = rpcArr.length === 0 || 'status' in rpcArr[0]
+      if (rpcHasStatus) {
+        data = rpcData
+      }
+      // rpcHasStatus = false → fall through to direct SELECT below
+    }
+
+    if (data === null) {
+      // RPC 미지원 또는 status 필드 누락 → 직접 테이블 조회
       const res = await fetch(
         `${SUPABASE_URL}/rest/v1/${TABLE}?select=${SELECT_COLS}&order=code.asc`,
         {

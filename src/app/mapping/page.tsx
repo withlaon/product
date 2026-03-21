@@ -100,29 +100,26 @@ export default function MappingPage() {
     setMappings(loadedMappings)
 
     // 기존 localStorage 매핑 중 matched 항목을 Supabase registered_malls에 동기화
-    // (이전에 매핑됐지만 registered_malls 업데이트가 안 된 경우 처리)
+    // throttle 제거: 매핑탭을 열 때마다 실행해 항상 최신 상태 보장
     const syncExisting = async () => {
-      const SYNC_KEY = 'pm_mapping_last_sync'
-      const lastSync = localStorage.getItem(SYNC_KEY)
-      const now = Date.now()
-      // 1시간 이내 이미 동기화했으면 스킵
-      if (lastSync && now - Number(lastSync) < 60 * 60 * 1000) return
+      const allMatched: { mallKey: string; r: MappedRow }[] = []
+      for (const mallKey of Object.keys(loadedMappings)) {
+        const matched = loadedMappings[mallKey].filter(r => r.status === 'matched' && r.matched_product_id)
+        matched.forEach(r => allMatched.push({ mallKey, r }))
+      }
+      if (allMatched.length === 0) return
 
       let synced = false
-      for (const mallKey of Object.keys(loadedMappings)) {
+      for (const { mallKey, r } of allMatched) {
         const mallName = connected.find(m => m.key === mallKey)?.name || mallKey
-        const matched = loadedMappings[mallKey].filter(r => r.status === 'matched' && r.matched_product_id)
-        for (const r of matched) {
-          if (r.matched_product_id) {
-            await updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id)
-            synced = true
-          }
+        if (r.matched_product_id) {
+          await updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id)
+          synced = true
         }
       }
       if (synced) {
-        localStorage.setItem(SYNC_KEY, String(now))
         try { localStorage.removeItem('pm_products_cache_v1') } catch {}
-        localStorage.setItem('pm_products_mapping_signal', String(now))
+        localStorage.setItem('pm_products_mapping_signal', String(Date.now()))
       }
     }
     syncExisting()
