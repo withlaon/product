@@ -194,15 +194,29 @@ export default function ReceiveManagePage() {
     if (!toConfirm.length)       { alert('선택한 항목이 이미 모두 확정되었습니다.'); return }
 
     setSaving(true)
-    const deltas = toConfirm
-      .filter(item => item.prodId)
-      .map(item => ({
-        prodId:        item.prodId,
+
+    // 바코드 기준 우선 매핑, 없으면 상품코드+옵션명으로 매핑
+    const deltas = toConfirm.map(item => {
+      let prodId = item.prodId
+      // prodId가 없는 경우 재탐색 (barcode 우선 → product_code+option_name fallback)
+      if (!prodId && item.barcode) {
+        for (const prod of products) {
+          const opt = prod.options.find(o => o.barcode === item.barcode)
+          if (opt) { prodId = prod.id; break }
+        }
+      }
+      if (!prodId && item.product_code) {
+        const prod = products.find(pr => pr.code === item.product_code)
+        if (prod) prodId = prod.id
+      }
+      return {
+        prodId,
         optName:       item.option_name,
         barcode:       item.barcode || undefined,
         orderedDelta:  0,
         receivedDelta: item.received,
-      }))
+      }
+    }).filter(d => d.prodId)
 
     if (deltas.length) await syncProductQty(products, deltas)
 
@@ -210,11 +224,16 @@ export default function ReceiveManagePage() {
     for (const item of toConfirm) newKeys.add(`${item.purchaseId}|${item.itemIndex}`)
     setConfirmedKeys(newKeys)
     localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newKeys]))
-    localStorage.removeItem('pm_products_cache_v1')  // 상품관리 캐시 클리어
+    // 상품관리탭 캐시 클리어 + 새로고침 signal
+    localStorage.removeItem('pm_products_cache_v1')
+    localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
 
     await loadProducts()
     setSaving(false)
     setSelectedKeys(new Set())
+    if (!deltas.length) {
+      alert('바코드 또는 상품코드가 매핑된 상품이 없어 수량 반영이 되지 않았습니다.\n입고 상품의 바코드/상품코드를 확인해 주세요.')
+    }
   }
 
   /* ── 수정 ── */
@@ -393,12 +412,17 @@ export default function ReceiveManagePage() {
       }))
     if (!items.length) return
     setSaving(true)
-    const p: Purchase = {
-      id: String(Date.now()), order_date: form.order_date,
-      supplier: form.supplier || '직접입고', status: 'completed',
+    const payload = {
+      order_date: form.order_date,
+      supplier: form.supplier || '직접입고', status: 'completed' as const,
       ordered_at: new Date().toISOString(), received_at: new Date().toISOString(), items,
     }
-    await supabase.from('pm_purchases').insert(p)
+    const { error } = await supabase.from('pm_purchases').insert(payload)
+    if (error) {
+      alert(`입고 등록 실패: ${error.message}`)
+      setSaving(false)
+      return
+    }
     await loadPurchases()
     closeAddModal()
     setSaving(false)

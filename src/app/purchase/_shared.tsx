@@ -93,10 +93,10 @@ export async function syncProductQty(
       ?? []
 
     const updatedOpts = baseOpts.map((opt: PmOption) => {
-      // 바코드 우선, 없으면 옵션명으로 매칭
+      // 바코드 우선 매칭, 바코드 불일치 시 옵션명으로 fallback
       const u = updates.find(u =>
         (u.barcode && u.barcode === opt.barcode) ||
-        (!u.barcode && u.optName === opt.name)
+        (u.optName && (u.optName === opt.name || u.optName === opt.korean_name))
       )
       if (!u) return opt
       const newOrdered  = Math.max(0, (opt.ordered || 0) + u.orderedDelta)
