@@ -1,13 +1,35 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import {
-  Purchase,
-  ST,
+  Purchase, PmProduct,
   getThisMonth, shiftMonth,
   fmtMonthLabel, fmtDateShort,
   apiFetchPurchases,
 } from './_shared'
 import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp } from 'lucide-react'
+
+type FP = PmProduct & { cost_price?: number; cost_currency?: string }
+
+const CACHE_KEY = 'pm_products_cache_v1'
+
+function loadCachedProducts(): FP[] {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    if (!raw) return []
+    const { data } = JSON.parse(raw)
+    return Array.isArray(data) ? (data as FP[]) : []
+  } catch { return [] }
+}
+
+/** 발주 1건의 원화 합계금액 계산 */
+function calcOrderKrw(purchase: Purchase, products: FP[], exchangeRate: number): number {
+  return purchase.items.reduce((sum, item) => {
+    const prod = products.find(p => p.code === item.product_code)
+    if (!prod?.cost_price) return sum
+    const rate = (prod.cost_currency || '원') === '원' ? 1 : exchangeRate
+    return sum + prod.cost_price * rate * item.ordered
+  }, 0)
+}
 
 /* ── 월별 전용 날짜 네비 ── */
 function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) => void }) {
@@ -36,6 +58,8 @@ function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) =>
 
 export default function PurchaseMainPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
+  const [products,  setProducts]  = useState<FP[]>([])
+  const [exchangeRate, setExchangeRate] = useState(190)
 
   /* 발주내역 날짜 (월별 전용) */
   const [poMonth, setPoMonth] = useState(getThisMonth())
@@ -52,10 +76,28 @@ export default function PurchaseMainPage() {
   }, [])
 
   useEffect(() => {
+    // 상품 캐시 + 환율 불러오기
+    setProducts(loadCachedProducts())
+    try {
+      const er = Number(localStorage.getItem('pm_exchange_rate'))
+      if (er > 0) setExchangeRate(er)
+    } catch { /* ignore */ }
+
     loadPurchases()
     const onVisible = () => { if (document.visibilityState === 'visible') loadPurchases() }
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === CACHE_KEY) setProducts(loadCachedProducts())
+      if (e.key === 'pm_exchange_rate') {
+        const er = Number(e.newValue)
+        if (er > 0) setExchangeRate(er)
+      }
+    }
     document.addEventListener('visibilitychange', onVisible)
-    return () => document.removeEventListener('visibilitychange', onVisible)
+    window.addEventListener('storage', onStorage)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('storage', onStorage)
+    }
   }, [loadPurchases])
 
   /* 발주내역: status='ordered' + 해당 월 + 오름차순 */
@@ -83,6 +125,10 @@ export default function PurchaseMainPage() {
   /* KPI */
   const poOrderedQty  = useMemo(() => poList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.ordered,0), 0), [poList])
   const rcReceivedQty = useMemo(() => rcList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.received,0), 0), [rcList])
+  /* 월 누적 발주금액 (원화) */
+  const poMonthKrw = useMemo(() =>
+    poList.reduce((s, p) => s + calcOrderKrw(p, products, exchangeRate), 0)
+  , [poList, products, exchangeRate])
 
   const thStyle = (align: 'left'|'center' = 'center'): React.CSSProperties => ({
     padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:align, borderBottom:'1px solid #f1f5f9',
@@ -103,7 +149,7 @@ export default function PurchaseMainPage() {
               <span style={{ fontSize:11, color:'#94a3b8' }}>발주확정 {poList.length}건</span>
             </div>
             <MonthNav month={poMonth} setMonth={v => { setPoMonth(v); setExpandedPoId(null) }}/>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:6, marginTop:10 }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginTop:10 }}>
               <div style={{ background:'#eff6ff', borderRadius:8, padding:'6px 10px' }}>
                 <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>발주확정 건수</p>
                 <p style={{ fontSize:18, fontWeight:900, color:'#2563eb', lineHeight:1 }}>{poList.length}</p>
@@ -111,6 +157,12 @@ export default function PurchaseMainPage() {
               <div style={{ background:'#f8fafc', borderRadius:8, padding:'6px 10px' }}>
                 <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>발주 수량</p>
                 <p style={{ fontSize:18, fontWeight:900, color:'#1e293b', lineHeight:1 }}>{poOrderedQty.toLocaleString()}</p>
+              </div>
+              <div style={{ background:'#fefce8', borderRadius:8, padding:'6px 10px' }}>
+                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>발주금액 (월누적)</p>
+                <p style={{ fontSize: poMonthKrw > 0 ? 14 : 18, fontWeight:900, color: poMonthKrw > 0 ? '#92400e' : '#cbd5e1', lineHeight:1, marginTop: poMonthKrw > 0 ? 3 : 0 }}>
+                  {poMonthKrw > 0 ? `₩${Math.round(poMonthKrw).toLocaleString()}` : '-'}
+                </p>
               </div>
             </div>
           </div>
@@ -128,12 +180,14 @@ export default function PurchaseMainPage() {
                       <th style={thStyle('left')}>구매처</th>
                       <th style={thStyle()}>품목</th>
                       <th style={thStyle()}>발주수량</th>
+                      <th style={thStyle()}>발주금액</th>
                       <th style={{ ...thStyle(), width:28 }}></th>
                     </tr>
                   </thead>
                   <tbody>
                     {poList.map(p => {
                       const tOrd = p.items.reduce((s,i) => s+i.ordered, 0)
+                      const lineKrw = calcOrderKrw(p, products, exchangeRate)
                       const isOpen = expandedPoId === p.id
                       return (
                         <>
@@ -150,13 +204,16 @@ export default function PurchaseMainPage() {
                             <td style={{ ...tdStyle('left'), fontSize:11.5, color:'#475569' }}>{p.supplier||'-'}</td>
                             <td style={{ ...tdStyle(), color:'#64748b' }}>{p.items.length}건</td>
                             <td style={{ ...tdStyle(), fontWeight:800, color:'#1e293b' }}>{tOrd.toLocaleString()}</td>
+                            <td style={{ ...tdStyle(), fontWeight:900, color: lineKrw > 0 ? '#92400e' : '#cbd5e1', fontSize:11.5 }}>
+                              {lineKrw > 0 ? `₩${Math.round(lineKrw).toLocaleString()}` : '-'}
+                            </td>
                             <td style={tdStyle()}>
                               {isOpen ? <ChevronUp size={13} color="#94a3b8"/> : <ChevronDown size={13} color="#94a3b8"/>}
                             </td>
                           </tr>
                           {isOpen && (
                             <tr key={`${p.id}-detail`}>
-                              <td colSpan={5} style={{ padding:0, background:'#f0f9ff' }}>
+                              <td colSpan={6} style={{ padding:0, background:'#f0f9ff' }}>
                                 <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
                                   <thead>
                                     <tr style={{ background:'#dbeafe' }}>
