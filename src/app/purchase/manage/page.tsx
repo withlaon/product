@@ -280,9 +280,7 @@ export default function PurchaseManagePage() {
         })
       }
     }
-    return result.sort((a, b) =>
-      a.prodCode.localeCompare(b.prodCode) || a.prodAbbr.localeCompare(b.prodAbbr)
-    )
+    return result.sort((a, b) => (a.barcode || '').localeCompare(b.barcode || ''))
   }, [products, unreceivedMap, shipSoldMap])
 
   // 추천 목록 이미지 로딩: qualOpts 내 prodId 목록이 바뀔 때마다 재실행
