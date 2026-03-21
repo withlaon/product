@@ -396,6 +396,23 @@ function buildLocalMallsMap(): Record<string, string[]> {
   return result
 }
 
+/** localStorage 매핑에서 productId → { 쇼핑몰명: 쇼핑몰상품ID } 맵 생성 (hover 시 코드 표시용) */
+function buildLocalMallCodesMap(): Record<string, Record<string, string>> {
+  const mappings = loadLocalMappings()
+  const channels = loadMallChannels()
+  const result: Record<string, Record<string, string>> = {}
+  for (const [mallKey, rows] of Object.entries(mappings)) {
+    const mallName = channels.find(c => c.key === mallKey)?.name || mallKey
+    for (const row of rows) {
+      if (row.status === 'matched' && row.matched_product_id && row.mall_product_id) {
+        if (!result[row.matched_product_id]) result[row.matched_product_id] = {}
+        result[row.matched_product_id][mallName] = row.mall_product_id
+      }
+    }
+  }
+  return result
+}
+
 interface MappingRow { mallKey:string; mall:string; productId:string; productName:string; price:string }
 function MallMappingModal({
   product, onClose, onSave,
@@ -678,6 +695,8 @@ export default function ProductsPage() {
 
   // localStorage 매핑 기반 쇼핑몰 현황 (마운트 시 즉시 로드 → Supabase 동기화 타이밍과 무관하게 실시간 반영)
   const [localMallsMap, setLocalMallsMap] = useState<Record<string, string[]>>(() => buildLocalMallsMap())
+  // localStorage 매핑 기반 쇼핑몰 상품ID (hover 툴팁 코드 표시용)
+  const [localMallCodesMap, setLocalMallCodesMap] = useState<Record<string, Record<string, string>>>(() => buildLocalMallCodesMap())
 
   // 옵션 이미지 lazy load: localStorage 캐시에서 즉시 초기화, 미캐시 상품만 API 조회
   const [pageImages, setPageImages] = useState<Record<string, string[]>>(() => loadImgCache())
@@ -945,6 +964,7 @@ export default function ProductsPage() {
     const onStorage = (e: StorageEvent) => {
       if (e.key === 'pm_products_mapping_signal' || e.key === 'pm_channel_mappings_v2') {
         setLocalMallsMap(buildLocalMallsMap())
+        setLocalMallCodesMap(buildLocalMallCodesMap())
         if (e.key === 'pm_products_mapping_signal') {
           try { localStorage.removeItem('pm_products_cache_v1') } catch {}
           setRefreshKey(k => k + 1)
@@ -955,6 +975,7 @@ export default function ProductsPage() {
       if (document.visibilityState === 'visible') {
         // visibilitychange 시 localMallsMap 항상 갱신 (탭 전환 후 복귀 시)
         setLocalMallsMap(buildLocalMallsMap())
+        setLocalMallCodesMap(buildLocalMallCodesMap())
         const sig = localStorage.getItem('pm_products_mapping_signal')
         if (sig) {
           localStorage.removeItem('pm_products_mapping_signal')
@@ -2256,7 +2277,9 @@ export default function ProductsPage() {
                           if (merged.length === 0) return <span style={{ fontSize:11, color:'#cbd5e1', fontWeight:600 }}>-</span>
                           return merged.map((mallName, mi) => {
                           const mallData = (p.registered_malls ?? []).find(m => (typeof m === 'string' ? m : m.mall) === mallName)
-                          const mallCode = mallData && typeof mallData === 'object' ? (mallData.code || '') : ''
+                          // Supabase registered_malls 코드 우선, 없으면 localStorage mall_product_id 사용
+                          const mallCode = (mallData && typeof mallData === 'object' ? (mallData.code || '') : '')
+                            || (localMallCodesMap[p.id]?.[mallName] ?? '')
                           const abbrMap: Record<string,string> = {
                             '쿠팡':    '쿠팡',
                             '네이버':  '네이버',

@@ -148,7 +148,7 @@ export default function MappingPage() {
   const rows = mappings[selectedMall] || []
   const filtered = rows.filter(row => {
     const q = searchQuery.toLowerCase()
-    const mSearch = !searchQuery || row.mall_product_name.toLowerCase().includes(q) || row.mall_option.toLowerCase().includes(q)
+    const mSearch = !searchQuery || row.mall_product_name.toLowerCase().includes(q) || row.mall_option.toLowerCase().includes(q) || row.mall_product_id.toLowerCase().includes(q)
     const mStatus = statusFilter === 'all' || row.status === statusFilter
     return mSearch && mStatus
   })
