@@ -2216,7 +2216,17 @@ export default function ProductsPage() {
                         ) : (p.registered_malls ?? []).map((mallData, mi) => {
                           const mallName = typeof mallData === 'string' ? mallData : mallData.mall
                           const mallCode = typeof mallData === 'string' ? '' : (mallData.code || '')
-                          const abbr = mallName.replace(/\s/g,'').slice(0,2)
+                          const abbrMap: Record<string,string> = {
+                            '쿠팡':    '쿠팡',
+                            '네이버':  '네이버',
+                            '스마트스토어': '스마트',
+                            '11번가':  '11번',
+                            '에이블리':'에이블',
+                            '지그재그':'지그재',
+                            'G마켓':   'G마켓',
+                            '옥션':    '옥션',
+                          }
+                          const abbr = abbrMap[mallName] ?? mallName.replace(/\s/g,'').slice(0,2)
                           const colors: Record<string,{bg:string;color:string}> = {
                             '쿠팡':    { bg:'#fff7ed', color:'#c2410c' },
                             '네이버':  { bg:'#f0fdf4', color:'#15803d' },
@@ -2240,7 +2250,8 @@ export default function ProductsPage() {
                               <span
                                 style={{
                                   display:'inline-flex', alignItems:'center', justifyContent:'center',
-                                  width:28, height:22, borderRadius:5, fontSize:10, fontWeight:900,
+                                  minWidth:28, height:22, borderRadius:5, fontSize:10, fontWeight:900,
+                                  padding:'0 5px',
                                   background:cs.bg, color:cs.color,
                                   border:`1px solid ${cs.color}33`, cursor:'default',
                                 }}
