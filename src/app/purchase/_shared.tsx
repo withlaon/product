@@ -107,7 +107,7 @@ export function fmtDateShort(d: string) {
    Supabase에서 항상 최신 options를 가져와 업데이트 → 이미지 등 다른 필드 유실 방지
 ── */
 export async function syncProductQty(
-  _products: PmProduct[],   // fallback용 (fresh fetch 실패 시)
+  _products: PmProduct[],   // fallback용
   rows: { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }[]
 ) {
   const PM_API = '/api/pm-products'
@@ -117,19 +117,32 @@ export async function syncProductQty(
     if (!grouped[r.prodId]) grouped[r.prodId] = []
     grouped[r.prodId].push(r)
   }
+
+  const errors: string[] = []
+
   for (const [prodId, updates] of Object.entries(grouped)) {
-    // 최신 options API 라우트(SERVICE_ROLE_KEY)로 조회 → RLS 우회
-    let baseOpts: PmOption[] = _products.find(p => p.id === prodId)?.options ?? []
+    // ① 최신 options를 API 라우트(SERVICE_ROLE_KEY)로 조회 — 이미지 포함 전체 필드
+    let baseOpts: PmOption[] | null = null
     try {
       const res = await fetch(`${PM_API}?id=${encodeURIComponent(prodId)}&full=1`)
       if (res.ok) {
         const fresh = await res.json()
-        if (fresh?.options) baseOpts = fresh.options as PmOption[]
+        if (Array.isArray(fresh?.options) && fresh.options.length > 0) {
+          baseOpts = fresh.options as PmOption[]
+        }
+      } else {
+        errors.push(`options 조회 실패(${prodId}): HTTP ${res.status}`)
       }
-    } catch { /* fallback to _products */ }
+    } catch (e) {
+      errors.push(`options 조회 오류(${prodId}): ${String(e)}`)
+    }
+
+    // API 조회 실패 시 로컬 상태 fallback (이미지 없을 수 있음)
+    if (!baseOpts) {
+      baseOpts = _products.find(p => p.id === prodId)?.options ?? []
+    }
 
     const updatedOpts = baseOpts.map((opt: PmOption) => {
-      // 바코드 우선 매칭, 바코드 불일치 시 옵션명으로 fallback
       const u = updates.find(u =>
         (u.barcode && u.barcode === opt.barcode) ||
         (u.optName && (u.optName === opt.name || u.optName === opt.korean_name))
@@ -141,12 +154,25 @@ export async function syncProductQty(
       const newStock    = Math.max(0, prevStock + u.receivedDelta)
       return { ...opt, ordered: newOrdered, received: newReceived, current_stock: newStock }
     })
-    // PATCH via API 라우트 → SERVICE_ROLE_KEY로 RLS 완전 우회
-    await fetch(PM_API, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: prodId, options: updatedOpts }),
-    })
+
+    // ② PATCH via API 라우트 → SERVICE_ROLE_KEY로 RLS 완전 우회
+    try {
+      const patchRes = await fetch(PM_API, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: prodId, options: updatedOpts }),
+      })
+      if (!patchRes.ok) {
+        const errJson = await patchRes.json().catch(() => ({}))
+        errors.push(`PATCH 실패(${prodId}): ${errJson?.error ?? `HTTP ${patchRes.status}`}`)
+      }
+    } catch (e) {
+      errors.push(`PATCH 오류(${prodId}): ${String(e)}`)
+    }
+  }
+
+  if (errors.length > 0) {
+    throw new Error(errors.join(' | '))
   }
 }
 
