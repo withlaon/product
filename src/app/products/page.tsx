@@ -1137,6 +1137,11 @@ export default function ProductsPage() {
   // 검색/탭/필터 변경 시에만 1페이지 리셋 (등록·수정 후에는 현재 페이지 유지)
   useEffect(() => { setPage(1) }, [search, activeTab, statusFilter, dateFilter, dateCustom])
 
+  // 페이지 이동 시 스크롤 맨 위로
+  useEffect(() => {
+    document.querySelector('main')?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [page])
+
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE))
   // useMemo로 안정적인 reference 유지 → imgLoadKey 불필요한 재계산 방지
   const paginated = useMemo(
@@ -1290,6 +1295,9 @@ export default function ProductsPage() {
   }
 
   const handleDelete = async (id: string) => {
+    const target = products.find(p => p.id === id)
+    const label = target?.abbr || target?.name || '해당 상품'
+    if (!window.confirm(`"${label}" 상품을 삭제하시겠습니까?\n\n삭제하면 되돌릴 수 없으며,\n매핑관리의 해당 상품 데이터도 함께 제거됩니다.`)) return
     const { error } = await pmDelete(id)
     if (!error) {
       setProducts(prev => prev.filter(p => p.id !== id))
@@ -1305,6 +1313,8 @@ export default function ProductsPage() {
           )
         }
         saveLocalMappings(allMaps)
+        // 매핑관리탭에 변경사항 즉시 반영
+        localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
       } catch { /* 무시 */ }
     }
   }

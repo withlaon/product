@@ -392,7 +392,9 @@ export default function PurchaseManagePage() {
       sheet1Rows.forEach((row, ri) => {
         row.forEach((val, ci) => {
           const cellRef = XLSX.utils.encode_cell({ r: ri + 1, c: ci })
-          ws1[cellRef] = { v: val, t: typeof val === 'number' ? 'n' : 's' }
+          // M열(ci=12): 원가 - 소숫점 그대로 표기
+          const isPrice = ci === 12 && typeof val === 'number'
+          ws1[cellRef] = { v: val, t: typeof val === 'number' ? 'n' : 's', ...(isPrice ? { z: '#,##0.##' } : {}) }
         })
       })
       // Sheet1 범위 갱신
@@ -614,7 +616,7 @@ export default function PurchaseManagePage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                   <tr>
-                    {['', '약어 / 옵션 / 바코드', '판매', '미입고', '현재고', '이미지', ''].map(h => (
+                    {['', '이미지', '약어 / 옵션 / 바코드', '판매', '미입고', '현재고', ''].map(h => (
                       <th key={h} style={{ padding: '7px 6px', fontWeight: 800, color: '#64748b', fontSize: 10, textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -627,13 +629,27 @@ export default function PurchaseManagePage() {
                       <tr key={opt.key} style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer', transition: 'background 0.15s' }}
                         onClick={() => toggleSelect(opt)}>
                         {/* 상태 배지 */}
-                        <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 48, flexShrink: 0 }}>
-                          {opt.reason === 'lowStock'   && <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>재고↓</span>}
-                          {opt.reason === 'unreceived' && <span style={{ fontSize: 8.5, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>미입고</span>}
-                          {opt.reason === 'both'       && <span style={{ fontSize: 8.5, background: '#fef2f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>재고↓미입고</span>}
-                          {opt.reason === 'sold'       && <span style={{ fontSize: 8.5, background: '#eff6ff', color: '#6366f1', fontWeight: 800, padding: '1px 4px', borderRadius: 4 }}>판매</span>}
+                        <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 52, flexShrink: 0 }}>
+                          {opt.reason === 'lowStock'   && <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>재고↓</span>}
+                          {opt.reason === 'unreceived' && <span style={{ fontSize: 8.5, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>미입고</span>}
+                          {opt.reason === 'both'       && (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+                              <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>재고↓</span>
+                              <span style={{ fontSize: 8.5, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>미입고</span>
+                            </div>
+                          )}
+                          {opt.reason === 'sold'       && <span style={{ fontSize: 8.5, background: '#eff6ff', color: '#6366f1', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>판매</span>}
                         </td>
-                        {/* 약어 · 옵션 · 바코드 (이미지보다 앞에 → 더 넓게) */}
+                        {/* 이미지 (약어 앞으로 이동) */}
+                        <td style={{ padding: '4px 5px', textAlign: 'center', width: 46 }}>
+                          {(() => { const img = qualImages[opt.barcode] || opt.image; return img
+                            ? <img src={img} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block', margin: '0 auto' }} />
+                            : <div style={{ width: 36, height: 36, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                <Package size={14} style={{ color: '#cbd5e1' }} />
+                              </div>
+                          })()}
+                        </td>
+                        {/* 약어 · 옵션 · 바코드 */}
                         <td style={{ padding: '5px 6px', minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
                             <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.prodAbbr}</span>
@@ -656,15 +672,6 @@ export default function PurchaseManagePage() {
                           <span style={{ fontSize: 12, fontWeight: 900, color: stockColor(opt.currentStock), background: stockBg(opt.currentStock), padding: '2px 6px', borderRadius: 99 }}>
                             {opt.currentStock}
                           </span>
-                        </td>
-                        {/* 이미지 (오른쪽으로 이동) */}
-                        <td style={{ padding: '4px 5px', textAlign: 'center', width: 46 }}>
-                          {(() => { const img = qualImages[opt.barcode] || opt.image; return img
-                            ? <img src={img} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block', margin: '0 auto' }} />
-                            : <div style={{ width: 36, height: 36, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Package size={14} style={{ color: '#cbd5e1' }} />
-                              </div>
-                          })()}
                         </td>
                         {/* 선택 체크 */}
                         <td style={{ padding: '5px 6px', textAlign: 'center', width: 30 }}>
