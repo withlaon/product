@@ -25,6 +25,23 @@ interface PmProduct { id: string; code: string; name: string; category: string; 
 
 const MAPPING_KEY = 'pm_channel_mappings_v2'
 
+/* ── API 헬퍼 (service role key → RLS 완전 우회) ── */
+const PM_API = '/api/pm-products'
+const JSON_H = { 'Content-Type': 'application/json' }
+
+async function apiGetProduct(id: string): Promise<Record<string, unknown> | null> {
+  try {
+    const res = await fetch(`${PM_API}?id=${encodeURIComponent(id)}&full=1`)
+    if (!res.ok) return null
+    return await res.json()
+  } catch { return null }
+}
+async function apiPatchProduct(id: string, fields: Record<string, unknown>) {
+  try {
+    await fetch(PM_API, { method: 'PATCH', headers: JSON_H, body: JSON.stringify({ id, ...fields }) })
+  } catch { /* 무시 */ }
+}
+
 function loadMappings(): Record<string, MappedRow[]> {
   try {
     const r = localStorage.getItem(MAPPING_KEY)
@@ -242,6 +259,7 @@ export default function MappingPage() {
         }
       }
       if (matched.length > 0) {
+        try { localStorage.removeItem('pm_mapping_last_sync') } catch {}
         try { localStorage.removeItem('pm_products_cache_v1') } catch {}
         localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
       }
@@ -256,37 +274,29 @@ export default function MappingPage() {
   }
 
   const updateChannelPrice = async (productId: string, mallName: string, price: number) => {
-    try {
-      const { data } = await supabase.from('pm_products').select('channel_prices').eq('id', productId).single()
-      if (!data) return
-      const current: { channel: string; price: number }[] = data.channel_prices ?? []
-      const exists = current.find(cp => cp.channel === mallName)
-      const updated = exists
-        ? current.map(cp => cp.channel === mallName ? { ...cp, price } : cp)
-        : [...current, { channel: mallName, price }]
-      await supabase.from('pm_products').update({ channel_prices: updated }).eq('id', productId)
-    } catch { /* 무시 */ }
+    const data = await apiGetProduct(productId)
+    if (!data) return
+    const current: { channel: string; price: number }[] = (data.channel_prices as { channel: string; price: number }[]) ?? []
+    const exists = current.find(cp => cp.channel === mallName)
+    const updated = exists
+      ? current.map(cp => cp.channel === mallName ? { ...cp, price } : cp)
+      : [...current, { channel: mallName, price }]
+    await apiPatchProduct(productId, { channel_prices: updated })
   }
 
   const updateRegisteredMalls = async (productId: string, mallName: string, mallCode: string) => {
-    try {
-      const { data } = await supabase.from('pm_products').select('registered_malls').eq('id', productId).single()
-      if (!data) return
-      const current: (string | { mall: string; code: string })[] = data.registered_malls ?? []
-      const hasMall = current.some(m => (typeof m === 'string' ? m === mallName : m.mall === mallName))
-      if (hasMall) {
-        const updated = current.map(m =>
+    const data = await apiGetProduct(productId)
+    if (!data) return
+    const current: (string | { mall: string; code: string })[] = (data.registered_malls as (string | { mall: string; code: string })[]) ?? []
+    const hasMall = current.some(m => (typeof m === 'string' ? m === mallName : m.mall === mallName))
+    const updated = hasMall
+      ? current.map(m =>
           (typeof m === 'string' ? m === mallName : m.mall === mallName)
             ? { mall: mallName, code: mallCode }
             : m
         )
-        await supabase.from('pm_products').update({ registered_malls: updated }).eq('id', productId)
-      } else {
-        await supabase.from('pm_products').update({
-          registered_malls: [...current, { mall: mallName, code: mallCode }],
-        }).eq('id', productId)
-      }
-    } catch { /* 무시 */ }
+      : [...current, { mall: mallName, code: mallCode }]
+    await apiPatchProduct(productId, { registered_malls: updated })
   }
 
   const handleManualSave = async () => {
@@ -312,6 +322,8 @@ export default function MappingPage() {
       const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
       await updateRegisteredMalls(prod.id, mallName, manualTarget?.mall_product_id || '')
       if (price && price > 0) await updateChannelPrice(prod.id, mallName, price)
+      // 다음 방문 시 syncExisting 재실행 (throttle 초기화)
+      try { localStorage.removeItem('pm_mapping_last_sync') } catch {}
       try { localStorage.removeItem('pm_products_cache_v1') } catch {}
       localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
     }
@@ -319,13 +331,11 @@ export default function MappingPage() {
 
   /* registered_malls에서 특정 쇼핑몰 제거 (매핑 삭제 시 동기화) */
   const removeRegisteredMall = async (productId: string, mallName: string) => {
-    try {
-      const { data } = await supabase.from('pm_products').select('registered_malls').eq('id', productId).single()
-      if (!data) return
-      const current: (string | { mall: string; code: string })[] = data.registered_malls ?? []
-      const updated = current.filter(m => (typeof m === 'string' ? m !== mallName : m.mall !== mallName))
-      await supabase.from('pm_products').update({ registered_malls: updated }).eq('id', productId)
-    } catch { /* 무시 */ }
+    const data = await apiGetProduct(productId)
+    if (!data) return
+    const current: (string | { mall: string; code: string })[] = (data.registered_malls as (string | { mall: string; code: string })[]) ?? []
+    const updated = current.filter(m => (typeof m === 'string' ? m !== mallName : m.mall !== mallName))
+    await apiPatchProduct(productId, { registered_malls: updated })
   }
 
   const handleDeleteRow = (idx: number) => {
