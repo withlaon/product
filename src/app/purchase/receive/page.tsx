@@ -6,71 +6,291 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import {
-  Purchase, PurchaseItem, PmProduct, PurchaseStatus, DateMode,
-  ST, isUnresolved,
-  getToday, getThisMonth,
+  Purchase, PurchaseItem, PmProduct,
+  getToday, getThisMonth, shiftMonth,
   fmtMonthLabel, fmtDayLabel,
-  syncProductQty, DateNav,
+  syncProductQty,
 } from '../_shared'
-import { Edit2, Trash2, X, Plus, PackagePlus, CheckCircle2, Upload } from 'lucide-react'
+import {
+  Edit2, Trash2, X, Plus, PackagePlus, CheckCircle2,
+  Upload, Link2, AlertTriangle, ChevronLeft, ChevronRight,
+} from 'lucide-react'
+
+/* ── 월별 전용 날짜 네비 ── */
+function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) => void }) {
+  const thisMonth = getThisMonth()
+  const isFuture  = month >= thisMonth
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+      <button onClick={() => setMonth(shiftMonth(month, -1))}
+        style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #e2e8f0', background:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <ChevronLeft size={12}/>
+      </button>
+      <span style={{ fontSize:12, fontWeight:800, color:'#0f172a', minWidth:80, textAlign:'center', whiteSpace:'nowrap' }}>
+        {fmtMonthLabel(month)}
+      </span>
+      <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={isFuture}
+        style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #e2e8f0', background:'white', cursor:isFuture?'not-allowed':'pointer', opacity:isFuture?0.4:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <ChevronRight size={12}/>
+      </button>
+      <button onClick={() => setMonth(thisMonth)}
+        style={{ fontSize:10.5, fontWeight:700, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:6, padding:'4px 9px', cursor:'pointer' }}>
+        이번달
+      </button>
+    </div>
+  )
+}
+
+/* ── localStorage 키 ── */
+const MAPPING_KEY   = 'pm_receive_mapping_v1'   // "code|optName" → barcode
+const CONFIRMED_KEY = 'pm_receive_confirmed_v1' // 확정된 "purchaseId|itemIdx" Set
+
+/* ── 오른쪽 패널 펼친 아이템 타입 ── */
+interface RcItem {
+  purchaseId:   string
+  itemIndex:    number
+  product_code: string
+  option_name:  string
+  barcode:      string
+  received:     number
+  confirmed:    boolean
+  prodId:       string
+  prodAbbr:     string
+  optImage:     string
+}
+
+function loadLocalSet(key: string): Set<string> {
+  if (typeof window === 'undefined') return new Set()
+  try { const r = localStorage.getItem(key); return r ? new Set(JSON.parse(r)) : new Set() }
+  catch { return new Set() }
+}
+function loadLocalObj(key: string): Record<string, string> {
+  if (typeof window === 'undefined') return {}
+  try { const r = localStorage.getItem(key); return r ? JSON.parse(r) : {} }
+  catch { return {} }
+}
 
 export default function ReceiveManagePage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [products,  setProducts]  = useState<PmProduct[]>([])
   const [saving,    setSaving]    = useState(false)
 
-  const [mode,  setMode]  = useState<DateMode>('month')
+  /* 오른쪽 날짜 네비 (월별 전용) */
   const [month, setMonth] = useState(getThisMonth())
-  const [day,   setDay]   = useState(getToday())
 
+  /* 체크박스 */
+  const [selectedKeys,  setSelectedKeys]  = useState<Set<string>>(new Set())
+
+  /* 확정된 아이템 키 */
+  const [confirmedKeys, setConfirmedKeys] = useState<Set<string>>(() => loadLocalSet(CONFIRMED_KEY))
+
+  /* 매핑 저장소 "product_code|option_name" → barcode */
+  const [mappingStore, setMappingStore] = useState<Record<string, string>>(() => loadLocalObj(MAPPING_KEY))
+
+  /* 수동 매핑 모달 */
+  const [showMappingModal, setShowMappingModal] = useState(false)
+  const [unmappedItems,    setUnmappedItems]    = useState<RcItem[]>([])
+  const [manualMappings,   setManualMappings]   = useState<Record<string, string>>({})
+
+  /* 입고 등록 모달 */
+  const [isAdd, setIsAdd] = useState(false)
+  const [form,  setForm]  = useState({
+    order_date: getToday(),
+    supplier: '',
+    items: [{ product_code: '', option_name: '', barcode: '', qty: '' }],
+  })
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  /* 수정/삭제 모달 */
   const [editTarget,   setEditTarget]   = useState<Purchase | null>(null)
   const [editFormData, setEditFormData] = useState<Purchase | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Purchase | null>(null)
 
-  /* 입고 등록 모달 */
-  const [isAdd, setIsAdd] = useState(false)
-  const [form, setForm]   = useState({ order_date:'', supplier:'', items:[{ product_code:'', option_name:'', barcode:'', qty:'' }] })
-  const fileInputRef      = useRef<HTMLInputElement>(null)
-
+  /* ── 데이터 로드 ── */
   const loadPurchases = useCallback(async () => {
-    const { data } = await supabase.from('pm_purchases').select('*').order('order_date', { ascending:false })
+    const { data } = await supabase.from('pm_purchases').select('*').order('order_date', { ascending: false })
     if (data) setPurchases(data as Purchase[])
   }, [])
   const loadProducts = useCallback(async () => {
-    const { data } = await supabase.from('pm_products').select('id,code,name,options')
+    const { data } = await supabase.from('pm_products').select('id,code,name,abbr,options')
     if (data) setProducts(data as PmProduct[])
   }, [])
   useEffect(() => { loadPurchases(); loadProducts() }, [loadPurchases, loadProducts])
 
-  const key    = mode === 'month' ? month : day
-  const rcList = useMemo(() =>
+  /* ── 왼쪽: 미입고 목록 (pm_products 기준 ordered > received) ── */
+  const unreceivedList = useMemo(() => {
+    const list: {
+      prodId: string; abbr: string; optName: string
+      barcode: string; image: string; qty: number
+    }[] = []
+    for (const prod of products) {
+      for (const opt of prod.options) {
+        const unreceived = (opt.ordered || 0) - (opt.received || 0)
+        if (unreceived > 0) {
+          list.push({
+            prodId:  prod.id,
+            abbr:    prod.abbr || prod.name || prod.code,
+            optName: opt.name || opt.korean_name || '',
+            barcode: opt.barcode || '',
+            image:   opt.image   || '',
+            qty:     unreceived,
+          })
+        }
+      }
+    }
+    return list.sort((a, b) => b.qty - a.qty)
+  }, [products])
+
+  /* ── 오른쪽: 날짜 필터 입고 목록 ── */
+  const rcPurchases = useMemo(() =>
     purchases
       .filter(p => p.status !== 'ordered' && p.status !== 'cancelled')
       .filter(p => {
-        const ref = (p.received_at ?? p.order_date).slice(0, key.length)
-        return ref === key
+        const ref = (p.received_at ?? p.order_date).slice(0, month.length)
+        return ref === month
       })
-      .sort((a,b) => {
-        const aD = (a.received_at??a.order_date).slice(0,10)
-        const bD = (b.received_at??b.order_date).slice(0,10)
+      .sort((a, b) => {
+        const aD = (a.received_at ?? a.order_date).slice(0, 10)
+        const bD = (b.received_at ?? b.order_date).slice(0, 10)
         return bD.localeCompare(aD)
       })
-  , [purchases, key])
+  , [purchases, month])
 
-  const kpiCount    = rcList.length
-  const kpiQty      = useMemo(() => rcList.reduce((s,p)=>s+p.items.reduce((ss,i)=>ss+i.received,0),0), [rcList])
-  const kpiUnresolved = purchases.filter(isUnresolved).length
+  /* ── 오른쪽: 펼친 아이템 목록 (매핑 포함) ── */
+  const rcItems = useMemo((): RcItem[] => {
+    const items: RcItem[] = []
+    for (const p of rcPurchases) {
+      for (let i = 0; i < p.items.length; i++) {
+        const item = p.items[i]
+        const mapKey = `${item.product_code}|${item.option_name}`
+        const barcode = item.barcode || mappingStore[mapKey] || ''
+        const itemKey = `${p.id}|${i}`
+
+        let prodId = '', prodAbbr = '', optImage = ''
+        if (barcode) {
+          for (const prod of products) {
+            const opt = prod.options.find(o => o.barcode === barcode)
+            if (opt) { prodId = prod.id; prodAbbr = prod.abbr || prod.name; optImage = opt.image || ''; break }
+          }
+        }
+        if (!prodId) {
+          const prod = products.find(pr => pr.code === item.product_code)
+          if (prod) {
+            const opt = prod.options.find(o =>
+              o.name === item.option_name || o.korean_name === item.option_name
+            )
+            prodId = prod.id; prodAbbr = prod.abbr || prod.name; optImage = opt?.image || ''
+          }
+        }
+
+        items.push({
+          purchaseId: p.id, itemIndex: i,
+          product_code: item.product_code, option_name: item.option_name,
+          barcode, received: item.received,
+          confirmed: confirmedKeys.has(itemKey),
+          prodId, prodAbbr, optImage,
+        })
+      }
+    }
+    return items
+  }, [rcPurchases, products, mappingStore, confirmedKeys])
+
+  /* ── 매핑하기 ── */
+  const handleMapping = () => {
+    const newMappings: Record<string, string> = { ...mappingStore }
+    const unmapped: RcItem[] = []
+
+    for (const item of rcItems) {
+      if (item.barcode) continue
+      const mapKey = `${item.product_code}|${item.option_name}`
+      const prod = products.find(pr => pr.code === item.product_code)
+      if (prod) {
+        const opt = prod.options.find(o =>
+          o.name === item.option_name ||
+          o.korean_name === item.option_name ||
+          (o.korean_name || '').includes(item.option_name) ||
+          item.option_name.includes(o.name || '')
+        )
+        if (opt?.barcode) { newMappings[mapKey] = opt.barcode; continue }
+      }
+      unmapped.push(item)
+    }
+
+    const updated = { ...mappingStore, ...newMappings }
+    setMappingStore(updated)
+    localStorage.setItem(MAPPING_KEY, JSON.stringify(updated))
+
+    if (unmapped.length > 0) {
+      setUnmappedItems(unmapped)
+      const init: Record<string, string> = {}
+      for (const item of unmapped) init[`${item.product_code}|${item.option_name}`] = ''
+      setManualMappings(init)
+      setShowMappingModal(true)
+    } else {
+      alert('모든 상품이 자동 매핑되었습니다.')
+    }
+  }
+
+  const handleSaveManualMapping = () => {
+    const updated = { ...mappingStore }
+    for (const [k, v] of Object.entries(manualMappings)) {
+      if (v.trim()) updated[k] = v.trim()
+    }
+    setMappingStore(updated)
+    localStorage.setItem(MAPPING_KEY, JSON.stringify(updated))
+    setShowMappingModal(false)
+  }
+
+  /* ── 입고확정 ── */
+  const handleConfirm = async () => {
+    const toConfirm = rcItems.filter(item => {
+      const k = `${item.purchaseId}|${item.itemIndex}`
+      return selectedKeys.has(k) && !confirmedKeys.has(k)
+    })
+    if (selectedKeys.size === 0) { alert('확정할 항목을 선택하세요.'); return }
+    if (!toConfirm.length)       { alert('선택한 항목이 이미 모두 확정되었습니다.'); return }
+
+    setSaving(true)
+    const deltas = toConfirm
+      .filter(item => item.prodId)
+      .map(item => ({
+        prodId:         item.prodId,
+        optName:        item.option_name,
+        barcode:        item.barcode || undefined,
+        orderedDelta:   0,
+        receivedDelta:  item.received,
+      }))
+
+    if (deltas.length) await syncProductQty(products, deltas)
+
+    const newKeys = new Set(confirmedKeys)
+    for (const item of toConfirm) newKeys.add(`${item.purchaseId}|${item.itemIndex}`)
+    setConfirmedKeys(newKeys)
+    localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newKeys]))
+
+    await loadProducts()   // 미입고 목록 실시간 반영
+    setSaving(false)
+    setSelectedKeys(new Set())
+  }
 
   /* ── 수정 ── */
   const handleEditSave = async () => {
-    if (!editTarget||!editFormData) return
+    if (!editTarget || !editFormData) return
     setSaving(true)
-    const deltas = editFormData.items.map((newItem,i) => {
-      const oldItem = editTarget.items[i]||{product_code:'',option_name:'',barcode:'',ordered:0,received:0}
-      const prod = products.find(p=>p.code===newItem.product_code||p.code===oldItem.product_code)
-      return { prodId:prod?.id??'', optName:newItem.option_name, orderedDelta:newItem.ordered-oldItem.ordered, receivedDelta:newItem.received-oldItem.received }
-    }).filter(d=>d.prodId&&(d.orderedDelta!==0||d.receivedDelta!==0))
-    await supabase.from('pm_purchases').update({ order_date:editFormData.order_date, supplier:editFormData.supplier, status:editFormData.status, items:editFormData.items }).eq('id', editTarget.id)
+    const deltas = editFormData.items.map((newItem, i) => {
+      const oldItem = editTarget.items[i] || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
+      const prod = products.find(p => p.code === newItem.product_code || p.code === oldItem.product_code)
+      return {
+        prodId: prod?.id ?? '',
+        optName: newItem.option_name,
+        orderedDelta:  newItem.ordered  - oldItem.ordered,
+        receivedDelta: newItem.received - oldItem.received,
+      }
+    }).filter(d => d.prodId && (d.orderedDelta !== 0 || d.receivedDelta !== 0))
+    await supabase.from('pm_purchases').update({
+      order_date: editFormData.order_date, supplier: editFormData.supplier,
+      status: editFormData.status, items: editFormData.items,
+    }).eq('id', editTarget.id)
     if (deltas.length) await syncProductQty(products, deltas)
     await loadPurchases(); await loadProducts()
     setEditTarget(null); setEditFormData(null); setSaving(false)
@@ -80,71 +300,89 @@ export default function ReceiveManagePage() {
   const handleDelete = async (p: Purchase) => {
     setSaving(true)
     const deltas = p.items.map(item => {
-      const prod = products.find(pr=>pr.code===item.product_code)
-      return { prodId:prod?.id??'', optName:item.option_name, orderedDelta:-item.ordered, receivedDelta:-item.received }
-    }).filter(d=>d.prodId)
+      const prod = products.find(pr => pr.code === item.product_code)
+      return { prodId: prod?.id ?? '', optName: item.option_name, orderedDelta: -item.ordered, receivedDelta: -item.received }
+    }).filter(d => d.prodId)
     if (deltas.length) await syncProductQty(products, deltas)
     await supabase.from('pm_purchases').delete().eq('id', p.id)
     await loadPurchases(); await loadProducts()
     setDeleteTarget(null); setSaving(false)
   }
 
-  /* ── 입고 파일 업로드 파싱 ── */
+  /* ── 파일 업로드 (패킹리스트 형식 우선 지원) ── */
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        const wb   = XLSX.read(ev.target?.result, { type: 'binary' })
-        const ws   = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
-        if (!rows.length) return
+        const wb  = XLSX.read(ev.target?.result, { type: 'binary' })
+        const ws  = wb.Sheets[wb.SheetNames[0]]
 
-        // 헤더 자동 감지 — 컬럼명 후보 매핑
-        const COL = {
-          product_code: ['상품코드','product_code','상품 코드','코드'],
-          option_name:  ['옵션명','option_name','옵션','옵션 명','옵션이름'],
-          barcode:      ['바코드','barcode','바 코드','BARCODE'],
-          qty:          ['입고수량','수량','입고 수량','qty','QTY','Qty','입고량'],
-          order_date:   ['입고일','입고일자','날짜','date','입고 일자'],
-          supplier:     ['구매처','공급처','supplier','거래처'],
+        /* ── column-letter 방식으로 raw 읽기 ── */
+        const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', header: 'A' })
+
+        /* 헤더 행 탐색 (B열이 '품번' | '상품코드' 포함) */
+        const headerIdx = raw.findIndex(row =>
+          String(row['B'] || '').trim().includes('품번') ||
+          String(row['B'] || '').trim().includes('상품코드') ||
+          String(row['B'] || '').toLowerCase().trim() === 'product_code'
+        )
+
+        let parsedItems: { product_code:string; option_name:string; barcode:string; qty:string }[] = []
+        let dateVal = ''; let supplierVal = ''
+
+        if (headerIdx >= 0) {
+          /* ── 패킹리스트 형식: B=품번, D=컬러, E=수량 ── */
+          const dataRows = raw.slice(headerIdx + 2)   // +2: 단위 설명 행 스킵
+            .filter(row => String(row['B'] || '').trim() && !String(row['B'] || '').includes('합계') && !String(row['B'] || '').includes('총'))
+          parsedItems = dataRows.map(row => ({
+            product_code: String(row['B'] || '').trim(),
+            option_name:  String(row['D'] || '').trim(),
+            barcode:      '',
+            qty:          String(row['E'] || '').trim(),
+          })).filter(i => i.product_code && i.qty && Number(i.qty) > 0)
+        } else {
+          /* ── 기존 헤더 기반 파싱 (COL 목록 매핑) ── */
+          const allRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
+          if (!allRows.length) return
+          const COL = {
+            product_code: ['상품코드','product_code','상품 코드','코드','품번'],
+            option_name:  ['옵션명','option_name','옵션','옵션 명','옵션이름','컬러','색상','color'],
+            barcode:      ['바코드','barcode','바 코드','BARCODE'],
+            qty:          ['입고수량','수량','입고 수량','qty','QTY','Qty','입고량'],
+            order_date:   ['입고일','입고일자','날짜','date','입고 일자'],
+            supplier:     ['구매처','공급처','supplier','거래처'],
+          }
+          const headers = Object.keys(allRows[0])
+          const findCol = (keys: string[]) =>
+            headers.find(h => keys.map(k => k.toLowerCase()).includes(h.toLowerCase())) ?? ''
+          const cCode = findCol(COL.product_code); const cOpt  = findCol(COL.option_name)
+          const cBar  = findCol(COL.barcode);      const cQty  = findCol(COL.qty)
+          const cDate = findCol(COL.order_date);   const cSup  = findCol(COL.supplier)
+          parsedItems = allRows
+            .map(row => ({
+              product_code: String(row[cCode] ?? '').trim(),
+              option_name:  String(row[cOpt]  ?? '').trim(),
+              barcode:      String(row[cBar]  ?? '').trim(),
+              qty:          String(row[cQty]  ?? '').trim(),
+            }))
+            .filter(i => i.product_code || i.barcode)
+          if (cDate) dateVal    = String(allRows[0][cDate] ?? '').slice(0, 10)
+          if (cSup)  supplierVal = String(allRows[0][cSup]  ?? '').trim()
         }
-        const headers = Object.keys(rows[0])
-        const findCol = (keys: string[]) => headers.find(h => keys.map(k=>k.toLowerCase()).includes(h.toLowerCase())) ?? ''
 
-        const cCode = findCol(COL.product_code)
-        const cOpt  = findCol(COL.option_name)
-        const cBar  = findCol(COL.barcode)
-        const cQty  = findCol(COL.qty)
-        const cDate = findCol(COL.order_date)
-        const cSup  = findCol(COL.supplier)
-
-        const items = rows
-          .map(row => ({
-            product_code: String(row[cCode] ?? '').trim(),
-            option_name:  String(row[cOpt]  ?? '').trim(),
-            barcode:      String(row[cBar]  ?? '').trim(),
-            qty:          String(row[cQty]  ?? '').trim(),
-          }))
-          .filter(i => i.product_code || i.barcode)
-
-        if (!items.length) {
-          alert('파싱 가능한 행이 없습니다. 상품코드 또는 바코드 컬럼이 있는지 확인하세요.')
+        if (!parsedItems.length) {
+          alert('파싱 가능한 행이 없습니다. 파일 형식을 확인하세요.')
           return
         }
-
-        const dateVal    = cDate ? String(rows[0][cDate] ?? '').slice(0,10) : ''
-        const supplierVal = cSup ? String(rows[0][cSup] ?? '').trim() : ''
-
         setForm(f => ({
           order_date: dateVal || f.order_date,
           supplier:   supplierVal || f.supplier,
-          items,
+          items:      parsedItems,
         }))
       } catch (err) {
-        console.error(err)
-        alert('파일 파싱 오류가 발생했습니다.')
+        console.error(err); alert('파일 파싱 오류가 발생했습니다.')
       } finally {
         if (fileInputRef.current) fileInputRef.current.value = ''
       }
@@ -152,190 +390,325 @@ export default function ReceiveManagePage() {
     reader.readAsBinaryString(file)
   }
 
-  /* ── 입고 직접 등록 ── */
+  /* ── 입고 등록 (수량 반영은 입고확정 버튼으로) ── */
   const handleAdd = async () => {
     if (!form.order_date) return
-    const items: PurchaseItem[] = form.items.filter(i=>i.product_code).map(i=>({
-      product_code:i.product_code, option_name:i.option_name, barcode:i.barcode,
-      ordered:Number(i.qty)||0, received:Number(i.qty)||0,
-    }))
+    const items: PurchaseItem[] = form.items
+      .filter(i => i.product_code || i.barcode)
+      .map(i => ({
+        product_code: i.product_code, option_name: i.option_name, barcode: i.barcode,
+        ordered: Number(i.qty) || 0, received: Number(i.qty) || 0,
+      }))
     if (!items.length) return
     setSaving(true)
-    const p: Purchase = { id:String(Date.now()), order_date:form.order_date, supplier:form.supplier||'직접입고', status:'completed', ordered_at:new Date().toISOString(), received_at:new Date().toISOString(), items }
+    const p: Purchase = {
+      id: String(Date.now()), order_date: form.order_date,
+      supplier: form.supplier || '직접입고', status: 'completed',
+      ordered_at: new Date().toISOString(), received_at: new Date().toISOString(), items,
+    }
     await supabase.from('pm_purchases').insert(p)
-    await syncProductQty(products, items.map(i=>{
-      const prod = products.find(pr=>pr.code===i.product_code)
-      return { prodId:prod?.id??'', optName:i.option_name, orderedDelta:i.ordered, receivedDelta:i.received }
-    }).filter(d=>d.prodId))
-    await loadPurchases(); await loadProducts()
+    await loadPurchases()
     setIsAdd(false)
-    setForm({ order_date:'', supplier:'', items:[{ product_code:'', option_name:'', barcode:'', qty:'' }] })
+    setForm({ order_date: getToday(), supplier: '', items: [{ product_code:'', option_name:'', barcode:'', qty:'' }] })
     setSaving(false)
   }
+
+  /* KPI */
+  const kpiQty = useMemo(() => rcPurchases.reduce((s, p) => s + p.items.reduce((ss, i) => ss + i.received, 0), 0), [rcPurchases])
 
   const L = ({ children }: { children: React.ReactNode }) => (
     <label style={{ display:'block', fontSize:11.5, fontWeight:800, color:'#475569', marginBottom:5 }}>{children}</label>
   )
 
-  return (
-    <div className="pm-page" style={{ display:'flex', flexDirection:'column', height:'100%', gap:12 }}>
+  /* ── 전체 체크박스 상태 ── */
+  const allChecked = rcItems.length > 0 && rcItems.every(i => selectedKeys.has(`${i.purchaseId}|${i.itemIndex}`))
+  const toggleAll  = (v: boolean) =>
+    setSelectedKeys(v ? new Set(rcItems.map(i => `${i.purchaseId}|${i.itemIndex}`)) : new Set())
 
-      {/* 날짜 네비 + 등록 버튼 */}
+  return (
+    <div className="pm-page" style={{ display:'flex', flexDirection:'column', height:'100%', gap:10 }}>
+
+      {/* ── 상단: KPI + 등록 버튼 ── */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
-        <DateNav mode={mode} setMode={setMode} month={month} setMonth={setMonth} day={day} setDay={setDay} />
+        <div style={{ display:'flex', gap:8 }}>
+          {[
+            { label:'이번달 입고 건수', value:rcPurchases.length, color:'#059669', bg:'#f0fdf4' },
+            { label:'입고 수량',        value:kpiQty,             color:'#1e293b', bg:'#f8fafc' },
+            { label:'전체 미입고 종류', value:unreceivedList.length, color:unreceivedList.length>0?'#d97706':'#94a3b8', bg:unreceivedList.length>0?'#fffbeb':'#f8fafc' },
+          ].map(c => (
+            <div key={c.label} className="pm-card" style={{ padding:'8px 16px', background:c.bg, minWidth:130 }}>
+              <p style={{ fontSize:10, fontWeight:800, color:'#94a3b8', marginBottom:2 }}>{c.label}</p>
+              <p style={{ fontSize:20, fontWeight:900, color:c.color, lineHeight:1 }}>{c.value.toLocaleString()}</p>
+            </div>
+          ))}
+        </div>
         <button onClick={() => setIsAdd(true)}
-          style={{ display:'flex', alignItems:'center', gap:5, fontSize:12.5, fontWeight:800, color:'white', background:'#059669', border:'none', borderRadius:8, padding:'7px 14px', cursor:'pointer' }}>
+          style={{ display:'flex', alignItems:'center', gap:5, fontSize:12.5, fontWeight:800, color:'white', background:'#059669', border:'none', borderRadius:8, padding:'8px 16px', cursor:'pointer' }}>
           <Plus size={13}/>입고 등록
         </button>
       </div>
 
-      {/* KPI */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:8, flexShrink:0 }}>
-        {[
-          { label:`${mode==='month'?'이번달':'오늘'} 입고`, value:kpiCount,     color:'#059669', bg:'#f0fdf4' },
-          { label:'입고 수량',                              value:kpiQty,       color:'#1e293b', bg:'#f8fafc' },
-          { label:'전체 미입고 건수',                       value:kpiUnresolved, color:kpiUnresolved>0?'#d97706':'#94a3b8', bg:kpiUnresolved>0?'#fffbeb':'#f8fafc' },
-        ].map(c=>(
-          <div key={c.label} className="pm-card" style={{ padding:'10px 14px', background:c.bg }}>
-            <p style={{ fontSize:10, fontWeight:800, color:'#94a3b8', marginBottom:3 }}>{c.label}</p>
-            <p style={{ fontSize:22, fontWeight:900, color:c.color, lineHeight:1 }}>{c.value.toLocaleString()}</p>
-          </div>
-        ))}
-      </div>
+      {/* ── 2분할 메인 영역 ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10, flex:1, overflow:'hidden' }}>
 
-      {/* 입고 목록 */}
-      <div className="pm-card" style={{ flex:1, overflow:'auto', padding:0 }}>
-        <div style={{ padding:'10px 14px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-          <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>
-            {mode==='month' ? fmtMonthLabel(month) : fmtDayLabel(day)} 입고 내역
-          </span>
-          <span style={{ fontSize:11, color:'#94a3b8' }}>{kpiCount}건</span>
+        {/* ══ 왼쪽: 미입고 내역 ══ */}
+        <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
+          <div style={{ padding:'10px 14px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
+            <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>미입고 내역</span>
+            <span style={{ fontSize:11, color:'#94a3b8' }}>{unreceivedList.length}종</span>
+          </div>
+          <div style={{ flex:1, overflow:'auto' }}>
+            {unreceivedList.length === 0
+              ? (
+                <div style={{ textAlign:'center', padding:'40px 0', color:'#94a3b8' }}>
+                  <CheckCircle2 size={32} style={{ opacity:0.2, margin:'0 auto 10px' }}/>
+                  <p style={{ fontSize:13, fontWeight:700 }}>미입고 상품이 없습니다</p>
+                </div>
+              )
+              : (
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                  <thead>
+                    <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
+                      {['이미지','상품약어','옵션명','바코드','미입고'].map(h => (
+                        <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {unreceivedList.map((u, idx) => (
+                      <tr key={idx} style={{ borderBottom:'1px solid #f8fafc' }}>
+                        <td style={{ textAlign:'center', padding:'5px 6px' }}>
+                          {u.image
+                            ? <img src={u.image} alt="" style={{ width:32, height:32, objectFit:'cover', borderRadius:4 }}/>
+                            : <div style={{ width:32, height:32, background:'#f1f5f9', borderRadius:4, margin:'0 auto' }}/>}
+                        </td>
+                        <td style={{ padding:'5px 8px', fontWeight:700, color:'#0f172a', fontSize:11, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.abbr}</td>
+                        <td style={{ padding:'5px 8px', color:'#475569', fontSize:11, maxWidth:90, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.optName}</td>
+                        <td style={{ padding:'5px 8px', color:'#94a3b8', fontSize:10, fontFamily:'monospace' }}>{u.barcode || '-'}</td>
+                        <td style={{ textAlign:'center', fontWeight:900, color:'#dc2626', fontSize:13 }}>{u.qty}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            }
+          </div>
         </div>
 
-        {rcList.length === 0
-          ? <div style={{ textAlign:'center', padding:'40px 0', color:'#94a3b8' }}>
-              <PackagePlus size={32} style={{ opacity:0.2, margin:'0 auto 10px' }}/>
-              <p style={{ fontSize:13, fontWeight:700 }}>입고 내역이 없습니다</p>
-              <p style={{ fontSize:11, color:'#cbd5e1', marginTop:4 }}>입고 등록 버튼을 눌러 새 입고를 추가하세요</p>
+        {/* ══ 오른쪽: 입고 목록 ══ */}
+        <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
+          {/* 날짜 네비 + 버튼 */}
+          <div style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', flexShrink:0, display:'flex', flexDirection:'column', gap:8 }}>
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+              <MonthNav month={month} setMonth={setMonth}/>
+              <span style={{ fontSize:11, color:'#94a3b8' }}>{rcItems.length}건</span>
             </div>
-          : <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
-              <thead>
-                <tr style={{ background:'#f8fafc' }}>
-                  {['발주일','입고일','구매처','품목수','발주','입고','상태','관리'].map(h=>(
-                    <th key={h} style={{ padding:'7px 10px', fontWeight:800, color:'#64748b', fontSize:11, textAlign:h==='구매처'||h==='발주일'||h==='입고일'?'left':'center', borderBottom:'1px solid #f1f5f9' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rcList.map(p=>{
-                  const tOrd = p.items.reduce((s,i)=>s+i.ordered,0)
-                  const tRcv = p.items.reduce((s,i)=>s+i.received,0)
-                  const st   = ST[p.status]
-                  return (
-                    <tr key={p.id} style={{ borderBottom:'1px solid #f8fafc' }}>
-                      <td style={{ padding:'8px 10px', color:'#94a3b8', fontSize:11.5 }}>{p.order_date}</td>
-                      <td style={{ padding:'8px 10px', fontWeight:700, color:'#334155' }}>{p.received_at?p.received_at.slice(0,10):'-'}</td>
-                      <td style={{ padding:'8px 10px', color:'#475569' }}>{p.supplier||'-'}</td>
-                      <td style={{ textAlign:'center', color:'#64748b' }}>{p.items.length}건</td>
-                      <td style={{ textAlign:'center', fontWeight:800, color:'#1e293b' }}>{tOrd.toLocaleString()}</td>
-                      <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9' }}>{tRcv.toLocaleString()}</td>
-                      <td style={{ textAlign:'center' }}>
-                        <span style={{ display:'inline-flex', fontSize:10.5, fontWeight:800, background:st.bg, color:st.color, padding:'3px 8px', borderRadius:99 }}>{st.label}</span>
-                      </td>
-                      <td style={{ textAlign:'center' }}>
-                        <div style={{ display:'flex', gap:3, justifyContent:'center' }}>
-                          <button onClick={()=>{setEditTarget(p);setEditFormData(JSON.parse(JSON.stringify(p)))}}
-                            style={{ fontSize:11,fontWeight:800,color:'#7e22ce',background:'#fdf4ff',border:'none',borderRadius:6,padding:'3px 8px',cursor:'pointer',display:'flex',alignItems:'center',gap:2 }}>
-                            <Edit2 size={10}/>수정
-                          </button>
-                          <button onClick={()=>setDeleteTarget(p)}
-                            style={{ fontSize:11,fontWeight:800,color:'#dc2626',background:'#fff1f2',border:'none',borderRadius:6,padding:'3px 8px',cursor:'pointer',display:'flex',alignItems:'center',gap:2 }}>
-                            <Trash2 size={10}/>삭제
-                          </button>
-                        </div>
-                      </td>
+            <div style={{ display:'flex', gap:6 }}>
+              <button onClick={handleMapping}
+                style={{ flex:1, fontSize:12, fontWeight:800, color:'#7c3aed', background:'#f5f3ff', border:'1px solid #ddd6fe', borderRadius:7, padding:'6px 0', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                <Link2 size={12}/>매핑하기
+              </button>
+              <button onClick={handleConfirm} disabled={saving}
+                style={{ flex:1, fontSize:12, fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:7, padding:'6px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                <CheckCircle2 size={12}/>{saving ? '처리 중...' : '입고확정'}
+              </button>
+            </div>
+          </div>
+
+          {/* 입고 아이템 목록 */}
+          <div style={{ flex:1, overflow:'auto' }}>
+            {rcItems.length === 0
+              ? (
+                <div style={{ textAlign:'center', padding:'40px 0', color:'#94a3b8' }}>
+                  <PackagePlus size={32} style={{ opacity:0.2, margin:'0 auto 10px' }}/>
+                  <p style={{ fontSize:13, fontWeight:700 }}>입고 내역이 없습니다</p>
+                  <p style={{ fontSize:11, color:'#cbd5e1', marginTop:4 }}>
+                    {fmtMonthLabel(month)} 기간에 입고 등록된 항목이 없습니다
+                  </p>
+                </div>
+              )
+              : (
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
+                  <thead>
+                    <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
+                      <th style={{ padding:'6px 8px', borderBottom:'1px solid #f1f5f9', width:28 }}>
+                        <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ cursor:'pointer' }}/>
+                      </th>
+                      {['이미지','상품약어','옵션명','바코드','입고수량','확정'].map(h => (
+                        <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
+                      ))}
                     </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-        }
+                  </thead>
+                  <tbody>
+                    {rcItems.map(item => {
+                      const k = `${item.purchaseId}|${item.itemIndex}`
+                      return (
+                        <tr key={k} style={{ borderBottom:'1px solid #f8fafc', background:item.confirmed ? '#f0fdf4' : 'white' }}>
+                          <td style={{ textAlign:'center', padding:'5px 8px' }}>
+                            <input type="checkbox" checked={selectedKeys.has(k)}
+                              onChange={e => {
+                                const ns = new Set(selectedKeys)
+                                e.target.checked ? ns.add(k) : ns.delete(k)
+                                setSelectedKeys(ns)
+                              }} style={{ cursor:'pointer' }}/>
+                          </td>
+                          <td style={{ textAlign:'center', padding:'5px 6px' }}>
+                            {item.optImage
+                              ? <img src={item.optImage} alt="" style={{ width:32, height:32, objectFit:'cover', borderRadius:4 }}/>
+                              : <div style={{ width:32, height:32, background:'#f1f5f9', borderRadius:4, margin:'0 auto' }}/>}
+                          </td>
+                          <td style={{ padding:'5px 8px', fontWeight:700, color:'#0f172a', fontSize:11, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {item.prodAbbr || item.product_code}
+                          </td>
+                          <td style={{ padding:'5px 8px', color:'#475569', fontSize:11, maxWidth:90, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {item.option_name}
+                          </td>
+                          <td style={{ padding:'5px 8px', fontSize:10, fontFamily:'monospace' }}>
+                            {item.barcode
+                              ? <span style={{ color:'#64748b' }}>{item.barcode}</span>
+                              : <span style={{ color:'#f59e0b', fontWeight:700, fontSize:10 }}>미매핑</span>}
+                          </td>
+                          <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize:13 }}>{item.received}</td>
+                          <td style={{ textAlign:'center' }}>
+                            {item.confirmed
+                              ? <span style={{ fontSize:10, fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 7px', borderRadius:99 }}>확정</span>
+                              : <span style={{ fontSize:10, fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 7px', borderRadius:99 }}>대기</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )
+            }
+          </div>
+        </div>
       </div>
 
+      {/* ── 수동 매핑 모달 ── */}
+      <Modal isOpen={showMappingModal} onClose={() => setShowMappingModal(false)} title="수동 매핑" size="lg">
+        <p style={{ fontSize:12, color:'#64748b', marginBottom:14 }}>
+          <AlertTriangle size={13} style={{ display:'inline', color:'#f59e0b', marginRight:4 }}/>
+          아래 항목은 자동 매핑되지 않았습니다. 바코드를 직접 입력하거나 상품을 선택해 주세요.
+        </p>
+        <div style={{ display:'flex', flexDirection:'column', gap:8, maxHeight:360, overflow:'auto' }}>
+          {unmappedItems.map(item => {
+            const mapKey = `${item.product_code}|${item.option_name}`
+            return (
+              <div key={mapKey} style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', gap:8, alignItems:'center', padding:'8px 10px', background:'#f8fafc', borderRadius:8 }}>
+                <div>
+                  <p style={{ fontSize:10, color:'#94a3b8', marginBottom:2 }}>상품코드</p>
+                  <p style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>{item.product_code}</p>
+                </div>
+                <div>
+                  <p style={{ fontSize:10, color:'#94a3b8', marginBottom:2 }}>옵션명</p>
+                  <p style={{ fontSize:12, fontWeight:700, color:'#0f172a' }}>{item.option_name}</p>
+                </div>
+                <div>
+                  <p style={{ fontSize:10, color:'#94a3b8', marginBottom:2 }}>바코드 입력</p>
+                  <Input
+                    placeholder="바코드 입력"
+                    value={manualMappings[mapKey] || ''}
+                    onChange={e => setManualMappings(m => ({ ...m, [mapKey]: e.target.value }))}
+                    style={{ fontSize:12, height:32 }}
+                  />
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {/* 상품 목록에서 선택 */}
+        <div style={{ marginTop:14, padding:'10px 12px', background:'#eff6ff', borderRadius:8 }}>
+          <p style={{ fontSize:11, color:'#2563eb', fontWeight:700 }}>
+            💡 상품관리의 바코드를 확인 후 직접 입력하거나, 매핑 후 다음 사용부터는 자동 매핑됩니다.
+          </p>
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+          <Button variant="outline" onClick={() => setShowMappingModal(false)}>취소</Button>
+          <Button onClick={handleSaveManualMapping} style={{ background:'#7c3aed', borderColor:'#7c3aed' }}>
+            <Link2 size={13}/>매핑 저장
+          </Button>
+        </div>
+      </Modal>
+
       {/* ── 입고 등록 모달 ── */}
-      <Modal isOpen={isAdd} onClose={()=>setIsAdd(false)} title="입고 등록" size="xl">
-        {/* 파일 업로드 영역 */}
+      <Modal isOpen={isAdd} onClose={() => setIsAdd(false)} title="입고 등록" size="xl">
         <div style={{ marginBottom:14, padding:'10px 14px', background:'#f8fafc', borderRadius:8, border:'1px dashed #cbd5e1', display:'flex', alignItems:'center', gap:10 }}>
-          <Upload size={15} style={{ color:'#64748b', flexShrink:0 }} />
+          <Upload size={15} style={{ color:'#64748b', flexShrink:0 }}/>
           <div style={{ flex:1 }}>
             <p style={{ fontSize:12, fontWeight:800, color:'#334155', marginBottom:2 }}>입고 파일 업로드 (선택)</p>
-            <p style={{ fontSize:10.5, color:'#94a3b8' }}>상품코드·바코드·옵션명·입고수량 컬럼이 포함된 엑셀 파일을 업로드하면 자동으로 채워집니다</p>
+            <p style={{ fontSize:10.5, color:'#94a3b8' }}>패킹리스트(B=품번·D=컬러·E=수량) 또는 일반 입고 엑셀 파일</p>
           </div>
-          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }} onChange={handleFileUpload} />
-          <button onClick={()=>fileInputRef.current?.click()}
+          <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }} onChange={handleFileUpload}/>
+          <button onClick={() => fileInputRef.current?.click()}
             style={{ fontSize:12, fontWeight:800, color:'#0ea5e9', background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:7, padding:'6px 14px', cursor:'pointer', whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:5 }}>
             <Upload size={12}/>파일 선택
           </button>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
-          <div><L>입고일 *</L><Input type="date" value={form.order_date} onChange={e=>setForm(f=>({...f,order_date:e.target.value}))}/></div>
-          <div><L>구매처</L><Input placeholder="구매처" value={form.supplier} onChange={e=>setForm(f=>({...f,supplier:e.target.value}))}/></div>
+          <div><L>입고일 *</L><Input type="date" value={form.order_date} onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))}/></div>
+          <div><L>구매처</L><Input placeholder="구매처" value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}/></div>
           <div style={{ gridColumn:'1/-1', marginTop:8 }}>
-            <p style={{ fontSize:12,fontWeight:800,color:'#059669',paddingBottom:6,borderBottom:'1px solid #f0fdf4',marginBottom:10 }}>✅ 입고 상품</p>
-            {form.items.map((item,i)=>(
+            <p style={{ fontSize:12, fontWeight:800, color:'#059669', paddingBottom:6, borderBottom:'1px solid #f0fdf4', marginBottom:10 }}>✅ 입고 상품</p>
+            {form.items.map((item, i) => (
               <div key={i} style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr 1.5fr 1fr auto', gap:8, marginBottom:8 }}>
-                <Input placeholder="상품코드" value={item.product_code} onChange={e=>{const it=[...form.items];it[i]={...it[i],product_code:e.target.value};setForm(f=>({...f,items:it}))}}/>
-                <Input placeholder="옵션명" value={item.option_name} onChange={e=>{const it=[...form.items];it[i]={...it[i],option_name:e.target.value};setForm(f=>({...f,items:it}))}}/>
-                <Input placeholder="바코드" value={item.barcode} onChange={e=>{const it=[...form.items];it[i]={...it[i],barcode:e.target.value};setForm(f=>({...f,items:it}))}}/>
-                <Input type="number" placeholder="입고수량" value={item.qty} onChange={e=>{const it=[...form.items];it[i]={...it[i],qty:e.target.value};setForm(f=>({...f,items:it}))}}/>
-                {form.items.length>1 && (
-                  <button onClick={()=>setForm(f=>({...f,items:f.items.filter((_,j)=>j!==i)}))}
-                    style={{ width:36,height:36,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff1f2',color:'#dc2626',border:'none',borderRadius:8,cursor:'pointer' }}>
+                <Input placeholder="상품코드(품번)" value={item.product_code} onChange={e => { const it=[...form.items]; it[i]={...it[i],product_code:e.target.value}; setForm(f=>({...f,items:it})) }}/>
+                <Input placeholder="옵션명(컬러)" value={item.option_name} onChange={e => { const it=[...form.items]; it[i]={...it[i],option_name:e.target.value}; setForm(f=>({...f,items:it})) }}/>
+                <Input placeholder="바코드 (선택)" value={item.barcode} onChange={e => { const it=[...form.items]; it[i]={...it[i],barcode:e.target.value}; setForm(f=>({...f,items:it})) }}/>
+                <Input type="number" placeholder="입고수량" value={item.qty} onChange={e => { const it=[...form.items]; it[i]={...it[i],qty:e.target.value}; setForm(f=>({...f,items:it})) }}/>
+                {form.items.length > 1 && (
+                  <button onClick={() => setForm(f => ({ ...f, items: f.items.filter((_, j) => j !== i) }))}
+                    style={{ width:36, height:36, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:8, cursor:'pointer' }}>
                     <X size={13}/>
                   </button>
                 )}
               </div>
             ))}
-            <button onClick={()=>setForm(f=>({...f,items:[...f.items,{product_code:'',option_name:'',barcode:'',qty:''}]}))}
-              style={{ fontSize:12,fontWeight:800,color:'#059669',background:'#f0fdf4',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4 }}>
+            <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { product_code:'', option_name:'', barcode:'', qty:'' }] }))}
+              style={{ fontSize:12, fontWeight:800, color:'#059669', background:'#f0fdf4', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
               <Plus size={12}/>상품 추가
             </button>
           </div>
         </div>
-        <div style={{ display:'flex',justifyContent:'flex-end',gap:8,marginTop:20 }}>
-          <Button variant="outline" onClick={()=>setIsAdd(false)}>취소</Button>
-          <Button onClick={handleAdd} disabled={saving} style={{ background:'#059669',borderColor:'#059669' }}>
-            <CheckCircle2 size={13}/>입고 등록
+        <div style={{ marginTop:12, padding:'8px 12px', background:'#fef3c7', borderRadius:8 }}>
+          <p style={{ fontSize:11, color:'#92400e' }}>
+            ⚠️ 입고 등록 후 <strong>매핑하기</strong>로 바코드를 연결하고 <strong>입고확정</strong> 버튼을 눌러야 재고에 반영됩니다.
+          </p>
+        </div>
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+          <Button variant="outline" onClick={() => setIsAdd(false)}>취소</Button>
+          <Button onClick={handleAdd} disabled={saving} style={{ background:'#059669', borderColor:'#059669' }}>
+            <CheckCircle2 size={13}/>{saving ? '저장 중...' : '입고 등록'}
           </Button>
         </div>
       </Modal>
 
       {/* ── 수정 모달 ── */}
       {editTarget && editFormData && (
-        <Modal isOpen onClose={()=>{setEditTarget(null);setEditFormData(null)}} title={`입고 수정 — ${editTarget.order_date}`} size="xl">
+        <Modal isOpen onClose={() => { setEditTarget(null); setEditFormData(null) }} title={`입고 수정 — ${editTarget.order_date}`} size="xl">
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
-            <div><L>발주일</L><Input type="date" value={editFormData.order_date} onChange={e=>setEditFormData(f=>f?{...f,order_date:e.target.value}:f)}/></div>
-            <div><L>구매처</L><Input value={editFormData.supplier} onChange={e=>setEditFormData(f=>f?{...f,supplier:e.target.value}:f)}/></div>
+            <div><L>발주일</L><Input type="date" value={editFormData.order_date} onChange={e => setEditFormData(f => f ? { ...f, order_date: e.target.value } : f)}/></div>
+            <div><L>구매처</L><Input value={editFormData.supplier} onChange={e => setEditFormData(f => f ? { ...f, supplier: e.target.value } : f)}/></div>
           </div>
-          {editFormData.items.map((item,i)=>(
+          {editFormData.items.map((item, i) => (
             <div key={i} style={{ display:'grid', gridTemplateColumns:'1.4fr 1fr 1.6fr 0.8fr 0.8fr auto', gap:8, marginBottom:8, alignItems:'center' }}>
-              <Input value={item.product_code} onChange={e=>setEditFormData(f=>{if(!f)return f;const it=[...f.items];it[i]={...it[i],product_code:e.target.value};return{...f,items:it}})}/>
-              <Input value={item.option_name}  onChange={e=>setEditFormData(f=>{if(!f)return f;const it=[...f.items];it[i]={...it[i],option_name:e.target.value};return{...f,items:it}})}/>
-              <Input value={item.barcode}       onChange={e=>setEditFormData(f=>{if(!f)return f;const it=[...f.items];it[i]={...it[i],barcode:e.target.value};return{...f,items:it}})}/>
-              <Input type="number" value={item.ordered}  onChange={e=>setEditFormData(f=>{if(!f)return f;const it=[...f.items];it[i]={...it[i],ordered:Number(e.target.value)||0};return{...f,items:it}})}/>
-              <Input type="number" value={item.received} onChange={e=>setEditFormData(f=>{if(!f)return f;const it=[...f.items];it[i]={...it[i],received:Number(e.target.value)||0};return{...f,items:it}})}/>
-              <button onClick={()=>setEditFormData(f=>f?{...f,items:f.items.filter((_,j)=>j!==i)}:f)}
-                style={{ width:32,height:32,display:'flex',alignItems:'center',justifyContent:'center',background:'#fff1f2',color:'#dc2626',border:'none',borderRadius:7,cursor:'pointer' }}>
+              <Input value={item.product_code} onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],product_code:e.target.value}; return{...f,items:it} })}/>
+              <Input value={item.option_name}  onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],option_name:e.target.value}; return{...f,items:it} })}/>
+              <Input value={item.barcode}       onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],barcode:e.target.value}; return{...f,items:it} })}/>
+              <Input type="number" value={item.ordered}  onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],ordered:Number(e.target.value)||0}; return{...f,items:it} })}/>
+              <Input type="number" value={item.received} onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],received:Number(e.target.value)||0}; return{...f,items:it} })}/>
+              <button onClick={() => setEditFormData(f => f ? { ...f, items: f.items.filter((_, j) => j !== i) } : f)}
+                style={{ width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:7, cursor:'pointer' }}>
                 <X size={12}/>
               </button>
             </div>
           ))}
-          <button onClick={()=>setEditFormData(f=>f?{...f,items:[...f.items,{product_code:'',option_name:'',barcode:'',ordered:0,received:0}]}:f)}
-            style={{ fontSize:12,fontWeight:800,color:'#059669',background:'#f0fdf4',border:'none',borderRadius:8,padding:'6px 14px',cursor:'pointer',display:'flex',alignItems:'center',gap:4,marginBottom:16 }}>
+          <button onClick={() => setEditFormData(f => f ? { ...f, items: [...f.items, { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }] } : f)}
+            style={{ fontSize:12, fontWeight:800, color:'#059669', background:'#f0fdf4', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:4, marginBottom:16 }}>
             <Plus size={12}/>상품 추가
           </button>
-          <div style={{ display:'flex',justifyContent:'flex-end',gap:8 }}>
-            <Button variant="outline" onClick={()=>{setEditTarget(null);setEditFormData(null)}}>취소</Button>
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+            <Button variant="outline" onClick={() => { setEditTarget(null); setEditFormData(null) }}>취소</Button>
             <Button onClick={handleEditSave} disabled={saving}>저장</Button>
           </div>
         </Modal>
@@ -343,17 +716,17 @@ export default function ReceiveManagePage() {
 
       {/* ── 삭제 확인 모달 ── */}
       {deleteTarget && (
-        <Modal isOpen onClose={()=>setDeleteTarget(null)} title="입고 삭제 확인" size="sm">
+        <Modal isOpen onClose={() => setDeleteTarget(null)} title="입고 삭제 확인" size="sm">
           <div style={{ textAlign:'center', padding:'16px 0' }}>
             <Trash2 size={36} style={{ color:'#dc2626', margin:'0 auto 12px' }}/>
-            <p style={{ fontSize:14,fontWeight:800,color:'#1e293b',marginBottom:8 }}>{deleteTarget.order_date} 입고를 삭제하시겠습니까?</p>
-            <p style={{ fontSize:12,color:'#64748b' }}>삭제 시 입고 수량이 상품관리에서 차감됩니다.</p>
+            <p style={{ fontSize:14, fontWeight:800, color:'#1e293b', marginBottom:8 }}>{deleteTarget.order_date} 입고를 삭제하시겠습니까?</p>
+            <p style={{ fontSize:12, color:'#64748b' }}>삭제 시 확정된 입고 수량이 상품관리에서 차감됩니다.</p>
           </div>
-          <div style={{ display:'flex',justifyContent:'flex-end',gap:8,marginTop:20 }}>
-            <Button variant="outline" onClick={()=>setDeleteTarget(null)}>취소</Button>
-            <Button onClick={()=>handleDelete(deleteTarget)} disabled={saving}
-              style={{ background:'#dc2626',borderColor:'#dc2626',opacity:saving?0.6:1 }}>
-              <Trash2 size={13}/>{saving?'삭제 중...':'삭제'}
+          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+            <Button variant="outline" onClick={() => setDeleteTarget(null)}>취소</Button>
+            <Button onClick={() => handleDelete(deleteTarget)} disabled={saving}
+              style={{ background:'#dc2626', borderColor:'#dc2626', opacity:saving ? 0.6 : 1 }}>
+              <Trash2 size={13}/>{saving ? '삭제 중...' : '삭제'}
             </Button>
           </div>
         </Modal>

@@ -2,26 +2,46 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
 import {
-  Purchase, DateMode,
+  Purchase,
   ST, isUnresolved,
-  getToday, getThisMonth, shiftMonth, shiftDay,
-  fmtMonthLabel, fmtDayLabel, fmtDateShort,
-  DateNav,
+  getThisMonth, shiftMonth,
+  fmtMonthLabel, fmtDateShort,
 } from './_shared'
-import { PackagePlus } from 'lucide-react'
+import { ChevronLeft, ChevronRight, PackagePlus } from 'lucide-react'
+
+/* ── 월별 전용 날짜 네비 ── */
+function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) => void }) {
+  const thisMonth = getThisMonth()
+  const isFuture  = month >= thisMonth
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+      <button onClick={() => setMonth(shiftMonth(month, -1))}
+        style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #e2e8f0', background:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <ChevronLeft size={12}/>
+      </button>
+      <span style={{ fontSize:12, fontWeight:800, color:'#0f172a', minWidth:80, textAlign:'center', whiteSpace:'nowrap' }}>
+        {fmtMonthLabel(month)}
+      </span>
+      <button onClick={() => setMonth(shiftMonth(month, 1))} disabled={isFuture}
+        style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #e2e8f0', background:'white', cursor:isFuture?'not-allowed':'pointer', opacity:isFuture?0.4:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+        <ChevronRight size={12}/>
+      </button>
+      <button onClick={() => setMonth(thisMonth)}
+        style={{ fontSize:10.5, fontWeight:700, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:6, padding:'4px 9px', cursor:'pointer' }}>
+        이번달
+      </button>
+    </div>
+  )
+}
 
 export default function PurchaseMainPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
 
-  /* 발주내역 날짜 */
-  const [poMode,  setPoMode]  = useState<DateMode>('day')
+  /* 발주내역 날짜 (월별 전용) */
   const [poMonth, setPoMonth] = useState(getThisMonth())
-  const [poDay,   setPoDay]   = useState(getToday())
 
-  /* 입고내역 날짜 */
-  const [rcMode,  setRcMode]  = useState<DateMode>('day')
+  /* 입고내역 날짜 (월별 전용) */
   const [rcMonth, setRcMonth] = useState(getThisMonth())
-  const [rcDay,   setRcDay]   = useState(getToday())
 
   const loadPurchases = useCallback(async () => {
     const { data } = await supabase.from('pm_purchases').select('*').order('order_date', { ascending: false })
@@ -30,43 +50,41 @@ export default function PurchaseMainPage() {
 
   useEffect(() => { loadPurchases() }, [loadPurchases])
 
-  /* 발주내역 필터 */
-  const poKey = poMode === 'month' ? poMonth : poDay
+  /* 발주내역 필터 (월별) */
   const poList = useMemo(() =>
-    purchases.filter(p => p.order_date.startsWith(poKey))
+    purchases.filter(p => p.order_date.startsWith(poMonth))
       .sort((a,b) => b.order_date.localeCompare(a.order_date))
-  , [purchases, poKey])
+  , [purchases, poMonth])
 
   /* 미입고 과거 건 (날짜 외 unresolved) */
   const poUnresolvedOld = useMemo(() =>
-    purchases.filter(p => isUnresolved(p) && !p.order_date.startsWith(poKey))
-  , [purchases, poKey])
+    purchases.filter(p => isUnresolved(p) && !p.order_date.startsWith(poMonth))
+  , [purchases, poMonth])
 
   const poAll = useMemo(() => {
     const ids = new Set(poList.map(p => p.id))
     return [...poList, ...poUnresolvedOld.filter(p => !ids.has(p.id))]
   }, [poList, poUnresolvedOld])
 
-  /* 입고내역 필터 */
-  const rcKey = rcMode === 'month' ? rcMonth : rcDay
+  /* 입고내역 필터 (월별) */
   const rcList = useMemo(() =>
     purchases
       .filter(p => p.status !== 'ordered' && p.status !== 'cancelled')
       .filter(p => {
-        const ref = (p.received_at ?? p.order_date).slice(0, rcKey.length)
-        return ref === rcKey
+        const ref = (p.received_at ?? p.order_date).slice(0, rcMonth.length)
+        return ref === rcMonth
       })
       .sort((a,b) => {
         const aD = (a.received_at ?? a.order_date).slice(0,10)
         const bD = (b.received_at ?? b.order_date).slice(0,10)
         return bD.localeCompare(aD)
       })
-  , [purchases, rcKey])
+  , [purchases, rcMonth])
 
   /* KPI */
-  const poOrderedQty  = useMemo(() => poList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.ordered,0),0), [poList])
+  const poOrderedQty    = useMemo(() => poList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.ordered,0),0), [poList])
   const poUnresolvedAll = purchases.filter(isUnresolved)
-  const rcReceivedQty = useMemo(() => rcList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.received,0),0), [rcList])
+  const rcReceivedQty   = useMemo(() => rcList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.received,0),0), [rcList])
 
   const thStyle = (align: 'left'|'center' = 'center'): React.CSSProperties => ({
     padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:align, borderBottom:'1px solid #f1f5f9',
@@ -93,11 +111,11 @@ export default function PurchaseMainPage() {
                 )}
               </span>
             </div>
-            <DateNav mode={poMode} setMode={setPoMode} month={poMonth} setMonth={setPoMonth} day={poDay} setDay={setPoDay} />
+            <MonthNav month={poMonth} setMonth={setPoMonth}/>
             {/* KPI */}
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginTop:10 }}>
               <div style={{ background:'#eff6ff', borderRadius:8, padding:'6px 10px' }}>
-                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>{poMode==='month'?'이번달':'오늘'} 발주</p>
+                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>이번달 발주</p>
                 <p style={{ fontSize:18, fontWeight:900, color:'#2563eb', lineHeight:1 }}>{poList.length}</p>
               </div>
               <div style={{ background:'#f8fafc', borderRadius:8, padding:'6px 10px' }}>
@@ -136,7 +154,7 @@ export default function PurchaseMainPage() {
                       const tRcv = p.items.reduce((s,i)=>s+i.received,0)
                       const tMis = tOrd - tRcv
                       const st   = ST[p.status]
-                      const old  = isUnresolved(p) && !p.order_date.startsWith(poKey)
+                      const old  = isUnresolved(p) && !p.order_date.startsWith(poMonth)
                       return (
                         <tr key={p.id} style={{ borderBottom:'1px solid #f8fafc', background:old?'#fffbeb':undefined }}>
                           <td style={tdStyle('left')}>
@@ -171,11 +189,11 @@ export default function PurchaseMainPage() {
               <span style={{ fontSize:14, fontWeight:900, color:'#0f172a' }}>✅ 입고내역</span>
               <span style={{ fontSize:11, color:'#94a3b8' }}>{rcList.length}건</span>
             </div>
-            <DateNav mode={rcMode} setMode={setRcMode} month={rcMonth} setMonth={setRcMonth} day={rcDay} setDay={setRcDay} />
+            <MonthNav month={rcMonth} setMonth={setRcMonth}/>
             {/* KPI */}
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginTop:10 }}>
               <div style={{ background:'#f0fdf4', borderRadius:8, padding:'6px 10px' }}>
-                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>{rcMode==='month'?'이번달':'오늘'} 입고</p>
+                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>이번달 입고</p>
                 <p style={{ fontSize:18, fontWeight:900, color:'#059669', lineHeight:1 }}>{rcList.length}</p>
               </div>
               <div style={{ background:'#f8fafc', borderRadius:8, padding:'6px 10px' }}>
