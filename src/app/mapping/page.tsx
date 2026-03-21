@@ -63,15 +63,13 @@ export default function MappingPage() {
   const [manualPrice, setManualPrice] = useState('')
 
   useEffect(() => {
+    let connected: { key: string; name: string }[] = []
     try {
       const raw = localStorage.getItem(CHANNEL_STORAGE_KEY)
       if (raw) {
         const parsed = JSON.parse(raw)
-        // ChannelData[] 배열 형식 (active:true 기준)
         const arr: { key: string; name: string; active: boolean }[] = Array.isArray(parsed) ? parsed : []
-        const connected = arr
-          .filter(c => c.active)
-          .map(c => ({ key: c.key, name: c.name }))
+        connected = arr.filter(c => c.active).map(c => ({ key: c.key, name: c.name }))
         setConnectedMalls(connected)
         if (connected.length > 0) setSelectedMall(connected[0].key)
       }
@@ -80,7 +78,37 @@ export default function MappingPage() {
     supabase.from('pm_products').select('id,code,name,category,options').then(({ data }) => {
       if (data) setProducts(data as PmProduct[])
     })
-    setMappings(loadMappings())
+
+    const loadedMappings = loadMappings()
+    setMappings(loadedMappings)
+
+    // 기존 localStorage 매핑 중 matched 항목을 Supabase registered_malls에 동기화
+    // (이전에 매핑됐지만 registered_malls 업데이트가 안 된 경우 처리)
+    const syncExisting = async () => {
+      const SYNC_KEY = 'pm_mapping_last_sync'
+      const lastSync = localStorage.getItem(SYNC_KEY)
+      const now = Date.now()
+      // 1시간 이내 이미 동기화했으면 스킵
+      if (lastSync && now - Number(lastSync) < 60 * 60 * 1000) return
+
+      let synced = false
+      for (const mallKey of Object.keys(loadedMappings)) {
+        const mallName = connected.find(m => m.key === mallKey)?.name || mallKey
+        const matched = loadedMappings[mallKey].filter(r => r.status === 'matched' && r.matched_product_id)
+        for (const r of matched) {
+          if (r.matched_product_id) {
+            await updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id)
+            synced = true
+          }
+        }
+      }
+      if (synced) {
+        localStorage.setItem(SYNC_KEY, String(now))
+        try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+        localStorage.setItem('pm_products_mapping_signal', String(now))
+      }
+    }
+    syncExisting()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── 상품관리탭에서 직접 매핑 시 localStorage 변경 감지 → 매핑 목록 갱신 ── */
@@ -401,6 +429,11 @@ export default function MappingPage() {
             {connectedMalls.map(m => {
               const s = stats(m.key)
               const isActive = selectedMall === m.key
+              const mappingStatus = s.total === 0
+                ? null
+                : s.unmatched === 0
+                  ? 'complete'
+                  : 'partial'
               return (
                 <button
                   key={m.key}
@@ -424,11 +457,26 @@ export default function MappingPage() {
                     <span style={{ fontSize: 12.5, fontWeight: isActive ? 900 : 700, color: isActive ? '#1d4ed8' : '#334155', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {m.name}
                     </span>
+                    {mappingStatus === 'complete' && (
+                      <span style={{ fontSize: 9, fontWeight: 900, background: '#ecfdf5', color: '#059669', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        매핑완료
+                      </span>
+                    )}
+                    {mappingStatus === 'partial' && (
+                      <span style={{ fontSize: 9, fontWeight: 900, background: '#fffbeb', color: '#b45309', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        매핑중
+                      </span>
+                    )}
                   </div>
                   <div style={{ display: 'flex', gap: 4 }}>
                     <span style={{ fontSize: 10, fontWeight: 800, background: isActive ? '#dbeafe' : '#f1f5f9', color: isActive ? '#1d4ed8' : '#64748b', padding: '1px 6px', borderRadius: 4 }}>
                       전체 {s.total}
                     </span>
+                    {s.matched > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 800, background: '#ecfdf5', color: '#059669', padding: '1px 6px', borderRadius: 4 }}>
+                        매핑 {s.matched}
+                      </span>
+                    )}
                     {s.unmatched > 0 && (
                       <span style={{ fontSize: 10, fontWeight: 800, background: '#fff1f2', color: '#be123c', padding: '1px 6px', borderRadius: 4 }}>
                         미매핑 {s.unmatched}
