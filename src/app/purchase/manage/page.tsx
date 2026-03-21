@@ -385,7 +385,7 @@ export default function PurchaseManagePage() {
           'F',                      // H: 중국사이즈 (고정)
           'FFF',                    // I: 리블리크사이즈 (고정)
           prod.category    || '',   // J: 품목
-          imgVal,                   // K: 이미지 (URL 또는 빈값)
+          '',                       // K: 이미지 (링크 미출력)
           prod.supplier    || '',   // L: URL (구매처 사이트)
           prod.cost_price  ?? '',   // M: 단가
           Number(s.qty)    || 0,    // N: 부족수량
@@ -396,9 +396,18 @@ export default function PurchaseManagePage() {
       sheet1Rows.forEach((row, ri) => {
         row.forEach((val, ci) => {
           const cellRef = XLSX.utils.encode_cell({ r: ri + 1, c: ci })
-          // M열(ci=12): 원가 - 소숫점 그대로 표기
-          const isPrice = ci === 12 && typeof val === 'number'
-          ws1[cellRef] = { v: val, t: typeof val === 'number' ? 'n' : 's', ...(isPrice ? { z: '#,##0.##' } : {}) }
+          // M열(ci=12): 원가 - 정수면 정수, 소숫점 있으면 끝까지 표시
+          if (ci === 12 && val !== '') {
+            const numVal = typeof val === 'number' ? val : Number(val)
+            if (!isNaN(numVal)) {
+              const isInt = Number.isInteger(numVal)
+              ws1[cellRef] = { v: numVal, t: 'n', z: isInt ? '#,##0' : '#,##0.##########' }
+            } else {
+              ws1[cellRef] = { v: val, t: 's' }
+            }
+          } else {
+            ws1[cellRef] = { v: val, t: typeof val === 'number' ? 'n' : 's' }
+          }
         })
       })
       // Sheet1 범위 갱신

@@ -1,6 +1,6 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Eye, EyeOff, Save, CheckCircle2, KeyRound, Globe, User, Lock } from 'lucide-react'
+import { Plus, Trash2, Save, CheckCircle2, KeyRound, Globe, User, Lock } from 'lucide-react'
 
 const LS_KEY = 'pm_site_accounts_v1'
 
@@ -28,7 +28,6 @@ function lsSave(data: SiteAccount[]) {
 
 export default function SettingsPage() {
   const [accounts, setAccounts] = useState<SiteAccount[]>([])
-  const [showPw,   setShowPw]   = useState<Set<string>>(new Set())
   const [saved,    setSaved]    = useState(false)
 
   useEffect(() => { setAccounts(lsLoad()) }, [])
@@ -46,13 +45,6 @@ export default function SettingsPage() {
 
   const handleChange = (id: string, field: keyof SiteAccount, value: string) =>
     setAccounts(prev => prev.map(a => a.id === id ? { ...a, [field]: value } : a))
-
-  const toggleShowPw = (id: string) =>
-    setShowPw(prev => {
-      const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
-      return next
-    })
 
   return (
     <div className="pm-page" style={{ maxWidth:700, margin:'0 auto' }}>
@@ -124,22 +116,15 @@ export default function SettingsPage() {
             />
 
             {/* 비밀번호 */}
-            <div style={{ position:'relative' }}>
-              <input
-                type={showPw.has(acc.id) ? 'text' : 'password'}
-                placeholder="비밀번호"
-                value={acc.password}
-                onChange={e => handleChange(acc.id, 'password', e.target.value)}
-                style={{ width:'100%', fontSize:13, border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 32px 7px 10px', outline:'none', color:'#334155', background:'white', boxSizing:'border-box' }}
-                onFocus={e => e.currentTarget.style.borderColor='#2563eb'}
-                onBlur={e => e.currentTarget.style.borderColor='#e2e8f0'}
-              />
-              <button
-                onClick={() => toggleShowPw(acc.id)}
-                style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', padding:2, color:'#94a3b8', display:'flex', alignItems:'center' }}>
-                {showPw.has(acc.id) ? <EyeOff size={14}/> : <Eye size={14}/>}
-              </button>
-            </div>
+            <input
+              type="text"
+              placeholder="비밀번호"
+              value={acc.password}
+              onChange={e => handleChange(acc.id, 'password', e.target.value)}
+              style={{ width:'100%', fontSize:13, border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', outline:'none', color:'#334155', background:'white' }}
+              onFocus={e => e.currentTarget.style.borderColor='#2563eb'}
+              onBlur={e => e.currentTarget.style.borderColor='#e2e8f0'}
+            />
 
             {/* 사이트 주소 */}
             <input

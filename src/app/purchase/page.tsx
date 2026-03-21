@@ -61,6 +61,8 @@ export default function PurchaseMainPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [products,  setProducts]  = useState<FP[]>([])
   const [exchangeRate, setExchangeRate] = useState(DEFAULT_EXCHANGE_RATE)
+  const [syncingId, setSyncingId] = useState<string | null>(null)
+  const [syncMsg,   setSyncMsg]   = useState<{ id: string; ok: boolean; text: string } | null>(null)
 
   /* 발주내역 날짜 (월별 전용) */
   const [poMonth, setPoMonth] = useState(getThisMonth())
@@ -75,6 +77,55 @@ export default function PurchaseMainPage() {
     const data = await apiFetchPurchases()
     setPurchases(data)
   }, [])
+
+  /** 기존 발주확정 건의 발주수량을 상품관리탭에 반영 */
+  const handleSyncQty = useCallback(async (purchase: Purchase) => {
+    setSyncingId(purchase.id)
+    setSyncMsg(null)
+    try {
+      // products 캐시 없으면 새로 로드
+      let prods = products.length > 0 ? products : loadCachedProducts()
+      if (prods.length === 0) {
+        const res = await fetch('/api/pm-products')
+        if (res.ok) prods = await res.json()
+        setProducts(prods)
+      }
+      const updates = purchase.items
+        .map(item => {
+          const prod = prods.find(p => p.code === item.product_code)
+          return prod ? {
+            prodId:       prod.id,
+            optName:      item.option_name,
+            barcode:      item.barcode,
+            orderedDelta: item.ordered,
+            receivedDelta: 0,
+          } : null
+        })
+        .filter(Boolean) as { prodId: string; optName: string; barcode: string; orderedDelta: number; receivedDelta: number }[]
+
+      if (updates.length === 0) {
+        setSyncMsg({ id: purchase.id, ok: false, text: '매칭 상품 없음 (상품코드 확인 필요)' })
+        return
+      }
+      const res = await fetch('/api/pm-sync-qty', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates }),
+      })
+      const json = await res.json()
+      if (!res.ok || !json?.ok) {
+        setSyncMsg({ id: purchase.id, ok: false, text: json?.error ?? '반영 실패' })
+      } else {
+        setSyncMsg({ id: purchase.id, ok: true, text: `✅ ${updates.length}개 상품 발주수량 반영 완료` })
+        try { localStorage.removeItem(CACHE_KEY) } catch {}
+        setTimeout(() => setSyncMsg(null), 4000)
+      }
+    } catch (e) {
+      setSyncMsg({ id: purchase.id, ok: false, text: String(e) })
+    } finally {
+      setSyncingId(null)
+    }
+  }, [products])
 
   useEffect(() => {
     // 상품 캐시 + 환율 불러오기
@@ -182,6 +233,7 @@ export default function PurchaseMainPage() {
                       <th style={thStyle()}>품목</th>
                       <th style={thStyle()}>발주수량</th>
                       <th style={thStyle()}>발주금액</th>
+                      <th style={{ ...thStyle(), width:60 }}>수량반영</th>
                       <th style={{ ...thStyle(), width:28 }}></th>
                     </tr>
                   </thead>
@@ -190,6 +242,8 @@ export default function PurchaseMainPage() {
                       const tOrd = p.items.reduce((s,i) => s+i.ordered, 0)
                       const lineKrw = calcOrderKrw(p, products, exchangeRate)
                       const isOpen = expandedPoId === p.id
+                      const isSyncing = syncingId === p.id
+                      const msg = syncMsg?.id === p.id ? syncMsg : null
                       return (
                         <>
                           <tr key={p.id}
@@ -208,13 +262,24 @@ export default function PurchaseMainPage() {
                             <td style={{ ...tdStyle(), fontWeight:900, color: lineKrw > 0 ? '#92400e' : '#cbd5e1', fontSize:11.5 }}>
                               {lineKrw > 0 ? `₩${Math.round(lineKrw).toLocaleString()}` : '-'}
                             </td>
+                            <td style={{ ...tdStyle(), padding:'4px 6px' }} onClick={e => e.stopPropagation()}>
+                              <button
+                                disabled={isSyncing}
+                                onClick={() => handleSyncQty(p)}
+                                style={{ fontSize:10, fontWeight:800, color: msg?.ok ? '#059669' : '#2563eb', background: msg?.ok ? '#f0fdf4' : '#eff6ff', border:'none', borderRadius:6, padding:'4px 7px', cursor:isSyncing?'wait':'pointer', whiteSpace:'nowrap', opacity:isSyncing?0.6:1 }}>
+                                {isSyncing ? '반영중...' : msg?.ok ? '완료✓' : '수량반영'}
+                              </button>
+                              {msg && !msg.ok && (
+                                <div style={{ fontSize:9, color:'#dc2626', marginTop:2 }}>{msg.text}</div>
+                              )}
+                            </td>
                             <td style={tdStyle()}>
                               {isOpen ? <ChevronUp size={13} color="#94a3b8"/> : <ChevronDown size={13} color="#94a3b8"/>}
                             </td>
                           </tr>
                           {isOpen && (
                             <tr key={`${p.id}-detail`}>
-                              <td colSpan={6} style={{ padding:0, background:'#f0f9ff' }}>
+                              <td colSpan={7} style={{ padding:0, background:'#f0f9ff' }}>
                                 <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
                                   <thead>
                                     <tr style={{ background:'#dbeafe' }}>
