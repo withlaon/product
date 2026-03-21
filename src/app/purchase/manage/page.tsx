@@ -75,6 +75,9 @@ export default function PurchaseManagePage() {
   })
   const [orderDate,    setOrderDate]    = useState(getToday())
   const [orderSupplier, setOrderSupplier] = useState('')
+  const [exchangeRate,  setExchangeRate]  = useState(() => {
+    try { return Number(localStorage.getItem('pm_exchange_rate') || '190') || 190 } catch { return 190 }
+  })
 
   /* 발주 이력 영역 */
   const [showHistory, setShowHistory] = useState(false)
@@ -713,31 +716,64 @@ export default function PurchaseManagePage() {
           ) : (
             <>
               {/* 발주 기본 정보 */}
-              <div style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, flexShrink: 0 }}>
-                <div>
-                  <L>발주일 *</L>
-                  <Input type="date" value={orderDate} onChange={e => setOrderDate(e.target.value)} />
+              <div style={{ padding: '12px 14px', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 8 }}>
+                  <div>
+                    <L>발주일 *</L>
+                    <Input type="date" value={orderDate} onChange={e => setOrderDate(e.target.value)} />
+                  </div>
+                  <div>
+                    <L>환율 (비원화→원화)</L>
+                    <Input type="number" min="1" value={exchangeRate}
+                      onChange={e => {
+                        const v = Number(e.target.value) || 1
+                        setExchangeRate(v)
+                        try { localStorage.setItem('pm_exchange_rate', String(v)) } catch {}
+                      }}
+                      style={{ textAlign: 'right', fontWeight: 700 }} />
+                  </div>
                 </div>
-                <div>
-                  <L>구매처</L>
-                  <Input placeholder="동대문 A상회" value={orderSupplier} onChange={e => setOrderSupplier(e.target.value)} />
-                </div>
+                {/* 합계금액 표시 */}
+                {(() => {
+                  type FP = PmProduct & { cost_price?: number; cost_currency?: string }
+                  const fp = products as unknown as FP[]
+                  const total = selectedOpts.reduce((sum, s) => {
+                    const p = fp.find(x => x.id === s.prodId)
+                    const u = p?.cost_price ?? 0
+                    const krw = (p?.cost_currency || '원') === '원' ? u : u * exchangeRate
+                    return sum + krw * (Number(s.qty) || 0)
+                  }, 0)
+                  return (
+                    <div style={{ background: '#f8fafc', borderRadius: 8, padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: '#64748b' }}>합계금액</span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: total > 0 ? '#0f172a' : '#cbd5e1' }}>
+                        {total > 0 ? `₩ ${Math.round(total).toLocaleString()}` : '-'}
+                      </span>
+                    </div>
+                  )
+                })()}
               </div>
 
               {/* 선택 상품 목록 */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px' }}>
                 {selectedOpts.map((s, i) => {
                   const img = qualImages[s.barcode] || s.image
+                  type FP = PmProduct & { cost_price?: number; cost_currency?: string }
+                  const prod = (products as unknown as FP[]).find(p => p.id === s.prodId)
+                  const unitCost = prod?.cost_price ?? null
+                  const currency = prod?.cost_currency || '원'
+                  const unitKrw = unitCost != null ? (currency === '원' ? unitCost : unitCost * exchangeRate) : null
+                  const lineKrw = unitKrw != null ? unitKrw * (Number(s.qty) || 0) : null
                   return (
-                    <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 0', borderBottom: '1px solid #f8fafc' }}>
-                      {/* 이미지 (qualImages로 실제 이미지 표시) */}
+                    <div key={s.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 0', borderBottom: '1px solid #f8fafc' }}>
+                      {/* 이미지 */}
                       {img
-                        ? <img src={img} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 7, border: '1px solid #e2e8f0', flexShrink: 0 }} />
-                        : <div style={{ width: 38, height: 38, background: '#f1f5f9', borderRadius: 7, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        ? <img src={img} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 7, border: '1px solid #e2e8f0', flexShrink: 0, marginTop: 2 }} />
+                        : <div style={{ width: 38, height: 38, background: '#f1f5f9', borderRadius: 7, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', marginTop: 2 }}>
                             <Package size={14} style={{ color: '#cbd5e1' }} />
                           </div>
                       }
-                      {/* 상품 정보: 약어 · 옵션 · 바코드 가로 한 줄 */}
+                      {/* 상품 정보 */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
                           <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.prodAbbr}</span>
@@ -746,6 +782,24 @@ export default function PurchaseManagePage() {
                           <span style={{ fontSize: 10, color: '#cbd5e1', flexShrink: 0 }}>·</span>
                           <span style={{ fontSize: 9.5, color: '#94a3b8', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.barcode || '-'}</span>
                         </div>
+                        {/* 원가 + KRW 환산 */}
+                        {unitCost != null && (
+                          <div style={{ display: 'flex', gap: 6, marginTop: 3, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <span style={{ fontSize: 10, color: '#475569', fontWeight: 700 }}>
+                              단가: {currency !== '원' ? `${unitCost.toLocaleString()} ${currency}` : `₩${unitCost.toLocaleString()}`}
+                            </span>
+                            {currency !== '원' && (
+                              <span style={{ fontSize: 10, color: '#94a3b8' }}>
+                                (₩{Math.round(unitKrw!).toLocaleString()})
+                              </span>
+                            )}
+                            {lineKrw != null && (
+                              <span style={{ fontSize: 10, fontWeight: 900, color: '#2563eb', marginLeft: 2 }}>
+                                소계 ₩{Math.round(lineKrw).toLocaleString()}
+                              </span>
+                            )}
+                          </div>
+                        )}
                       </div>
                       {/* 수량 입력 */}
                       <Input type="number" min="1" value={s.qty}
@@ -753,7 +807,7 @@ export default function PurchaseManagePage() {
                         style={{ width: 64, textAlign: 'center', fontWeight: 800, flexShrink: 0 }} />
                       {/* 제거 버튼 */}
                       <button onClick={() => setSelectedOpts(prev => prev.filter((_, j) => j !== i))}
-                        style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff1f2', color: '#dc2626', border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0 }}>
+                        style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff1f2', color: '#dc2626', border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}>
                         <X size={11} />
                       </button>
                     </div>
@@ -772,6 +826,24 @@ export default function PurchaseManagePage() {
                     전체 선택 해제
                   </button>
                 </div>
+                {/* 발주 종합계 KRW */}
+                {(() => {
+                  type FP = PmProduct & { cost_price?: number; cost_currency?: string }
+                  const fp = products as unknown as FP[]
+                  const grandTotal = selectedOpts.reduce((sum, s) => {
+                    const p = fp.find(x => x.id === s.prodId)
+                    const u = p?.cost_price ?? 0
+                    const krw = (p?.cost_currency || '원') === '원' ? u : u * exchangeRate
+                    return sum + krw * (Number(s.qty) || 0)
+                  }, 0)
+                  if (grandTotal <= 0) return null
+                  return (
+                    <div style={{ background: '#eff6ff', borderRadius: 8, padding: '7px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                      <span style={{ fontSize: 11, fontWeight: 700, color: '#2563eb' }}>발주 종합계</span>
+                      <span style={{ fontSize: 15, fontWeight: 900, color: '#1d4ed8' }}>₩ {Math.round(grandTotal).toLocaleString()}</span>
+                    </div>
+                  )
+                })()}
                 {/* 발주서 다운 → 발주 확정 순서 */}
                 <button onClick={handleDownloadOrderSheet}
                   style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 800, fontSize: 13, cursor: 'pointer', marginBottom: 8 }}>
