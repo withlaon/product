@@ -83,6 +83,26 @@ export default function MappingPage() {
     setMappings(loadMappings())
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  /* ── 상품관리탭에서 직접 매핑 시 localStorage 변경 감지 → 매핑 목록 갱신 ── */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === MAPPING_KEY || e.key === 'pm_products_mapping_signal') {
+        setMappings(loadMappings())
+      }
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        setMappings(loadMappings())
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [])
+
   const rows = mappings[selectedMall] || []
   const filtered = rows.filter(row => {
     const q = searchQuery.toLowerCase()
@@ -187,11 +207,15 @@ export default function MappingPage() {
       const matched = newRows.filter(r => r.status === 'matched' && r.matched_product_id)
       for (const r of matched) {
         if (r.matched_product_id) {
-          updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id)
+          await updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id)
           if (r.mall_price && r.mall_price > 0) {
-            updateChannelPrice(r.matched_product_id, mallName, r.mall_price)
+            await updateChannelPrice(r.matched_product_id, mallName, r.mall_price)
           }
         }
+      }
+      if (matched.length > 0) {
+        try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+        localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
       }
     } catch (err) { console.error(err) }
     finally { setImporting(false); if (fileRef.current) fileRef.current.value = '' }
@@ -237,7 +261,7 @@ export default function MappingPage() {
     } catch { /* 무시 */ }
   }
 
-  const handleManualSave = () => {
+  const handleManualSave = async () => {
     if (!manualTarget || manualTargetIdx < 0 || !manualSelProduct) return
     const prod = products.find(p => p.id === manualSelProduct)
     const opt = prod?.options.find(o => o.name === manualSelOption)
@@ -258,8 +282,10 @@ export default function MappingPage() {
     // 매핑된 상품에 쇼핑몰 등록현황 + 판매가 업데이트
     if (prod) {
       const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
-      updateRegisteredMalls(prod.id, mallName, manualTarget?.mall_product_id || '')
-      if (price && price > 0) updateChannelPrice(prod.id, mallName, price)
+      await updateRegisteredMalls(prod.id, mallName, manualTarget?.mall_product_id || '')
+      if (price && price > 0) await updateChannelPrice(prod.id, mallName, price)
+      try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+      localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
     }
   }
 
@@ -284,7 +310,11 @@ export default function MappingPage() {
     if (row.matched_product_id) {
       const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
       const stillMapped = newRows.some(r => r.matched_product_id === row.matched_product_id && r.status === 'matched')
-      if (!stillMapped) removeRegisteredMall(row.matched_product_id, mallName)
+      if (!stillMapped) {
+        removeRegisteredMall(row.matched_product_id, mallName)
+        try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+        localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
+      }
     }
   }
 
@@ -304,6 +334,8 @@ export default function MappingPage() {
         removeRegisteredMall(row.matched_product_id, mallName)
       }
     })
+    try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+    localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
   }
 
   const handleClearAll = () => {
@@ -315,6 +347,8 @@ export default function MappingPage() {
     const updated = { ...mappings }; delete updated[selectedMall]
     setMappings(updated); saveMappings(updated)
     setCheckedIdxs(new Set())
+    try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+    localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
   }
 
   const toggleCheck = (idx: number) => {

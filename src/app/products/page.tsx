@@ -918,6 +918,32 @@ export default function ProductsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey])
 
+  /* ── 매핑관리탭 변경 감지: storage 이벤트(다른 탭) + visibilitychange(같은 탭 복귀) ── */
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === 'pm_products_mapping_signal') {
+        try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+        setRefreshKey(k => k + 1)
+      }
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') {
+        const sig = localStorage.getItem('pm_products_mapping_signal')
+        if (sig) {
+          localStorage.removeItem('pm_products_mapping_signal')
+          try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+          setRefreshKey(k => k + 1)
+        }
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    document.addEventListener('visibilitychange', onVisible)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVisible)
+    }
+  }, [])
+
   const allCats = useMemo(
     () => ['전체', ...extraCats.filter(c => !deletedCats.includes(c))],
     [extraCats, deletedCats]
@@ -1236,7 +1262,20 @@ export default function ProductsPage() {
   const handleMappingSave = async (cp: ChannelPrice[], rm: (string|{mall:string;code:string})[]) => {
     if (!mappingTarget) return
     const { error } = await pmPatch(mappingTarget.id, { channel_prices: cp, registered_malls: rm })
-    if (!error) setProducts(prev => prev.map(p => p.id === mappingTarget!.id ? { ...p, channel_prices: cp, registered_malls: rm } : p))
+    if (!error) {
+      setProducts(prev => prev.map(p => p.id === mappingTarget!.id ? { ...p, channel_prices: cp, registered_malls: rm } : p))
+      // 캐시도 갱신해서 새로고침 없이도 최신 상태 유지
+      try {
+        const raw = localStorage.getItem('pm_products_cache_v1')
+        if (raw) {
+          const { ts, data } = JSON.parse(raw)
+          const newData = (data as Product[]).map((p: Product) => p.id === mappingTarget!.id ? { ...p, channel_prices: cp, registered_malls: rm } : p)
+          localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts, data: newData }))
+        }
+      } catch {}
+      // 매핑관리탭에 변경 알림
+      localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
+    }
     setMappingTarget(null)
   }
 
@@ -2171,7 +2210,7 @@ export default function ProductsPage() {
 
                     {/* 쇼핑몰 등록현황 */}
                     <td style={{ paddingTop:10, paddingBottom:10, overflow:'visible' }}>
-                      <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:4, maxWidth:160 }}>
                         {(p.registered_malls ?? []).length === 0 ? (
                           <span style={{ fontSize:11, color:'#cbd5e1', fontWeight:600 }}>-</span>
                         ) : (p.registered_malls ?? []).map((mallData, mi) => {
