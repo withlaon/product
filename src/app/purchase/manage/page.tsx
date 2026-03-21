@@ -17,7 +17,7 @@ import {
   syncProductQty, DateNav,
   apiFetchPurchases, apiInsertPurchase, apiUpdatePurchase, apiDeletePurchase,
 } from '../_shared'
-import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, ChevronUp, AlertTriangle, Package, FileDown } from 'lucide-react'
+import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, ChevronUp, AlertTriangle, Package, FileDown, RefreshCw } from 'lucide-react'
 
 // 출고내역 기반 판매수량 집계 기준일 (발주 이력이 없을 경우 기본값)
 const SHIP_BASE_DATE = '2026-03-18'
@@ -280,7 +280,9 @@ export default function PurchaseManagePage() {
         })
       }
     }
-    return result.sort((a, b) => a.currentStock - b.currentStock)
+    return result.sort((a, b) =>
+      a.prodCode.localeCompare(b.prodCode) || a.prodAbbr.localeCompare(b.prodAbbr)
+    )
   }, [products, unreceivedMap, shipSoldMap])
 
   // 추천 목록 이미지 로딩: qualOpts 내 prodId 목록이 바뀔 때마다 재실행
@@ -565,9 +567,9 @@ export default function PurchaseManagePage() {
           <span style={{ fontSize: 11, color: '#94a3b8' }}>
             추천 {qualOpts.length}건 · 선택 {selectedOpts.length}건
           </span>
-          <button onClick={() => { loadPurchases(); loadProducts() }}
-            style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer' }}>
-            새로고침
+          <button onClick={() => { loadPurchases(); loadProducts(true); setShippedOrders(loadShippedOrders()); setMappings(loadMappings()) }}
+            style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+            <RefreshCw size={12} />새로고침
           </button>
         </div>
       </div>
@@ -592,7 +594,7 @@ export default function PurchaseManagePage() {
                 판매: {qualOpts.filter(o => o.reason === 'sold').length}
               </span>
               <button
-                onClick={() => { loadPurchases(); loadProducts(); setShippedOrders(loadShippedOrders()); setMappings(loadMappings()) }}
+                onClick={() => { loadPurchases(); loadProducts(true); setShippedOrders(loadShippedOrders()); setMappings(loadMappings()) }}
                 style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
                 🔄 새로고침
               </button>
