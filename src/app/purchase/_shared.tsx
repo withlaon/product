@@ -114,75 +114,28 @@ export function fmtDateShort(d: string) {
 }
 
 /* ── 상품 수량 동기화 ──
-   Supabase에서 항상 최신 options를 가져와 업데이트 → 이미지 등 다른 필드 유실 방지
+   /api/pm-sync-qty 에서 서버사이드로 전체 처리 (SERVICE_ROLE_KEY, RLS 우회)
 ── */
 export async function syncProductQty(
-  _products: PmProduct[],   // fallback용
+  _products: PmProduct[],   // (미사용, 호환성 유지용)
   rows: { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }[]
 ) {
-  const PM_API = '/api/pm-products'
-  const grouped: Record<string, typeof rows> = {}
-  for (const r of rows) {
-    if (!r.prodId) continue
-    if (!grouped[r.prodId]) grouped[r.prodId] = []
-    grouped[r.prodId].push(r)
+  const validRows = rows.filter(r => r.prodId)
+  if (validRows.length === 0) return
+
+  const res = await fetch('/api/pm-sync-qty', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ updates: validRows }),
+  })
+
+  const json = await res.json().catch(() => ({}))
+
+  if (!res.ok) {
+    throw new Error(json?.error ?? `수량 동기화 실패 HTTP ${res.status}`)
   }
-
-  const errors: string[] = []
-
-  for (const [prodId, updates] of Object.entries(grouped)) {
-    // ① 최신 options를 API 라우트(SERVICE_ROLE_KEY)로 조회 — 이미지 포함 전체 필드
-    let baseOpts: PmOption[] | null = null
-    try {
-      const res = await fetch(`${PM_API}?id=${encodeURIComponent(prodId)}&full=1`)
-      if (res.ok) {
-        const fresh = await res.json()
-        if (Array.isArray(fresh?.options) && fresh.options.length > 0) {
-          baseOpts = fresh.options as PmOption[]
-        }
-      } else {
-        errors.push(`options 조회 실패(${prodId}): HTTP ${res.status}`)
-      }
-    } catch (e) {
-      errors.push(`options 조회 오류(${prodId}): ${String(e)}`)
-    }
-
-    // API 조회 실패 시 로컬 상태 fallback (이미지 없을 수 있음)
-    if (!baseOpts) {
-      baseOpts = _products.find(p => p.id === prodId)?.options ?? []
-    }
-
-    const updatedOpts = baseOpts.map((opt: PmOption) => {
-      const u = updates.find(u =>
-        (u.barcode && u.barcode === opt.barcode) ||
-        (u.optName && (u.optName === opt.name || u.optName === opt.korean_name))
-      )
-      if (!u) return opt
-      const newOrdered  = Math.max(0, (opt.ordered || 0) + u.orderedDelta)
-      const prevStock   = opt.current_stock !== undefined ? opt.current_stock : Math.max(0, (opt.received||0)-(opt.sold||0))
-      const newReceived = Math.max(0, (opt.received||0) + u.receivedDelta)
-      const newStock    = Math.max(0, prevStock + u.receivedDelta)
-      return { ...opt, ordered: newOrdered, received: newReceived, current_stock: newStock }
-    })
-
-    // ② PATCH via API 라우트 → SERVICE_ROLE_KEY로 RLS 완전 우회
-    try {
-      const patchRes = await fetch(PM_API, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ id: prodId, options: updatedOpts }),
-      })
-      if (!patchRes.ok) {
-        const errJson = await patchRes.json().catch(() => ({}))
-        errors.push(`PATCH 실패(${prodId}): ${errJson?.error ?? `HTTP ${patchRes.status}`}`)
-      }
-    } catch (e) {
-      errors.push(`PATCH 오류(${prodId}): ${String(e)}`)
-    }
-  }
-
-  if (errors.length > 0) {
-    throw new Error(errors.join(' | '))
+  if (!json?.ok) {
+    throw new Error(json?.error ?? '수량 동기화 실패 (알 수 없는 오류)')
   }
 }
 
