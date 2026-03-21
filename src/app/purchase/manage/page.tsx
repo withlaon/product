@@ -104,33 +104,38 @@ export default function PurchaseManagePage() {
   const SHARED_CACHE_KEY = 'pm_products_cache_v1'
   const SHARED_CACHE_TTL = 30 * 60 * 1000 // 30분
 
-  const loadProducts = useCallback(async () => {
+  const loadProducts = useCallback(async (force = false) => {
     setLoadError('')
 
-    // ① localStorage 캐시 우선 (상품관리 탭 방문 후 즉시 로딩)
-    try {
-      const raw = localStorage.getItem(SHARED_CACHE_KEY)
-      if (raw) {
-        const { ts, data } = JSON.parse(raw)
-        if (Date.now() - ts < SHARED_CACHE_TTL && Array.isArray(data) && data.length > 0) {
-          setProducts(data as PmProduct[])
-          return
+    // ① localStorage 캐시 우선 (force=false 이고 캐시 유효할 때만)
+    if (!force) {
+      try {
+        const raw = localStorage.getItem(SHARED_CACHE_KEY)
+        if (raw) {
+          const { ts, data } = JSON.parse(raw)
+          if (Date.now() - ts < SHARED_CACHE_TTL && Array.isArray(data) && data.length > 0) {
+            setProducts(data as PmProduct[])
+            return
+          }
         }
-      }
-    } catch { /* ignore */ }
+      } catch { /* ignore */ }
+    }
 
-    // ② 캐시 미스 → API 라우트 (Vercel 엣지 캐시 적용)
+    // ② API 라우트 (force 시 캐시 버스팅)
     try {
-      const res = await fetch('/api/pm-products')
+      const res = await fetch(`/api/pm-products${force ? `?t=${Date.now()}` : ''}`)
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const data = await res.json()
       setProducts(data as PmProduct[])
+      // 캐시 갱신
+      try { localStorage.setItem(SHARED_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })) } catch { /* ignore */ }
     } catch (e: unknown) {
       // ③ 최후 fallback → supabase 클라이언트 직접
       try {
         const { data, error } = await supabase.from('pm_products').select('id,code,name,abbr,status,options')
         if (error) throw new Error(error.message)
         setProducts((data ?? []) as PmProduct[])
+        try { localStorage.setItem(SHARED_CACHE_KEY, JSON.stringify({ ts: Date.now(), data })) } catch { /* ignore */ }
       } catch (e2: unknown) {
         setLoadError(e2 instanceof Error ? e2.message : String(e instanceof Error ? e.message : e))
       }
@@ -458,8 +463,9 @@ export default function PurchaseManagePage() {
       }))
       setSaveMsg({ type: 'ok', text: `상품관리 발주수량 반영 중 (${deltas.length}종)...` })
       await syncProductQty(products, deltas)
+      localStorage.removeItem(SHARED_CACHE_KEY)  // 캐시 클리어 → 강제 재로딩
       await loadPurchases()
-      await loadProducts()
+      await loadProducts(true)
       localStorage.removeItem(DRAFT_KEY)
       setSelectedOpts([])
       setOrderSupplier('')
@@ -494,7 +500,8 @@ export default function PurchaseManagePage() {
       return { prodId: prod?.id ?? '', optName: item.option_name, orderedDelta: 0, receivedDelta: receivedItems[i] || 0 }
     }).filter(d => d.prodId && d.receivedDelta > 0)
     if (deltas.length) await syncProductQty(products, deltas)
-    await loadPurchases(); await loadProducts()
+    await loadPurchases()
+    await loadProducts(true)
     setReceiveTarget(null); setSaving(false)
   }
 
@@ -509,7 +516,8 @@ export default function PurchaseManagePage() {
     }).filter(d => d.prodId && (d.orderedDelta !== 0 || d.receivedDelta !== 0))
     await supabase.from('pm_purchases').update({ order_date: editFormData.order_date, supplier: editFormData.supplier, status: editFormData.status, items: editFormData.items }).eq('id', editTarget.id)
     if (deltas.length) await syncProductQty(products, deltas)
-    await loadPurchases(); await loadProducts()
+    localStorage.removeItem(SHARED_CACHE_KEY)
+    await loadPurchases(); await loadProducts(true)
     setEditTarget(null); setEditFormData(null); setSaving(false)
   }
 
@@ -521,8 +529,9 @@ export default function PurchaseManagePage() {
       return { prodId: prod?.id ?? '', optName: item.option_name, orderedDelta: -item.ordered, receivedDelta: -item.received }
     }).filter(d => d.prodId)
     if (deltas.length) await syncProductQty(products, deltas)
+    localStorage.removeItem(SHARED_CACHE_KEY)
     await supabase.from('pm_purchases').delete().eq('id', p.id)
-    await loadPurchases(); await loadProducts()
+    await loadPurchases(); await loadProducts(true)
     setDeleteTarget(null); setSaving(false)
   }
 

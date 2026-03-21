@@ -48,7 +48,13 @@ export default function PurchaseMainPage() {
     if (data) setPurchases(data as Purchase[])
   }, [])
 
-  useEffect(() => { loadPurchases() }, [loadPurchases])
+  useEffect(() => {
+    loadPurchases()
+    /* 탭 포커스 시 자동 새로고침 (하위 탭에서 변경된 데이터 반영) */
+    const onVisible = () => { if (document.visibilityState === 'visible') loadPurchases() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [loadPurchases])
 
   /* 발주내역 필터 (월별) */
   const poList = useMemo(() =>

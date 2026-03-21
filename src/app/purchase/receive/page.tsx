@@ -210,6 +210,7 @@ export default function ReceiveManagePage() {
     for (const item of toConfirm) newKeys.add(`${item.purchaseId}|${item.itemIndex}`)
     setConfirmedKeys(newKeys)
     localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newKeys]))
+    localStorage.removeItem('pm_products_cache_v1')  // 상품관리 캐시 클리어
 
     await loadProducts()
     setSaving(false)
@@ -235,6 +236,7 @@ export default function ReceiveManagePage() {
       status: editFormData.status, items: editFormData.items,
     }).eq('id', editTarget.id)
     if (deltas.length) await syncProductQty(products, deltas)
+    localStorage.removeItem('pm_products_cache_v1')
     await loadPurchases(); await loadProducts()
     setEditTarget(null); setEditFormData(null); setSaving(false)
   }
@@ -247,6 +249,7 @@ export default function ReceiveManagePage() {
       return { prodId: prod?.id ?? '', optName: item.option_name, orderedDelta: -item.ordered, receivedDelta: -item.received }
     }).filter(d => d.prodId)
     if (deltas.length) await syncProductQty(products, deltas)
+    localStorage.removeItem('pm_products_cache_v1')
     await supabase.from('pm_purchases').delete().eq('id', p.id)
     await loadPurchases(); await loadProducts()
     setDeleteTarget(null); setSaving(false)
