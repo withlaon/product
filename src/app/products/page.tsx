@@ -377,6 +377,25 @@ function saveLocalMappings(data: Record<string, LocalMappedRow[]>) {
   try { localStorage.setItem(LOCAL_MAPPING_KEY, JSON.stringify(data)) } catch {}
 }
 
+/** localStorage 매핑에서 productId → 매핑된 쇼핑몰명[] 맵 생성 */
+function buildLocalMallsMap(): Record<string, string[]> {
+  const mappings = loadLocalMappings()
+  const channels = loadMallChannels()
+  const result: Record<string, string[]> = {}
+  for (const [mallKey, rows] of Object.entries(mappings)) {
+    const mallName = channels.find(c => c.key === mallKey)?.name || mallKey
+    for (const row of rows) {
+      if (row.status === 'matched' && row.matched_product_id) {
+        if (!result[row.matched_product_id]) result[row.matched_product_id] = []
+        if (!result[row.matched_product_id].includes(mallName)) {
+          result[row.matched_product_id].push(mallName)
+        }
+      }
+    }
+  }
+  return result
+}
+
 interface MappingRow { mallKey:string; mall:string; productId:string; productName:string; price:string }
 function MallMappingModal({
   product, onClose, onSave,
@@ -657,6 +676,9 @@ export default function ProductsPage() {
   const [page, setPage] = useState(1)
   const PAGE_SIZE = 10
 
+  // localStorage 매핑 기반 쇼핑몰 현황 (마운트 시 즉시 로드 → Supabase 동기화 타이밍과 무관하게 실시간 반영)
+  const [localMallsMap, setLocalMallsMap] = useState<Record<string, string[]>>(() => buildLocalMallsMap())
+
   // 옵션 이미지 lazy load: localStorage 캐시에서 즉시 초기화, 미캐시 상품만 API 조회
   const [pageImages, setPageImages] = useState<Record<string, string[]>>(() => loadImgCache())
 
@@ -921,13 +943,18 @@ export default function ProductsPage() {
   /* ── 매핑관리탭 변경 감지: storage 이벤트(다른 탭) + visibilitychange(같은 탭 복귀) ── */
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === 'pm_products_mapping_signal') {
-        try { localStorage.removeItem('pm_products_cache_v1') } catch {}
-        setRefreshKey(k => k + 1)
+      if (e.key === 'pm_products_mapping_signal' || e.key === 'pm_channel_mappings_v2') {
+        setLocalMallsMap(buildLocalMallsMap())
+        if (e.key === 'pm_products_mapping_signal') {
+          try { localStorage.removeItem('pm_products_cache_v1') } catch {}
+          setRefreshKey(k => k + 1)
+        }
       }
     }
     const onVisible = () => {
       if (document.visibilityState === 'visible') {
+        // visibilitychange 시 localMallsMap 항상 갱신 (탭 전환 후 복귀 시)
+        setLocalMallsMap(buildLocalMallsMap())
         const sig = localStorage.getItem('pm_products_mapping_signal')
         if (sig) {
           localStorage.removeItem('pm_products_mapping_signal')
@@ -2221,11 +2248,15 @@ export default function ProductsPage() {
                     {/* 쇼핑몰 등록현황 */}
                     <td style={{ paddingTop:10, paddingBottom:10, overflow:'visible' }}>
                       <div style={{ display:'flex', flexWrap:'wrap', gap:4, maxWidth:160 }}>
-                        {(p.registered_malls ?? []).length === 0 ? (
-                          <span style={{ fontSize:11, color:'#cbd5e1', fontWeight:600 }}>-</span>
-                        ) : (p.registered_malls ?? []).map((mallData, mi) => {
-                          const mallName = typeof mallData === 'string' ? mallData : mallData.mall
-                          const mallCode = typeof mallData === 'string' ? '' : (mallData.code || '')
+                        {(() => {
+                          // Supabase registered_malls + localStorage 매핑 병합
+                          const fromSupabase = (p.registered_malls ?? []).map(m => typeof m === 'string' ? m : m.mall)
+                          const fromLocal = localMallsMap[p.id] ?? []
+                          const merged = [...new Set([...fromSupabase, ...fromLocal])]
+                          if (merged.length === 0) return <span style={{ fontSize:11, color:'#cbd5e1', fontWeight:600 }}>-</span>
+                          return merged.map((mallName, mi) => {
+                          const mallData = (p.registered_malls ?? []).find(m => (typeof m === 'string' ? m : m.mall) === mallName)
+                          const mallCode = mallData && typeof mallData === 'object' ? (mallData.code || '') : ''
                           const abbrMap: Record<string,string> = {
                             '쿠팡':    '쿠팡',
                             '네이버':  '네이버',
@@ -2303,7 +2334,8 @@ export default function ProductsPage() {
                               )}
                             </div>
                           )
-                        })}
+                        })
+                      })()}
                       </div>
                     </td>
 
