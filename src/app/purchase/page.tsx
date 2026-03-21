@@ -5,6 +5,7 @@ import {
   getThisMonth, shiftMonth,
   fmtMonthLabel, fmtDateShort,
   apiFetchPurchases,
+  DEFAULT_EXCHANGE_RATE, unitToOrderKrw,
 } from './_shared'
 import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp } from 'lucide-react'
 
@@ -21,13 +22,13 @@ function loadCachedProducts(): FP[] {
   } catch { return [] }
 }
 
-/** 발주 1건의 원화 합계금액 계산 */
+/** 발주 1건의 원화 합계금액 계산 (원가 × 환율 × 1.18 × 1.25 × 수량) */
 function calcOrderKrw(purchase: Purchase, products: FP[], exchangeRate: number): number {
   return purchase.items.reduce((sum, item) => {
     const prod = products.find(p => p.code === item.product_code)
     if (!prod?.cost_price) return sum
-    const rate = (prod.cost_currency || '원') === '원' ? 1 : exchangeRate
-    return sum + prod.cost_price * rate * item.ordered
+    const unitKrw = unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate)
+    return sum + unitKrw * item.ordered
   }, 0)
 }
 
@@ -59,7 +60,7 @@ function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) =>
 export default function PurchaseMainPage() {
   const [purchases, setPurchases] = useState<Purchase[]>([])
   const [products,  setProducts]  = useState<FP[]>([])
-  const [exchangeRate, setExchangeRate] = useState(190)
+  const [exchangeRate, setExchangeRate] = useState(DEFAULT_EXCHANGE_RATE)
 
   /* 발주내역 날짜 (월별 전용) */
   const [poMonth, setPoMonth] = useState(getThisMonth())

@@ -16,6 +16,7 @@ import {
   fmtMonthLabel, fmtDayLabel,
   syncProductQty, DateNav,
   apiFetchPurchases, apiInsertPurchase, apiUpdatePurchase, apiDeletePurchase,
+  DEFAULT_EXCHANGE_RATE, PRICE_FACTOR, unitToOrderKrw,
 } from '../_shared'
 import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, ChevronUp, AlertTriangle, Package, FileDown, RefreshCw } from 'lucide-react'
 
@@ -76,7 +77,7 @@ export default function PurchaseManagePage() {
   const [orderDate,    setOrderDate]    = useState(getToday())
   const [orderSupplier, setOrderSupplier] = useState('')
   const [exchangeRate,  setExchangeRate]  = useState(() => {
-    try { return Number(localStorage.getItem('pm_exchange_rate') || '190') || 190 } catch { return 190 }
+    try { return Number(localStorage.getItem('pm_exchange_rate') || String(DEFAULT_EXCHANGE_RATE)) || DEFAULT_EXCHANGE_RATE } catch { return DEFAULT_EXCHANGE_RATE }
   })
 
   /* 발주 이력 영역 */
@@ -741,7 +742,7 @@ export default function PurchaseManagePage() {
                   const total = selectedOpts.reduce((sum, s) => {
                     const p = fp.find(x => x.id === s.prodId)
                     const u = p?.cost_price ?? 0
-                    const krw = (p?.cost_currency || '원') === '원' ? u : u * exchangeRate
+                    const krw = unitToOrderKrw(u, p?.cost_currency || '원', exchangeRate)
                     return sum + krw * (Number(s.qty) || 0)
                   }, 0)
                   return (
@@ -763,7 +764,7 @@ export default function PurchaseManagePage() {
                   const prod = (products as unknown as FP[]).find(p => p.id === s.prodId)
                   const unitCost = prod?.cost_price ?? null
                   const currency = prod?.cost_currency || '원'
-                  const unitKrw = unitCost != null ? (currency === '원' ? unitCost : unitCost * exchangeRate) : null
+                  const unitKrw = unitCost != null ? unitToOrderKrw(unitCost, currency, exchangeRate) : null
                   const lineKrw = unitKrw != null ? unitKrw * (Number(s.qty) || 0) : null
                   return (
                     <div key={s.key} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, padding: '8px 0', borderBottom: '1px solid #f8fafc' }}>
@@ -834,7 +835,7 @@ export default function PurchaseManagePage() {
                   const grandTotal = selectedOpts.reduce((sum, s) => {
                     const p = fp.find(x => x.id === s.prodId)
                     const u = p?.cost_price ?? 0
-                    const krw = (p?.cost_currency || '원') === '원' ? u : u * exchangeRate
+                    const krw = unitToOrderKrw(u, p?.cost_currency || '원', exchangeRate)
                     return sum + krw * (Number(s.qty) || 0)
                   }, 0)
                   if (grandTotal <= 0) return null
