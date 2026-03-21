@@ -15,6 +15,7 @@ import {
   getToday, getThisMonth,
   fmtMonthLabel, fmtDayLabel,
   syncProductQty, DateNav,
+  apiFetchPurchases, apiInsertPurchase, apiUpdatePurchase, apiDeletePurchase,
 } from '../_shared'
 import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, ChevronUp, AlertTriangle, Package, FileDown } from 'lucide-react'
 
@@ -89,8 +90,8 @@ export default function PurchaseManagePage() {
 
   /* ── 데이터 로드 ── */
   const loadPurchases = useCallback(async () => {
-    const { data } = await supabase.from('pm_purchases').select('*').order('order_date', { ascending: false })
-    if (data) setPurchases(data as Purchase[])
+    const data = await apiFetchPurchases()
+    setPurchases(data)
   }, [])
 
   const [loadError, setLoadError] = useState('')
@@ -443,8 +444,7 @@ export default function PurchaseManagePage() {
         ordered:      Number(s.qty),
         received:     0,
       }))
-      const purchase: Purchase = {
-        id:          String(Date.now()),
+      const purchase: Omit<Purchase, 'id'> = {
         order_date:  orderDate,
         supplier:    orderSupplier || '미지정',
         status:      'ordered',
@@ -452,7 +452,8 @@ export default function PurchaseManagePage() {
         received_at: null,
         items,
       }
-      await supabase.from('pm_purchases').insert(purchase)
+      const { error: insertErr } = await apiInsertPurchase(purchase)
+      if (insertErr) { setSaveMsg({ type: 'err', text: `발주 등록 실패: ${insertErr}` }); setSaving(false); return }
       // 바코드 기준으로 상품관리탭 발주 수량 카운팅
       const deltas = valid.map(s => ({
         prodId:       s.prodId,
@@ -494,7 +495,7 @@ export default function PurchaseManagePage() {
       status: (allDone ? 'completed' : anyDone ? 'partial' : receiveTarget.status) as PurchaseStatus,
       received_at: allDone ? new Date().toISOString() : receiveTarget.received_at,
     }
-    await supabase.from('pm_purchases').update({ items: updated.items, status: updated.status, received_at: updated.received_at }).eq('id', receiveTarget.id)
+    await apiUpdatePurchase(receiveTarget.id, { items: updated.items, status: updated.status, received_at: updated.received_at })
     const deltas = receiveTarget.items.map((item, i) => {
       const prod = products.find(p => p.code === item.product_code)
       return { prodId: prod?.id ?? '', optName: item.option_name, orderedDelta: 0, receivedDelta: receivedItems[i] || 0 }
@@ -514,7 +515,7 @@ export default function PurchaseManagePage() {
       const prod = products.find(p => p.code === newItem.product_code || p.code === oldItem.product_code)
       return { prodId: prod?.id ?? '', optName: newItem.option_name, orderedDelta: newItem.ordered - oldItem.ordered, receivedDelta: newItem.received - oldItem.received }
     }).filter(d => d.prodId && (d.orderedDelta !== 0 || d.receivedDelta !== 0))
-    await supabase.from('pm_purchases').update({ order_date: editFormData.order_date, supplier: editFormData.supplier, status: editFormData.status, items: editFormData.items }).eq('id', editTarget.id)
+    await apiUpdatePurchase(editTarget.id, { order_date: editFormData.order_date, supplier: editFormData.supplier, status: editFormData.status, items: editFormData.items })
     if (deltas.length) await syncProductQty(products, deltas)
     localStorage.removeItem(SHARED_CACHE_KEY)
     await loadPurchases(); await loadProducts(true)
@@ -530,7 +531,7 @@ export default function PurchaseManagePage() {
     }).filter(d => d.prodId)
     if (deltas.length) await syncProductQty(products, deltas)
     localStorage.removeItem(SHARED_CACHE_KEY)
-    await supabase.from('pm_purchases').delete().eq('id', p.id)
+    await apiDeletePurchase(p.id)
     await loadPurchases(); await loadProducts(true)
     setDeleteTarget(null); setSaving(false)
   }

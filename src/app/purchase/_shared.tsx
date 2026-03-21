@@ -22,6 +22,43 @@ export interface Purchase {
   received_at: string | null
   items:       PurchaseItem[]
 }
+
+/* ── pm_purchases API 유틸 (SERVICE_ROLE_KEY 사용 → RLS/스키마 캐시 문제 우회) ── */
+const PO_API = '/api/pm-purchases'
+
+export async function apiFetchPurchases(): Promise<Purchase[]> {
+  try {
+    const res = await fetch(PO_API)
+    if (!res.ok) return []
+    const data = await res.json()
+    return Array.isArray(data) ? data : []
+  } catch { return [] }
+}
+
+export async function apiInsertPurchase(payload: Omit<Purchase, 'id'> & { id?: string }): Promise<{ data: Purchase | null; error: string | null }> {
+  try {
+    const res = await fetch(PO_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) })
+    const json = await res.json()
+    if (!res.ok) return { data: null, error: json.error ?? `${res.status}` }
+    return { data: json as Purchase, error: null }
+  } catch (e) { return { data: null, error: String(e) } }
+}
+
+export async function apiUpdatePurchase(id: string, fields: Partial<Purchase>): Promise<{ error: string | null }> {
+  try {
+    const res = await fetch(PO_API, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id, ...fields }) })
+    if (!res.ok) { const j = await res.json(); return { error: j.error ?? `${res.status}` } }
+    return { error: null }
+  } catch (e) { return { error: String(e) } }
+}
+
+export async function apiDeletePurchase(id: string): Promise<{ error: string | null }> {
+  try {
+    const res = await fetch(PO_API, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id }) })
+    if (!res.ok) { const j = await res.json(); return { error: j.error ?? `${res.status}` } }
+    return { error: null }
+  } catch (e) { return { error: String(e) } }
+}
 export interface PmOption {
   name: string; barcode: string; chinese_name?: string; korean_name?: string; size?: string
   image?: string

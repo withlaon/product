@@ -10,6 +10,7 @@ import {
   getToday, getThisMonth, shiftMonth,
   fmtMonthLabel,
   syncProductQty,
+  apiFetchPurchases, apiInsertPurchase, apiUpdatePurchase, apiDeletePurchase,
 } from '../_shared'
 import {
   Edit2, Trash2, X, Plus, PackagePlus, CheckCircle2,
@@ -97,8 +98,8 @@ export default function ReceiveManagePage() {
 
   /* ── 데이터 로드 ── */
   const loadPurchases = useCallback(async () => {
-    const { data } = await supabase.from('pm_purchases').select('*').order('order_date', { ascending: false })
-    if (data) setPurchases(data as Purchase[])
+    const data = await apiFetchPurchases()
+    setPurchases(data)
   }, [])
   const loadProducts = useCallback(async () => {
     const { data } = await supabase.from('pm_products').select('id,code,name,abbr,options')
@@ -250,10 +251,10 @@ export default function ReceiveManagePage() {
         receivedDelta: newItem.received - oldItem.received,
       }
     }).filter(d => d.prodId && (d.orderedDelta !== 0 || d.receivedDelta !== 0))
-    await supabase.from('pm_purchases').update({
+    await apiUpdatePurchase(editTarget.id, {
       order_date: editFormData.order_date, supplier: editFormData.supplier,
       status: editFormData.status, items: editFormData.items,
-    }).eq('id', editTarget.id)
+    })
     if (deltas.length) await syncProductQty(products, deltas)
     localStorage.removeItem('pm_products_cache_v1')
     await loadPurchases(); await loadProducts()
@@ -269,7 +270,7 @@ export default function ReceiveManagePage() {
     }).filter(d => d.prodId)
     if (deltas.length) await syncProductQty(products, deltas)
     localStorage.removeItem('pm_products_cache_v1')
-    await supabase.from('pm_purchases').delete().eq('id', p.id)
+    await apiDeletePurchase(p.id)
     await loadPurchases(); await loadProducts()
     setDeleteTarget(null); setSaving(false)
   }
@@ -417,9 +418,9 @@ export default function ReceiveManagePage() {
       supplier: form.supplier || '직접입고', status: 'completed' as const,
       ordered_at: new Date().toISOString(), received_at: new Date().toISOString(), items,
     }
-    const { error } = await supabase.from('pm_purchases').insert(payload)
+    const { error } = await apiInsertPurchase(payload)
     if (error) {
-      alert(`입고 등록 실패: ${error.message}`)
+      alert(`입고 등록 실패: ${error}`)
       setSaving(false)
       return
     }

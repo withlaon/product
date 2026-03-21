@@ -6,6 +6,7 @@ import {
   ST, isUnresolved,
   getThisMonth, shiftMonth,
   fmtMonthLabel, fmtDateShort,
+  apiFetchPurchases,
 } from './_shared'
 import { ChevronLeft, ChevronRight, PackagePlus } from 'lucide-react'
 
@@ -44,8 +45,8 @@ export default function PurchaseMainPage() {
   const [rcMonth, setRcMonth] = useState(getThisMonth())
 
   const loadPurchases = useCallback(async () => {
-    const { data } = await supabase.from('pm_purchases').select('*').order('order_date', { ascending: false })
-    if (data) setPurchases(data as Purchase[])
+    const data = await apiFetchPurchases()
+    setPurchases(data)
   }, [])
 
   useEffect(() => {
