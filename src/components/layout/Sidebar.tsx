@@ -61,7 +61,7 @@ const navGroups: NavGroup[] = [
     label: '시스템',
     items: [
       { label: '매핑관리', href: '/mapping', icon: GitMerge },
-      { label: '설정',     href: '/settings', icon: Settings },
+      { label: '아이디/비번', href: '/settings', icon: Settings },
     ],
   },
 ]
