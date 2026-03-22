@@ -37,7 +37,7 @@ interface ProductOption {
   current_stock?: number // 현재 실재고
   defective?: number     // 불량 수량
 }
-interface ChannelPrice { channel: string; price: number }
+interface ChannelPrice { channel: string; price: number; tag_price?: number }
 interface MallCategory { channel: string; category: string; category_code: string }
 interface BasicInfo {
   // ── 기본 상품정보
@@ -294,11 +294,22 @@ function ChannelPriceModal({
       channels.map(ch => [ch.name, String(product.channel_prices.find(cp => cp.channel === ch.name)?.price ?? '')])
     )
   )
+  const [tagPrices, setTagPrices] = useState<Record<string, string>>(
+    () => Object.fromEntries(
+      channels.map(ch => [ch.name, String(product.channel_prices.find(cp => cp.channel === ch.name)?.tag_price ?? '')])
+    )
+  )
   const costKrw = product.cost_currency === 'CNY' ? Math.round(product.cost_price * CNY_TO_KRW) : product.cost_price
   const handleSave = () => {
     const result: ChannelPrice[] = channels
       .filter(ch => prices[ch.name] && Number(prices[ch.name]) > 0)
-      .map(ch => ({ channel: ch.name, price: Number(prices[ch.name]) }))
+      .map(ch => ({
+        channel: ch.name,
+        price: Number(prices[ch.name]),
+        ...(tagPrices[ch.name] && Number(tagPrices[ch.name]) > 0
+          ? { tag_price: Number(tagPrices[ch.name]) }
+          : {}),
+      }))
     onSave(result)
   }
   return (
@@ -315,25 +326,65 @@ function ChannelPriceModal({
         ) : (
           <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
             {channels.map(ch => {
-              const price = Number(prices[ch.name]) || 0
-              const margin = costKrw > 0 && price > 0 ? (((price - costKrw) / price) * 100).toFixed(1) : null
-              const below  = price > 0 && price < costKrw
+              const price    = Number(prices[ch.name])    || 0
+              const tagPrice = Number(tagPrices[ch.name]) || 0
+              const margin   = costKrw > 0 && price > 0 ? (((price - costKrw) / price) * 100).toFixed(1) : null
+              const below    = price > 0 && price < costKrw
+              const discount = tagPrice > 0 && price > 0 && tagPrice > price
+                ? Math.round((1 - price / tagPrice) * 100) : null
               return (
                 <div key={ch.name} style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+                  {/* 쇼핑몰명 + 상태 배지 */}
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:8 }}>
                       <span style={{ fontSize:13, fontWeight:800, background:ch.bg, color:ch.color, padding:'2px 10px', borderRadius:6 }}>
                         {ch.name}
                       </span>
                       {below && <span style={{ fontSize:11, fontWeight:800, color:'#dc2626' }}>⚠️ 원가 미만</span>}
                     </div>
-                    {margin && <span style={{ fontSize:12.5, fontWeight:800, color: below ? '#dc2626' : '#059669' }}>마진 {margin}%</span>}
+                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                      {discount !== null && (
+                        <span style={{ fontSize:11.5, fontWeight:800, color:'#7c3aed', background:'#f5f3ff', padding:'2px 7px', borderRadius:5 }}>
+                          {discount}% 할인
+                        </span>
+                      )}
+                      {margin && (
+                        <span style={{ fontSize:12.5, fontWeight:800, color: below ? '#dc2626' : '#059669' }}>
+                          마진 {margin}%
+                        </span>
+                      )}
+                    </div>
                   </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <span style={{ fontSize:13, fontWeight:700, color:'#64748b', minWidth:14 }}>₩</span>
-                    <Input type="number" placeholder="0" value={prices[ch.name]}
-                      onChange={e => setPrices(prev => ({...prev, [ch.name]: e.target.value}))}
-                      style={{ fontSize:14, fontWeight:800 }} />
+                  {/* TAG가 + 판매가 입력 */}
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+                    <div>
+                      <p style={{ fontSize:10.5, fontWeight:800, color:'#94a3b8', marginBottom:5, letterSpacing:'0.04em' }}>
+                        🏷️ TAG가 <span style={{ fontWeight:500, fontSize:10 }}>(정가·소비자가)</span>
+                      </p>
+                      <div style={{ display:'flex', alignItems:'center', gap:5, background:'white', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'5px 8px' }}>
+                        <span style={{ fontSize:12, fontWeight:700, color:'#94a3b8' }}>₩</span>
+                        <input
+                          type="number" placeholder="0"
+                          value={tagPrices[ch.name]}
+                          onChange={e => setTagPrices(prev => ({ ...prev, [ch.name]: e.target.value }))}
+                          style={{ border:'none', outline:'none', width:'100%', fontSize:14, fontWeight:800, color:'#64748b', background:'transparent' }}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <p style={{ fontSize:10.5, fontWeight:800, color:'#2563eb', marginBottom:5, letterSpacing:'0.04em' }}>
+                        💰 판매가 <span style={{ fontWeight:500, fontSize:10 }}>(실제 판매)</span>
+                      </p>
+                      <div style={{ display:'flex', alignItems:'center', gap:5, background:'white', border:'1.5px solid #bfdbfe', borderRadius:8, padding:'5px 8px' }}>
+                        <span style={{ fontSize:12, fontWeight:700, color:'#2563eb' }}>₩</span>
+                        <input
+                          type="number" placeholder="0"
+                          value={prices[ch.name]}
+                          onChange={e => setPrices(prev => ({ ...prev, [ch.name]: e.target.value }))}
+                          style={{ border:'none', outline:'none', width:'100%', fontSize:14, fontWeight:800, color:'#1e40af', background:'transparent' }}
+                        />
+                      </div>
+                    </div>
                   </div>
                 </div>
               )
@@ -2757,10 +2808,22 @@ export default function ProductsPage() {
                   const cs = CH_STYLE[cp.channel] ?? {bg:'#f8fafc',color:'#475569'}
                   const cost = detail.cost_currency==='CNY' ? Math.round(detail.cost_price*CNY_TO_KRW) : detail.cost_price
                   const margin = cost>0 ? (((cp.price-cost)/cp.price)*100).toFixed(1) : '-'
+                  const discount = cp.tag_price && cp.tag_price > cp.price
+                    ? Math.round((1 - cp.price / cp.tag_price) * 100) : null
                   return (
                     <div key={cp.channel} style={{ background:cs.bg, borderRadius:10, padding:'10px 12px' }}>
                       <p style={{ fontSize:10.5, fontWeight:800, color:cs.color }}>{cp.channel}</p>
-                      <p style={{ fontSize:16, fontWeight:900, color:'#1e293b', marginTop:3 }}>{formatCurrency(cp.price)}</p>
+                      {cp.tag_price && (
+                        <p style={{ fontSize:11, fontWeight:700, color:'#94a3b8', marginTop:4, textDecoration:'line-through' }}>
+                          🏷️ {formatCurrency(cp.tag_price)}
+                          {discount !== null && (
+                            <span style={{ marginLeft:4, fontSize:10, fontWeight:800, color:'#7c3aed', textDecoration:'none' }}>
+                              -{discount}%
+                            </span>
+                          )}
+                        </p>
+                      )}
+                      <p style={{ fontSize:16, fontWeight:900, color:'#1e293b', marginTop:cp.tag_price ? 2 : 3 }}>{formatCurrency(cp.price)}</p>
                       <p style={{ fontSize:10.5, fontWeight:700, color:'#94a3b8', marginTop:2 }}>마진 {margin}%</p>
                     </div>
                   )
