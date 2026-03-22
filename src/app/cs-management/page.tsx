@@ -145,9 +145,10 @@ function lookupTracking(barcode: string, mall?: string, customerName?: string): 
       if (!order.customer_name.includes(cn) && !cn.includes(order.customer_name)) continue
     }
     for (const item of order.items) {
-      const m         = lookupMapping(mappings, item.product_name ?? '', item.option)
-      const itemBarcode = (m.barcode ?? item.sku ?? '').trim()
-      if (itemBarcode === bc) return order.tracking_number ?? ''
+      const m = lookupMapping(mappings, item.product_name ?? '', item.option)
+      // mapping 바코드 + item.sku 둘 다 체크 (출고내역 직접 수정된 바코드도 반영)
+      const barcodes = [(m.barcode ?? '').trim(), (item.sku ?? '').trim()].filter(Boolean)
+      if (barcodes.includes(bc)) return order.tracking_number ?? ''
     }
   }
   return ''
@@ -210,9 +211,8 @@ export default function CsManagementPage() {
   const curYM = getCurYM()
 
   const [items,      setItems]      = useState<CsItem[]>([])
-  const [leftYM,     setLeftYM]     = useState(curYM)
-  const [rightYM,    setRightYM]    = useState(curYM)
   const [leftSearch, setLeftSearch] = useState('')
+  const [rightYM,    setRightYM]    = useState(curYM)
   const [rightSearch,setRightSearch]= useState('')
 
   /* 등록 모달 */
@@ -232,7 +232,7 @@ export default function CsManagementPage() {
 
   /* ── 파생 목록 ── */
   const pending = useMemo(() => {
-    let list = items.filter(i => i.status === 'pending' && i.registered_at.slice(0, 7) === leftYM)
+    let list = items.filter(i => i.status === 'pending')
     if (leftSearch) {
       const q = leftSearch.toLowerCase()
       list = list.filter(i =>
@@ -241,7 +241,7 @@ export default function CsManagementPage() {
       )
     }
     return list.slice().sort((a, b) => b.registered_at.localeCompare(a.registered_at))
-  }, [items, leftYM, leftSearch])
+  }, [items, leftSearch])
 
   const processed = useMemo(() => {
     let list = items.filter(i => i.status === 'processed' && (i.processed_at ?? '').slice(0, 7) === rightYM)
@@ -380,8 +380,11 @@ export default function CsManagementPage() {
   /* ── 처리완료 ── */
   const handleProcess = async (item: CsItem) => {
     if (processing) return
+    const typeLabel   = item.type === 'return' ? '반품' : '교환'
+    const reasonLabel = item.reason === 'defective' ? '불량' : '단순변심'
+    const qty         = item.quantity ?? 1
+    if (!confirm(`[${typeLabel}] ${item.customer_name} / ${item.barcode}\n사유: ${reasonLabel} / 수량: ${qty}개\n\n처리완료 하시겠습니까?`)) return
     setProcessing(item.id)
-    const qty = item.quantity ?? 1
     try {
       const products = loadCachedProducts()
       let found = false
@@ -481,10 +484,10 @@ export default function CsManagementPage() {
               <RefreshCw size={13} /> 교환등록
             </button>
           </div>
-          {/* 월 네비 + 검색 */}
-          <MonthNav ym={leftYM} curYM={curYM} onChange={setLeftYM} accentColor="#2563eb" accentBg="#eff6ff">
+          {/* 검색 */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
             <SearchBox value={leftSearch} onChange={setLeftSearch} />
-          </MonthNav>
+          </div>
         </div>
 
         {/* 목록 카드 */}
@@ -492,7 +495,7 @@ export default function CsManagementPage() {
           <GridHeader cols={GRID_LEFT} headers={HDRS_LEFT} />
           <div style={{ flex: 1, overflowY: 'auto' }}>
             {pending.length === 0 ? (
-              <EmptyState icon={<HeadphonesIcon size={32} />} text={`${leftYM.replace('-', '년 ')}월 접수된 CS가 없습니다`} />
+              <EmptyState icon={<HeadphonesIcon size={32} />} text="미처리 CS가 없습니다" />
             ) : pending.map(item => {
               const ms     = mallStyle(item.mall)
               const isProc = processing === item.id

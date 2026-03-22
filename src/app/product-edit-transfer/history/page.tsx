@@ -2,14 +2,14 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
-import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search } from 'lucide-react'
 import {
   loadShippedOrders, saveShippedOrders, loadOrders, saveOrders,
   loadMappings, lookupMapping,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 
-/* 로컬 캐시에서 상품 목록 로드 (바코드 기준 재고차감용) */
+/* 로컬 캐시에서 상품 목록 로드 */
 type CachedOption = { barcode?: string; name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
 type CachedProduct = { id: string; options: CachedOption[] }
 function loadCachedProducts(): CachedProduct[] {
@@ -78,6 +78,7 @@ interface EditFields {
   product_name   : string
   option         : string
   barcode        : string
+  unit_price     : string
 }
 
 /* ─── 페이지 ─────────────────────────────────────────────── */
@@ -85,15 +86,16 @@ export default function ShippingHistoryPage() {
   const today  = getToday()
   const curYM  = getCurYM()
 
-  const [shipped, setShipped]       = useState<ShippedOrder[]>([])
-  const [viewMode, setViewMode]     = useState<'daily' | 'monthly'>('daily')
-  const [selDate, setSelDate]       = useState(today)
-  const [selMonth, setSelMonth]     = useState(curYM)
-  const [checked, setChecked]       = useState<Set<string>>(new Set())
-  const [mappings, setMappings]     = useState<ReturnType<typeof loadMappings>>({})
+  const [shipped,    setShipped]    = useState<ShippedOrder[]>([])
+  const [viewMode,   setViewMode]   = useState<'daily' | 'monthly'>('daily')
+  const [selDate,    setSelDate]    = useState(today)
+  const [selMonth,   setSelMonth]   = useState(curYM)
+  const [checked,    setChecked]    = useState<Set<string>>(new Set())
+  const [mappings,   setMappings]   = useState<ReturnType<typeof loadMappings>>({})
+  const [searchText, setSearchText] = useState('')
 
   /* 인라인 편집 */
-  const [editingId, setEditingId]   = useState<string | null>(null)
+  const [editingId,  setEditingId]  = useState<string | null>(null)
   const [editFields, setEditFields] = useState<EditFields | null>(null)
 
   useEffect(() => {
@@ -101,20 +103,36 @@ export default function ShippingHistoryPage() {
     setMappings(loadMappings())
   }, [])
 
-  /* 날짜/월별 필터 */
+  /* 날짜/월별 필터 → 검색 */
   const displayOrders = useMemo(() => {
+    let list: ShippedOrder[]
     if (viewMode === 'daily') {
-      const d = selDate
-      return shipped.filter(o => (o.shipped_at ?? o.order_date).slice(0, 10) === d)
+      list = shipped.filter(o => (o.shipped_at ?? o.order_date).slice(0, 10) === selDate)
     } else {
-      const ym = selMonth
-      return shipped.filter(o => (o.shipped_at ?? o.order_date).slice(0, 7) === ym)
+      list = shipped.filter(o => (o.shipped_at ?? o.order_date).slice(0, 7) === selMonth)
     }
-  }, [shipped, viewMode, selDate, selMonth])
+    if (searchText.trim()) {
+      const q = searchText.trim().toLowerCase()
+      list = list.filter(o => {
+        const item    = o.items[0]
+        const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
+        const barcode = (mapping.barcode ?? item?.sku ?? '').toLowerCase()
+        return (
+          o.order_number.toLowerCase().includes(q) ||
+          o.channel.toLowerCase().includes(q) ||
+          o.customer_name.toLowerCase().includes(q) ||
+          barcode.includes(q) ||
+          (o.tracking_number ?? '').toLowerCase().includes(q) ||
+          (item?.product_name ?? '').toLowerCase().includes(q)
+        )
+      })
+    }
+    return list
+  }, [shipped, viewMode, selDate, selMonth, searchText, mappings])
 
   /* KPI */
-  const todayShipped  = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,10) === today).length, [shipped, today])
-  const monthShipped  = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,7) === curYM).length, [shipped, curYM])
+  const todayShipped = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,10) === today).length, [shipped, today])
+  const monthShipped = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,7) === curYM).length, [shipped, curYM])
 
   /* 체크박스 */
   const allChecked = displayOrders.length > 0 && displayOrders.every(o => checked.has(o.id))
@@ -123,10 +141,8 @@ export default function ShippingHistoryPage() {
     else            setChecked(prev => { const n = new Set(prev); displayOrders.forEach(o => n.add(o.id)); return n })
   }
   const toggleOne = (id: string) => {
-    if (editingId) return  // 편집 중에는 체크 무시
-    setChecked(prev => {
-      const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n
-    })
+    if (editingId) return
+    setChecked(prev => { const n = new Set(prev); n.has(id) ? n.delete(id) : n.add(id); return n })
   }
 
   /* ── 인라인 편집 시작 ── */
@@ -140,6 +156,7 @@ export default function ShippingHistoryPage() {
       product_name   : o.items[0]?.product_name ?? '',
       option         : o.items[0]?.option ?? '',
       barcode        : barcode,
+      unit_price     : String(o.items[0]?.unit_price ?? ''),
     })
   }
 
@@ -159,6 +176,7 @@ export default function ShippingHistoryPage() {
           product_name: editFields.product_name || item.product_name,
           option      : editFields.option,
           sku         : editFields.barcode || item.sku,
+          unit_price  : editFields.unit_price !== '' ? Number(editFields.unit_price) : item.unit_price,
         } : item),
       }
     })
@@ -170,70 +188,56 @@ export default function ShippingHistoryPage() {
 
   const cancelEdit = () => { setEditingId(null); setEditFields(null) }
 
-  /* 출고일 변경: 선택 항목의 shipped_at 날짜를 변경 */
+  /* 출고일 변경 */
   const [changeDateMode, setChangeDateMode] = useState(false)
   const [newDate, setNewDate] = useState('')
   const handleChangeDate = () => {
     if (!newDate || checked.size === 0) return
     const updated = shipped.map(o =>
-      checked.has(o.id)
-        ? { ...o, shipped_at: `${newDate}T00:00:00.000Z` }
-        : o
+      checked.has(o.id) ? { ...o, shipped_at: `${newDate}T00:00:00.000Z` } : o
     )
-    saveShippedOrders(updated)
-    setShipped(updated)
-    setChecked(new Set())
-    setChangeDateMode(false)
-    setNewDate('')
+    saveShippedOrders(updated); setShipped(updated)
+    setChecked(new Set()); setChangeDateMode(false); setNewDate('')
     alert(`${checked.size}건의 출고일이 ${newDate}로 변경되었습니다.`)
   }
 
   /* 출고취소 */
   const handleCancelShipping = () => {
     if (checked.size === 0) return
-    if (!confirm(`선택한 ${checked.size}건의 출고를 취소하시겠습니까?\n주문이 송장전송용 탭으로 돌아갑니다.`)) return
+    if (!confirm(`선택한 ${checked.size}건의 출고를 취소하시겠습니까?`)) return
     const toCancel  = shipped.filter(o => checked.has(o.id))
     const remaining = shipped.filter(o => !checked.has(o.id))
-    saveShippedOrders(remaining)
-    setShipped(remaining)
+    saveShippedOrders(remaining); setShipped(remaining)
     const allOrders = loadOrders()
     const cancelIds = new Set(toCancel.map(o => o.id))
-    const restored  = allOrders.map(o => cancelIds.has(o.id) ? { ...o, status: 'shipped' as const } : o)
-    saveOrders(restored)
+    saveOrders(allOrders.map(o => cancelIds.has(o.id) ? { ...o, status: 'shipped' as const } : o))
     setChecked(new Set())
   }
 
   /* 출고내역 엑셀 다운로드 */
   const handleDownloadHistory = () => {
-    const targets = displayOrders
-    if (targets.length === 0) return alert('다운로드할 출고내역이 없습니다.')
+    if (displayOrders.length === 0) return alert('다운로드할 출고내역이 없습니다.')
     const now     = new Date()
     const dateStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
-    const rows = targets.map(o => {
+    const rows = displayOrders.map(o => {
       const item    = o.items[0]
       const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
       const barcode = mapping.barcode ?? item?.sku ?? ''
       return {
-        '출고일':    o.shipped_at ? o.shipped_at.slice(0, 10) : o.order_date,
-        '주문번호':  o.order_number,
-        '쇼핑몰':   o.channel,
-        '바코드':   barcode,
-        '상품명':   item?.product_name ?? '',
-        '옵션':     item?.option ?? '',
-        '수량':     item?.quantity ?? 1,
-        '판매가':   item?.unit_price ?? 0,
-        '수취인':   o.customer_name,
-        '연락처':   o.customer_phone ?? '',
-        '배송주소': o.shipping_address,
-        '택배사':   o.carrier ?? '',
+        '출고일': o.shipped_at ? o.shipped_at.slice(0,10) : o.order_date,
+        '주문번호': o.order_number, '쇼핑몰': o.channel, '바코드': barcode,
+        '상품명': item?.product_name ?? '', '옵션': item?.option ?? '',
+        '수량': item?.quantity ?? 1, '판매가': item?.unit_price ?? 0,
+        '수취인': o.customer_name, '연락처': o.customer_phone ?? '',
+        '배송주소': o.shipping_address, '택배사': o.carrier ?? '',
         '운송장번호': o.tracking_number ?? '',
-        '상태':     (o as ShippedOrder & { status?: string }).status === 'delivered' ? '출고확정' : '출고',
+        '상태': (o as ShippedOrder & { status?: string }).status === 'delivered' ? '출고확정' : '출고',
       }
     })
-    const ws  = XLSX.utils.json_to_sheet(rows)
-    const wb  = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '출고내역')
-    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+    const out  = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
     const blob = new Blob([out], { type: 'application/octet-stream' })
     const url  = URL.createObjectURL(blob)
     const a    = document.createElement('a')
@@ -279,35 +283,31 @@ export default function ShippingHistoryPage() {
         return { ...p, options: p.options.map((o, i) => i in changes ? { ...o, current_stock: Math.max(0, changes[i]) } : o) }
       })
       saveCachedProducts(updatedProducts)
-      await Promise.all(Object.keys(stockChanges).map(async productId => {
-        const product = updatedProducts.find(p => p.id === productId)
-        if (!product) return
-        await fetch('/api/pm-products', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: productId, options: product.options }) })
+      await Promise.all(Object.keys(stockChanges).map(async pid => {
+        const p = updatedProducts.find(pp => pp.id === pid)
+        if (!p) return
+        await fetch('/api/pm-products', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid, options: p.options }) })
       }))
-      const confirmedIds = new Set(toConfirm.map(o => o.id))
+      const confirmedIds  = new Set(toConfirm.map(o => o.id))
       const updatedShipped = shipped.map(o => confirmedIds.has(o.id) ? { ...o, status: 'delivered' as const } : o)
-      saveShippedOrders(updatedShipped)
-      setShipped(updatedShipped)
-      setChecked(new Set())
-      alert(notFound.length > 0
-        ? `${toConfirm.length}건 출고확정 완료.\n재고 미차감: ${[...new Set(notFound)].join(', ')}`
-        : `${toConfirm.length}건 출고확정 완료.`)
+      saveShippedOrders(updatedShipped); setShipped(updatedShipped); setChecked(new Set())
+      alert(notFound.length > 0 ? `${toConfirm.length}건 출고확정 완료.\n재고 미차감: ${[...new Set(notFound)].join(', ')}` : `${toConfirm.length}건 출고확정 완료.`)
     } finally { setIsConfirming(false) }
   }
 
   /* ── 편집 인풋 스타일 ── */
-  const editInputStyle: React.CSSProperties = {
+  const ei: React.CSSProperties = {
     width: '100%', height: 28, fontSize: 11, fontWeight: 700,
     border: '1.5px solid #3b82f6', borderRadius: 6, padding: '0 6px',
     outline: 'none', background: '#fafcff', color: '#0f172a',
   }
 
   /* ─── 그리드 컬럼 ─────────────────────────────────────── */
-  // 체크|주문번호|출고일|쇼핑몰|바코드|상품명/옵션|판매가|운송장번호|수정버튼
-  const GRID = '36px 140px 82px 92px 110px 1fr 80px 120px 64px'
+  // 체크 | 주문번호 | 출고일 | 쇼핑몰 | 수령인 | 바코드 | 상품명/옵션 | 판매가 | 운송장번호 | 수정
+  const GRID = '36px 130px 78px 84px 80px 100px 1fr 70px 110px 60px'
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto' }}>
+    <div style={{ maxWidth: 1400, margin: '0 auto' }}>
 
       {/* KPI */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
@@ -326,8 +326,9 @@ export default function ShippingHistoryPage() {
         ))}
       </div>
 
-      {/* 뷰 토글 + 날짜 네비 + 버튼 */}
+      {/* 뷰 토글 + 날짜 네비 + 검색 + 버튼 */}
       <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        {/* 날짜별/월별 토글 */}
         <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1.5px solid #e2e8f0', flexShrink: 0 }}>
           {(['daily', 'monthly'] as const).map(m => (
             <button key={m} onClick={() => setViewMode(m)}
@@ -336,12 +337,14 @@ export default function ShippingHistoryPage() {
             </button>
           ))}
         </div>
+
+        {/* 날짜 네비 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
           <button onClick={() => viewMode === 'daily' ? setSelDate(shiftDate(selDate, -1)) : setSelMonth(shiftMonth(selMonth, -1))}
             style={{ width: 28, height: 28, borderRadius: 7, border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ChevronLeft size={14} />
           </button>
-          <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', minWidth: 200, textAlign: 'center' }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', minWidth: 190, textAlign: 'center' }}>
             {viewMode === 'daily' ? fmtDate(selDate) : `${selMonth.replace('-', '년 ')}월`}
           </span>
           <button onClick={() => viewMode === 'daily' ? setSelDate(shiftDate(selDate, 1)) : setSelMonth(shiftMonth(selMonth, 1))}
@@ -355,11 +358,32 @@ export default function ShippingHistoryPage() {
             </button>
           )}
         </div>
+
         <input type="date" value={viewMode === 'daily' ? selDate : ''}
           onChange={e => { if (e.target.value) { setViewMode('daily'); setSelDate(e.target.value) } }}
           style={{ height: 32, fontSize: 12.5, fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: '#0f172a', cursor: 'pointer', outline: 'none' }}
         />
+
+        {/* 검색창 */}
+        <div style={{ position: 'relative', flexShrink: 0 }}>
+          <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }} />
+          <input
+            value={searchText}
+            onChange={e => setSearchText(e.target.value)}
+            placeholder="주문번호 · 쇼핑몰 · 수령인 · 바코드 · 운송장번호"
+            style={{ paddingLeft: 30, paddingRight: 30, height: 32, width: 300, fontSize: 12, fontWeight: 600, border: '1.5px solid #e2e8f0', borderRadius: 8, outline: 'none', color: '#0f172a' }}
+          />
+          {searchText && (
+            <button onClick={() => setSearchText('')}
+              style={{ position: 'absolute', right: 8, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', padding: 0 }}>
+              <X size={13} style={{ color: '#94a3b8' }} />
+            </button>
+          )}
+        </div>
+
         <div style={{ flex: 1 }} />
+
+        {/* 선택 액션 버튼 */}
         {checked.size > 0 && (
           <>
             <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>{checked.size}건 선택</span>
@@ -392,13 +416,14 @@ export default function ShippingHistoryPage() {
 
       {/* 주문 목록 */}
       <div className="pm-card" style={{ overflow: 'hidden' }}>
-        {/* 헤더 */}
         <div style={{ padding: '11px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Truck size={14} style={{ color: '#64748b' }} />
           <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>
             {viewMode === 'daily' ? `${selDate} 출고내역` : `${selMonth.replace('-', '년 ')}월 출고내역`}
           </span>
-          <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>({displayOrders.length}건)</span>
+          <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>
+            ({displayOrders.length}건{searchText ? ' · 검색결과' : ''})
+          </span>
           <div style={{ flex: 1 }} />
           {displayOrders.length > 0 && (
             <button onClick={handleDownloadHistory}
@@ -412,13 +437,8 @@ export default function ShippingHistoryPage() {
           <div style={{ padding: '64px 20px', textAlign: 'center' }}>
             <Package size={40} style={{ margin: '0 auto 14px', opacity: 0.15, display: 'block' }} />
             <p style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>
-              {shipped.length === 0 ? '출고내역이 없습니다' : '해당 기간 출고내역이 없습니다'}
+              {shipped.length === 0 ? '출고내역이 없습니다' : searchText ? '검색 결과가 없습니다' : '해당 기간 출고내역이 없습니다'}
             </p>
-            {shipped.length === 0 && (
-              <p style={{ fontSize: 12, color: '#cbd5e1', marginTop: 4 }}>
-                송장입력 탭에서 운송장번호를 저장하면 자동으로 출고내역에 등록됩니다
-              </p>
-            )}
           </div>
         ) : (
           <div>
@@ -427,7 +447,7 @@ export default function ShippingHistoryPage() {
               <span onClick={toggleAll} style={{ cursor: 'pointer', fontSize: 13, color: allChecked ? '#2563eb' : '#cbd5e1' }}>
                 {allChecked ? '☑' : '☐'}
               </span>
-              {['주문번호', '출고일', '쇼핑몰', '바코드', '상품명/옵션', '판매가', '운송장번호', '수정'].map(h => (
+              {['주문번호', '출고일', '쇼핑몰', '수령인', '바코드', '상품명/옵션', '판매가', '운송장번호', '수정'].map(h => (
                 <span key={h} style={{ fontSize: 10.5, fontWeight: 900, color: '#94a3b8', letterSpacing: '0.04em' }}>{h}</span>
               ))}
             </div>
@@ -443,53 +463,47 @@ export default function ShippingHistoryPage() {
               const isEditing   = editingId === o.id
 
               if (isEditing && editFields) {
-                /* ── 편집 모드 행 ── */
                 return (
                   <div key={o.id} style={{ borderBottom: '2px solid #3b82f6', background: '#f0f7ff' }}>
-                    {/* 편집 그리드 행 */}
                     <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '10px 16px', alignItems: 'center' }}>
-                      <span style={{ fontSize: 13, color: '#cbd5e1' }}>✎</span>
-
+                      <span style={{ fontSize: 13, color: '#3b82f6' }}>✎</span>
                       {/* 주문번호 (읽기전용) */}
                       <span style={{ fontSize: 11, fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {o.order_number}
                       </span>
-
                       {/* 출고일 */}
                       <input type="date" value={editFields.shipped_at}
                         onChange={e => setEditFields(f => f ? { ...f, shipped_at: e.target.value } : f)}
-                        style={editInputStyle} />
-
+                        style={ei} />
                       {/* 쇼핑몰 */}
                       <input value={editFields.channel}
                         onChange={e => setEditFields(f => f ? { ...f, channel: e.target.value } : f)}
-                        style={editInputStyle} placeholder="쇼핑몰" />
-
+                        style={ei} placeholder="쇼핑몰" />
+                      {/* 수령인 */}
+                      <input value={editFields.customer_name}
+                        onChange={e => setEditFields(f => f ? { ...f, customer_name: e.target.value } : f)}
+                        style={ei} placeholder="수령인" />
                       {/* 바코드 */}
                       <input value={editFields.barcode}
                         onChange={e => setEditFields(f => f ? { ...f, barcode: e.target.value } : f)}
-                        style={{ ...editInputStyle, fontFamily: 'monospace' }} placeholder="바코드" />
-
+                        style={{ ...ei, fontFamily: 'monospace' }} placeholder="바코드" />
                       {/* 상품명/옵션 */}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
                         <input value={editFields.product_name}
                           onChange={e => setEditFields(f => f ? { ...f, product_name: e.target.value } : f)}
-                          style={editInputStyle} placeholder="상품명" />
+                          style={ei} placeholder="상품명" />
                         <input value={editFields.option}
                           onChange={e => setEditFields(f => f ? { ...f, option: e.target.value } : f)}
-                          style={{ ...editInputStyle, fontSize: 10.5 }} placeholder="옵션" />
+                          style={{ ...ei, fontSize: 10.5 }} placeholder="옵션" />
                       </div>
-
-                      {/* 판매가 (읽기전용) */}
-                      <span style={{ fontSize: 12, fontWeight: 800, color: '#334155', textAlign: 'right' }}>
-                        {item?.unit_price ? item.unit_price.toLocaleString() : '-'}
-                      </span>
-
+                      {/* 판매가 (수정 가능) */}
+                      <input type="number" value={editFields.unit_price}
+                        onChange={e => setEditFields(f => f ? { ...f, unit_price: e.target.value } : f)}
+                        style={{ ...ei, textAlign: 'right' }} placeholder="판매가" />
                       {/* 운송장번호 */}
                       <input value={editFields.tracking_number}
                         onChange={e => setEditFields(f => f ? { ...f, tracking_number: e.target.value } : f)}
-                        style={{ ...editInputStyle, fontFamily: 'monospace' }} placeholder="운송장번호" />
-
+                        style={{ ...ei, fontFamily: 'monospace' }} placeholder="운송장번호" />
                       {/* 저장/취소 */}
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button onClick={() => saveEdit(o.id)}
@@ -502,22 +516,14 @@ export default function ShippingHistoryPage() {
                         </button>
                       </div>
                     </div>
-                    {/* 수령인 편집 (아래 별도 행) */}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '0 16px 10px' }}>
-                      <span style={{ fontSize: 11, fontWeight: 700, color: '#94a3b8', flexShrink: 0 }}>수취인</span>
-                      <input value={editFields.customer_name}
-                        onChange={e => setEditFields(f => f ? { ...f, customer_name: e.target.value } : f)}
-                        style={{ ...editInputStyle, width: 160 }} placeholder="수취인" />
-                    </div>
                   </div>
                 )
               }
 
-              /* ── 일반 행 ── */
               const optLabel = item?.option ? `[${item.option}]` : ''
               return (
                 <div key={o.id} onClick={() => toggleOne(o.id)}
-                  style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '11px 16px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: isChk ? '#eff6ff' : isDelivered ? '#f0fdf4' : 'transparent', cursor: 'pointer', transition: 'background 100ms' }}>
+                  style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '10px 16px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: isChk ? '#eff6ff' : isDelivered ? '#f0fdf4' : 'transparent', cursor: 'pointer', transition: 'background 100ms' }}>
 
                   <span style={{ fontSize: 14, color: isChk ? '#2563eb' : '#cbd5e1' }}>{isChk ? '☑' : '☐'}</span>
 
@@ -532,10 +538,15 @@ export default function ShippingHistoryPage() {
                   </span>
 
                   {/* 쇼핑몰 */}
-                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                  <span>
                     <span style={{ fontSize: 11, fontWeight: 800, color: ms.color, background: ms.bg, padding: '2px 8px', borderRadius: 6 }}>
                       {o.channel}
                     </span>
+                  </span>
+
+                  {/* 수령인 */}
+                  <span style={{ fontSize: 11.5, fontWeight: 700, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {o.customer_name}
                   </span>
 
                   {/* 바코드 */}
@@ -545,11 +556,11 @@ export default function ShippingHistoryPage() {
 
                   {/* 상품명/옵션 */}
                   <div style={{ overflow: 'hidden' }}>
-                    <p style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                    <p style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                       {item?.product_name ?? '-'}
                     </p>
                     {optLabel && (
-                      <p style={{ fontSize: 11, color: '#64748b', marginTop: 1, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                      <p style={{ fontSize: 10.5, color: '#64748b', marginTop: 1, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                         {optLabel}
                       </p>
                     )}
@@ -562,7 +573,7 @@ export default function ShippingHistoryPage() {
 
                   {/* 운송장번호 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-                    <span style={{ fontSize: 11.5, fontFamily: 'monospace', color: '#334155', fontWeight: 700, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#334155', fontWeight: 700, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                       {o.tracking_number ?? '-'}
                     </span>
                     {isDelivered && (
@@ -573,8 +584,7 @@ export default function ShippingHistoryPage() {
                   </div>
 
                   {/* 수정 버튼 */}
-                  <button
-                    onClick={e => { e.stopPropagation(); startEdit(o, barcode) }}
+                  <button onClick={e => { e.stopPropagation(); startEdit(o, barcode) }}
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 10px', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 11.5, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.color = '#2563eb' }}
                     onMouseLeave={e => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#475569' }}>
