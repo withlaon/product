@@ -94,6 +94,7 @@ interface Product {
   basic_info: BasicInfo | null
   status: ProductStatus; supplier: string
   registered_malls: (string | { mall: string; code: string })[]   // 등록된 쇼핑몰 이름 및 상품코드
+  promo_text?: string
   created_at?: string
 }
 const DEF_BASIC_INFO: BasicInfo = {
@@ -520,6 +521,7 @@ const INIT_FORM = {
   cost_price:'', cost_currency:'CNY' as CostCurrency,
   newCat:'', status:'active' as ProductStatus,
   options:[{ ...INIT_OPT }],
+  promo_text:'',
 }
 
 /* ─── 이미지 압축 (Canvas, 200×200, JPEG 70%) ───────────────── */
@@ -596,6 +598,7 @@ function rowToProduct(row: any): Product {
     mall_categories: (row.mall_categories ?? []) as MallCategory[],
     basic_info: (row.basic_info ?? null) as BasicInfo | null,
     registered_malls: (row.registered_malls ?? []) as (string | { mall: string; code: string })[],
+    promo_text: row.promo_text ?? '',
     created_at: row.created_at ?? '',
   }
 }
@@ -800,6 +803,7 @@ export default function ProductsPage() {
   type EditFormState = {
     code:string; name:string; abbr:string; category:string; newCat:string; supplier:string; loca:string
     cost_price:string; cost_currency:CostCurrency; status:ProductStatus; options:EditOptRow[]
+    promo_text:string
   }
   const [editForm, setEditForm] = useState<EditFormState | null>(null)
 
@@ -1081,6 +1085,7 @@ export default function ProductsPage() {
       cost_price: String(p.cost_price), cost_currency: p.cost_currency,
       status: p.status,
       options: initOptions(p),
+      promo_text: p.promo_text ?? '',
     })
     setIsEdit(p)
     // 이미지 포함 전체 데이터 백그라운드 로드
@@ -1124,6 +1129,7 @@ export default function ProductsPage() {
       cost_currency: editForm.cost_currency,
       status: editForm.status, supplier: editForm.supplier,
       options,
+      promo_text: editForm.promo_text ?? '',
     }
     try {
       const { error } = await supabase
@@ -1269,6 +1275,7 @@ export default function ProductsPage() {
         options, channel_prices: [],
         basic_info: null,
         registered_malls: [],
+        promo_text: form.promo_text ?? '',
       }
       const addSuccess = (rawData: unknown) => {
         const row = Array.isArray(rawData) ? rawData[0] : rawData
@@ -2651,6 +2658,20 @@ export default function ProductsPage() {
             </button>
           </div>
 
+          {/* 홍보문구 */}
+          <div style={{ marginTop:16 }}>
+            <p style={{ fontSize:12, fontWeight:800, color:'#7c3aed', paddingBottom:6, borderBottom:'1px solid #f5f3ff', marginBottom:10 }}>
+              📣 홍보문구
+            </p>
+            <textarea
+              value={form.promo_text ?? ''}
+              onChange={e => setForm(f => ({ ...f, promo_text: e.target.value }))}
+              placeholder="예) 고급 PU 소재, 가볍고 실용적인 데일리백! 지금 구매하면 무료배송 🎁"
+              style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:64, lineHeight:1.6 }}
+            />
+            <p style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, marginTop:4 }}>쇼핑몰 상품 노출 시 사용되는 짧은 홍보 문구입니다.</p>
+          </div>
+
         </div>
 
         {addDbError && (
@@ -2959,6 +2980,21 @@ export default function ProductsPage() {
                 <Plus size={12}/>옵션 추가
               </button>
             </div>
+
+            {/* 홍보문구 */}
+            <div style={{ marginTop:16 }}>
+              <p style={{ fontSize:12, fontWeight:800, color:'#7c3aed', paddingBottom:6, borderBottom:'1px solid #f5f3ff', marginBottom:10 }}>
+                📣 홍보문구
+              </p>
+              <textarea
+                value={editForm.promo_text ?? ''}
+                onChange={e => setEditForm(f => f ? ({ ...f, promo_text: e.target.value }) : f)}
+                placeholder="예) 고급 PU 소재, 가볍고 실용적인 데일리백! 지금 구매하면 무료배송 🎁"
+                style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:64, lineHeight:1.6 }}
+              />
+              <p style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, marginTop:4 }}>쇼핑몰 상품 노출 시 사용되는 짧은 홍보 문구입니다.</p>
+            </div>
+
           </div>
 
           {editSaveError && (
