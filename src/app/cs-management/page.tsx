@@ -47,11 +47,14 @@ function saveCs(items: CsItem[]) {
 /* ─── 상품 캐시 헬퍼 (재고/불량 업데이트용) ─────────────────────── */
 type CachedOption = {
   barcode?: string
+  name?: string
+  korean_name?: string
+  image?: string
   current_stock?: number
   defective?: number
   [k: string]: unknown
 }
-type CachedProduct = { id: string; options: CachedOption[] }
+type CachedProduct = { id: string; abbr?: string; options: CachedOption[] }
 
 function loadCachedProducts(): CachedProduct[] {
   try {
@@ -69,6 +72,62 @@ function saveCachedProducts(products: CachedProduct[]) {
     const parsed = JSON.parse(raw)
     localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ...parsed, data: products }))
   } catch {}
+}
+
+/* ─── 상품캐시 기반 자동조회 ────────────────────────────────────── */
+export type OptionSuggestion = {
+  barcode    : string
+  option_name: string
+  option_image: string
+  product_abbr: string
+}
+
+/** 바코드 → 상품약어 + 옵션명 + 이미지 */
+function lookupByBarcode(barcode: string): Omit<OptionSuggestion, 'barcode'> | null {
+  if (!barcode) return null
+  const products = loadCachedProducts()
+  for (const p of products) {
+    for (const o of p.options) {
+      if ((o.barcode ?? '') === barcode) {
+        return {
+          product_abbr : p.abbr ?? '',
+          option_name  : (o.korean_name as string) ?? (o.name as string) ?? '',
+          option_image : (o.image as string) ?? '',
+        }
+      }
+    }
+  }
+  return null
+}
+
+/** 상품약어 → 해당 상품의 전체 옵션 목록 (드롭다운 제안용) */
+function getOptionsByAbbr(abbr: string): OptionSuggestion[] {
+  if (!abbr.trim()) return []
+  const products = loadCachedProducts()
+  const abbrLow  = abbr.toLowerCase()
+  const result: OptionSuggestion[] = []
+  for (const p of products) {
+    if (!(p.abbr ?? '').toLowerCase().startsWith(abbrLow)) continue
+    for (const o of p.options) {
+      result.push({
+        barcode     : (o.barcode as string) ?? '',
+        option_name : (o.korean_name as string) ?? (o.name as string) ?? '',
+        option_image: (o.image as string) ?? '',
+        product_abbr: p.abbr ?? '',
+      })
+    }
+  }
+  return result
+}
+
+/** 약어 + 옵션명으로 바코드 + 이미지 조회 */
+function lookupByAbbrAndOption(abbr: string, optionName: string): Pick<OptionSuggestion, 'barcode' | 'option_image'> | null {
+  const opts = getOptionsByAbbr(abbr)
+  if (opts.length === 0) return null
+  if (!optionName) return { barcode: opts[0].barcode, option_image: opts[0].option_image }
+  const q = optionName.toLowerCase()
+  const hit = opts.find(o => o.option_name.toLowerCase().includes(q))
+  return hit ? { barcode: hit.barcode, option_image: hit.option_image } : null
 }
 
 /* ─── 출고내역에서 송장번호 조회 ────────────────────────────────── */
@@ -153,6 +212,11 @@ export default function CsManagementPage() {
   const [processing, setProcessing] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
+  /* 옵션 제안 드롭다운 */
+  const [abbrSuggestions, setAbbrSuggestions] = useState<OptionSuggestion[]>([])
+  const [showAbbrDrop,    setShowAbbrDrop]    = useState(false)
+  const abbrDropRef = useRef<HTMLDivElement>(null)
+
   /* 검색 */
   const [leftSearch,  setLeftSearch]  = useState('')
   const [rightSearch, setRightSearch] = useState('')
@@ -187,6 +251,55 @@ export default function CsManagementPage() {
   /* ── 폼 핸들러 ── */
   const setF = (k: keyof typeof EMPTY_FORM, v: string) =>
     setForm(f => ({ ...f, [k]: v }))
+
+  /* 바코드 변경 → 상품약어/옵션명/이미지 자동입력 */
+  const handleBarcodeChange = (v: string) => {
+    const found = lookupByBarcode(v)
+    setForm(f => ({
+      ...f,
+      barcode      : v,
+      product_abbr : found ? found.product_abbr : f.product_abbr,
+      option_name  : found ? found.option_name  : f.option_name,
+      option_image : found ? found.option_image : f.option_image,
+    }))
+  }
+
+  /* 상품약어 변경 → 옵션 제안 목록 갱신 + 바코드/이미지 자동입력 */
+  const handleAbbrChange = (v: string) => {
+    const suggs = getOptionsByAbbr(v)
+    setAbbrSuggestions(suggs)
+    setShowAbbrDrop(suggs.length > 0)
+    const found = lookupByAbbrAndOption(v, form.option_name)
+    setForm(f => ({
+      ...f,
+      product_abbr : v,
+      barcode      : found ? found.barcode      : f.barcode,
+      option_image : found ? found.option_image : f.option_image,
+    }))
+  }
+
+  /* 옵션명 변경 → 바코드/이미지 자동입력 */
+  const handleOptionNameChange = (v: string) => {
+    const found = lookupByAbbrAndOption(form.product_abbr, v)
+    setForm(f => ({
+      ...f,
+      option_name  : v,
+      barcode      : found ? found.barcode      : f.barcode,
+      option_image : found ? found.option_image : f.option_image,
+    }))
+  }
+
+  /* 드롭다운에서 옵션 선택 */
+  const selectAbbrSuggestion = (s: OptionSuggestion) => {
+    setForm(f => ({
+      ...f,
+      product_abbr : s.product_abbr,
+      option_name  : s.option_name,
+      barcode      : s.barcode,
+      option_image : s.option_image,
+    }))
+    setShowAbbrDrop(false)
+  }
 
   /* 자동 송장조회 (수령인 + 바코드 입력 시) */
   const autoLookupTracking = () => {
@@ -772,24 +885,63 @@ export default function CsManagementPage() {
 
                   {/* 상품약어 + 옵션명 */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                    <div>
+                    <div style={{ position: 'relative' }} ref={abbrDropRef}>
                       <label style={{ fontSize: 11.5, fontWeight: 800, color: '#475569', marginBottom: 5, display: 'block' }}>
                         상품약어
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>→ 바코드 자동입력</span>
                       </label>
                       <input
                         value={form.product_abbr}
-                        onChange={e => setF('product_abbr', e.target.value)}
+                        onChange={e => handleAbbrChange(e.target.value)}
+                        onBlur={() => setTimeout(() => setShowAbbrDrop(false), 150)}
+                        onFocus={() => { if (abbrSuggestions.length > 0) setShowAbbrDrop(true) }}
                         placeholder="예: BLK-MT"
                         className="pm-input"
+                        autoComplete="off"
                       />
+                      {/* 옵션 드롭다운 */}
+                      {showAbbrDrop && abbrSuggestions.length > 0 && (
+                        <div style={{
+                          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200,
+                          background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 10,
+                          boxShadow: '0 8px 24px rgba(15,23,42,0.12)', marginTop: 3,
+                          maxHeight: 200, overflowY: 'auto',
+                        }}>
+                          {abbrSuggestions.map((s, i) => (
+                            <div key={i}
+                              onMouseDown={() => selectAbbrSuggestion(s)}
+                              style={{
+                                display: 'flex', alignItems: 'center', gap: 8,
+                                padding: '7px 10px', cursor: 'pointer',
+                                borderBottom: '1px solid #f8fafc',
+                              }}
+                              onMouseEnter={e => (e.currentTarget.style.background = '#f8fafc')}
+                              onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                            >
+                              {s.option_image ? (
+                                <img src={s.option_image} alt="" style={{ width: 28, height: 28, borderRadius: 5, objectFit: 'cover', border: '1px solid #e2e8f0', flexShrink: 0 }} />
+                              ) : (
+                                <div style={{ width: 28, height: 28, borderRadius: 5, background: '#f1f5f9', flexShrink: 0 }} />
+                              )}
+                              <div style={{ overflow: 'hidden', flex: 1 }}>
+                                <p style={{ fontSize: 11, fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                  {s.option_name || '(옵션명 없음)'}
+                                </p>
+                                <p style={{ fontSize: 10, color: '#94a3b8', fontFamily: 'monospace' }}>{s.barcode}</p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     <div>
                       <label style={{ fontSize: 11.5, fontWeight: 800, color: '#475569', marginBottom: 5, display: 'block' }}>
                         옵션명
+                        <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>→ 바코드 자동입력</span>
                       </label>
                       <input
                         value={form.option_name}
-                        onChange={e => setF('option_name', e.target.value)}
+                        onChange={e => handleOptionNameChange(e.target.value)}
                         placeholder="예: 블랙/FREE"
                         className="pm-input"
                       />
@@ -800,11 +952,12 @@ export default function CsManagementPage() {
                   <div>
                     <label style={{ fontSize: 11.5, fontWeight: 800, color: '#475569', marginBottom: 5, display: 'block' }}>
                       바코드 <span style={{ color: '#dc2626' }}>*</span>
+                      <span style={{ fontSize: 10, fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>→ 약어/옵션명 자동입력</span>
                     </label>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <input
                         value={form.barcode}
-                        onChange={e => setF('barcode', e.target.value)}
+                        onChange={e => handleBarcodeChange(e.target.value)}
                         placeholder="바코드 번호"
                         className="pm-input"
                         style={{ flex: 1 }}
