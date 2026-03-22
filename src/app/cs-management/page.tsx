@@ -127,16 +127,27 @@ function lookupByAbbrAndOption(abbr: string, optionName: string): Pick<OptionSug
 }
 
 /* ─── 출고내역 송장번호 조회 ─────────────────────────────────────── */
-function lookupTracking(customerName: string, barcode: string): string {
-  if (!customerName || !barcode) return ''
+/**
+ * 바코드 기준으로 출고내역에서 송장번호 조회.
+ * mall / customerName 은 선택 필터 (입력된 경우에만 비교).
+ */
+function lookupTracking(barcode: string, mall?: string, customerName?: string): string {
+  const bc = barcode.trim()
+  if (!bc) return ''
   const shipped  = loadShippedOrders()
   const mappings = loadMappings()
   for (const order of shipped) {
-    if (!order.customer_name.includes(customerName) && !customerName.includes(order.customer_name)) continue
+    // 쇼핑몰 필터 (입력된 경우)
+    if (mall && order.channel !== mall) continue
+    // 수령인 필터 (입력된 경우)
+    if (customerName) {
+      const cn = customerName.trim()
+      if (!order.customer_name.includes(cn) && !cn.includes(order.customer_name)) continue
+    }
     for (const item of order.items) {
-      const m   = lookupMapping(mappings, item.product_name ?? '', item.option)
-      const bc  = m.barcode ?? item.sku ?? ''
-      if (bc.trim() === barcode.trim()) return order.tracking_number ?? ''
+      const m         = lookupMapping(mappings, item.product_name ?? '', item.option)
+      const itemBarcode = (m.barcode ?? item.sku ?? '').trim()
+      if (itemBarcode === bc) return order.tracking_number ?? ''
     }
   }
   return ''
@@ -299,12 +310,16 @@ export default function CsManagementPage() {
     setShowAbbrDrop(false)
   }
 
-  /* ── 자동 송장조회 ── */
+  /* ── 자동 송장조회 (바코드 기준, 쇼핑몰/수령인은 선택 필터) ── */
   const autoLookupTracking = () => {
-    if (!form.customer_name || !form.barcode) return
-    const tn = lookupTracking(form.customer_name, form.barcode)
+    if (!form.barcode) { alert('바코드를 먼저 입력해주세요.'); return }
+    const tn = lookupTracking(
+      form.barcode,
+      form.mall       || undefined,
+      form.customer_name || undefined,
+    )
     if (tn) setForm(f => ({ ...f, tracking_number: tn }))
-    else alert('출고내역에서 해당 수령인+바코드 조합의 송장번호를 찾지 못했습니다.')
+    else alert('출고내역에서 해당 바코드의 송장번호를 찾지 못했습니다.\n쇼핑몰·수령인을 함께 입력하면 더 정확하게 찾을 수 있습니다.')
   }
 
   /* ── 직접 등록 저장 ── */
@@ -432,8 +447,8 @@ export default function CsManagementPage() {
   }
 
   /* ════ 그리드 컬럼 ════ */
-  const GRID_LEFT  = '26px 56px 62px 40px 74px 84px 26px 50px 62px 24px'
-  const GRID_RIGHT = '26px 56px 62px 40px 74px 84px 26px 50px 76px 24px'
+  const GRID_LEFT  = '38px 72px 1fr 42px 1.2fr 104px 32px 62px 66px 58px'
+  const GRID_RIGHT = '38px 72px 1fr 42px 1.2fr 104px 32px 62px 78px 58px'
   const HDRS_LEFT  = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '바코드', '수량', '사유', '', '']
   const HDRS_RIGHT = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '바코드', '수량', '사유', '처리일시', '']
 
@@ -501,10 +516,10 @@ export default function CsManagementPage() {
                   {/* 삭제 */}
                   <button onClick={() => handleDelete(item.id, `${item.customer_name} / ${item.barcode}`)}
                     title="삭제"
-                    style={{ width: 22, height: 22, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 5, padding: 0 }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: 10.5, fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <Trash2 size={12} style={{ color: '#dc2626' }} />
+                    onMouseLeave={e => (e.currentTarget.style.background = '#fff1f2')}>
+                    <Trash2 size={11} /> 삭제
                   </button>
                 </div>
               )
@@ -565,10 +580,10 @@ export default function CsManagementPage() {
                   {/* 삭제 */}
                   <button onClick={() => handleDelete(item.id, `${item.customer_name} / ${item.barcode}`)}
                     title="삭제"
-                    style={{ width: 22, height: 22, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', borderRadius: 5, padding: 0 }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: 10.5, fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
-                    onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}>
-                    <Trash2 size={12} style={{ color: '#dc2626' }} />
+                    onMouseLeave={e => (e.currentTarget.style.background = '#fff1f2')}>
+                    <Trash2 size={11} /> 삭제
                   </button>
                 </div>
               )
