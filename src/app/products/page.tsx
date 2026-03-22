@@ -313,19 +313,32 @@ function ChannelPriceModal({
     onSave(result)
   }
   return (
-    <Modal isOpen onClose={onClose} title={`쇼핑몰별 판매가 — ${product.name}`} size="md">
+    <Modal isOpen onClose={onClose} title={`쇼핑몰별 판매가 — ${product.name}`} size="xl">
       <div style={{ marginBottom:16 }}>
-        <p style={{ fontSize:11.5, fontWeight:700, color:'#64748b', marginBottom:10 }}>
-          원가: {product.cost_currency==='CNY' ? `¥${product.cost_price} (≈ ${formatCurrency(costKrw)})` : formatCurrency(product.cost_price)}
-        </p>
+        {/* 원가 + 컬럼 헤더 */}
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:8 }}>
+          <p style={{ fontSize:11.5, fontWeight:700, color:'#64748b' }}>
+            원가: {product.cost_currency==='CNY' ? `¥${product.cost_price} (≈ ${formatCurrency(costKrw)})` : formatCurrency(product.cost_price)}
+          </p>
+        </div>
+
         {channels.length === 0 ? (
           <div style={{ padding:'20px', textAlign:'center', color:'#94a3b8', fontSize:13, fontWeight:700 }}>
             연동된 쇼핑몰이 없습니다.<br/>
             <a href="/channels" style={{ color:'#2563eb', fontWeight:800 }}>쇼핑몰 관리에서 연동</a>해 주세요.
           </div>
         ) : (
-          <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-            {channels.map(ch => {
+          <div style={{ border:'1px solid #e2e8f0', borderRadius:12, overflow:'hidden' }}>
+            {/* 헤더 행 */}
+            <div style={{ display:'grid', gridTemplateColumns:'160px 1fr 1fr 150px', gap:0, background:'#f1f5f9', borderBottom:'1px solid #e2e8f0', padding:'8px 14px', alignItems:'center' }}>
+              <span style={{ fontSize:10.5, fontWeight:800, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em' }}>쇼핑몰</span>
+              <span style={{ fontSize:10.5, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>🏷️ TAG가 (정가·소비자가)</span>
+              <span style={{ fontSize:10.5, fontWeight:800, color:'#2563eb', textTransform:'uppercase', letterSpacing:'0.06em' }}>💰 판매가 (실제 판매)</span>
+              <span style={{ fontSize:10.5, fontWeight:800, color:'#64748b', textTransform:'uppercase', letterSpacing:'0.06em', textAlign:'right' }}>할인율 / 마진</span>
+            </div>
+
+            {/* 채널 행 */}
+            {channels.map((ch, idx) => {
               const price    = Number(prices[ch.name])    || 0
               const tagPrice = Number(tagPrices[ch.name]) || 0
               const margin   = costKrw > 0 && price > 0 ? (((price - costKrw) / price) * 100).toFixed(1) : null
@@ -333,58 +346,58 @@ function ChannelPriceModal({
               const discount = tagPrice > 0 && price > 0 && tagPrice > price
                 ? Math.round((1 - price / tagPrice) * 100) : null
               return (
-                <div key={ch.name} style={{ background:'#f8fafc', borderRadius:12, padding:'12px 14px' }}>
-                  {/* 쇼핑몰명 + 상태 배지 */}
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      <span style={{ fontSize:13, fontWeight:800, background:ch.bg, color:ch.color, padding:'2px 10px', borderRadius:6 }}>
-                        {ch.name}
-                      </span>
-                      {below && <span style={{ fontSize:11, fontWeight:800, color:'#dc2626' }}>⚠️ 원가 미만</span>}
-                    </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                      {discount !== null && (
-                        <span style={{ fontSize:11.5, fontWeight:800, color:'#7c3aed', background:'#f5f3ff', padding:'2px 7px', borderRadius:5 }}>
-                          {discount}% 할인
-                        </span>
-                      )}
-                      {margin && (
-                        <span style={{ fontSize:12.5, fontWeight:800, color: below ? '#dc2626' : '#059669' }}>
-                          마진 {margin}%
-                        </span>
-                      )}
+                <div key={ch.name} style={{
+                  display:'grid', gridTemplateColumns:'160px 1fr 1fr 150px', gap:0,
+                  padding:'10px 14px', alignItems:'center',
+                  background: idx % 2 === 0 ? 'white' : '#fafbfc',
+                  borderBottom: idx < channels.length - 1 ? '1px solid #f1f5f9' : 'none',
+                }}>
+                  {/* 쇼핑몰명 */}
+                  <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <span style={{ fontSize:12.5, fontWeight:800, background:ch.bg, color:ch.color, padding:'3px 10px', borderRadius:6, whiteSpace:'nowrap' }}>
+                      {ch.name}
+                    </span>
+                    {below && <span style={{ fontSize:10, fontWeight:800, color:'#dc2626' }}>⚠️</span>}
+                  </div>
+
+                  {/* TAG가 입력 */}
+                  <div style={{ paddingRight:10 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:5, background:'white', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'5px 9px' }}>
+                      <span style={{ fontSize:12, fontWeight:700, color:'#94a3b8', flexShrink:0 }}>₩</span>
+                      <input
+                        type="number" placeholder="0"
+                        value={tagPrices[ch.name]}
+                        onChange={e => setTagPrices(prev => ({ ...prev, [ch.name]: e.target.value }))}
+                        style={{ border:'none', outline:'none', width:'100%', fontSize:13, fontWeight:800, color:'#64748b', background:'transparent' }}
+                      />
                     </div>
                   </div>
-                  {/* TAG가 + 판매가 입력 */}
-                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
-                    <div>
-                      <p style={{ fontSize:10.5, fontWeight:800, color:'#94a3b8', marginBottom:5, letterSpacing:'0.04em' }}>
-                        🏷️ TAG가 <span style={{ fontWeight:500, fontSize:10 }}>(정가·소비자가)</span>
-                      </p>
-                      <div style={{ display:'flex', alignItems:'center', gap:5, background:'white', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'5px 8px' }}>
-                        <span style={{ fontSize:12, fontWeight:700, color:'#94a3b8' }}>₩</span>
-                        <input
-                          type="number" placeholder="0"
-                          value={tagPrices[ch.name]}
-                          onChange={e => setTagPrices(prev => ({ ...prev, [ch.name]: e.target.value }))}
-                          style={{ border:'none', outline:'none', width:'100%', fontSize:14, fontWeight:800, color:'#64748b', background:'transparent' }}
-                        />
-                      </div>
+
+                  {/* 판매가 입력 */}
+                  <div style={{ paddingRight:10 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:5, background:'white', border:'1.5px solid #bfdbfe', borderRadius:8, padding:'5px 9px' }}>
+                      <span style={{ fontSize:12, fontWeight:700, color:'#2563eb', flexShrink:0 }}>₩</span>
+                      <input
+                        type="number" placeholder="0"
+                        value={prices[ch.name]}
+                        onChange={e => setPrices(prev => ({ ...prev, [ch.name]: e.target.value }))}
+                        style={{ border:'none', outline:'none', width:'100%', fontSize:13, fontWeight:800, color:'#1e40af', background:'transparent' }}
+                      />
                     </div>
-                    <div>
-                      <p style={{ fontSize:10.5, fontWeight:800, color:'#2563eb', marginBottom:5, letterSpacing:'0.04em' }}>
-                        💰 판매가 <span style={{ fontWeight:500, fontSize:10 }}>(실제 판매)</span>
-                      </p>
-                      <div style={{ display:'flex', alignItems:'center', gap:5, background:'white', border:'1.5px solid #bfdbfe', borderRadius:8, padding:'5px 8px' }}>
-                        <span style={{ fontSize:12, fontWeight:700, color:'#2563eb' }}>₩</span>
-                        <input
-                          type="number" placeholder="0"
-                          value={prices[ch.name]}
-                          onChange={e => setPrices(prev => ({ ...prev, [ch.name]: e.target.value }))}
-                          style={{ border:'none', outline:'none', width:'100%', fontSize:14, fontWeight:800, color:'#1e40af', background:'transparent' }}
-                        />
-                      </div>
-                    </div>
+                  </div>
+
+                  {/* 할인율 / 마진 */}
+                  <div style={{ display:'flex', alignItems:'center', justifyContent:'flex-end', gap:6 }}>
+                    {discount !== null && (
+                      <span style={{ fontSize:11, fontWeight:800, color:'#7c3aed', background:'#f5f3ff', padding:'2px 7px', borderRadius:5, whiteSpace:'nowrap' }}>
+                        -{discount}%
+                      </span>
+                    )}
+                    {margin && (
+                      <span style={{ fontSize:11.5, fontWeight:800, color: below ? '#dc2626' : '#059669', whiteSpace:'nowrap' }}>
+                        {margin}%
+                      </span>
+                    )}
                   </div>
                 </div>
               )
