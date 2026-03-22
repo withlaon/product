@@ -466,11 +466,6 @@ export default function ShippingHistoryPage() {
         {checked.size > 0 && (
           <>
             <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>{checked.size}건 선택</span>
-            {/* CS접수 버튼 */}
-            <button onClick={() => { setCsType('return'); setCsReason('simple_change'); setCsModal(true) }}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
-              <HeadphonesIcon size={13} /> CS접수
-            </button>
             <button onClick={handleConfirmShipping} disabled={isConfirming}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: isConfirming ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer' }}>
               <PackageCheck size={13} /> {isConfirming ? '처리중...' : '출고확정'}
@@ -509,6 +504,15 @@ export default function ShippingHistoryPage() {
             ({displayOrders.length}건{searchText ? ' · 검색결과' : ''})
           </span>
           <div style={{ flex: 1 }} />
+          {/* CS접수 버튼 — 항상 표시, 선택 시 활성화 */}
+          <button
+            onClick={() => {
+              if (checked.size === 0) { alert('CS접수할 항목을 먼저 선택해주세요.'); return }
+              setCsType('return'); setCsReason('simple_change'); setCsModal(true)
+            }}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: checked.size > 0 ? '#7c3aed' : '#e9d5ff', color: checked.size > 0 ? '#fff' : '#a78bfa', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer', transition: 'all 150ms' }}>
+            <HeadphonesIcon size={13} /> CS접수{checked.size > 0 ? ` (${checked.size})` : ''}
+          </button>
           {displayOrders.length > 0 && (
             <button onClick={handleDownloadHistory}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
