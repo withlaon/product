@@ -2,12 +2,53 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
-import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search, HeadphonesIcon, AlertTriangle, Clock, RefreshCw } from 'lucide-react'
 import {
   loadShippedOrders, saveShippedOrders, loadOrders, saveOrders,
   loadMappings, lookupMapping,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
+
+/* ─── CS 타입 & 헬퍼 ────────────────────────────────────── */
+type CsType   = 'return' | 'exchange'
+type CsReason = 'simple_change' | 'defective'
+interface CsItem {
+  id: string; type: CsType; mall: string; customer_name: string
+  option_image: string; product_abbr: string; option_name: string
+  barcode: string; quantity: number; reason: CsReason
+  tracking_number: string; registered_at: string
+  status: 'pending' | 'processed'; processed_at?: string
+}
+const CS_KEY = 'pm_cs_v1'
+function loadCs(): CsItem[] {
+  try { const r = localStorage.getItem(CS_KEY); return r ? JSON.parse(r) : [] } catch { return [] }
+}
+function saveCs(items: CsItem[]) {
+  try { localStorage.setItem(CS_KEY, JSON.stringify(items)) } catch {}
+}
+
+/** 바코드로 상품 약어·옵션명·이미지 조회 */
+function lookupProductByBarcode(barcode: string) {
+  try {
+    const raw = localStorage.getItem('pm_products_cache_v1')
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.data) ? parsed.data : [])
+    const bc = barcode.trim()
+    for (const p of arr) {
+      for (const o of p.options) {
+        if ((o.barcode ?? '').trim() === bc) {
+          return {
+            product_abbr: p.abbr ?? '',
+            option_name : String(o.korean_name ?? o.name ?? ''),
+            option_image: String(o.image ?? ''),
+          }
+        }
+      }
+    }
+  } catch {}
+  return null
+}
 
 /* 로컬 캐시에서 상품 목록 로드 */
 type CachedOption = { barcode?: string; name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
@@ -97,6 +138,11 @@ export default function ShippingHistoryPage() {
   /* 인라인 편집 */
   const [editingId,  setEditingId]  = useState<string | null>(null)
   const [editFields, setEditFields] = useState<EditFields | null>(null)
+
+  /* CS 접수 모달 */
+  const [csModal,  setCsModal]  = useState(false)
+  const [csType,   setCsType]   = useState<CsType>('return')
+  const [csReason, setCsReason] = useState<CsReason>('simple_change')
 
   useEffect(() => {
     setShipped(loadShippedOrders())
@@ -212,6 +258,39 @@ export default function ShippingHistoryPage() {
     const cancelIds = new Set(toCancel.map(o => o.id))
     saveOrders(allOrders.map(o => cancelIds.has(o.id) ? { ...o, status: 'shipped' as const } : o))
     setChecked(new Set())
+  }
+
+  /* 출고내역 → CS접수 등록 */
+  const handleCsRegister = () => {
+    const targets = displayOrders.filter(o => checked.has(o.id))
+    if (targets.length === 0) return
+    const mappingsSnap = loadMappings()
+    const existing     = loadCs()
+    const newItems: CsItem[] = targets.map(o => {
+      const item    = o.items[0]
+      const mapping = lookupMapping(mappingsSnap, item?.product_name ?? '', item?.option)
+      const barcode = (mapping.barcode ?? item?.sku ?? '').trim()
+      const prod    = lookupProductByBarcode(barcode)
+      return {
+        id             : crypto.randomUUID(),
+        type           : csType,
+        mall           : o.channel,
+        customer_name  : o.customer_name,
+        option_image   : prod?.option_image   ?? '',
+        product_abbr   : prod?.product_abbr   ?? '',
+        option_name    : prod?.option_name    ?? item?.option ?? '',
+        barcode,
+        quantity       : item?.quantity ?? 1,
+        reason         : csReason,
+        tracking_number: o.tracking_number ?? '',
+        registered_at  : new Date().toISOString(),
+        status         : 'pending',
+      }
+    })
+    saveCs([...newItems, ...existing])
+    setCsModal(false)
+    setChecked(new Set())
+    alert(`${newItems.length}건이 CS접수(${csType === 'return' ? '반품' : '교환'})로 등록되었습니다.\nCS관리 탭에서 확인하세요.`)
   }
 
   /* 출고내역 엑셀 다운로드 */
@@ -387,6 +466,11 @@ export default function ShippingHistoryPage() {
         {checked.size > 0 && (
           <>
             <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>{checked.size}건 선택</span>
+            {/* CS접수 버튼 */}
+            <button onClick={() => { setCsType('return'); setCsReason('simple_change'); setCsModal(true) }}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
+              <HeadphonesIcon size={13} /> CS접수
+            </button>
             <button onClick={handleConfirmShipping} disabled={isConfirming}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: isConfirming ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer' }}>
               <PackageCheck size={13} /> {isConfirming ? '처리중...' : '출고확정'}
@@ -598,6 +682,113 @@ export default function ShippingHistoryPage() {
       </div>
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+      {/* ── CS접수 모달 ── */}
+      {csModal && (
+        <div onClick={e => { if (e.target === e.currentTarget) setCsModal(false) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 560, maxHeight: '88vh', overflow: 'auto', boxShadow: '0 24px 64px rgba(15,23,42,0.18)' }}>
+
+            {/* 모달 헤더 */}
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 36, height: 36, borderRadius: 11, background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <HeadphonesIcon size={18} style={{ color: '#7c3aed' }} />
+              </div>
+              <div>
+                <p style={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>CS접수 등록</p>
+                <p style={{ fontSize: 11.5, color: '#94a3b8' }}>선택한 {checked.size}건을 CS접수로 등록합니다</p>
+              </div>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setCsModal(false)}
+                style={{ width: 30, height: 30, borderRadius: 8, border: 'none', background: '#f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={15} style={{ color: '#64748b' }} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px 22px', display: 'grid', gap: 18 }}>
+
+              {/* 유형 선택 */}
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 10 }}>CS 유형</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {([['return', '반품', RotateCcw, '#dc2626', '#fff1f2'], ['exchange', '교환', RefreshCw, '#7c3aed', '#f5f3ff']] as const).map(([val, label, Icon, color, bg]) => (
+                    <div key={val} onClick={() => setCsType(val)}
+                      style={{ padding: '14px 16px', borderRadius: 12, border: `2px solid ${csType === val ? color : '#e2e8f0'}`, background: csType === val ? bg : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'all 120ms' }}>
+                      <Icon size={16} style={{ color, flexShrink: 0 }} />
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{label}</p>
+                        <p style={{ fontSize: 10.5, color: '#94a3b8' }}>{val === 'return' ? '상품을 돌려받음' : '새 상품으로 교체'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 사유 선택 */}
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 10 }}>사유</p>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  {([['simple_change', '단순변심', Clock, '#2563eb', '#eff6ff'], ['defective', '불량', AlertTriangle, '#f97316', '#fff7ed']] as const).map(([val, label, Icon, color, bg]) => (
+                    <div key={val} onClick={() => setCsReason(val)}
+                      style={{ padding: '14px 16px', borderRadius: 12, border: `2px solid ${csReason === val ? color : '#e2e8f0'}`, background: csReason === val ? bg : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'all 120ms' }}>
+                      <Icon size={16} style={{ color, flexShrink: 0 }} />
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{label}</p>
+                        <p style={{ fontSize: 10.5, color: '#94a3b8' }}>{val === 'defective' ? '불량수량 +처리' : '재고수량 +복원'}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* 선택 항목 미리보기 */}
+              <div>
+                <p style={{ fontSize: 12, fontWeight: 800, color: '#475569', marginBottom: 8 }}>접수 대상 ({checked.size}건)</p>
+                <div style={{ border: '1.5px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', maxHeight: 200, overflowY: 'auto' }}>
+                  {displayOrders.filter(o => checked.has(o.id)).map((o, idx) => {
+                    const item    = o.items[0]
+                    const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
+                    const barcode = mapping.barcode ?? item?.sku ?? ''
+                    return (
+                      <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: idx < checked.size - 1 ? '1px solid #f8fafc' : 'none', background: '#fafafe' }}>
+                        <div style={{ width: 22, height: 22, borderRadius: 6, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                          <span style={{ fontSize: 10, fontWeight: 900, color: '#2563eb' }}>{idx + 1}</span>
+                        </div>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                            <span style={{ fontSize: 11, fontWeight: 800, color: '#0f172a' }}>{o.customer_name}</span>
+                            <span style={{ fontSize: 10.5, color: '#94a3b8' }}>{o.channel}</span>
+                          </div>
+                          <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
+                            <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#475569' }}>{barcode || '-'}</span>
+                            {item?.option && <span style={{ fontSize: 10, color: '#64748b' }}>[{item.option}]</span>}
+                          </div>
+                        </div>
+                        <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#64748b', flexShrink: 0 }}>
+                          {o.tracking_number ?? '-'}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+              </div>
+
+              {/* 등록 버튼 */}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setCsModal(false)}
+                  style={{ flex: 1, padding: '12px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                  취소
+                </button>
+                <button onClick={handleCsRegister}
+                  style={{ flex: 2, padding: '12px 0', background: csType === 'return' ? '#dc2626' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  {csType === 'return' ? <RotateCcw size={14} /> : <RefreshCw size={14} />}
+                  {checked.size}건 {csType === 'return' ? '반품' : '교환'} 접수 등록
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
