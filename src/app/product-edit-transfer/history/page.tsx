@@ -753,6 +753,7 @@ export default function ShippingHistoryPage() {
                     const item    = o.items[0]
                     const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
                     const barcode = mapping.barcode ?? item?.sku ?? ''
+                    const qty     = item?.quantity ?? 1
                     return (
                       <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: idx < checked.size - 1 ? '1px solid #f8fafc' : 'none', background: '#fafafe' }}>
                         <div style={{ width: 22, height: 22, borderRadius: 6, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -762,6 +763,10 @@ export default function ShippingHistoryPage() {
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
                             <span style={{ fontSize: 11, fontWeight: 800, color: '#0f172a' }}>{o.customer_name}</span>
                             <span style={{ fontSize: 10.5, color: '#94a3b8' }}>{o.channel}</span>
+                            {/* 주문 수량 표시 */}
+                            <span style={{ fontSize: 10.5, fontWeight: 800, color: '#7c3aed', background: '#f5f3ff', padding: '1px 6px', borderRadius: 5 }}>
+                              수량 {qty}개
+                            </span>
                           </div>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
                             <span style={{ fontSize: 10, fontFamily: 'monospace', color: '#475569' }}>{barcode || '-'}</span>
