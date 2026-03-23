@@ -394,19 +394,19 @@ export default function DashboardPage() {
       {/* ── KPI (5열) ── */}
       <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8, flexShrink:0 }}>
         {[
-          { title:'전체 상품',  value: products.length?`${products.length}개`:'0', sub:`재고부족 ${lowStock.length} · 품절 ${soldOut.length}`, icon:Package,       bg:'#eff6ff', ic:'#2563eb', href:'/products' },
-          { title:'오늘 주문',  value: todayOrders.length?`${todayOrders.length}건`:'0', sub: todayOrders.length?`미처리 ${todayOrders.filter(o=>o.status==='pending'||o.status==='confirmed').length}건`:'주문없음', icon:ShoppingCart, bg:'#ecfdf5', ic:'#059669', href:'/product-transfer' },
-          { title:'재고 부족',  value: lowStock.length?`${lowStock.length}개`:'0', sub: lowStock.length?'3개 이하 옵션':'재고 정상', icon:AlertTriangle, bg:'#fffbeb', ic:'#d97706', href:'/inventory' },
-          { title:'이번달 매출', value: monthRevenue>0?`₩${fmtMoney(monthRevenue)}`:'₩0', sub:`${curYM.replace('-','년 ')}월`, icon:TrendingUp, bg:'#f5f3ff', ic:'#7c3aed', href:'/product-transfer' },
+          { title:'전체 상품',   value: products.length?`${products.length}개`:'0',       sub:`재고부족 ${lowStock.length} · 품절 ${soldOut.length}`,                                                                      icon:Package,       bg:'#eff6ff', ic:'#2563eb', href:'/products',          fs:18 },
+          { title:'오늘 주문',   value: todayOrders.length?`${todayOrders.length}건`:'0',  sub: todayOrders.length?`미처리 ${todayOrders.filter(o=>o.status==='pending'||o.status==='confirmed').length}건`:'주문없음',    icon:ShoppingCart,  bg:'#ecfdf5', ic:'#059669', href:'/product-transfer',  fs:18 },
+          { title:'재고 부족',   value: lowStock.length?`${lowStock.length}개`:'0',         sub: lowStock.length?'3개 이하 옵션':'재고 정상',                                                                                icon:AlertTriangle, bg:'#fffbeb', ic:'#d97706', href:'/inventory',         fs:18 },
+          { title:'이번달 매출', value: monthRevenue>0?`₩${monthRevenue.toLocaleString()}`:'₩0', sub:`${curYM.replace('-','년 ')}월`,                                                                                      icon:TrendingUp,    bg:'#f5f3ff', ic:'#7c3aed', href:'/product-transfer',  fs:14 },
         ].map(s => (
           <Link key={s.title} href={s.href} style={{ textDecoration:'none' }}>
             <div className="pm-card" style={{ padding:'9px 12px', cursor:'pointer', display:'flex', alignItems:'center', gap:9 }}>
               <div style={{ width:34,height:34,borderRadius:10,background:s.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
                 <s.icon size={16} color={s.ic} strokeWidth={2} />
               </div>
-              <div>
+              <div style={{ minWidth:0 }}>
                 <p style={{ fontSize:9.5,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em' }}>{s.title}</p>
-                <p style={{ fontSize:18,fontWeight:900,color:'#0f172a',lineHeight:1.1 }}>{s.value}</p>
+                <p style={{ fontSize:s.fs,fontWeight:900,color:'#0f172a',lineHeight:1.2,wordBreak:'break-all' }}>{s.value}</p>
                 <p style={{ fontSize:9.5,color:'#94a3b8',fontWeight:600 }}>{s.sub}</p>
               </div>
             </div>
