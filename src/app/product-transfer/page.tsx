@@ -6,7 +6,7 @@ import {
   ShoppingCart, Calendar, Package, Map, Printer,
   Truck, X, Save, ChevronLeft, ChevronRight,
   BarChart2, ListFilter, CheckSquare, Square,
-  ChevronDown, Link2, Link2Off, Search, AlertCircle,
+  ChevronDown, Link2, Link2Off, Search, AlertCircle, Trash2,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import {
@@ -572,6 +572,16 @@ export default function OrdersPage() {
     printPickingList(targets, mappings)
   }
 
+  /* 선택 주문 삭제 */
+  const handleDeleteChecked = () => {
+    if (checked.size === 0) return
+    if (!confirm(`선택된 ${checked.size}건을 주문목록에서 삭제하시겠습니까?`)) return
+    const updated = orders.filter(o => !checked.has(o.id))
+    saveOrders(updated)
+    setOrders(updated)
+    setChecked(new Set())
+  }
+
   /* 송장등록으로 이동 */
   const goToInvoice = () => {
     const targets = checked.size > 0
@@ -829,9 +839,17 @@ export default function OrdersPage() {
 
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {checked.size > 0 && (
-            <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '6px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <CheckSquare size={13} />{checked.size}건 선택
-            </span>
+            <>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '6px 10px', borderRadius: 8, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <CheckSquare size={13} />{checked.size}건 선택
+              </span>
+              <button
+                onClick={handleDeleteChecked}
+                style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#dc2626', color: 'white', borderRadius: 9, fontSize: 12.5, fontWeight: 800, border: 'none', cursor: 'pointer' }}
+              >
+                <Trash2 size={13} />선택 삭제
+              </button>
+            </>
           )}
 
           {/* 매핑하기 */}
