@@ -1401,9 +1401,10 @@ export default function ProductsPage() {
           localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts, data: newData }))
         }
       } catch {}
-      // 매핑관리탭에 변경 알림
       localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
     }
+    // Supabase 성공/실패 상관없이 localStorage는 이미 저장됐으므로 항상 이벤트 발송
+    window.dispatchEvent(new CustomEvent('pm_mapping_updated'))
     setMappingTarget(null)
   }
 
@@ -1425,19 +1426,15 @@ export default function ProductsPage() {
     if (!error) {
       setProducts(prev => prev.filter(p => p.id !== id))
       invalidateProductsCache()
-      // pm_channel_mappings_v2 에서 해당 상품 매핑 해제
+      // pm_channel_mappings_v2 에서 해당 상품 매핑 행 완전 제거
       try {
         const allMaps = loadLocalMappings()
         for (const key of Object.keys(allMaps)) {
-          allMaps[key] = allMaps[key].map(r =>
-            r.matched_product_id === id
-              ? { ...r, matched_product_id: null, matched_product_name: null, matched_option: null, matched_barcode: null, status: 'unmatched' as const }
-              : r
-          )
+          allMaps[key] = allMaps[key].filter(r => r.matched_product_id !== id)
         }
         saveLocalMappings(allMaps)
-        // 매핑관리탭에 변경사항 즉시 반영
         localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
+        window.dispatchEvent(new CustomEvent('pm_mapping_updated'))
       } catch { /* 무시 */ }
     }
   }

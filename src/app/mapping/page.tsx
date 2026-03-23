@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { usePathname } from 'next/navigation'
 import { Upload, RefreshCw, Link2, Trash2, CheckCircle2, AlertCircle, FileSpreadsheet, X, Search, Store, Download } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
@@ -65,6 +66,7 @@ function saveMappings(data: Record<string, MappedRow[]>) {
 
 export default function MappingPage() {
   const fileRef = useRef<HTMLInputElement>(null)
+  const pathname = usePathname()
   const [connectedMalls, setConnectedMalls] = useState<{ key: string; name: string }[]>([])
   const [selectedMall, setSelectedMall] = useState('')
   const [products, setProducts] = useState<PmProduct[]>([])
@@ -83,6 +85,11 @@ export default function MappingPage() {
   const [manualSelProduct, setManualSelProduct] = useState('')
   const [manualSelOption, setManualSelOption] = useState('')
   const [manualPrice, setManualPrice] = useState('')
+
+  /* ── SPA 내비게이션으로 이 페이지에 진입할 때마다 localStorage에서 최신 매핑 로드 ── */
+  useEffect(() => {
+    setMappings(loadMappings())
+  }, [pathname])
 
   useEffect(() => {
     let connected: { key: string; name: string }[] = []
@@ -130,25 +137,28 @@ export default function MappingPage() {
     syncExisting()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── 상품관리탭 매핑 저장 감지 → 매핑 목록 실시간 갱신 ── */
+  /* ── 상품관리탭 매핑 저장/삭제 감지 → 매핑 목록 실시간 갱신 ── */
   useEffect(() => {
     const refresh = () => setMappings(loadMappings())
 
-    // 같은 탭(SPA 내) 이벤트: 상품관리탭 매핑완료 시 dispatch
+    // 같은 탭(SPA 내) 이벤트: 상품관리탭 매핑완료/삭제 시 dispatch
     window.addEventListener('pm_mapping_updated', refresh)
     // 다른 탭(cross-tab) storage 이벤트
     const onStorage = (e: StorageEvent) => {
       if (e.key === MAPPING_KEY || e.key === 'pm_products_mapping_signal') refresh()
     }
-    // 탭/윈도우 포커스 복귀 시
+    // 브라우저 탭/윈도우 포커스 복귀 시 (Alt+Tab, 탭 전환 등)
+    const onFocus = () => refresh()
     const onVisible = () => {
       if (document.visibilityState === 'visible') refresh()
     }
     window.addEventListener('storage', onStorage)
+    window.addEventListener('focus', onFocus)
     document.addEventListener('visibilitychange', onVisible)
     return () => {
       window.removeEventListener('pm_mapping_updated', refresh)
       window.removeEventListener('storage', onStorage)
+      window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVisible)
     }
   }, [])
