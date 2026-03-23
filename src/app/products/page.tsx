@@ -419,7 +419,8 @@ const LOCAL_CHANNEL_KEY  = 'pm_mall_channels_v5'
 
 interface LocalMappedRow {
   mall_product_id: string; mall_product_name: string; mall_option: string
-  matched_product_id: string | null; matched_product_name: string | null
+  matched_product_id: string | null; matched_product_code: string | null
+  matched_product_name: string | null
   matched_option: string | null; matched_barcode: string | null
   mall_price: number | null; status: 'matched' | 'unmatched'
 }
@@ -524,6 +525,7 @@ function MallMappingModal({
           mall_product_name: row.productName || product.name,
           mall_option:       '',
           matched_product_id:   product.id,
+          matched_product_code: product.code || null,
           matched_product_name: product.name,
           matched_option:   null,
           matched_barcode:  null,

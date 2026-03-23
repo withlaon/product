@@ -643,16 +643,21 @@ export default function ShippingHistoryPage() {
                     {barcode || '-'}
                   </span>
 
-                  {/* 상품명/옵션 */}
+                  {/* 상품명/옵션/수량 */}
                   <div style={{ overflow: 'hidden' }}>
                     <p style={{ fontSize: 12, fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                       {item?.product_name ?? '-'}
                     </p>
-                    {optLabel && (
-                      <p style={{ fontSize: 10.5, color: '#64748b', marginTop: 1, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                        {optLabel}
-                      </p>
-                    )}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1, overflow: 'hidden' }}>
+                      {optLabel && (
+                        <span style={{ fontSize: 10.5, color: '#64748b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', flexShrink: 1 }}>
+                          {optLabel}
+                        </span>
+                      )}
+                      <span style={{ fontSize: 10, fontWeight: 800, background: '#f1f5f9', color: '#475569', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                        수량 {item?.quantity ?? 1}
+                      </span>
+                    </div>
                   </div>
 
                   {/* 판매가 */}

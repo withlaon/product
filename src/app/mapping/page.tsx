@@ -13,6 +13,7 @@ interface MappedRow {
   mall_product_name: string
   mall_option: string
   matched_product_id: string | null
+  matched_product_code: string | null
   matched_product_name: string | null
   matched_option: string | null
   matched_barcode: string | null
@@ -47,9 +48,13 @@ function loadMappings(): Record<string, MappedRow[]> {
     const r = localStorage.getItem(MAPPING_KEY)
     if (!r) return {}
     const data = JSON.parse(r)
-    // mall_price 필드 없는 기존 데이터 마이그레이션
+    // 기존 데이터 마이그레이션 (필드 누락 보완)
     for (const key of Object.keys(data)) {
-      data[key] = data[key].map((row: MappedRow) => ({ ...row, mall_price: row.mall_price ?? null }))
+      data[key] = data[key].map((row: MappedRow) => ({
+        ...row,
+        mall_price: row.mall_price ?? null,
+        matched_product_code: row.matched_product_code ?? null,
+      }))
     }
     return data
   } catch { return {} }
@@ -167,9 +172,9 @@ export default function MappingPage() {
     const matchProduct = (p: PmProduct) => {
       if (p.options.length === 1) {
         const o = p.options[0]
-        return { pid: p.id, pname: p.name, oname: o.name, barcode: o.barcode }
+        return { pid: p.id, pname: p.name, pcode: p.code, oname: o.name, barcode: o.barcode }
       }
-      return { pid: p.id, pname: p.name, oname: null, barcode: null }
+      return { pid: p.id, pname: p.name, pcode: p.code, oname: null, barcode: null }
     }
 
     // 1순위: 엑셀 상품코드 컬럼이 pm_products.code와 정확히 일치
@@ -234,6 +239,7 @@ export default function MappingPage() {
           mall_product_name: mallName,
           mall_option: '',
           matched_product_id: m?.pid || null,
+          matched_product_code: m?.pcode || null,
           matched_product_name: m?.pname || null,
           matched_option: m?.oname || null,
           matched_barcode: m?.barcode || null,
@@ -305,6 +311,7 @@ export default function MappingPage() {
     newRows[manualTargetIdx] = {
       ...newRows[manualTargetIdx],
       matched_product_id: prod?.id || null,
+      matched_product_code: prod?.code || null,
       matched_product_name: prod?.name || null,
       matched_option: opt?.name || null,
       matched_barcode: opt?.barcode || null,
@@ -616,7 +623,7 @@ export default function MappingPage() {
                               style={{ cursor:'pointer', width:14, height:14 }}
                             />
                           </th>
-                          {['#', '쇼핑몰 상품ID', '쇼핑몰 상품명', '쇼핑몰 옵션', '매핑 상품명', '매핑 옵션', '바코드', '판매가', '상태', '관리'].map((h, i) => (
+                          {['#', '쇼핑몰 상품ID', '쇼핑몰 상품명', '쇼핑몰 옵션', '매핑 상품명 / 상품코드', '매핑 옵션', '바코드', '판매가', '상태', '관리'].map((h, i) => (
                             <th key={i} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 10.5, fontWeight: 900, color: '#94a3b8', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                           ))}
                         </tr>
@@ -643,10 +650,15 @@ export default function MappingPage() {
                               <td style={{ padding: '9px 12px', fontSize: 12, color: '#64748b', maxWidth: 120 }}>
                                 <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.mall_option || '-'}</span>
                               </td>
-                              <td style={{ padding: '9px 12px', fontSize: 12.5, fontWeight: 700, color: row.matched_product_name ? '#1e293b' : '#cbd5e1', maxWidth: 160 }}>
-                                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <td style={{ padding: '9px 12px', maxWidth: 180 }}>
+                                <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: row.matched_product_name ? '#1e293b' : '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {row.matched_product_name || <span style={{ color: '#cbd5e1' }}>미매핑</span>}
                                 </span>
+                                {row.matched_product_code && (
+                                  <span style={{ display: 'inline-block', marginTop: 2, fontSize: 10, fontWeight: 800, fontFamily: 'monospace', background: '#f0fdf4', color: '#059669', padding: '1px 6px', borderRadius: 4, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {row.matched_product_code}
+                                  </span>
+                                )}
                               </td>
                               <td style={{ padding: '9px 12px', fontSize: 12, color: row.matched_option ? '#64748b' : '#e2e8f0' }}>{row.matched_option || '-'}</td>
                               <td style={{ padding: '9px 12px', fontSize: 11, fontFamily: 'monospace', color: '#334155' }}>{row.matched_barcode || '-'}</td>
