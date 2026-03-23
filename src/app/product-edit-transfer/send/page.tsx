@@ -44,7 +44,6 @@ function todayStr() {
 
 /* ─── 마켓플러스 송장 파일 생성 (형식: 주문번호/품목별주문번호/운송장번호/수량) ── */
 function downloadMarketPlusInvoice(allOrders: Order[]) {
-  // import_source = 'marketplus' 또는 channel이 마켓플러스인 배송중 주문
   const mpOrders = allOrders.filter(o =>
     o.status === 'shipped' && o.tracking_number &&
     (o.extra_data?.['import_source'] === 'marketplus' || o.channel === '마켓플러스')
@@ -55,18 +54,31 @@ function downloadMarketPlusInvoice(allOrders: Order[]) {
     return
   }
 
-  const rows = mpOrders.map(o => {
-    const item = o.items[0]
-    const ed   = o.extra_data ?? {}
-    return {
-      '주문번호':       String(ed['주문번호'] ?? o.order_number),
-      '품목별 주문번호': String(ed['품목별_주문번호'] ?? ed['품목별 주문번호'] ?? o.order_number),
-      '운송장번호':     o.tracking_number ?? '',
-      '수량':          item?.quantity ?? 1,
-    }
+  // 마켓플러스 업로드 형식: 수량이 1이면 수량 컬럼 생략
+  const lines: string[] = ['주문번호,품목별 주문번호,운송장번호,수량']
+
+  mpOrders.forEach(o => {
+    const item   = o.items[0]
+    const ed     = o.extra_data ?? {}
+    const 주문번호 = String(ed['주문번호'] ?? o.order_number)
+    const 품목별   = String(ed['품목별_주문번호'] ?? ed['품목별 주문번호'] ?? o.order_number)
+    const 운송장   = o.tracking_number ?? ''
+    const qty    = item?.quantity ?? 1
+
+    const cols = [`"${주문번호}"`, `"${품목별}"`, `"${운송장}"`]
+    if (qty > 1) cols.push(`"${qty}"`)
+    lines.push(cols.join(','))
   })
 
-  triggerExcelDownload(rows, `마켓플러스_송장_${todayStr()}.xlsx`)
+  // UTF-8 BOM 추가 (Excel에서 한글 깨짐 방지)
+  const csv  = '\uFEFF' + lines.join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `마켓플러스_송장_${todayStr()}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 /* ─── 일반 쇼핑몰 송장 파일 생성 ────────────────────────── */
