@@ -8,7 +8,7 @@ import {
   Truck, MessageSquare, RefreshCw, ChevronLeft, ChevronRight,
   ClipboardList,
 } from 'lucide-react'
-import { loadOrders, loadShippedOrders } from '@/lib/orders'
+import { loadOrders, loadShippedOrders, loadInvoiceQueue } from '@/lib/orders'
 import type { Order, ShippedOrder } from '@/lib/orders'
 import { supabase } from '@/lib/supabase'
 
@@ -214,15 +214,16 @@ export default function DashboardPage() {
   const curYM    = getCurYM()
   const pathname = usePathname()
 
-  const [orders,     setOrders]     = useState<Order[]>([])
-  const [shipped,    setShipped]    = useState<ShippedOrder[]>([])
-  const [products,   setProducts]   = useState<CachedProduct[]>([])
-  const [csItems,    setCsItems]    = useState<CsItem[]>([])
-  const [purchases,  setPurchases]  = useState<Purchase[]>([])
-  const [loading,    setLoading]    = useState(true)
-  const [selMonth,   setSelMonth]   = useState(curYM)
-  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
+  const [orders,        setOrders]        = useState<Order[]>([])
+  const [shipped,       setShipped]       = useState<ShippedOrder[]>([])
+  const [invoiceQueue,  setInvoiceQueue]  = useState<Order[]>([])
+  const [products,      setProducts]      = useState<CachedProduct[]>([])
+  const [csItems,       setCsItems]       = useState<CsItem[]>([])
+  const [purchases,     setPurchases]     = useState<Purchase[]>([])
+  const [loading,       setLoading]       = useState(true)
+  const [selMonth,      setSelMonth]      = useState(curYM)
+  const [lastUpdate,    setLastUpdate]    = useState<Date | null>(null)
+  const [refreshing,    setRefreshing]    = useState(false)
 
   _selMonthForChart = selMonth
 
@@ -230,6 +231,7 @@ export default function DashboardPage() {
   const refreshLocal = useCallback(() => {
     setOrders(loadOrders())
     setShipped(loadShippedOrders())
+    setInvoiceQueue(loadInvoiceQueue())
     setProducts(loadCachedProducts())
     setCsItems(loadCsItems())
     setLastUpdate(new Date())
@@ -340,17 +342,30 @@ export default function DashboardPage() {
   const deliveredToday = useMemo(() => shipped.filter(o => (o.shipped_at??'').slice(0,10) === today).length, [shipped, today])
   const totalShipped   = useMemo(() => shipped.length, [shipped])
 
-  /* ── 월별 차트 데이터 ── */
+  /* ── 월별 차트 데이터
+       pm_orders_v1 + pm_invoice_queue_v1 + pm_shipped_orders_v1 를 합산
+       (주문이 어느 단계에 있든 order_date 기준으로 집계) ── */
   const chartData = useMemo(() => {
     const days = daysInMonth(selMonth)
-    const mo = orders.filter(o => o.order_date?.slice(0,7) === selMonth && o.status !== 'cancelled')
+    // 세 저장소를 합쳐 ID 기준 중복 제거
+    const seenIds = new Set<string>()
+    const allOrders: (Order | ShippedOrder)[] = []
+    for (const o of [...orders, ...invoiceQueue, ...shipped]) {
+      if (!seenIds.has(o.id)) {
+        seenIds.add(o.id)
+        allOrders.push(o)
+      }
+    }
+    const mo = allOrders.filter(
+      o => o.order_date?.slice(0,7) === selMonth && o.status !== 'cancelled'
+    )
     return Array.from({ length: days }, (_, i) => {
-      const day = i + 1
+      const day  = i + 1
       const date = `${selMonth}-${String(day).padStart(2,'0')}`
       const dayO = mo.filter(o => o.order_date === date)
       return { day, count: dayO.length, amount: dayO.reduce((s,o) => s+(o.total_amount??0), 0) }
     })
-  }, [orders, selMonth])
+  }, [orders, invoiceQueue, shipped, selMonth])
 
   const monthTotal  = useMemo(() => chartData.reduce((s,d) => s+d.count, 0), [chartData])
   const monthRevSel = useMemo(() => chartData.reduce((s,d) => s+d.amount, 0), [chartData])
