@@ -4,10 +4,10 @@ import {
   Purchase, PmProduct,
   getThisMonth, shiftMonth,
   fmtMonthLabel, fmtDateShort,
-  apiFetchPurchases,
+  apiFetchPurchases, isUnresolved,
   DEFAULT_EXCHANGE_RATE, unitToOrderKrw,
 } from './_shared'
-import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp, Truck } from 'lucide-react'
 
 type FP = PmProduct & { cost_price?: number; cost_currency?: string }
 
@@ -22,17 +22,14 @@ function loadCachedProducts(): FP[] {
   } catch { return [] }
 }
 
-/** 발주 1건의 원화 합계금액 계산 (원가 × 환율 × 1.18 × 1.25 × 수량) */
 function calcOrderKrw(purchase: Purchase, products: FP[], exchangeRate: number): number {
   return purchase.items.reduce((sum, item) => {
     const prod = products.find(p => p.code === item.product_code)
     if (!prod?.cost_price) return sum
-    const unitKrw = unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate)
-    return sum + unitKrw * item.ordered
+    return sum + unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate) * item.ordered
   }, 0)
 }
 
-/* ── 월별 전용 날짜 네비 ── */
 function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) => void }) {
   const thisMonth = getThisMonth()
   const isFuture  = month >= thisMonth
@@ -58,21 +55,17 @@ function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) =>
 }
 
 export default function PurchaseMainPage() {
-  const [purchases, setPurchases] = useState<Purchase[]>([])
-  const [products,  setProducts]  = useState<FP[]>([])
+  const [purchases,    setPurchases]    = useState<Purchase[]>([])
+  const [products,     setProducts]     = useState<FP[]>([])
   const [exchangeRate, setExchangeRate] = useState(DEFAULT_EXCHANGE_RATE)
 
-  /* 발주내역 날짜 (월별 전용) */
-  const [poMonth, setPoMonth] = useState(getThisMonth())
-  /* 입고내역 날짜 (월별 전용) */
-  const [rcMonth, setRcMonth] = useState(getThisMonth())
-
-  /* 펼친 행 ID */
+  /* 좌측: 발주 목록 */
+  const [poMonth,      setPoMonth]      = useState(getThisMonth())
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null)
-  const [expandedRcId, setExpandedRcId] = useState<string | null>(null)
 
-  /* 발주 추천 패널 열림 여부 */
-  const [showRecommend, setShowRecommend] = useState(true)
+  /* 우측: 미입고 리스트 */
+  const [miMonth,      setMiMonth]      = useState(getThisMonth())
+  const [expandedMiId, setExpandedMiId] = useState<string | null>(null)
 
   const loadPurchases = useCallback(async () => {
     const data = await apiFetchPurchases()
@@ -80,7 +73,6 @@ export default function PurchaseMainPage() {
   }, [])
 
   useEffect(() => {
-    // 상품 캐시 + 환율 불러오기
     setProducts(loadCachedProducts())
     try {
       const er = Number(localStorage.getItem('pm_exchange_rate'))
@@ -104,151 +96,64 @@ export default function PurchaseMainPage() {
     }
   }, [loadPurchases])
 
-  /* 발주내역: status='ordered' + 해당 월 + 오름차순 */
+  /* ── 발주 목록: 해당 월의 ordered 상태 발주 ── */
   const poList = useMemo(() =>
     purchases
       .filter(p => p.status === 'ordered' && p.order_date.startsWith(poMonth))
       .sort((a, b) => a.order_date.localeCompare(b.order_date))
   , [purchases, poMonth])
 
-  /* 입고내역: status='completed' + 해당 월 + 오름차순 */
-  const rcList = useMemo(() =>
-    purchases
-      .filter(p => p.status === 'completed')
-      .filter(p => {
-        const ref = (p.received_at ?? p.order_date).slice(0, rcMonth.length)
-        return ref === rcMonth
-      })
-      .sort((a, b) => {
-        const aD = (a.received_at ?? a.order_date).slice(0, 10)
-        const bD = (b.received_at ?? b.order_date).slice(0, 10)
-        return aD.localeCompare(bD)
-      })
-  , [purchases, rcMonth])
+  /* ── 미입고 리스트
+       1) 선택 월의 미입고 발주 (발주일 기준)
+       2) 이전 달 ~ 에서 아직 미입고인 발주 (이월 표시)
+       두 그룹 모두 발주일 내림차순
+  ── */
+  const miList = useMemo(() => {
+    const inMonth   = purchases
+      .filter(p => isUnresolved(p) && p.order_date.startsWith(miMonth))
+      .sort((a, b) => b.order_date.localeCompare(a.order_date))
+    const carryOver = purchases
+      .filter(p => isUnresolved(p) && p.order_date < miMonth && !p.order_date.startsWith(miMonth))
+      .sort((a, b) => b.order_date.localeCompare(a.order_date))
+    return [...inMonth, ...carryOver]
+  }, [purchases, miMonth])
 
   /* KPI */
-  const poOrderedQty  = useMemo(() => poList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.ordered,0), 0), [poList])
-  const rcReceivedQty = useMemo(() => rcList.reduce((s,p) => s+p.items.reduce((ss,i) => ss+i.received,0), 0), [rcList])
-  /* 월 누적 발주금액 (원화) */
+  const poOrderedQty = useMemo(() =>
+    poList.reduce((s,p) => s + p.items.reduce((ss,i) => ss + i.ordered, 0), 0)
+  , [poList])
+
   const poMonthKrw = useMemo(() =>
-    poList.reduce((s, p) => s + calcOrderKrw(p, products, exchangeRate), 0)
+    poList.reduce((s,p) => s + calcOrderKrw(p, products, exchangeRate), 0)
   , [poList, products, exchangeRate])
 
-  /* 현재고 3개 이하 옵션 목록 (재고 오름차순) */
-  const lowStockItems = useMemo(() => {
-    const items: { code: string; name: string; abbr: string; optName: string; barcode: string; stock: number }[] = []
-    for (const p of products) {
-      for (const opt of p.options) {
-        const stock = opt.current_stock ?? 0
-        if (stock <= 3) {
-          items.push({
-            code:    p.code,
-            name:    p.name,
-            abbr:    p.abbr || p.name,
-            optName: opt.name,
-            barcode: opt.barcode || '',
-            stock,
-          })
-        }
-      }
-    }
-    return items.sort((a, b) => a.stock - b.stock)
-  }, [products])
+  const miUnreceivedQty = useMemo(() =>
+    miList.reduce((s,p) => s + p.items.reduce((ss,i) => ss + Math.max(0, i.ordered - i.received), 0), 0)
+  , [miList])
+
+  const miCarryOverCount = useMemo(() =>
+    purchases.filter(p => isUnresolved(p) && p.order_date < miMonth && !p.order_date.startsWith(miMonth)).length
+  , [purchases, miMonth])
 
   const thStyle = (align: 'left'|'center' = 'center'): React.CSSProperties => ({
-    padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:align, borderBottom:'1px solid #f1f5f9',
+    padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:align,
+    borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap',
   })
   const tdStyle = (align: 'left'|'center' = 'center'): React.CSSProperties => ({
     padding:'7px 8px', textAlign:align, verticalAlign:'middle',
   })
 
   return (
-    <div className="pm-page" style={{ display:'flex', flexDirection:'column', height:'100%', gap:10 }}>
-
-      {/* ── 발주 추천 목록 (현재고 3개 이하) ── */}
-      <div className="pm-card" style={{ flexShrink:0, padding:0, overflow:'hidden' }}>
-        {/* 헤더 */}
-        <button
-          onClick={() => setShowRecommend(v => !v)}
-          style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'9px 14px',
-            background:'none', border:'none', cursor:'pointer', textAlign:'left' }}
-        >
-          <AlertTriangle size={14} color={lowStockItems.length > 0 ? '#d97706' : '#94a3b8'} strokeWidth={2.5}/>
-          <span style={{ fontSize:13, fontWeight:900, color:'#0f172a', flex:1 }}>
-            발주 추천 목록
-          </span>
-          {lowStockItems.length > 0 && (
-            <span style={{ fontSize:11, fontWeight:800, background:'#fef3c7', color:'#92400e',
-              padding:'2px 9px', borderRadius:20, border:'1px solid #fde68a' }}>
-              재고부족 {lowStockItems.length}개
-            </span>
-          )}
-          {lowStockItems.length === 0 && (
-            <span style={{ fontSize:11, fontWeight:700, color:'#22c55e' }}>재고 여유 ✓</span>
-          )}
-          <ChevronDown size={13} color="#94a3b8"
-            style={{ transform: showRecommend ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }}/>
-        </button>
-
-        {/* 펼쳐진 목록 */}
-        {showRecommend && (
-          lowStockItems.length === 0
-            ? <div style={{ padding:'10px 14px 12px', fontSize:12, color:'#94a3b8', textAlign:'center' }}>
-                현재고 3개 이하인 상품이 없습니다.
-              </div>
-            : <div style={{ overflowX:'auto' }}>
-                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
-                  <thead>
-                    <tr style={{ background:'#fffbeb', borderTop:'1px solid #fef3c7' }}>
-                      {['#','상품코드','상품명(약칭)','옵션명','바코드','현재고'].map((h,i) => (
-                        <th key={h} style={{ padding:'5px 10px', fontWeight:800, color:'#92400e',
-                          textAlign: i === 0 ? 'center' : i <= 4 ? 'left' : 'center',
-                          fontSize:10.5, borderBottom:'1px solid #fde68a', whiteSpace:'nowrap' }}>
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {lowStockItems.map((item, idx) => {
-                      const isZero = item.stock === 0
-                      return (
-                        <tr key={`${item.code}-${item.optName}-${idx}`}
-                          style={{ borderBottom:'1px solid #fef9c3',
-                            background: isZero ? '#fff7ed' : idx % 2 === 0 ? '#fffdf5' : 'white' }}>
-                          <td style={{ padding:'5px 10px', textAlign:'center', color:'#94a3b8', fontSize:10.5, fontWeight:700 }}>{idx+1}</td>
-                          <td style={{ padding:'5px 10px', fontFamily:'monospace', fontSize:11, color:'#059669', fontWeight:800 }}>{item.code}</td>
-                          <td style={{ padding:'5px 10px', fontSize:11.5, fontWeight:700, color:'#1e293b', maxWidth:160 }}>
-                            <span style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.abbr}</span>
-                          </td>
-                          <td style={{ padding:'5px 10px', fontSize:11, color:'#475569', maxWidth:120 }}>
-                            <span style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.optName || '-'}</span>
-                          </td>
-                          <td style={{ padding:'5px 10px', fontFamily:'monospace', fontSize:10.5, color:'#64748b' }}>{item.barcode || '-'}</td>
-                          <td style={{ padding:'5px 10px', textAlign:'center' }}>
-                            <span style={{ fontSize:12, fontWeight:900,
-                              background: isZero ? '#fee2e2' : '#fef3c7',
-                              color:      isZero ? '#dc2626' : '#d97706',
-                              padding:'2px 10px', borderRadius:6, whiteSpace:'nowrap' }}>
-                              {item.stock}개
-                            </span>
-                          </td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-        )}
-      </div>
-
+    <div className="pm-page" style={{ display:'flex', flexDirection:'column', height:'100%', gap:0 }}>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, flex:1, overflow:'hidden' }}>
 
-        {/* ── 왼쪽: 발주내역 ── */}
+        {/* ── 좌측: 발주 목록 ── */}
         <div style={{ display:'flex', flexDirection:'column', gap:10, overflow:'hidden' }}>
+
+          {/* KPI 카드 */}
           <div className="pm-card" style={{ padding:'10px 14px', flexShrink:0 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-              <span style={{ fontSize:14, fontWeight:900, color:'#0f172a' }}>📦 발주내역</span>
+              <span style={{ fontSize:14, fontWeight:900, color:'#0f172a' }}>📦 발주 목록</span>
               <span style={{ fontSize:11, color:'#94a3b8' }}>발주확정 {poList.length}건</span>
             </div>
             <MonthNav month={poMonth} setMonth={v => { setPoMonth(v); setExpandedPoId(null) }}/>
@@ -263,18 +168,21 @@ export default function PurchaseMainPage() {
               </div>
               <div style={{ background:'#fefce8', borderRadius:8, padding:'6px 10px' }}>
                 <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>발주금액 (월누적)</p>
-                <p style={{ fontSize: poMonthKrw > 0 ? 14 : 18, fontWeight:900, color: poMonthKrw > 0 ? '#92400e' : '#cbd5e1', lineHeight:1, marginTop: poMonthKrw > 0 ? 3 : 0 }}>
+                <p style={{ fontSize: poMonthKrw > 0 ? 14 : 18, fontWeight:900,
+                  color: poMonthKrw > 0 ? '#92400e' : '#cbd5e1', lineHeight:1,
+                  marginTop: poMonthKrw > 0 ? 3 : 0 }}>
                   {poMonthKrw > 0 ? `₩${Math.round(poMonthKrw).toLocaleString()}` : '-'}
                 </p>
               </div>
             </div>
           </div>
 
+          {/* 목록 테이블 */}
           <div className="pm-card" style={{ flex:1, overflow:'auto', padding:0 }}>
             {poList.length === 0
               ? <div style={{ textAlign:'center', padding:'40px 0', color:'#94a3b8' }}>
                   <PackagePlus size={28} style={{ opacity:0.2, margin:'0 auto 8px' }}/>
-                  <p style={{ fontSize:13, fontWeight:700 }}>발주확정 내역이 없습니다</p>
+                  <p style={{ fontSize:13, fontWeight:700 }}>이 달의 발주 내역이 없습니다</p>
                 </div>
               : <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                   <thead style={{ position:'sticky', top:0, zIndex:1 }}>
@@ -289,9 +197,9 @@ export default function PurchaseMainPage() {
                   </thead>
                   <tbody>
                     {poList.map(p => {
-                      const tOrd = p.items.reduce((s,i) => s+i.ordered, 0)
+                      const tOrd    = p.items.reduce((s,i) => s + i.ordered, 0)
                       const lineKrw = calcOrderKrw(p, products, exchangeRate)
-                      const isOpen = expandedPoId === p.id
+                      const isOpen  = expandedPoId === p.id
                       return (
                         <>
                           <tr key={p.id}
@@ -348,86 +256,116 @@ export default function PurchaseMainPage() {
           </div>
         </div>
 
-        {/* ── 오른쪽: 입고내역 ── */}
+        {/* ── 우측: 미입고 리스트 ── */}
         <div style={{ display:'flex', flexDirection:'column', gap:10, overflow:'hidden' }}>
+
+          {/* KPI 카드 */}
           <div className="pm-card" style={{ padding:'10px 14px', flexShrink:0 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-              <span style={{ fontSize:14, fontWeight:900, color:'#0f172a' }}>✅ 입고내역</span>
-              <span style={{ fontSize:11, color:'#94a3b8' }}>입고확정 {rcList.length}건</span>
+              <span style={{ fontSize:14, fontWeight:900, color:'#0f172a' }}>🚚 미입고 리스트</span>
+              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                {miCarryOverCount > 0 && (
+                  <span style={{ fontSize:10.5, fontWeight:800, background:'#fffbeb', color:'#d97706',
+                    padding:'2px 8px', borderRadius:99, border:'1px solid #fde68a' }}>
+                    이월 {miCarryOverCount}건
+                  </span>
+                )}
+                <span style={{ fontSize:11, color:'#94a3b8' }}>총 {miList.length}건</span>
+              </div>
             </div>
-            <MonthNav month={rcMonth} setMonth={v => { setRcMonth(v); setExpandedRcId(null) }}/>
+            <MonthNav month={miMonth} setMonth={v => { setMiMonth(v); setExpandedMiId(null) }}/>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:6, marginTop:10 }}>
-              <div style={{ background:'#f0fdf4', borderRadius:8, padding:'6px 10px' }}>
-                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>입고확정 건수</p>
-                <p style={{ fontSize:18, fontWeight:900, color:'#059669', lineHeight:1 }}>{rcList.length}</p>
+              <div style={{ background:'#fff7ed', borderRadius:8, padding:'6px 10px' }}>
+                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>미입고 건수</p>
+                <p style={{ fontSize:18, fontWeight:900, color:'#d97706', lineHeight:1 }}>{miList.length}</p>
               </div>
               <div style={{ background:'#f8fafc', borderRadius:8, padding:'6px 10px' }}>
-                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>입고 수량</p>
-                <p style={{ fontSize:18, fontWeight:900, color:'#1e293b', lineHeight:1 }}>{rcReceivedQty.toLocaleString()}</p>
+                <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8' }}>미입고 수량</p>
+                <p style={{ fontSize:18, fontWeight:900, color:'#1e293b', lineHeight:1 }}>{miUnreceivedQty.toLocaleString()}</p>
               </div>
             </div>
           </div>
 
+          {/* 목록 테이블 */}
           <div className="pm-card" style={{ flex:1, overflow:'auto', padding:0 }}>
-            {rcList.length === 0
+            {miList.length === 0
               ? <div style={{ textAlign:'center', padding:'40px 0', color:'#94a3b8' }}>
-                  <PackagePlus size={28} style={{ opacity:0.2, margin:'0 auto 8px' }}/>
-                  <p style={{ fontSize:13, fontWeight:700 }}>입고확정 내역이 없습니다</p>
+                  <Truck size={28} style={{ opacity:0.2, margin:'0 auto 8px' }}/>
+                  <p style={{ fontSize:13, fontWeight:700 }}>미입고 항목이 없습니다</p>
                 </div>
               : <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                   <thead style={{ position:'sticky', top:0, zIndex:1 }}>
                     <tr style={{ background:'#f8fafc' }}>
-                      <th style={thStyle('left')}>입고일</th>
+                      <th style={thStyle('left')}>발주일</th>
                       <th style={thStyle('left')}>구매처</th>
                       <th style={thStyle()}>품목</th>
-                      <th style={thStyle()}>입고수량</th>
+                      <th style={thStyle()}>발주</th>
+                      <th style={thStyle()}>입고</th>
+                      <th style={thStyle()}>미입고</th>
                       <th style={{ ...thStyle(), width:28 }}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    {rcList.map(p => {
-                      const tRcv  = p.items.reduce((s,i) => s+i.received, 0)
-                      const rcDate = p.received_at ? p.received_at.slice(0,10) : p.order_date
-                      const isOpen = expandedRcId === p.id
+                    {miList.map(p => {
+                      const tOrd  = p.items.reduce((s,i) => s + i.ordered, 0)
+                      const tRcv  = p.items.reduce((s,i) => s + i.received, 0)
+                      const tMis  = tOrd - tRcv
+                      const isOld = !p.order_date.startsWith(miMonth)
+                      const isOpen = expandedMiId === p.id
                       return (
                         <>
                           <tr key={p.id}
-                            onClick={() => setExpandedRcId(isOpen ? null : p.id)}
-                            style={{ borderBottom:'1px solid #f8fafc', cursor:'pointer', background:isOpen?'#f0fdf4':undefined }}
+                            onClick={() => setExpandedMiId(isOpen ? null : p.id)}
+                            style={{ borderBottom:'1px solid #f8fafc', cursor:'pointer',
+                              background: isOpen ? '#fffbeb' : isOld ? '#fefce8' : undefined }}
                             onMouseEnter={e => { if (!isOpen) e.currentTarget.style.background='#f8fafc' }}
-                            onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background='' }}
+                            onMouseLeave={e => { if (!isOpen) e.currentTarget.style.background = isOld ? '#fefce8' : '' }}
                           >
                             <td style={tdStyle('left')}>
-                              <span style={{ fontSize:11.5, fontWeight:700, color:'#334155' }}>{fmtDateShort(rcDate)}</span>
-                              <span style={{ display:'block', fontSize:10, color:'#94a3b8' }}>{rcDate}</span>
+                              <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                                <span style={{ fontSize:11.5, fontWeight:700, color:'#334155' }}>{fmtDateShort(p.order_date)}</span>
+                                {isOld && (
+                                  <span style={{ fontSize:9, fontWeight:800, background:'#fef3c7', color:'#d97706',
+                                    padding:'1px 5px', borderRadius:99, whiteSpace:'nowrap' }}>이월</span>
+                                )}
+                              </div>
+                              <span style={{ display:'block', fontSize:10, color:'#94a3b8' }}>{p.order_date}</span>
                             </td>
                             <td style={{ ...tdStyle('left'), fontSize:11.5, color:'#475569' }}>{p.supplier||'-'}</td>
                             <td style={{ ...tdStyle(), color:'#64748b' }}>{p.items.length}건</td>
-                            <td style={{ ...tdStyle(), fontWeight:800, color:'#059669' }}>{tRcv.toLocaleString()}</td>
+                            <td style={{ ...tdStyle(), fontWeight:800, color:'#1e293b' }}>{tOrd.toLocaleString()}</td>
+                            <td style={{ ...tdStyle(), fontWeight:700, color:'#059669' }}>{tRcv.toLocaleString()}</td>
+                            <td style={{ ...tdStyle(), fontWeight:900, color:'#d97706' }}>{tMis.toLocaleString()}</td>
                             <td style={tdStyle()}>
                               {isOpen ? <ChevronUp size={13} color="#94a3b8"/> : <ChevronDown size={13} color="#94a3b8"/>}
                             </td>
                           </tr>
                           {isOpen && (
                             <tr key={`${p.id}-detail`}>
-                              <td colSpan={5} style={{ padding:0, background:'#f0fdf4' }}>
+                              <td colSpan={7} style={{ padding:0, background:'#fffbeb' }}>
                                 <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
                                   <thead>
-                                    <tr style={{ background:'#bbf7d0' }}>
-                                      {['상품코드','옵션명','바코드','입고수량'].map(h => (
-                                        <th key={h} style={{ padding:'4px 8px', fontWeight:800, color:'#166534', textAlign:'center', fontSize:10 }}>{h}</th>
+                                    <tr style={{ background:'#fde68a' }}>
+                                      {['상품코드','옵션명','바코드','발주','입고','미입고'].map(h => (
+                                        <th key={h} style={{ padding:'4px 8px', fontWeight:800, color:'#92400e', textAlign:'center', fontSize:10 }}>{h}</th>
                                       ))}
                                     </tr>
                                   </thead>
                                   <tbody>
-                                    {p.items.map((item, i) => (
-                                      <tr key={i} style={{ borderBottom:'1px solid #dcfce7' }}>
-                                        <td style={{ padding:'4px 8px', color:'#334155', fontFamily:'monospace', fontSize:10.5 }}>{item.product_code}</td>
-                                        <td style={{ padding:'4px 8px', color:'#475569', fontSize:10.5 }}>{item.option_name||'-'}</td>
-                                        <td style={{ padding:'4px 8px', color:'#64748b', fontFamily:'monospace', fontSize:10 }}>{item.barcode||'-'}</td>
-                                        <td style={{ padding:'4px 8px', textAlign:'center', fontWeight:800, color:'#059669' }}>{item.received}</td>
-                                      </tr>
-                                    ))}
+                                    {p.items.map((item, i) => {
+                                      const mis = Math.max(0, item.ordered - item.received)
+                                      return (
+                                        <tr key={i} style={{ borderBottom:'1px solid #fef9c3',
+                                          background: mis > 0 ? '#fffdf5' : '#f0fdf4' }}>
+                                          <td style={{ padding:'4px 8px', color:'#334155', fontFamily:'monospace', fontSize:10.5 }}>{item.product_code}</td>
+                                          <td style={{ padding:'4px 8px', color:'#475569', fontSize:10.5 }}>{item.option_name||'-'}</td>
+                                          <td style={{ padding:'4px 8px', color:'#64748b', fontFamily:'monospace', fontSize:10 }}>{item.barcode||'-'}</td>
+                                          <td style={{ padding:'4px 8px', textAlign:'center', fontWeight:700, color:'#1e293b' }}>{item.ordered}</td>
+                                          <td style={{ padding:'4px 8px', textAlign:'center', fontWeight:700, color:'#059669' }}>{item.received}</td>
+                                          <td style={{ padding:'4px 8px', textAlign:'center', fontWeight:900, color: mis > 0 ? '#d97706' : '#94a3b8' }}>{mis}</td>
+                                        </tr>
+                                      )
+                                    })}
                                   </tbody>
                                 </table>
                               </td>
