@@ -23,7 +23,11 @@ interface MappedRow {
 }
 
 interface PmOption { name: string; barcode: string }
-interface PmProduct { id: string; code: string; name: string; category: string; options: PmOption[] }
+interface PmProduct {
+  id: string; code: string; name: string; category: string; options: PmOption[]
+  registered_malls?: (string | { mall: string; code: string })[]
+  channel_prices?:   { channel: string; price: number }[]
+}
 
 const MAPPING_KEY = 'pm_channel_mappings_v2'
 
@@ -104,15 +108,62 @@ export default function MappingPage() {
       }
     } catch { /* empty */ }
 
-    supabase.from('pm_products').select('id,code,name,category,options').then(({ data }) => {
-      if (data) setProducts(data as PmProduct[])
-    })
+    supabase
+      .from('pm_products')
+      .select('id,code,name,category,options,registered_malls,channel_prices')
+      .then(({ data }) => {
+        if (!data) return
+        const pmProducts = data as PmProduct[]
+        setProducts(pmProducts)
+
+        /* ── Supabase registered_malls → pm_channel_mappings_v2 역방향 동기화
+           상품관리탭에서 매핑완료 후 registered_malls가 설정됐지만
+           localStorage에 아직 항목이 없는 경우 자동 생성 ── */
+        const currentMappings = loadMappings()
+        let localUpdated = false
+
+        for (const product of pmProducts) {
+          const regMalls = (product.registered_malls ?? []) as (string | { mall: string; code: string })[]
+          for (const entry of regMalls) {
+            const mallName = typeof entry === 'string' ? entry : entry.mall
+            const mallCode = typeof entry === 'string' ? '' : (entry.code || '')
+            if (!mallCode) continue
+
+            const channel = connected.find(c => c.name === mallName)
+            if (!channel) continue
+
+            const mallRows = currentMappings[channel.key] ?? []
+            // 이미 매핑된 항목이면 스킵
+            if (mallRows.some(r => r.matched_product_id === product.id)) continue
+
+            const chPrice = (product.channel_prices ?? []).find(cp => cp.channel === mallName)
+            currentMappings[channel.key] = [...mallRows, {
+              mall_product_id:      mallCode,
+              mall_product_name:    product.name,
+              mall_option:          '',
+              matched_product_id:   product.id,
+              matched_product_code: product.code || null,
+              matched_product_name: product.name,
+              matched_option:       null,
+              matched_barcode:      null,
+              mall_price:           chPrice?.price ?? null,
+              status:               'matched' as const,
+            }]
+            localUpdated = true
+          }
+        }
+
+        if (localUpdated) {
+          saveMappings(currentMappings)
+          setMappings({ ...currentMappings })
+          try { window.dispatchEvent(new CustomEvent('pm_mapping_updated')) } catch {}
+        }
+      })
 
     const loadedMappings = loadMappings()
     setMappings(loadedMappings)
 
     // 기존 localStorage 매핑 중 matched 항목을 Supabase registered_malls에 동기화
-    // throttle 제거: 매핑탭을 열 때마다 실행해 항상 최신 상태 보장
     const syncExisting = async () => {
       const allMatched: { mallKey: string; r: MappedRow }[] = []
       for (const mallKey of Object.keys(loadedMappings)) {
