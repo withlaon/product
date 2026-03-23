@@ -39,22 +39,23 @@ const navGroups: NavGroup[] = [
     items: [
       { label: '상품관리',     href: '/products',              icon: Package },
       {
-        label: '주문관리',     href: '/product-transfer',      icon: ShoppingCart,
-        children: [
-          { label: '주문서등록', href: '/order-registration', icon: ClipboardList },
-        ],
-      },
-      { label: 'CS관리',       href: '/cs-management',         icon: HeadphonesIcon },
-      { label: '송장등록관리', href: '/product-edit-transfer/print', icon: Truck },
-      { label: '출고내역',     href: '/product-edit-transfer/history', icon: History },
-      { label: '재고관리',     href: '/inventory',             icon: Warehouse },
-      {
         label: '발주/입고관리', href: '/purchase', icon: PackagePlus,
         children: [
           { label: '발주관리', href: '/purchase/manage',  icon: PackagePlus },
           { label: '입고관리', href: '/purchase/receive', icon: Truck },
         ],
       },
+      { label: '재고관리',     href: '/inventory',             icon: Warehouse },
+    ],
+  },
+  {
+    label: '주문 · 배송',
+    items: [
+      { label: '주문서등록',   href: '/order-registration',    icon: ClipboardList },
+      { label: '주문관리',     href: '/product-transfer',      icon: ShoppingCart },
+      { label: 'CS관리',       href: '/cs-management',         icon: HeadphonesIcon },
+      { label: '송장등록관리', href: '/product-edit-transfer/print', icon: Truck },
+      { label: '출고내역',     href: '/product-edit-transfer/history', icon: History },
     ],
   },
   {
