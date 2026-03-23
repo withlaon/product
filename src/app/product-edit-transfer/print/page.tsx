@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import {
   Truck, CheckCircle2, Search, Save, Package, Printer,
@@ -9,9 +8,9 @@ import {
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
-  loadOrders, saveOrders, loadSelectedForInvoice, clearSelectedForInvoice,
-  STATUS_MAP, loadMappings, lookupMapping,
+  loadInvoiceQueue, saveInvoiceQueue,
   loadShippedOrders, saveShippedOrders,
+  loadMappings, lookupMapping,
 } from '@/lib/orders'
 import type { Order, ShippedOrder } from '@/lib/orders'
 
@@ -24,7 +23,6 @@ function formatOption(option: string): string {
     return eq !== -1 ? part.slice(eq + 1).trim() : part.trim()
   })
   const result = parts.join(',')
-  // 원본이 [] 형식이었으면 [] 유지, 아니면 그대로
   return option.startsWith('[') ? `[${result}]` : result
 }
 
@@ -46,51 +44,21 @@ const SENDER_PHONE   = '070-8949-7469'
 const SENDER_ADDRESS = '경기도 부천시 소사구 성주로 96, 제일빌딩 5층'
 
 export default function InvoicePrintPage() {
-  const router = useRouter()
   const [orders, setOrders]             = useState<Order[]>([])
   const [search, setSearch]             = useState('')
   const [saved, setSaved]               = useState<Record<string, boolean>>({})
   const [edits, setEdits]               = useState<Record<string, { carrier: string; tracking: string }>>({})
-  const [filterSelected, setFilterSelected] = useState(false)
-  const [selectedIds, setSelectedIds]   = useState<string[]>([])
   const [checkedPrint, setCheckedPrint] = useState<Set<string>>(new Set())
   const bulkFileRef = useRef<HTMLInputElement>(null)
-  // 날짜 필터 (좌우 네비게이션)
   const [dateFilter, setDateFilter] = useState(getToday())
   const [showAllDates, setShowAllDates] = useState(false)
-  // 상태 탭: 'needInvoice' | 'shipped' | 'delivered'
-  const [statusTab, setStatusTab] = useState<'needInvoice' | 'shipped' | 'delivered'>('needInvoice')
 
   useEffect(() => {
-    setOrders(loadOrders())
-    const ids = loadSelectedForInvoice()
-    if (ids.length > 0) {
-      setSelectedIds(ids)
-      setFilterSelected(true)
-      clearSelectedForInvoice()
-    }
+    setOrders(loadInvoiceQueue())
   }, [])
 
-  /* 상태 탭별 목록 */
-  const needInvoice = useMemo(() =>
-    orders.filter(o => o.status !== 'cancelled' && o.status !== 'delivered' && !o.tracking_number),
-  [orders])
-
-  const statusList = useMemo(() => {
-    if (statusTab === 'needInvoice') return needInvoice
-    if (statusTab === 'shipped')     return orders.filter(o => o.status === 'shipped' && !!o.tracking_number)
-    if (statusTab === 'delivered')   return orders.filter(o => o.status === 'delivered')
-    return needInvoice
-  }, [orders, needInvoice, statusTab])
-
-  const baseList = useMemo(() =>
-    filterSelected && selectedIds.length > 0
-      ? statusList.filter(o => selectedIds.includes(o.id))
-      : statusList,
-  [statusList, filterSelected, selectedIds])
-
   const filtered = useMemo(() => {
-    let list = baseList
+    let list = orders
     if (!showAllDates && dateFilter) list = list.filter(o => o.order_date === dateFilter)
     const q = search.trim().toLowerCase()
     if (!q) return list
@@ -99,7 +67,7 @@ export default function InvoicePrintPage() {
       o.customer_name.toLowerCase().includes(q) ||
       o.items[0]?.product_name?.toLowerCase().includes(q)
     )
-  }, [baseList, search, dateFilter, showAllDates])
+  }, [orders, search, dateFilter, showAllDates])
 
   /* 체크박스 */
   const allPrintChecked = filtered.length > 0 && filtered.every(o => checkedPrint.has(o.id))
@@ -120,8 +88,8 @@ export default function InvoicePrintPage() {
   const setEdit = (id: string, field: 'carrier' | 'tracking', value: string) =>
     setEdits(prev => ({ ...prev, [id]: { ...getEdit(id), [field]: value } }))
 
-  /** 운송장 저장 후 출고내역(pm_shipped_orders_v1)에 자동 등록 */
-  const addToShippedHistory = (shippedOrders: Order[]) => {
+  /** 운송장 저장 → 큐에서 제거 + 출고내역(pm_shipped_orders_v1)에 추가 */
+  const addToShippedAndRemoveFromQueue = (shippedOrders: Order[]) => {
     const now = new Date().toISOString()
     const existing = loadShippedOrders()
     const existingIds = new Set(existing.map(o => o.id))
@@ -129,57 +97,46 @@ export default function InvoicePrintPage() {
       .filter(o => !existingIds.has(o.id))
       .map(o => ({ ...o, status: 'shipped' as const, shipped_at: now }))
     if (newEntries.length > 0) saveShippedOrders([...existing, ...newEntries])
+
+    // 큐에서 제거
+    const savedIds = new Set(shippedOrders.map(o => o.id))
+    const remaining = orders.filter(o => !savedIds.has(o.id))
+    saveInvoiceQueue(remaining)
+    setOrders(remaining)
+    setCheckedPrint(new Set())
   }
 
   const handleSave = (order: Order) => {
     const edit = getEdit(order.id)
     if (!edit.tracking.trim()) return
-    const updated = orders.map(o =>
-      o.id === order.id
-        ? { ...o, tracking_number: edit.tracking.trim(), carrier: edit.carrier, status: 'shipped' as const }
-        : o
-    )
-    saveOrders(updated)
-    setOrders(updated)
-    // 출고내역에 자동 추가
-    const saved_order = updated.find(o => o.id === order.id)
-    if (saved_order) addToShippedHistory([saved_order])
+    const updated = { ...order, tracking_number: edit.tracking.trim(), carrier: edit.carrier, status: 'shipped' as const }
+    addToShippedAndRemoveFromQueue([updated])
     setSaved(prev => ({ ...prev, [order.id]: true }))
     setTimeout(() => setSaved(prev => ({ ...prev, [order.id]: false })), 2000)
   }
 
+  /** 일괄저장: 운송장 입력된 주문만 송장전송파일로 이동 */
   const handleSaveAll = () => {
-    let updated = [...orders]
-    let count = 0
-    const newSaved: Record<string, boolean> = {}
-    const savedOrderIds: string[] = []
+    const toSave: Order[] = []
     filtered.forEach(order => {
       const edit = getEdit(order.id)
       if (!edit.tracking.trim()) return
-      updated = updated.map(o =>
-        o.id === order.id
-          ? { ...o, tracking_number: edit.tracking.trim(), carrier: edit.carrier, status: 'shipped' as const }
-          : o
-      )
-      newSaved[order.id] = true
-      savedOrderIds.push(order.id)
-      count++
+      toSave.push({ ...order, tracking_number: edit.tracking.trim(), carrier: edit.carrier, status: 'shipped' as const })
     })
-    if (count === 0) return alert('입력된 운송장번호가 없습니다.')
-    saveOrders(updated)
-    setOrders(updated)
-    // 출고내역에 자동 추가
-    const savedOrders = updated.filter(o => savedOrderIds.includes(o.id))
-    addToShippedHistory(savedOrders)
+    if (toSave.length === 0) return alert('입력된 운송장번호가 없습니다.')
+    addToShippedAndRemoveFromQueue(toSave)
+    const newSaved: Record<string, boolean> = {}
+    toSave.forEach(o => { newSaved[o.id] = true })
     setSaved(prev => ({ ...prev, ...newSaved }))
     setTimeout(() => setSaved(prev => {
       const n = { ...prev }
-      Object.keys(newSaved).forEach(k => delete n[k])
+      toSave.forEach(o => delete n[o.id])
       return n
     }), 2500)
+    alert(`${toSave.length}건이 송장전송파일 탭으로 이동되었습니다.`)
   }
 
-  /* CJ 송장파일 일괄 업로드 → 운송장번호 자동입력 */
+  /* CJ 송장파일 업로드 → 운송장번호 자동입력 */
   const handleBulkInvoiceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
@@ -192,15 +149,11 @@ export default function InvoicePrintPage() {
         const ws   = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' }) as unknown[][]
 
-        // 헤더 제외, H열(index 7) = 운송장번호, U열(index 20) = 받는분, V열(index 21) = 전화번호
         const dataRows = rows.slice(1).filter(r => String(r[7] ?? '').trim())
 
-        // 전화번호 정규화 (숫자만 추출)
         const normalizePhone = (p: string) => String(p ?? '').replace(/\D/g, '')
-        // 주소 앞 15자 비교 (도로명/지번 차이 허용)
         const addrKey = (a: string) => a.trim().replace(/\s+/g, ' ').slice(0, 15)
 
-        // 현재 목록 복사 후 매핑
         let matchCount = 0
         const newEdits: Record<string, { carrier: string; tracking: string }> = { ...edits }
 
@@ -212,8 +165,6 @@ export default function InvoicePrintPage() {
 
           if (!tracking) return
 
-          // 매칭 기준: ① 전화번호 일치 ② 이름+주소 일치
-          // → 동일 조건인 주문 전부에 동일 운송장번호 적용
           const matches = filtered.filter(o => {
             const oPhone = normalizePhone(o.customer_phone ?? '')
             if (oPhone && excelPhone && oPhone === excelPhone) return true
@@ -234,7 +185,7 @@ export default function InvoicePrintPage() {
         })
 
         setEdits(newEdits)
-        alert(`${matchCount}건 운송장번호가 자동 입력되었습니다.\n(동일 주문자+주소의 주문은 같은 운송장번호 적용)\n확인 후 [일괄 저장] 버튼을 눌러 저장하세요.`)
+        alert(`${matchCount}건 운송장번호가 자동 입력되었습니다.\n확인 후 [일괄 저장] 버튼을 눌러 저장하세요.`)
       } catch {
         alert('파일을 읽는 중 오류가 발생했습니다.')
       }
@@ -245,14 +196,14 @@ export default function InvoicePrintPage() {
   /* 선택 항목 삭제 */
   const handleDelete = () => {
     if (checkedPrint.size === 0) return
-    if (!confirm(`선택된 ${checkedPrint.size}건을 주문목록에서 삭제하시겠습니까?`)) return
+    if (!confirm(`선택된 ${checkedPrint.size}건을 큐에서 삭제하시겠습니까?`)) return
     const updated = orders.filter(o => !checkedPrint.has(o.id))
-    saveOrders(updated)
+    saveInvoiceQueue(updated)
     setOrders(updated)
     setCheckedPrint(new Set())
   }
 
-  /* 발송기본 양식 다운로드 */
+  /* 전체 다운로드 (CJ 양식) */
   const downloadPrintFile = () => {
     const targets = checkedPrint.size > 0
       ? filtered.filter(o => checkedPrint.has(o.id))
@@ -295,7 +246,7 @@ export default function InvoicePrintPage() {
     URL.revokeObjectURL(url)
   }
 
-  /* 송장 출력 (새 창) */
+  /* 송장출력용 파일 (새 창 인쇄) */
   const printInvoices = () => {
     const printItems = filtered.filter(o => getEdit(o.id).tracking.trim() || saved[o.id])
     if (printItems.length === 0) {
@@ -341,63 +292,28 @@ export default function InvoicePrintPage() {
     if (w) { w.document.write(html); w.document.close() }
   }
 
-  const shippedCount   = orders.filter(o => o.status === 'shipped').length
-  const deliveredCount = orders.filter(o => o.status === 'delivered').length
-  const checkedCount   = checkedPrint.size
-
+  const checkedCount = checkedPrint.size
   const GRID = '36px 130px 68px 1fr 82px 140px 180px 72px'
 
   return (
     <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
-      {/* 내부 탭 네비게이션 */}
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: '#f1f5f9', borderRadius: 14, padding: 5, width: 'fit-content' }}>
+      {/* KPI */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12, marginBottom: 20 }}>
         {[
-          { label: '송장입력',  path: '/product-edit-transfer/print' },
-          { label: '송장전송용', path: '/product-edit-transfer/send'  },
-        ].map(t => (
-          <button key={t.path}
-            onClick={() => router.push(t.path)}
-            style={{
-              padding: '10px 28px', borderRadius: 10, border: 'none', cursor: 'pointer',
-              fontSize: 15, fontWeight: 900,
-              background: t.path.includes('print') ? '#1e293b' : 'transparent',
-              color:      t.path.includes('print') ? 'white'    : '#64748b',
-              transition: 'all 150ms',
-            }}
-          >{t.label}</button>
+          { label: '송장출력/등록 대기', value: orders.length,   color: '#dc2626', bg: '#fef2f2' },
+          { label: '현재 필터 건수',     value: filtered.length, color: '#2563eb', bg: '#eff6ff' },
+        ].map(k => (
+          <div key={k.label} className="pm-card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ width: 40, height: 40, borderRadius: 12, background: k.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <Truck size={18} style={{ color: k.color }} />
+            </div>
+            <div>
+              <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
+              <p style={{ fontSize: 11.5, color: k.color, fontWeight: 800, marginTop: 3 }}>{k.label}</p>
+            </div>
+          </div>
         ))}
-      </div>
-
-      {/* 상태 탭 (클릭 가능한 KPI 카드) */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
-        {[
-          { id: 'needInvoice' as const, label: '송장 미등록', value: needInvoice.length,  color: '#dc2626', bg: '#fef2f2', activeBg: '#fee2e2' },
-          { id: 'shipped'     as const, label: '배송중',      value: shippedCount,        color: '#7c3aed', bg: '#f5f3ff', activeBg: '#ede9fe' },
-          { id: 'delivered'   as const, label: '배송완료',    value: deliveredCount,      color: '#059669', bg: '#ecfdf5', activeBg: '#d1fae5' },
-        ].map(k => {
-          const active = statusTab === k.id
-          return (
-            <button
-              key={k.id}
-              onClick={() => setStatusTab(k.id)}
-              className="pm-card"
-              style={{
-                padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14, width: '100%', textAlign: 'left',
-                cursor: 'pointer', border: active ? `2px solid ${k.color}` : '2px solid transparent',
-                background: active ? k.activeBg : undefined, transition: 'all 150ms',
-              }}
-            >
-              <div style={{ width: 40, height: 40, borderRadius: 12, background: k.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                <Truck size={18} style={{ color: k.color }} />
-              </div>
-              <div>
-                <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
-                <p style={{ fontSize: 11.5, color: active ? k.color : '#94a3b8', fontWeight: 800, marginTop: 3 }}>{k.label}</p>
-              </div>
-            </button>
-          )
-        })}
       </div>
 
       {/* 검색 + 날짜 네비게이션 + 액션 바 */}
@@ -409,6 +325,7 @@ export default function InvoicePrintPage() {
           placeholder="주문번호 · 수취인 · 상품명 검색..."
           style={{ flex: 1, height: 34, fontSize: 13, border: 'none', outline: 'none', background: 'transparent', minWidth: 160 }}
         />
+
         {/* 날짜 좌우 네비게이션 */}
         {!showAllDates && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexShrink: 0 }}>
@@ -431,60 +348,38 @@ export default function InvoicePrintPage() {
           {showAllDates ? '날짜별' : '전체'}
         </button>
 
-        {selectedIds.length > 0 && (
-          <button
-            onClick={() => setFilterSelected(v => !v)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: 6,
-              padding: '7px 12px', borderRadius: 9, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 800,
-              background: filterSelected ? '#2563eb' : '#f1f5f9',
-              color: filterSelected ? 'white' : '#64748b',
-            }}
-          >
-            {filterSelected ? <CheckCircle2 size={13} /> : <Package size={13} />}
-            {filterSelected ? `선택 ${selectedIds.length}건` : '전체 보기'}
-          </button>
-        )}
-
         {/* 선택 삭제 */}
         {checkedCount > 0 && (
-          <button
-            onClick={handleDelete}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#fef2f2', color: '#dc2626', borderRadius: 9, fontSize: 12, fontWeight: 800, border: '1.5px solid #fecaca', cursor: 'pointer' }}
-          >
+          <button onClick={handleDelete}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#fef2f2', color: '#dc2626', borderRadius: 9, fontSize: 12, fontWeight: 800, border: '1.5px solid #fecaca', cursor: 'pointer' }}>
             <Trash2 size={13} />삭제 ({checkedCount})
           </button>
         )}
 
-        {/* 송장출력 파일 다운로드 */}
-        <button
-          onClick={downloadPrintFile}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#ecfdf5', color: '#059669', borderRadius: 9, fontSize: 12, fontWeight: 800, border: '1.5px solid #bbf7d0', cursor: 'pointer' }}
-        >
+        {/* 전체 다운로드 */}
+        <button onClick={downloadPrintFile}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#ecfdf5', color: '#059669', borderRadius: 9, fontSize: 12, fontWeight: 800, border: '1.5px solid #bbf7d0', cursor: 'pointer' }}>
           <FileDown size={13} />
           {checkedCount > 0 ? `선택 ${checkedCount}건 다운로드` : '전체 다운로드'}
         </button>
 
-        {/* 일괄등록: CJ 송장파일 업로드 */}
-        <button
-          onClick={() => bulkFileRef.current?.click()}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#2563eb', color: 'white', borderRadius: 9, fontSize: 12, fontWeight: 800, border: 'none', cursor: 'pointer' }}
-        >
-          <Upload size={13} />일괄등록 (파일업로드)
+        {/* 송장출력용 파일 */}
+        <button onClick={printInvoices}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#7c3aed', color: 'white', borderRadius: 9, fontSize: 12, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+          <Printer size={13} />송장출력용 파일
+        </button>
+
+        {/* 송장파일 업로드 */}
+        <button onClick={() => bulkFileRef.current?.click()}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#2563eb', color: 'white', borderRadius: 9, fontSize: 12, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+          <Upload size={13} />송장파일 업로드
         </button>
         <input ref={bulkFileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleBulkInvoiceUpload} />
+
         {/* 일괄 저장 */}
-        <button
-          onClick={handleSaveAll}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#059669', color: 'white', borderRadius: 9, fontSize: 12, fontWeight: 800, border: 'none', cursor: 'pointer' }}
-        >
+        <button onClick={handleSaveAll}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#059669', color: 'white', borderRadius: 9, fontSize: 12, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
           <Save size={13} />일괄 저장
-        </button>
-        <button
-          onClick={printInvoices}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#7c3aed', color: 'white', borderRadius: 9, fontSize: 12, fontWeight: 800, border: 'none', cursor: 'pointer' }}
-        >
-          <Printer size={13} />송장 출력
         </button>
       </div>
 
@@ -492,9 +387,7 @@ export default function InvoicePrintPage() {
       <div className="pm-card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '12px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Truck size={15} style={{ color: '#64748b' }} />
-          <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>
-            {filterSelected ? '선택된 주문 · 송장입력' : '송장 미등록 주문'}
-          </span>
+          <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>송장출력/등록 대기 주문</span>
           <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>({filtered.length}건)</span>
           {checkedCount > 0 && (
             <span style={{ fontSize: 12, color: '#2563eb', fontWeight: 700 }}>{checkedCount}건 선택됨</span>
@@ -505,17 +398,14 @@ export default function InvoicePrintPage() {
           <div style={{ padding: '60px 20px', textAlign: 'center' }}>
             <Package size={40} style={{ margin: '0 auto 14px', opacity: 0.15, display: 'block' }} />
             <p style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>
-              {needInvoice.length === 0 ? '모든 주문의 송장이 등록되었습니다 🎉' : '검색 결과가 없습니다'}
+              {orders.length === 0 ? '주문관리에서 CJ송장출력 파일을 통해 주문을 이동해주세요' : '검색 결과가 없습니다'}
             </p>
           </div>
         ) : (
           <div>
             {/* 헤더 */}
             <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-              <span
-                onClick={togglePrintAll}
-                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-              >
+              <span onClick={togglePrintAll} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                 {allPrintChecked
                   ? <CheckSquare size={14} style={{ color: '#2563eb' }} />
                   : <Square size={14} style={{ color: '#cbd5e1' }} />}
@@ -530,11 +420,9 @@ export default function InvoicePrintPage() {
               const isSaved   = saved[order.id]
               const isChecked = checkedPrint.has(order.id)
               return (
-                <div
-                  key={order.id}
+                <div key={order.id}
                   style={{
-                    display: 'grid',
-                    gridTemplateColumns: GRID,
+                    display: 'grid', gridTemplateColumns: GRID,
                     gap: 8, padding: '10px 20px',
                     borderBottom: '1px solid #f8fafc',
                     alignItems: 'center',
@@ -542,10 +430,7 @@ export default function InvoicePrintPage() {
                     transition: 'background 200ms',
                   }}
                 >
-                  <span
-                    onClick={() => togglePrintOne(order.id)}
-                    style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}
-                  >
+                  <span onClick={() => togglePrintOne(order.id)} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                     {isChecked
                       ? <CheckSquare size={14} style={{ color: '#2563eb' }} />
                       : <Square size={14} style={{ color: '#cbd5e1' }} />}
@@ -567,16 +452,12 @@ export default function InvoicePrintPage() {
                   </div>
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
 
-                  <select
-                    value={edit.carrier}
-                    onChange={e => setEdit(order.id, 'carrier', e.target.value)}
-                    style={{ height: 32, borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 11.5, fontWeight: 600, color: '#334155', padding: '0 6px', background: 'white', width: '100%' }}
-                  >
+                  <select value={edit.carrier} onChange={e => setEdit(order.id, 'carrier', e.target.value)}
+                    style={{ height: 32, borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 11.5, fontWeight: 600, color: '#334155', padding: '0 6px', background: 'white', width: '100%' }}>
                     {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
 
-                  <input
-                    value={edit.tracking}
+                  <input value={edit.tracking}
                     onChange={e => setEdit(order.id, 'tracking', e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleSave(order) }}
                     placeholder="운송장번호 입력"
@@ -585,8 +466,7 @@ export default function InvoicePrintPage() {
                     onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
                   />
 
-                  <button
-                    onClick={() => handleSave(order)}
+                  <button onClick={() => handleSave(order)}
                     disabled={!edit.tracking.trim() || isSaved}
                     style={{
                       display: 'flex', alignItems: 'center', gap: 5,
@@ -596,8 +476,7 @@ export default function InvoicePrintPage() {
                       borderRadius: 8, border: 'none', cursor: edit.tracking.trim() ? 'pointer' : 'default',
                       fontSize: 11.5, fontWeight: 800, transition: 'background 200ms',
                       width: '100%', justifyContent: 'center',
-                    }}
-                  >
+                    }}>
                     {isSaved ? <><CheckCircle2 size={11} />완료</> : <><Save size={11} />등록</>}
                   </button>
                 </div>

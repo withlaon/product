@@ -51,11 +51,12 @@ const navGroups: NavGroup[] = [
   {
     label: '주문 · 배송',
     items: [
-      { label: '주문서등록',   href: '/order-registration',    icon: ClipboardList },
-      { label: '주문관리',     href: '/product-transfer',      icon: ShoppingCart },
-      { label: 'CS관리',       href: '/cs-management',         icon: HeadphonesIcon },
-      { label: '송장등록관리', href: '/product-edit-transfer/print', icon: Truck },
-      { label: '출고내역',     href: '/product-edit-transfer/history', icon: History },
+      { label: 'CS관리',         href: '/cs-management',                  icon: HeadphonesIcon },
+      { label: '주문서등록',     href: '/order-registration',             icon: ClipboardList },
+      { label: '주문관리',       href: '/product-transfer',               icon: ShoppingCart },
+      { label: '송장출력/등록',  href: '/product-edit-transfer/print',    icon: Printer },
+      { label: '송장전송파일',   href: '/product-edit-transfer/send',     icon: Send },
+      { label: '출고내역',       href: '/product-edit-transfer/history',  icon: History },
     ],
   },
   {

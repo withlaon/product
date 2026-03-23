@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx'
 import {
   Upload, ChevronLeft, ChevronRight, Package,
   CheckCircle2, AlertCircle, Store, FileSpreadsheet,
-  CheckSquare, Square, Trash2,
+  CheckSquare, Square, Trash2, PackageCheck,
 } from 'lucide-react'
 import {
   loadOrders, saveOrders, toOrderDate,
@@ -346,6 +346,19 @@ export default function OrderRegistrationPage() {
     saveOrders(mainOrders.filter(o => !deletedIds.has(o.id)))
   }
 
+  /* 주문확인 - 주문서등록 목록에서만 제거 (주문관리에는 유지) */
+  const handleOrderConfirm = () => {
+    if (checkedIds.size === 0 || !selectedMall || !dayData) return
+    if (!confirm(`선택된 ${checkedIds.size}건을 주문확인 처리하시겠습니까?\n주문서등록 목록에서 삭제되고 주문관리 탭에서 확인할 수 있습니다.`)) return
+
+    const remaining = dayData.orders.filter(o => !checkedIds.has(o.id))
+    const newData: DayData = { ...dayData, orders: remaining }
+    saveDayData(newData)
+    setDayData(newData)
+    setCheckedIds(new Set())
+    // pm_orders_v1은 그대로 유지 (주문관리 탭에 표시됨)
+  }
+
   const handleMallSelect = (mall: MallId) => {
     setSelectedMall(mall)
     setCurrentDate(today)
@@ -574,6 +587,12 @@ export default function OrderRegistrationPage() {
                     {importing ? '처리 중...' : '주문서 업로드'}
                   </button>
                   <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFile} />
+                  {checkedIds.size > 0 && (
+                    <button onClick={handleOrderConfirm}
+                      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: '#059669', color: 'white', borderRadius: 10, fontSize: 13, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+                      <PackageCheck size={14} />주문확인 ({checkedIds.size})
+                    </button>
+                  )}
                 </>
               )}
 
@@ -621,11 +640,11 @@ export default function OrderRegistrationPage() {
               ) : (
                 <div style={{ flex: 1, overflow: 'auto' }}>
                   {/* 테이블 헤더 */}
-                  <div style={{ display: 'grid', gridTemplateColumns: '36px 1fr 2fr 110px 70px 90px', gap: 10, padding: '10px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', position: 'sticky', top: 0, zIndex: 1 }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '44px 1fr 2fr 110px 70px 90px', gap: 10, padding: '10px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', position: 'sticky', top: 0, zIndex: 1 }}>
                     <span onClick={toggleAll} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                       {allChecked
-                        ? <CheckSquare size={14} style={{ color: '#2563eb' }} />
-                        : <Square size={14} style={{ color: '#cbd5e1' }} />}
+                        ? <CheckSquare size={20} style={{ color: '#2563eb' }} />
+                        : <Square size={20} style={{ color: '#cbd5e1' }} />}
                     </span>
                     {['주문번호', '상품명', '수취인', '수량', '상태'].map(h => (
                       <span key={h} style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
@@ -639,14 +658,14 @@ export default function OrderRegistrationPage() {
                     const isChk = checkedIds.has(order.id)
                     return (
                       <div key={order.id}
-                        style={{ display: 'grid', gridTemplateColumns: '36px 1fr 2fr 110px 70px 90px', gap: 10, padding: '12px 20px', borderBottom: idx < dayData.orders.length - 1 ? '1px solid #f8fafc' : 'none', alignItems: 'center', background: isChk ? '#eff6ff' : 'transparent', transition: 'background 100ms' }}
+                        style={{ display: 'grid', gridTemplateColumns: '44px 1fr 2fr 110px 70px 90px', gap: 10, padding: '12px 20px', borderBottom: idx < dayData.orders.length - 1 ? '1px solid #f8fafc' : 'none', alignItems: 'center', background: isChk ? '#eff6ff' : 'transparent', transition: 'background 100ms' }}
                         onMouseEnter={e => { if (!isChk) e.currentTarget.style.background = '#f8fafc' }}
                         onMouseLeave={e => { if (!isChk) e.currentTarget.style.background = 'transparent' }}
                       >
                         <span onClick={e => { e.stopPropagation(); toggleOne(order.id) }} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                           {isChk
-                            ? <CheckSquare size={14} style={{ color: '#2563eb' }} />
-                            : <Square size={14} style={{ color: '#cbd5e1' }} />}
+                            ? <CheckSquare size={20} style={{ color: '#2563eb' }} />
+                            : <Square size={20} style={{ color: '#cbd5e1' }} />}
                         </span>
                         <div onClick={() => setSelectedOrder(order)} style={{ cursor: 'pointer', overflow: 'hidden' }}>
                           <span style={{ fontSize: 11.5, fontWeight: 800, color: activeMall?.color ?? '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>

@@ -12,6 +12,7 @@ import * as XLSX from 'xlsx'
 import {
   loadOrders, saveOrders, loadMappings, saveMappings, extractColor,
   saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
+  loadInvoiceQueue, saveInvoiceQueue,
 } from '@/lib/orders'
 import type { Order, MappingStore } from '@/lib/orders'
 
@@ -592,12 +593,13 @@ export default function OrdersPage() {
     router.push('/product-edit-transfer/print')
   }
 
-  /* CJ 송장출력 파일 다운로드 */
+  /* CJ 송장출력 파일 다운로드 → 확인 후 송장출력/등록 탭으로 이동 */
   const handleCJInvoiceDownload = () => {
     const targets = checked.size > 0
       ? orders.filter(o => checked.has(o.id))
       : displayOrders
     if (targets.length === 0) return alert('다운로드할 주문이 없습니다.')
+    if (!confirm(`선택된 ${targets.length}건의 CJ 송장출력 파일을 다운로드하고\n해당 주문을 송장출력/등록 탭으로 이동하시겠습니까?`)) return
 
     const now = new Date()
     const dateStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
@@ -642,7 +644,6 @@ export default function OrdersPage() {
     })
 
     const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
-    // 열 너비 설정
     ws['!cols'] = [
       {wch:12},{wch:15},{wch:40},
       {wch:10},{wch:15},{wch:50},
@@ -651,6 +652,20 @@ export default function OrdersPage() {
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, '송장출력')
     XLSX.writeFile(wb, `CJ송장출력_${dateStr}.xlsx`)
+
+    // 선택 주문을 pm_orders_v1에서 제거하고 pm_invoice_queue_v1로 이동
+    const targetIds = new Set(targets.map(o => o.id))
+    const remaining = orders.filter(o => !targetIds.has(o.id))
+    saveOrders(remaining)
+    setOrders(remaining)
+    setChecked(new Set())
+
+    const existingQueue = loadInvoiceQueue()
+    const existingQueueIds = new Set(existingQueue.map(o => o.id))
+    const newQueue = [...existingQueue, ...targets.filter(o => !existingQueueIds.has(o.id))]
+    saveInvoiceQueue(newQueue)
+
+    router.push('/product-edit-transfer/print')
   }
 
   /* KPI */

@@ -58,6 +58,20 @@ export function saveOrders(orders: Order[]) {
   try { localStorage.setItem(ORDERS_KEY, JSON.stringify(orders)) } catch {}
 }
 
+/* ─── 송장출력/등록 대기 큐 (주문관리 → 송장출력/등록 이동용) ── */
+export const INVOICE_QUEUE_KEY = 'pm_invoice_queue_v1'
+
+export function loadInvoiceQueue(): Order[] {
+  try {
+    const raw = localStorage.getItem(INVOICE_QUEUE_KEY)
+    return raw ? (JSON.parse(raw) as Order[]) : []
+  } catch { return [] }
+}
+
+export function saveInvoiceQueue(orders: Order[]) {
+  try { localStorage.setItem(INVOICE_QUEUE_KEY, JSON.stringify(orders)) } catch {}
+}
+
 /* ─── 선택 주문 임시 스토리지 (주문관리 → 송장등록 이동용) ── */
 export const SELECTED_INVOICE_KEY = 'pm_selected_for_invoice'
 
