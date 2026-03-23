@@ -15,20 +15,21 @@ type CsReason = 'simple_change' | 'defective'
 type CsStatus = 'pending' | 'processed'
 
 interface CsItem {
-  id             : string
-  type           : CsType
-  mall           : string
-  customer_name  : string
-  option_image   : string
-  product_abbr   : string
-  option_name    : string
-  barcode        : string
-  quantity       : number
-  reason         : CsReason
-  tracking_number: string
-  registered_at  : string
-  status         : CsStatus
-  processed_at  ?: string
+  id                    : string
+  type                  : CsType
+  mall                  : string
+  customer_name         : string
+  option_image          : string
+  product_abbr          : string
+  option_name           : string
+  barcode               : string
+  quantity              : number
+  reason                : CsReason
+  tracking_number       : string
+  return_tracking_number?: string
+  registered_at         : string
+  status                : CsStatus
+  processed_at         ?: string
 }
 
 /* ─── 로컬스토리지 헬퍼 ──────────────────────────────────────────── */
@@ -193,14 +194,15 @@ const mallStyle = (mall: string) => MALL_COLORS[mall] ?? { color: '#64748b', bg:
 
 /* ─── 폼 초기값 ─────────────────────────────────────────────────── */
 const EMPTY_FORM = {
-  mall           : '',
-  customer_name  : '',
-  option_image   : '',
-  product_abbr   : '',
-  option_name    : '',
-  barcode        : '',
-  reason         : 'simple_change' as CsReason,
-  tracking_number: '',
+  mall                  : '',
+  customer_name         : '',
+  option_image          : '',
+  product_abbr          : '',
+  option_name           : '',
+  barcode               : '',
+  reason                : 'simple_change' as CsReason,
+  tracking_number       : '',
+  return_tracking_number: '',
 }
 const EMPTY_QTY = 1
 
@@ -221,6 +223,7 @@ export default function CsManagementPage() {
   const [formQty,    setFormQty]    = useState(EMPTY_QTY)
   const [saving,     setSaving]     = useState(false)
   const [processing, setProcessing] = useState<string | null>(null)
+  const [editDraft,  setEditDraft]  = useState<CsItem | null>(null)
   const fileRef    = useRef<HTMLInputElement>(null)
 
   /* 드롭다운 */
@@ -230,9 +233,22 @@ export default function CsManagementPage() {
 
   useEffect(() => { setItems(loadCs()) }, [])
 
+  /* ── 옵션이미지/상품약어 누락 시 캐시에서 자동 보완 ── */
+  const enrichedItems = useMemo(() => items.map(item => {
+    if (item.option_image && item.product_abbr) return item
+    const found = lookupByBarcode(item.barcode)
+    if (!found) return item
+    return {
+      ...item,
+      option_image: item.option_image || found.option_image,
+      product_abbr: item.product_abbr || found.product_abbr,
+      option_name : item.option_name  || found.option_name,
+    }
+  }), [items])
+
   /* ── 파생 목록 ── */
   const pending = useMemo(() => {
-    let list = items.filter(i => i.status === 'pending')
+    let list = enrichedItems.filter(i => i.status === 'pending')
     if (leftSearch) {
       const q = leftSearch.toLowerCase()
       list = list.filter(i =>
@@ -241,10 +257,10 @@ export default function CsManagementPage() {
       )
     }
     return list.slice().sort((a, b) => b.registered_at.localeCompare(a.registered_at))
-  }, [items, leftSearch])
+  }, [enrichedItems, leftSearch])
 
   const processed = useMemo(() => {
-    let list = items.filter(i => i.status === 'processed' && (i.processed_at ?? '').slice(0, 7) === rightYM)
+    let list = enrichedItems.filter(i => i.status === 'processed' && (i.processed_at ?? '').slice(0, 7) === rightYM)
     if (rightSearch) {
       const q = rightSearch.toLowerCase()
       list = list.filter(i =>
@@ -253,7 +269,7 @@ export default function CsManagementPage() {
       )
     }
     return list.slice().sort((a, b) => (b.processed_at ?? '').localeCompare(a.processed_at ?? ''))
-  }, [items, rightYM, rightSearch])
+  }, [enrichedItems, rightYM, rightSearch])
 
   /* ── 모달 열기 ── */
   const openModal = (type: CsType) => {
@@ -337,6 +353,7 @@ export default function CsManagementPage() {
       option_name: form.option_name, barcode: form.barcode.trim(),
       quantity: qty, reason: form.reason,
       tracking_number: form.tracking_number,
+      return_tracking_number: form.return_tracking_number || '',
       registered_at: nowIso(), status: 'pending',
     }
     const updated = [newItem, ...items]
@@ -365,6 +382,7 @@ export default function CsManagementPage() {
           quantity: Number(r['수량']) || 1,
           reason: (r['구분'] === '불량' ? 'defective' : 'simple_change') as CsReason,
           tracking_number: String(r['송장번호'] ?? ''),
+          return_tracking_number: String(r['반송장번호'] ?? ''),
           registered_at: nowIso(), status: 'pending',
         }))
         const updated = [...newItems, ...items]
@@ -428,6 +446,20 @@ export default function CsManagementPage() {
     } finally { setProcessing(null) }
   }
 
+  /* ── 반송장번호 인라인 저장 ── */
+  const handleReturnTrackingChange = (id: string, value: string) => {
+    const updated = items.map(i => i.id === id ? { ...i, return_tracking_number: value } : i)
+    saveCs(updated); setItems(updated)
+  }
+
+  /* ── 수정 저장 ── */
+  const handleEditSave = () => {
+    if (!editDraft) return
+    const updated = items.map(i => i.id === editDraft.id ? editDraft : i)
+    saveCs(updated); setItems(updated)
+    setEditDraft(null)
+  }
+
   /* ── 삭제 ── */
   const handleDelete = (id: string, label: string) => {
     if (!confirm(`[${label}] 항목을 삭제하시겠습니까?`)) return
@@ -437,7 +469,7 @@ export default function CsManagementPage() {
 
   /* ── 엑셀 템플릿 다운로드 ── */
   const handleDownloadTemplate = () => {
-    const rows = [{ 쇼핑몰: '', 수령인: '', 옵션이미지: '', 상품약어: '', 옵션명: '', 바코드: '', 수량: 1, 구분: '단순변심', 송장번호: '' }]
+    const rows = [{ 쇼핑몰: '', 수령인: '', 옵션이미지: '', 상품약어: '', 옵션명: '', 바코드: '', 수량: 1, 구분: '단순변심', 송장번호: '', 반송장번호: '' }]
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'CS접수')
@@ -450,10 +482,10 @@ export default function CsManagementPage() {
   }
 
   /* ════ 그리드 컬럼 ════ */
-  const GRID_LEFT  = '38px 72px 1fr 42px 1.2fr 104px 32px 62px 66px 58px'
-  const GRID_RIGHT = '38px 72px 1fr 42px 1.2fr 104px 32px 62px 78px 58px'
-  const HDRS_LEFT  = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '바코드', '수량', '사유', '', '']
-  const HDRS_RIGHT = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '바코드', '수량', '사유', '처리일시', '']
+  const GRID_LEFT  = '30px 56px 0.8fr 34px 1fr 72px 80px 80px 26px 52px 56px 48px'
+  const GRID_RIGHT = '30px 56px 0.8fr 34px 1fr 72px 80px 80px 26px 52px 68px 48px'
+  const HDRS_LEFT  = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '송장번호', '반송장번호', '바코드', '수량', '사유', '', '']
+  const HDRS_RIGHT = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '송장번호', '반송장번호', '바코드', '수량', '사유', '처리일시', '']
 
   /* ════════════════════════════════════════════════════════════════ */
   return (
@@ -501,23 +533,40 @@ export default function CsManagementPage() {
               const isProc = processing === item.id
               const qty    = item.quantity ?? 1
               return (
-                <div key={item.id} style={{ display: 'grid', gridTemplateColumns: GRID_LEFT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'center' }}>
+                <div key={item.id}
+                  onClick={() => setEditDraft({ ...item })}
+                  style={{ display: 'grid', gridTemplateColumns: GRID_LEFT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'center', cursor: 'pointer', transition: 'background 120ms' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
                   <TypeBadge type={item.type} />
                   <MallBadge mall={item.mall} style={ms} />
                   <CustomerCell name={item.customer_name} date={item.registered_at} />
                   <ImageCell src={item.option_image} />
                   <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
+                  {/* 송장번호 */}
+                  <span style={{ fontSize: 9.5, fontFamily: 'monospace', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                    {item.tracking_number || '-'}
+                  </span>
+                  {/* 반송장번호 인라인 입력 */}
+                  <input
+                    value={item.return_tracking_number || ''}
+                    onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
+                    placeholder="반송장"
+                    onClick={e => e.stopPropagation()}
+                    style={{ fontSize: 9.5, fontFamily: 'monospace', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box' }}
+                  />
                   <BarcodeCell barcode={item.barcode} />
                   {/* 수량 */}
                   <span style={{ fontSize: 11, fontWeight: 800, color: '#0f172a', textAlign: 'center' }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
                   {/* 처리완료 */}
-                  <button onClick={() => handleProcess(item)} disabled={!!processing}
+                  <button onClick={e => { e.stopPropagation(); handleProcess(item) }} disabled={!!processing}
                     style={{ padding: '4px 6px', background: isProc ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: 10, fontWeight: 800, cursor: isProc ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
                     {isProc ? '처리중' : '처리완료'}
                   </button>
                   {/* 삭제 */}
-                  <button onClick={() => handleDelete(item.id, `${item.customer_name} / ${item.barcode}`)}
+                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, `${item.customer_name} / ${item.barcode}`) }}
                     title="삭제"
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: 10.5, fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
@@ -558,12 +607,29 @@ export default function CsManagementPage() {
               const ms  = mallStyle(item.mall)
               const qty = item.quantity ?? 1
               return (
-                <div key={item.id} style={{ display: 'grid', gridTemplateColumns: GRID_RIGHT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: '#fafffe' }}>
+                <div key={item.id}
+                  onClick={() => setEditDraft({ ...item })}
+                  style={{ display: 'grid', gridTemplateColumns: GRID_RIGHT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: '#fafffe', cursor: 'pointer', transition: 'background 120ms' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = '#ecfdf5')}
+                  onMouseLeave={e => (e.currentTarget.style.background = '#fafffe')}
+                >
                   <TypeBadge type={item.type} />
                   <MallBadge mall={item.mall} style={ms} />
                   <CustomerCell name={item.customer_name} date={item.registered_at} />
                   <ImageCell src={item.option_image} />
                   <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
+                  {/* 송장번호 */}
+                  <span style={{ fontSize: 9.5, fontFamily: 'monospace', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                    {item.tracking_number || '-'}
+                  </span>
+                  {/* 반송장번호 인라인 입력 */}
+                  <input
+                    value={item.return_tracking_number || ''}
+                    onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
+                    placeholder="반송장"
+                    onClick={e => e.stopPropagation()}
+                    style={{ fontSize: 9.5, fontFamily: 'monospace', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box' }}
+                  />
                   <BarcodeCell barcode={item.barcode} />
                   {/* 수량 */}
                   <span style={{ fontSize: 11, fontWeight: 800, color: '#0f172a', textAlign: 'center' }}>{qty}</span>
@@ -581,7 +647,7 @@ export default function CsManagementPage() {
                     )}
                   </div>
                   {/* 삭제 */}
-                  <button onClick={() => handleDelete(item.id, `${item.customer_name} / ${item.barcode}`)}
+                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, `${item.customer_name} / ${item.barcode}`) }}
                     title="삭제"
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: 10.5, fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
@@ -755,6 +821,12 @@ export default function CsManagementPage() {
                     </label>
                     <input value={form.tracking_number} onChange={e => setF('tracking_number', e.target.value)} placeholder="운송장번호" className="pm-input" />
                   </div>
+
+                  {/* 반송장번호 */}
+                  <div>
+                    <label style={labelStyle}>반송장번호</label>
+                    <input value={form.return_tracking_number} onChange={e => setF('return_tracking_number', e.target.value)} placeholder="반품 운송장번호 (선택)" className="pm-input" />
+                  </div>
                 </div>
 
                 {/* 저장 버튼 */}
@@ -777,7 +849,7 @@ export default function CsManagementPage() {
                 <div style={{ background: '#f8fafc', border: '2px dashed #e2e8f0', borderRadius: 14, padding: '32px 24px', textAlign: 'center', marginBottom: 20 }}>
                   <FileUp size={32} style={{ margin: '0 auto 12px', color: '#94a3b8', display: 'block' }} />
                   <p style={{ fontSize: 13.5, fontWeight: 800, color: '#334155', marginBottom: 6 }}>엑셀 파일을 업로드하세요</p>
-                  <p style={{ fontSize: 11.5, color: '#94a3b8', marginBottom: 16 }}>쇼핑몰, 수령인, 상품약어, 옵션명, 바코드, 수량, 구분, 송장번호</p>
+                  <p style={{ fontSize: 11.5, color: '#94a3b8', marginBottom: 16 }}>쇼핑몰, 수령인, 상품약어, 옵션명, 바코드, 수량, 구분, 송장번호, 반송장번호</p>
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                     <button onClick={handleDownloadTemplate}
                       style={{ padding: '8px 16px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 9, fontSize: 12.5, fontWeight: 800, cursor: 'pointer' }}>
@@ -798,7 +870,7 @@ export default function CsManagementPage() {
                       ['옵션이미지', '이미지 URL (선택)'],  ['상품약어', '상품 약어코드'],
                       ['옵션명', '예: 블랙/FREE'],          ['바코드', '바코드 번호'],
                       ['수량', '숫자 (기본값 1)'],          ['구분', '단순변심 또는 불량'],
-                      ['송장번호', '운송장번호'],
+                      ['송장번호', '운송장번호'],            ['반송장번호', '반품 운송장번호 (선택)'],
                     ].map(([col, desc]) => (
                       <div key={col} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                         <span style={{ fontSize: 10.5, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: 5, flexShrink: 0 }}>{col}</span>
@@ -813,6 +885,150 @@ export default function CsManagementPage() {
                 </button>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════ 수정 모달 ══════════════════════════════════════════════ */}
+      {editDraft && (
+        <div onClick={e => { if (e.target === e.currentTarget) setEditDraft(null) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div className="pm-card animate-scale-in" style={{ width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto' }}>
+
+            {/* 모달 헤더 */}
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <div style={{ width: 32, height: 32, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center', background: editDraft.type === 'return' ? '#fff1f2' : '#f5f3ff' }}>
+                {editDraft.type === 'return' ? <RotateCcw size={15} style={{ color: '#dc2626' }} /> : <RefreshCw size={15} style={{ color: '#7c3aed' }} />}
+              </div>
+              <div>
+                <p style={{ fontSize: 14, fontWeight: 900, color: '#0f172a' }}>CS 항목 수정</p>
+                <p style={{ fontSize: 11, color: '#94a3b8' }}>{editDraft.customer_name} / {editDraft.barcode}</p>
+              </div>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setEditDraft(null)}
+                style={{ width: 28, height: 28, borderRadius: 8, border: 'none', background: '#f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={14} style={{ color: '#64748b' }} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px' }}>
+              <div style={{ display: 'grid', gap: 12 }}>
+
+                {/* 구분 (반품/교환) */}
+                <div>
+                  <label style={labelStyle}>구분</label>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {(['return', 'exchange'] as CsType[]).map(t => (
+                      <div key={t} onClick={() => setEditDraft(d => d ? { ...d, type: t } : d)}
+                        style={{ flex: 1, padding: '8px 12px', borderRadius: 9, cursor: 'pointer', border: `2px solid ${editDraft.type === t ? (t === 'return' ? '#dc2626' : '#7c3aed') : '#e2e8f0'}`, background: editDraft.type === t ? (t === 'return' ? '#fff1f2' : '#f5f3ff') : '#fff', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 120ms' }}>
+                        {t === 'return' ? <RotateCcw size={13} style={{ color: '#dc2626', flexShrink: 0 }} /> : <RefreshCw size={13} style={{ color: '#7c3aed', flexShrink: 0 }} />}
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>{t === 'return' ? '반품' : '교환'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 쇼핑몰 */}
+                <div>
+                  <label style={labelStyle}>쇼핑몰</label>
+                  <select value={editDraft.mall} onChange={e => setEditDraft(d => d ? { ...d, mall: e.target.value } : d)} className="pm-input pm-select" style={{ fontSize: 13 }}>
+                    <option value="">쇼핑몰 선택</option>
+                    {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데온', 'SSG', '기타'].map(m => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* 주문자(수령인) */}
+                <div>
+                  <label style={labelStyle}>주문자(수령인)</label>
+                  <input value={editDraft.customer_name} onChange={e => setEditDraft(d => d ? { ...d, customer_name: e.target.value } : d)} placeholder="수령인 이름" className="pm-input" />
+                </div>
+
+                {/* 바코드 */}
+                <div>
+                  <label style={labelStyle}>바코드</label>
+                  <input value={editDraft.barcode} onChange={e => setEditDraft(d => d ? { ...d, barcode: e.target.value } : d)} placeholder="바코드 번호" className="pm-input" />
+                </div>
+
+                {/* 상품약어 + 옵션명 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>상품약어</label>
+                    <input value={editDraft.product_abbr} onChange={e => setEditDraft(d => d ? { ...d, product_abbr: e.target.value } : d)} placeholder="예: BLK-MT" className="pm-input" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>옵션명</label>
+                    <input value={editDraft.option_name} onChange={e => setEditDraft(d => d ? { ...d, option_name: e.target.value } : d)} placeholder="예: 블랙/FREE" className="pm-input" />
+                  </div>
+                </div>
+
+                {/* 옵션이미지 */}
+                <div>
+                  <label style={labelStyle}>옵션이미지 URL</label>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                    <input value={editDraft.option_image} onChange={e => setEditDraft(d => d ? { ...d, option_image: e.target.value } : d)} placeholder="https://..." className="pm-input" style={{ flex: 1 }} />
+                    {editDraft.option_image && (
+                      <img src={editDraft.option_image} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', border: '1px solid #e2e8f0', flexShrink: 0 }}
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                    )}
+                  </div>
+                </div>
+
+                {/* 송장번호 + 반송장번호 */}
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                  <div>
+                    <label style={labelStyle}>송장번호</label>
+                    <input value={editDraft.tracking_number} onChange={e => setEditDraft(d => d ? { ...d, tracking_number: e.target.value } : d)} placeholder="운송장번호" className="pm-input" />
+                  </div>
+                  <div>
+                    <label style={labelStyle}>반송장번호</label>
+                    <input value={editDraft.return_tracking_number || ''} onChange={e => setEditDraft(d => d ? { ...d, return_tracking_number: e.target.value } : d)} placeholder="반품 운송장번호" className="pm-input" />
+                  </div>
+                </div>
+
+                {/* 사유 */}
+                <div>
+                  <label style={{ ...labelStyle, marginBottom: 8 }}>사유</label>
+                  <div style={{ display: 'flex', gap: 10 }}>
+                    {(['simple_change', 'defective'] as CsReason[]).map(r => (
+                      <div key={r} onClick={() => setEditDraft(d => d ? { ...d, reason: r } : d)}
+                        style={{ flex: 1, padding: '8px 12px', borderRadius: 9, cursor: 'pointer', border: `2px solid ${editDraft.reason === r ? (r === 'defective' ? '#f97316' : '#2563eb') : '#e2e8f0'}`, background: editDraft.reason === r ? (r === 'defective' ? '#fff7ed' : '#eff6ff') : '#fff', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 120ms' }}>
+                        {r === 'defective' ? <AlertTriangle size={13} style={{ color: '#f97316', flexShrink: 0 }} /> : <Clock size={13} style={{ color: '#2563eb', flexShrink: 0 }} />}
+                        <span style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a' }}>{r === 'defective' ? '불량' : '단순변심'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* 수량 */}
+                <div>
+                  <label style={labelStyle}>수량</label>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <button onClick={() => setEditDraft(d => d ? { ...d, quantity: Math.max(1, (d.quantity ?? 1) - 1) } : d)}
+                      style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                    <input type="number" min={1} value={editDraft.quantity ?? 1}
+                      onChange={e => setEditDraft(d => d ? { ...d, quantity: Math.max(1, parseInt(e.target.value) || 1) } : d)}
+                      style={{ width: 72, height: 36, textAlign: 'center', fontSize: 16, fontWeight: 900, border: '1.5px solid #e2e8f0', borderRadius: 9, outline: 'none', color: '#0f172a' }} />
+                    <button onClick={() => setEditDraft(d => d ? { ...d, quantity: (d.quantity ?? 1) + 1 } : d)}
+                      style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: 18, fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>개</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 저장 버튼 */}
+              <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
+                <button onClick={() => setEditDraft(null)}
+                  style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                  취소
+                </button>
+                <button onClick={handleEditSave}
+                  style={{ flex: 2, padding: '10px 0', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer', background: editDraft.type === 'return' ? '#dc2626' : '#7c3aed', color: '#fff' }}>
+                  수정 저장
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

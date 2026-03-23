@@ -16,7 +16,8 @@ interface CsItem {
   id: string; type: CsType; mall: string; customer_name: string
   option_image: string; product_abbr: string; option_name: string
   barcode: string; quantity: number; reason: CsReason
-  tracking_number: string; registered_at: string
+  tracking_number: string; return_tracking_number?: string
+  registered_at: string
   status: 'pending' | 'processed'; processed_at?: string
 }
 const CS_KEY = 'pm_cs_v1'
