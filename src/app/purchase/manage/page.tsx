@@ -246,29 +246,19 @@ export default function PurchaseManagePage() {
   }, [products])
 
   /* ── 발주 추천 목록 ──
-     조건 1: 판매중 상품 중 현재고 ≤ 2 (재고 부족) — pm_products 기준
-     조건 2: 미입고 발주가 있는 상품 — pm_purchases 기준
-     조건 3: 마지막 발주일(또는 SHIP_BASE_DATE) 이후 판매 이력 — 출고내역 기준
+     조건: 판매중(active) 상품 중 현재고 ≤ 3 (0·1·2·3개)
+     표시는 재고 오름차순 (0개 최상단)
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const result: QualOpt[] = []
     for (const prod of products) {
-      if (prod.status === 'pending_delete') continue
+      if (prod.status !== 'active') continue  // 판매중 상품만
       for (const opt of prod.options) {
-        // 현재고 / 미입고: pm_products 기준
         const stock = opt.current_stock ?? 0
-        const unr   = unreceivedMap[opt.barcode || ''] || 0
-        // 판매수량: 출고내역 기준 (마지막 발주일 이후)
-        const sold  = shipSoldMap[opt.barcode || ''] || 0
+        if (stock > 3) continue              // 현재고 3개 이하만 (0·1·2·3)
 
-        const isLow  = stock <= 2
-        const hasUnr = unr > 0
-        const hasSold = sold > 0
-        if (!isLow && !hasUnr && !hasSold) continue
-        const reason: QualOpt['reason'] =
-          (isLow && hasUnr) ? 'both' :
-          isLow             ? 'lowStock' :
-          hasUnr            ? 'unreceived' : 'sold'
+        const unr  = unreceivedMap[opt.barcode || ''] || 0
+        const sold = shipSoldMap[opt.barcode || ''] || 0
         result.push({
           key:          `${prod.id}__${opt.barcode || opt.name}`,
           prodId:       prod.id,
@@ -280,11 +270,12 @@ export default function PurchaseManagePage() {
           currentStock: stock,
           unreceived:   unr,
           sold,
-          reason,
+          reason:       'lowStock',
         })
       }
     }
-    return result.sort((a, b) => (a.barcode || '').localeCompare(b.barcode || ''))
+    // 재고 오름차순 → 같은 재고면 바코드 오름차순
+    return result.sort((a, b) => a.currentStock - b.currentStock || (a.barcode || '').localeCompare(b.barcode || ''))
   }, [products, unreceivedMap, shipSoldMap])
 
   // 추천 목록 이미지 로딩: qualOpts 내 prodId 목록이 바뀔 때마다 재실행
@@ -575,15 +566,9 @@ export default function PurchaseManagePage() {
       {/* ── 헤더 ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', margin: 0 }}>📦 발주관리</h2>
-        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-          <span style={{ fontSize: 11, color: '#94a3b8' }}>
-            추천 {qualOpts.length}건 · 선택 {selectedOpts.length}건
-          </span>
-          <button onClick={() => { loadPurchases(); loadProducts(true); setShippedOrders(loadShippedOrders()); setMappings(loadMappings()) }}
-            style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-            <RefreshCw size={12} />새로고침
-          </button>
-        </div>
+        <span style={{ fontSize: 11, color: '#94a3b8' }}>
+          추천 {qualOpts.length}건 · 선택 {selectedOpts.length}건
+        </span>
       </div>
 
       {/* ── 2단 메인 레이아웃 ── */}
@@ -595,21 +580,18 @@ export default function PurchaseManagePage() {
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <AlertTriangle size={14} style={{ color: '#d97706' }} />
             <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>발주 추천 목록</span>
+            <span style={{ fontSize: 10.5, color: '#94a3b8', fontWeight: 600 }}>판매중 · 현재고 3개 이하</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
-              <span style={{ fontSize: 11, background: '#fff1f2', color: '#dc2626', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
-                재고↓: {qualOpts.filter(o => o.reason === 'lowStock' || o.reason === 'both').length}
-              </span>
-              <span style={{ fontSize: 11, background: '#fffbeb', color: '#d97706', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
-                미입고: {qualOpts.filter(o => o.reason === 'unreceived' || o.reason === 'both').length}
-              </span>
-              <span style={{ fontSize: 11, background: '#eff6ff', color: '#6366f1', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
-                판매: {qualOpts.filter(o => o.reason === 'sold').length}
-              </span>
-              <button
-                onClick={() => { loadPurchases(); loadProducts(true); setShippedOrders(loadShippedOrders()); setMappings(loadMappings()) }}
-                style={{ fontSize: 11, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '4px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
-                🔄 새로고침
-              </button>
+              {qualOpts.filter(o => o.currentStock === 0).length > 0 && (
+                <span style={{ fontSize: 11, background: '#fff1f2', color: '#dc2626', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+                  재고 0개: {qualOpts.filter(o => o.currentStock === 0).length}
+                </span>
+              )}
+              {qualOpts.filter(o => o.currentStock > 0 && o.currentStock <= 3).length > 0 && (
+                <span style={{ fontSize: 11, background: '#fffbeb', color: '#d97706', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+                  1~3개: {qualOpts.filter(o => o.currentStock > 0 && o.currentStock <= 3).length}
+                </span>
+              )}
             </div>
           </div>
 
@@ -623,7 +605,7 @@ export default function PurchaseManagePage() {
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 8 }}>
               <Package size={36} style={{ opacity: 0.2 }} />
               <p style={{ fontSize: 13, fontWeight: 700 }}>{products.length === 0 ? '상품 데이터 로딩 중...' : '발주가 필요한 상품이 없습니다'}</p>
-              <p style={{ fontSize: 11, color: '#cbd5e1' }}>{products.length === 0 ? '잠시 후 자동으로 표시됩니다' : '재고 2개 이하 · 미입고 · 판매 이력 상품이 여기 표시됩니다'}</p>
+              <p style={{ fontSize: 11, color: '#cbd5e1' }}>{products.length === 0 ? '잠시 후 자동으로 표시됩니다' : '판매중 상품 중 현재고 3개 이하인 상품이 없습니다'}</p>
             </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
@@ -638,21 +620,16 @@ export default function PurchaseManagePage() {
                 <tbody>
                   {qualOpts.map(opt => {
                     const sel = selectedKeys.has(opt.key)
-                    const rowBg = sel ? '#eff6ff' : opt.reason === 'unreceived' ? '#fffbeb' : opt.reason === 'sold' ? '#f8f7ff' : undefined
+                    const rowBg = sel ? '#eff6ff' : opt.currentStock === 0 ? '#fff7f7' : undefined
                     return (
                       <tr key={opt.key} style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer', transition: 'background 0.15s' }}
                         onClick={() => toggleSelect(opt)}>
-                        {/* 상태 배지 */}
-                        <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 52, flexShrink: 0 }}>
-                          {opt.reason === 'lowStock'   && <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>재고↓</span>}
-                          {opt.reason === 'unreceived' && <span style={{ fontSize: 8.5, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>미입고</span>}
-                          {opt.reason === 'both'       && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-                              <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>재고↓</span>
-                              <span style={{ fontSize: 8.5, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>미입고</span>
-                            </div>
-                          )}
-                          {opt.reason === 'sold'       && <span style={{ fontSize: 8.5, background: '#eff6ff', color: '#6366f1', fontWeight: 800, padding: '1px 4px', borderRadius: 4, whiteSpace: 'nowrap' }}>판매</span>}
+                        {/* 재고 수준 배지 */}
+                        <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 44, flexShrink: 0 }}>
+                          {opt.currentStock === 0
+                            ? <span style={{ fontSize: 8.5, background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>품절</span>
+                            : <span style={{ fontSize: 8.5, background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>부족</span>
+                          }
                         </td>
                         {/* 이미지 (약어 앞으로 이동) */}
                         <td style={{ padding: '4px 5px', textAlign: 'center', width: 46 }}>
@@ -712,10 +689,15 @@ export default function PurchaseManagePage() {
             <PackagePlus size={14} style={{ color: '#2563eb' }} />
             <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>발주 확정</span>
             {selectedOpts.length > 0 && (
-              <span style={{ marginLeft: 'auto', fontSize: 11, background: '#eff6ff', color: '#2563eb', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+              <span style={{ fontSize: 11, background: '#eff6ff', color: '#2563eb', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                 {selectedOpts.length}종
               </span>
             )}
+            <button
+              onClick={() => { loadPurchases(); loadProducts(true); setShippedOrders(loadShippedOrders()); setMappings(loadMappings()) }}
+              style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <RefreshCw size={12} />새로고침
+            </button>
           </div>
 
           {selectedOpts.length === 0 ? (
