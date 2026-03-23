@@ -1,7 +1,8 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import {
   Package, ShoppingCart, AlertTriangle, TrendingUp,
   Truck, MessageSquare, RefreshCw, ChevronLeft, ChevronRight,
@@ -209,29 +210,88 @@ function selMonthLabel(day: number) {
 
 /* ── 대시보드 ─────────────────────────────────────────────── */
 export default function DashboardPage() {
-  const today = getToday()
-  const curYM = getCurYM()
+  const today    = getToday()
+  const curYM    = getCurYM()
+  const pathname = usePathname()
 
-  const [orders,    setOrders]    = useState<Order[]>([])
-  const [shipped,   setShipped]   = useState<ShippedOrder[]>([])
-  const [products,  setProducts]  = useState<CachedProduct[]>([])
-  const [csItems,   setCsItems]   = useState<CsItem[]>([])
-  const [purchases, setPurchases] = useState<Purchase[]>([])
-  const [loading,   setLoading]   = useState(true)
-  const [selMonth,  setSelMonth]  = useState(curYM)
+  const [orders,     setOrders]     = useState<Order[]>([])
+  const [shipped,    setShipped]    = useState<ShippedOrder[]>([])
+  const [products,   setProducts]   = useState<CachedProduct[]>([])
+  const [csItems,    setCsItems]    = useState<CsItem[]>([])
+  const [purchases,  setPurchases]  = useState<Purchase[]>([])
+  const [loading,    setLoading]    = useState(true)
+  const [selMonth,   setSelMonth]   = useState(curYM)
+  const [lastUpdate, setLastUpdate] = useState<Date | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   _selMonthForChart = selMonth
 
-  useEffect(() => {
+  /* ── localStorage 데이터 즉시 갱신 ── */
+  const refreshLocal = useCallback(() => {
     setOrders(loadOrders())
     setShipped(loadShippedOrders())
     setProducts(loadCachedProducts())
     setCsItems(loadCsItems())
-    setLoading(false)
-    // 발주 데이터 Supabase 비동기 로드
+    setLastUpdate(new Date())
+  }, [])
+
+  /* ── 발주 Supabase 로드 ── */
+  const refreshPurchases = useCallback(() => {
     supabase.from('pm_purchases').select('id,order_date,status,items')
       .then(({ data }) => { if (data) setPurchases(data as Purchase[]) })
   }, [])
+
+  /* ── 전체 새로고침 (버튼용) ── */
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true)
+    refreshLocal()
+    refreshPurchases()
+    setTimeout(() => setRefreshing(false), 600)
+  }, [refreshLocal, refreshPurchases])
+
+  /* ── 초기 로드 ── */
+  useEffect(() => {
+    refreshLocal()
+    refreshPurchases()
+    setLoading(false)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── SPA 내비게이션으로 대시보드 진입 시마다 갱신 ── */
+  useEffect(() => {
+    if (!loading) refreshLocal()
+  }, [pathname]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  /* ── 실시간 감지: storage(다른 탭) / visibilitychange / focus ── */
+  useEffect(() => {
+    const WATCH_KEYS = new Set([
+      'pm_orders_v1', 'pm_shipped_orders_v1', 'pm_invoice_queue_v1',
+      'pm_products_cache_v1', 'pm_cs_v1',
+    ])
+    const onStorage = (e: StorageEvent) => {
+      if (e.key && WATCH_KEYS.has(e.key)) refreshLocal()
+    }
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refreshLocal()
+    }
+    const onFocus = () => refreshLocal()
+
+    window.addEventListener('storage', onStorage)
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onFocus)
+    }
+  }, [refreshLocal])
+
+  /* ── 30초 자동 폴링 ── */
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.visibilityState === 'visible') refreshLocal()
+    }, 30_000)
+    return () => clearInterval(id)
+  }, [refreshLocal])
 
   /* ── KPI ── */
   const todayOrders  = useMemo(() => orders.filter(o => o.order_date === today), [orders, today])
@@ -380,8 +440,21 @@ export default function DashboardPage() {
                 <line x1="0" y1="2" x2="14" y2="2" stroke="#818cf8" strokeWidth="1" strokeDasharray="4 2"/>
               </svg>매출
             </span>
-            {/* 오른쪽: 월 네비 + 통계 가로 배치 */}
+            {/* 마지막 업데이트 시간 */}
+            {lastUpdate && (
+              <span style={{ fontSize:9, color:'#cbd5e1', fontWeight:600, flexShrink:0 }}>
+                {lastUpdate.getHours().toString().padStart(2,'0')}:{lastUpdate.getMinutes().toString().padStart(2,'0')}:{lastUpdate.getSeconds().toString().padStart(2,'0')} 기준
+              </span>
+            )}
+            {/* 오른쪽: 새로고침 + 월 네비 + 통계 가로 배치 */}
             <div style={{ display:'flex', alignItems:'center', gap:6, marginLeft:'auto' }}>
+              {/* 수동 새로고침 버튼 */}
+              <button
+                onClick={handleRefresh}
+                title="데이터 새로고침"
+                style={{ width:22,height:22,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center', flexShrink:0 }}>
+                <RefreshCw size={11} color="#64748b" style={{ animation: refreshing ? 'spin 0.6s linear infinite' : 'none' }} />
+              </button>
               {/* 월 네비 */}
               <div style={{ display:'flex', alignItems:'center', gap:2 }}>
                 <button onClick={() => setSelMonth(m => shiftMonth(m,-1))}
