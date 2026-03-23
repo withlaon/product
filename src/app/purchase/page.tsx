@@ -7,7 +7,7 @@ import {
   apiFetchPurchases,
   DEFAULT_EXCHANGE_RATE, unitToOrderKrw,
 } from './_shared'
-import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp, AlertTriangle } from 'lucide-react'
 
 type FP = PmProduct & { cost_price?: number; cost_currency?: string }
 
@@ -71,6 +71,9 @@ export default function PurchaseMainPage() {
   const [expandedPoId, setExpandedPoId] = useState<string | null>(null)
   const [expandedRcId, setExpandedRcId] = useState<string | null>(null)
 
+  /* 발주 추천 패널 열림 여부 */
+  const [showRecommend, setShowRecommend] = useState(true)
+
   const loadPurchases = useCallback(async () => {
     const data = await apiFetchPurchases()
     setPurchases(data)
@@ -131,6 +134,27 @@ export default function PurchaseMainPage() {
     poList.reduce((s, p) => s + calcOrderKrw(p, products, exchangeRate), 0)
   , [poList, products, exchangeRate])
 
+  /* 현재고 3개 이하 옵션 목록 (재고 오름차순) */
+  const lowStockItems = useMemo(() => {
+    const items: { code: string; name: string; abbr: string; optName: string; barcode: string; stock: number }[] = []
+    for (const p of products) {
+      for (const opt of p.options) {
+        const stock = opt.current_stock ?? 0
+        if (stock <= 3) {
+          items.push({
+            code:    p.code,
+            name:    p.name,
+            abbr:    p.abbr || p.name,
+            optName: opt.name,
+            barcode: opt.barcode || '',
+            stock,
+          })
+        }
+      }
+    }
+    return items.sort((a, b) => a.stock - b.stock)
+  }, [products])
+
   const thStyle = (align: 'left'|'center' = 'center'): React.CSSProperties => ({
     padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:align, borderBottom:'1px solid #f1f5f9',
   })
@@ -139,7 +163,85 @@ export default function PurchaseMainPage() {
   })
 
   return (
-    <div className="pm-page" style={{ display:'flex', flexDirection:'column', height:'100%', gap:0 }}>
+    <div className="pm-page" style={{ display:'flex', flexDirection:'column', height:'100%', gap:10 }}>
+
+      {/* ── 발주 추천 목록 (현재고 3개 이하) ── */}
+      <div className="pm-card" style={{ flexShrink:0, padding:0, overflow:'hidden' }}>
+        {/* 헤더 */}
+        <button
+          onClick={() => setShowRecommend(v => !v)}
+          style={{ width:'100%', display:'flex', alignItems:'center', gap:8, padding:'9px 14px',
+            background:'none', border:'none', cursor:'pointer', textAlign:'left' }}
+        >
+          <AlertTriangle size={14} color={lowStockItems.length > 0 ? '#d97706' : '#94a3b8'} strokeWidth={2.5}/>
+          <span style={{ fontSize:13, fontWeight:900, color:'#0f172a', flex:1 }}>
+            발주 추천 목록
+          </span>
+          {lowStockItems.length > 0 && (
+            <span style={{ fontSize:11, fontWeight:800, background:'#fef3c7', color:'#92400e',
+              padding:'2px 9px', borderRadius:20, border:'1px solid #fde68a' }}>
+              재고부족 {lowStockItems.length}개
+            </span>
+          )}
+          {lowStockItems.length === 0 && (
+            <span style={{ fontSize:11, fontWeight:700, color:'#22c55e' }}>재고 여유 ✓</span>
+          )}
+          <ChevronDown size={13} color="#94a3b8"
+            style={{ transform: showRecommend ? 'rotate(180deg)' : 'none', transition:'transform 0.2s' }}/>
+        </button>
+
+        {/* 펼쳐진 목록 */}
+        {showRecommend && (
+          lowStockItems.length === 0
+            ? <div style={{ padding:'10px 14px 12px', fontSize:12, color:'#94a3b8', textAlign:'center' }}>
+                현재고 3개 이하인 상품이 없습니다.
+              </div>
+            : <div style={{ overflowX:'auto' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
+                  <thead>
+                    <tr style={{ background:'#fffbeb', borderTop:'1px solid #fef3c7' }}>
+                      {['#','상품코드','상품명(약칭)','옵션명','바코드','현재고'].map((h,i) => (
+                        <th key={h} style={{ padding:'5px 10px', fontWeight:800, color:'#92400e',
+                          textAlign: i === 0 ? 'center' : i <= 4 ? 'left' : 'center',
+                          fontSize:10.5, borderBottom:'1px solid #fde68a', whiteSpace:'nowrap' }}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {lowStockItems.map((item, idx) => {
+                      const isZero = item.stock === 0
+                      return (
+                        <tr key={`${item.code}-${item.optName}-${idx}`}
+                          style={{ borderBottom:'1px solid #fef9c3',
+                            background: isZero ? '#fff7ed' : idx % 2 === 0 ? '#fffdf5' : 'white' }}>
+                          <td style={{ padding:'5px 10px', textAlign:'center', color:'#94a3b8', fontSize:10.5, fontWeight:700 }}>{idx+1}</td>
+                          <td style={{ padding:'5px 10px', fontFamily:'monospace', fontSize:11, color:'#059669', fontWeight:800 }}>{item.code}</td>
+                          <td style={{ padding:'5px 10px', fontSize:11.5, fontWeight:700, color:'#1e293b', maxWidth:160 }}>
+                            <span style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.abbr}</span>
+                          </td>
+                          <td style={{ padding:'5px 10px', fontSize:11, color:'#475569', maxWidth:120 }}>
+                            <span style={{ display:'block', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.optName || '-'}</span>
+                          </td>
+                          <td style={{ padding:'5px 10px', fontFamily:'monospace', fontSize:10.5, color:'#64748b' }}>{item.barcode || '-'}</td>
+                          <td style={{ padding:'5px 10px', textAlign:'center' }}>
+                            <span style={{ fontSize:12, fontWeight:900,
+                              background: isZero ? '#fee2e2' : '#fef3c7',
+                              color:      isZero ? '#dc2626' : '#d97706',
+                              padding:'2px 10px', borderRadius:6, whiteSpace:'nowrap' }}>
+                              {item.stock}개
+                            </span>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+        )}
+      </div>
+
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, flex:1, overflow:'hidden' }}>
 
         {/* ── 왼쪽: 발주내역 ── */}
