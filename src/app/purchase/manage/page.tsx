@@ -275,7 +275,7 @@ export default function PurchaseManagePage() {
       }
     }
     // 재고 오름차순 → 같은 재고면 바코드 오름차순
-    return result.sort((a, b) => a.currentStock - b.currentStock || (a.barcode || '').localeCompare(b.barcode || ''))
+    return result.sort((a, b) => (a.barcode || '').localeCompare(b.barcode || ''))
   }, [products, unreceivedMap, shipSoldMap])
 
   // 추천 목록 이미지 로딩: qualOpts 내 prodId 목록이 바뀔 때마다 재실행
