@@ -540,6 +540,8 @@ function MallMappingModal({
       allMaps[row.mallKey] = mallRows
     }
     saveLocalMappings(allMaps)
+    // 매핑관리 탭이 같은 탭(SPA)에 마운트돼 있을 경우 실시간 갱신
+    try { window.dispatchEvent(new CustomEvent('pm_mapping_updated')) } catch {}
     onSave(cp, rm)
   }
 

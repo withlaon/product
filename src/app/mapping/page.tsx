@@ -130,21 +130,24 @@ export default function MappingPage() {
     syncExisting()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── 상품관리탭에서 직접 매핑 시 localStorage 변경 감지 → 매핑 목록 갱신 ── */
+  /* ── 상품관리탭 매핑 저장 감지 → 매핑 목록 실시간 갱신 ── */
   useEffect(() => {
+    const refresh = () => setMappings(loadMappings())
+
+    // 같은 탭(SPA 내) 이벤트: 상품관리탭 매핑완료 시 dispatch
+    window.addEventListener('pm_mapping_updated', refresh)
+    // 다른 탭(cross-tab) storage 이벤트
     const onStorage = (e: StorageEvent) => {
-      if (e.key === MAPPING_KEY || e.key === 'pm_products_mapping_signal') {
-        setMappings(loadMappings())
-      }
+      if (e.key === MAPPING_KEY || e.key === 'pm_products_mapping_signal') refresh()
     }
+    // 탭/윈도우 포커스 복귀 시
     const onVisible = () => {
-      if (document.visibilityState === 'visible') {
-        setMappings(loadMappings())
-      }
+      if (document.visibilityState === 'visible') refresh()
     }
     window.addEventListener('storage', onStorage)
     document.addEventListener('visibilitychange', onVisible)
     return () => {
+      window.removeEventListener('pm_mapping_updated', refresh)
       window.removeEventListener('storage', onStorage)
       document.removeEventListener('visibilitychange', onVisible)
     }
@@ -623,7 +626,7 @@ export default function MappingPage() {
                               style={{ cursor:'pointer', width:14, height:14 }}
                             />
                           </th>
-                          {['#', '쇼핑몰 상품ID', '쇼핑몰 상품명', '쇼핑몰 옵션', '매핑 상품명 / 상품코드', '매핑 옵션', '바코드', '판매가', '상태', '관리'].map((h, i) => (
+                          {['#', '쇼핑몰 상품ID', '상품코드', '쇼핑몰 상품명', '쇼핑몰 옵션', '매핑 상품명', '판매가', '상태', '관리'].map((h, i) => (
                             <th key={i} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 10.5, fontWeight: 900, color: '#94a3b8', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                           ))}
                         </tr>
@@ -643,25 +646,25 @@ export default function MappingPage() {
                                   style={{ cursor:'pointer', width:14, height:14 }} />
                               </td>
                               <td style={{ padding: '9px 12px', fontSize: 11.5, color: '#94a3b8', fontWeight: 700 }}>{realIdx + 1}</td>
-                              <td style={{ padding: '9px 12px', fontSize: 11.5, color: '#64748b', fontFamily: 'monospace' }}>{row.mall_product_id || '-'}</td>
+                              <td style={{ padding: '9px 12px', fontSize: 11.5, color: '#64748b', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.mall_product_id || '-'}</td>
+                              <td style={{ padding: '9px 12px' }}>
+                                {row.matched_product_code ? (
+                                  <span style={{ fontSize: 11, fontWeight: 800, fontFamily: 'monospace', background: '#f0fdf4', color: '#059669', padding: '2px 7px', borderRadius: 5, whiteSpace: 'nowrap' }}>
+                                    {row.matched_product_code}
+                                  </span>
+                                ) : <span style={{ color: '#e2e8f0', fontSize: 11 }}>-</span>}
+                              </td>
                               <td style={{ padding: '9px 12px', fontSize: 12.5, fontWeight: 700, color: '#1e293b', maxWidth: 160 }}>
                                 <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.mall_product_name}</span>
                               </td>
                               <td style={{ padding: '9px 12px', fontSize: 12, color: '#64748b', maxWidth: 120 }}>
                                 <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.mall_option || '-'}</span>
                               </td>
-                              <td style={{ padding: '9px 12px', maxWidth: 180 }}>
-                                <span style={{ display: 'block', fontSize: 12.5, fontWeight: 700, color: row.matched_product_name ? '#1e293b' : '#cbd5e1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              <td style={{ padding: '9px 12px', fontSize: 12.5, fontWeight: 700, color: row.matched_product_name ? '#1e293b' : '#cbd5e1', maxWidth: 160 }}>
+                                <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {row.matched_product_name || <span style={{ color: '#cbd5e1' }}>미매핑</span>}
                                 </span>
-                                {row.matched_product_code && (
-                                  <span style={{ display: 'inline-block', marginTop: 2, fontSize: 10, fontWeight: 800, fontFamily: 'monospace', background: '#f0fdf4', color: '#059669', padding: '1px 6px', borderRadius: 4, maxWidth: '100%', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                    {row.matched_product_code}
-                                  </span>
-                                )}
                               </td>
-                              <td style={{ padding: '9px 12px', fontSize: 12, color: row.matched_option ? '#64748b' : '#e2e8f0' }}>{row.matched_option || '-'}</td>
-                              <td style={{ padding: '9px 12px', fontSize: 11, fontFamily: 'monospace', color: '#334155' }}>{row.matched_barcode || '-'}</td>
                               <td style={{ padding: '9px 12px' }}>
                                 {row.mall_price ? (
                                   <span style={{ fontSize: 12.5, fontWeight: 800, color: '#2563eb' }}>
