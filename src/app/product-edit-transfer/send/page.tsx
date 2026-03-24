@@ -41,9 +41,29 @@ function todayStr() {
   return new Date().toISOString().slice(0, 10)
 }
 
-/* ─── Excel 다운로드 헬퍼 ────────────────────────────────── */
+/* ─── 숫자만 추출 (송장번호 대시 제거) ──────────────────── */
+function digitsOnly(val: unknown): string {
+  return String(val ?? '').replace(/\D/g, '')
+}
+
+/* ─── Excel 다운로드 헬퍼 (헤더 포함) ───────────────────── */
 function triggerExcelDownload(rows: Record<string, unknown>[], filename: string) {
   const ws  = XLSX.utils.json_to_sheet(rows)
+  const wb  = XLSX.utils.book_new()
+  XLSX.utils.book_append_sheet(wb, ws, '송장')
+  const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+  const blob = new Blob([out], { type: 'application/octet-stream' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+/* ─── Excel 다운로드 헬퍼 (헤더 없음 · 2차원 배열) ─────── */
+function triggerExcelDownloadNoHeader(data: unknown[][], filename: string) {
+  const ws  = XLSX.utils.aoa_to_sheet(data)
   const wb  = XLSX.utils.book_new()
   XLSX.utils.book_append_sheet(wb, ws, '송장')
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
@@ -72,7 +92,7 @@ function downloadMarketPlusInvoice(orders: ShippedOrder[]) {
     const ed     = o.extra_data ?? {}
     const 주문번호 = String(ed['주문번호'] ?? o.order_number)
     const 품목별   = String(ed['품목별_주문번호'] ?? ed['품목별 주문번호'] ?? o.order_number)
-    const 운송장   = o.tracking_number ?? ''
+    const 운송장   = digitsOnly(o.tracking_number)
     const qty    = item?.quantity ?? 1
     const cols = [`"${주문번호}"`, `"${품목별}"`, `"${운송장}"`]
     if (qty > 1) cols.push(`"${qty}"`)
@@ -96,11 +116,11 @@ function downloadGSShopInvoice(orders: ShippedOrder[]) {
     alert('지에스샵 배송처리된 주문이 없습니다.')
     return
   }
-  const rows = gsOrders.map(o => ({
-    '출하지시번호': String(o.extra_data?.['출하지시번호'] ?? o.order_number),
-    '송장번호':     o.tracking_number ?? '',
-  }))
-  triggerExcelDownload(rows, `지에스샵_송장_${todayStr()}.xlsx`)
+  const data: unknown[][] = gsOrders.map(o => [
+    String(o.extra_data?.['출하지시번호'] ?? o.order_number),
+    digitsOnly(o.tracking_number),
+  ])
+  triggerExcelDownloadNoHeader(data, `지에스샵_송장_${todayStr()}.xlsx`)
 }
 
 /* ─── 일반 쇼핑몰 송장 파일 생성 ────────────────────────── */
@@ -116,7 +136,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
   const allDayData = loadAllDayData(mallId)
   const trackingMap: Record<string, { carrier: string; tracking: string }> = {}
   mallOrders.forEach(o => {
-    trackingMap[o.order_number] = { carrier: o.carrier ?? '', tracking: o.tracking_number ?? '' }
+    trackingMap[o.order_number] = { carrier: o.carrier ?? '', tracking: digitsOnly(o.tracking_number) }
   })
   const rows: Record<string, unknown>[] = []
   let usedRaw = false
@@ -145,7 +165,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
         '수량': item?.quantity ?? 1, '판매가': item?.unit_price ?? 0,
         '수취인': o.customer_name, '연락처': o.customer_phone ?? '',
         '배송주소': o.shipping_address, '메모': o.memo ?? '',
-        '택배사': o.carrier ?? '', '송장번호': o.tracking_number ?? '',
+        '택배사': o.carrier ?? '', '송장번호': digitsOnly(o.tracking_number),
       })
     })
   }
