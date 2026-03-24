@@ -295,12 +295,23 @@ export default function DashboardPage() {
     return () => clearInterval(id)
   }, [refreshLocal])
 
+  /* ── 세 저장소 중복 제거 합산 (KPI·차트 공통 기준) ── */
+  const allOrdersMerged = useMemo(() => {
+    const seen = new Set<string>()
+    const result: (Order | ShippedOrder)[] = []
+    for (const o of [...orders, ...invoiceQueue, ...shipped]) {
+      if (!seen.has(o.id)) { seen.add(o.id); result.push(o) }
+    }
+    return result
+  }, [orders, invoiceQueue, shipped])
+
   /* ── KPI ── */
   const todayOrders  = useMemo(() => orders.filter(o => o.order_date === today), [orders, today])
   const monthRevenue = useMemo(() =>
-    orders.filter(o => o.order_date?.slice(0,7) === curYM && o.status !== 'cancelled')
-          .reduce((s, o) => s + (o.total_amount ?? 0), 0),
-  [orders, curYM])
+    allOrdersMerged
+      .filter(o => o.order_date?.slice(0,7) === curYM && o.status !== 'cancelled')
+      .reduce((s, o) => s + (o.total_amount ?? 0), 0),
+  [allOrdersMerged, curYM])
 
   const lowStock = useMemo(() => products
     .filter(p => p.status !== 'pending_delete')
@@ -347,16 +358,7 @@ export default function DashboardPage() {
        (주문이 어느 단계에 있든 order_date 기준으로 집계) ── */
   const chartData = useMemo(() => {
     const days = daysInMonth(selMonth)
-    // 세 저장소를 합쳐 ID 기준 중복 제거
-    const seenIds = new Set<string>()
-    const allOrders: (Order | ShippedOrder)[] = []
-    for (const o of [...orders, ...invoiceQueue, ...shipped]) {
-      if (!seenIds.has(o.id)) {
-        seenIds.add(o.id)
-        allOrders.push(o)
-      }
-    }
-    const mo = allOrders.filter(
+    const mo = allOrdersMerged.filter(
       o => o.order_date?.slice(0,7) === selMonth && o.status !== 'cancelled'
     )
     return Array.from({ length: days }, (_, i) => {
@@ -365,7 +367,7 @@ export default function DashboardPage() {
       const dayO = mo.filter(o => o.order_date === date)
       return { day, count: dayO.length, amount: dayO.reduce((s,o) => s+(o.total_amount??0), 0) }
     })
-  }, [orders, invoiceQueue, shipped, selMonth])
+  }, [allOrdersMerged, selMonth])
 
   const monthTotal  = useMemo(() => chartData.reduce((s,d) => s+d.count, 0), [chartData])
   const monthRevSel = useMemo(() => chartData.reduce((s,d) => s+d.amount, 0), [chartData])
