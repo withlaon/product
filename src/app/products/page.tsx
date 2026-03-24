@@ -510,7 +510,8 @@ function MallMappingModal({
   )
 
   const handleSave = () => {
-    const cp = rows.filter(r => r.price && Number(r.price) > 0)
+    // productId가 비어있으면 해당 쇼핑몰의 판매가·등록현황도 함께 제거
+    const cp = rows.filter(r => r.productId.trim() && r.price && Number(r.price) > 0)
                    .map(r => ({
                      channel:   r.mall,
                      price:     Number(r.price),
@@ -576,7 +577,8 @@ function MallMappingModal({
         </div>
       ))}
       <p style={{ fontSize:11, color:'#94a3b8', marginTop:10 }}>
-        * 상품ID 입력한 쇼핑몰 → 쇼핑몰 등록현황 표시 + 매핑관리탭에도 자동 반영됩니다.
+        * 상품ID 입력한 쇼핑몰 → 쇼핑몰 등록현황·판매가 표시 + 매핑관리탭에도 자동 반영됩니다.<br/>
+        * 상품ID를 비우면 해당 쇼핑몰의 매핑·등록현황·판매가가 모두 삭제됩니다.
       </p>
       <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
         <Button variant="outline" onClick={onClose}>취소</Button>
