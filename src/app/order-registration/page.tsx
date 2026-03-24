@@ -234,6 +234,36 @@ function parseTossShoppingRow(row: Record<string, unknown>, idx: number): RegOrd
   }
 }
 
+/* ─── 지에스샵 전용 파싱 ─────────────────────────────────── */
+function parseGSShopRow(row: Record<string, unknown>, idx: number): RegOrder {
+  const orderNum = String(row['출하지시번호'] ?? `AUTO-GS-${Date.now()}-${idx}`)
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
+    order_number: orderNum,
+    customer_name:    String(row['수취인'] ?? '-'),
+    customer_phone:   String(row['수취인핸드폰'] ?? ''),
+    shipping_address: String(row['수취인주소'] ?? ''),
+    items: [{
+      product_name: String(row['상품명(송장)'] ?? row['상품명(인터넷)'] ?? '-'),
+      sku:          String(row['협력사상품코드'] ?? ''),
+      quantity:     Number(row['수량'] ?? 1),
+      unit_price:   Number(row['협력사지급금액'] ?? 0),
+      option:       String(row['주문옵션'] ?? ''),
+    }],
+    total_amount: Number(row['협력사지급금액'] ?? 0),
+    status: 'pending',
+    memo: String(row['배송메세지'] ?? ''),
+    extra_data: {
+      import_source:   '지에스샵',
+      출하지시번호:    orderNum,
+      우편번호:        String(row['우편번호'] ?? ''),
+      상품상세코드:    String(row['상품상세코드'] ?? ''),
+      상품명_인터넷:   String(row['상품명(인터넷)'] ?? ''),
+      협력사지급금액:  String(row['협력사지급금액'] ?? ''),
+    },
+  }
+}
+
 /* ─── 올웨이즈 전용 파싱 ─────────────────────────────────── */
 function parseAlwaysRow(row: Record<string, unknown>, idx: number): RegOrder {
   const orderNum = String(row['주문아이디'] ?? `AUTO-ALWAYS-${Date.now()}-${idx}`)
@@ -390,6 +420,7 @@ export default function OrderRegistrationPage() {
         const isMarketPlus   = selectedMall === 'marketplus'
         const isTossShopping = selectedMall === 'tossshopping'
         const isAlways       = selectedMall === 'always'
+        const isGSShop       = selectedMall === 'gsshop'
         const uploadedAt     = new Date().toISOString()
 
         // 마켓플러스: 자동 매핑 수집
@@ -405,6 +436,7 @@ export default function OrderRegistrationPage() {
           }
           if (isTossShopping) return parseTossShoppingRow(row, idx)
           if (isAlways)       return parseAlwaysRow(row, idx)
+          if (isGSShop)       return parseGSShopRow(row, idx)
           return parseGenericRow(row, idx, today, mallLabel)
         })
 
@@ -472,7 +504,7 @@ export default function OrderRegistrationPage() {
 
         const existingMain = loadOrders()
         // 같은 import_source+날짜 이전 업로드 제거
-        const importSrc = isMarketPlus ? 'marketplus' : mallLabel  // tossshopping='토스쇼핑', always='올웨이즈'
+        const importSrc = isMarketPlus ? 'marketplus' : mallLabel  // tossshopping='토스쇼핑', always='올웨이즈', gsshop='지에스샵'
         const filtered = existingMain.filter(o =>
           !(o.extra_data?.['import_source'] === importSrc && o.order_date === today)
         )

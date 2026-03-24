@@ -479,7 +479,7 @@ function buildLocalMallCodesMap(): Record<string, Record<string, string>> {
   return result
 }
 
-interface MappingRow { mallKey:string; mall:string; productId:string; productName:string; price:string }
+interface MappingRow { mallKey:string; mall:string; productId:string; productName:string; tagPrice:string; price:string }
 function MallMappingModal({
   product, onClose, onSave,
 }: { product: Product; onClose: () => void; onSave: (cp: ChannelPrice[], rm: (string|{mall:string;code:string})[]) => void }) {
@@ -501,6 +501,7 @@ function MallMappingModal({
           ? (mallEntry.code || localRow?.mall_product_id || '')
           : (localRow?.mall_product_id || ''),
         productName: localRow?.mall_product_name || '',
+        tagPrice: priceEntry?.tag_price ? String(priceEntry.tag_price) : '',
         price: priceEntry
           ? String(priceEntry.price)
           : (localRow?.mall_price ? String(localRow.mall_price) : ''),
@@ -510,7 +511,11 @@ function MallMappingModal({
 
   const handleSave = () => {
     const cp = rows.filter(r => r.price && Number(r.price) > 0)
-                   .map(r => ({ channel: r.mall, price: Number(r.price) }))
+                   .map(r => ({
+                     channel:   r.mall,
+                     price:     Number(r.price),
+                     ...(r.tagPrice && Number(r.tagPrice) > 0 ? { tag_price: Number(r.tagPrice) } : {}),
+                   }))
     const rm = rows.filter(r => r.productId.trim())
                    .map(r => ({ mall: r.mall, code: r.productId.trim() }))
 
@@ -548,16 +553,21 @@ function MallMappingModal({
   const thS: React.CSSProperties = { fontSize:10.5, fontWeight:800, color:'#64748b', padding:'4px 0' }
   return (
     <Modal isOpen onClose={onClose} title={`쇼핑몰 매핑 — ${product.name}`} size="xl">
-      <div style={{ display:'grid', gridTemplateColumns:'130px 1fr 1.5fr 120px', gap:8, marginBottom:6 }}>
-        {['쇼핑몰','상품ID','쇼핑몰 상품명 (참고)','판매가'].map(h => <span key={h} style={thS}>{h}</span>)}
+      <div style={{ display:'grid', gridTemplateColumns:'130px 1fr 1.5fr 110px 110px', gap:8, marginBottom:6 }}>
+        {['쇼핑몰','상품ID','쇼핑몰 상품명 (참고)','🏷️ TAG가','💰 판매가'].map(h => <span key={h} style={thS}>{h}</span>)}
       </div>
       {rows.map((row, i) => (
-        <div key={row.mallKey} style={{ display:'grid', gridTemplateColumns:'130px 1fr 1.5fr 120px', gap:8, marginBottom:6, alignItems:'center' }}>
+        <div key={row.mallKey} style={{ display:'grid', gridTemplateColumns:'130px 1fr 1.5fr 110px 110px', gap:8, marginBottom:6, alignItems:'center' }}>
           <span style={{ fontSize:12.5, fontWeight:800, color:'#334155', background:'#f1f5f9', padding:'6px 10px', borderRadius:7, textAlign:'center' }}>{row.mall}</span>
           <Input placeholder="상품ID" value={row.productId}
             onChange={e => { const r=[...rows]; r[i]={...r[i],productId:e.target.value}; setRows(r) }}/>
           <Input placeholder="상품명 (선택)" value={row.productName}
             onChange={e => { const r=[...rows]; r[i]={...r[i],productName:e.target.value}; setRows(r) }}/>
+          <div style={{ position:'relative' }}>
+            <span style={{ position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',fontSize:12,color:'#94a3b8',fontWeight:700,pointerEvents:'none' }}>₩</span>
+            <Input type="number" placeholder="0" value={row.tagPrice} style={{ paddingLeft:22 }}
+              onChange={e => { const r=[...rows]; r[i]={...r[i],tagPrice:e.target.value}; setRows(r) }}/>
+          </div>
           <div style={{ position:'relative' }}>
             <span style={{ position:'absolute',left:9,top:'50%',transform:'translateY(-50%)',fontSize:12,color:'#94a3b8',fontWeight:700,pointerEvents:'none' }}>₩</span>
             <Input type="number" placeholder="0" value={row.price} style={{ paddingLeft:22 }}

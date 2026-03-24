@@ -86,6 +86,23 @@ function downloadMarketPlusInvoice(orders: ShippedOrder[]) {
   URL.revokeObjectURL(url)
 }
 
+/* ─── 지에스샵 송장 파일 생성 (출하지시번호 + 송장번호 2열) ── */
+function downloadGSShopInvoice(orders: ShippedOrder[]) {
+  const gsOrders = orders.filter(o =>
+    o.status === 'shipped' && o.tracking_number &&
+    (o.extra_data?.['import_source'] === '지에스샵' || o.channel === '지에스샵')
+  )
+  if (gsOrders.length === 0) {
+    alert('지에스샵 배송처리된 주문이 없습니다.')
+    return
+  }
+  const rows = gsOrders.map(o => ({
+    '출하지시번호': String(o.extra_data?.['출하지시번호'] ?? o.order_number),
+    '송장번호':     o.tracking_number ?? '',
+  }))
+  triggerExcelDownload(rows, `지에스샵_송장_${todayStr()}.xlsx`)
+}
+
 /* ─── 일반 쇼핑몰 송장 파일 생성 ────────────────────────── */
 function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: ShippedOrder[]) {
   const mallOrders = orders.filter(o =>
@@ -187,6 +204,8 @@ export default function InvoiceSendPage() {
     try {
       if (mallId === 'marketplus') {
         downloadMarketPlusInvoice(allShipped)
+      } else if (mallId === 'gsshop') {
+        downloadGSShopInvoice(allShipped)
       } else {
         downloadMallInvoice(mallId, mallLabel, allShipped)
       }
