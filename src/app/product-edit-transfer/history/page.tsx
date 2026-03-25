@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx'
 import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search, HeadphonesIcon, AlertTriangle, Clock, RefreshCw } from 'lucide-react'
 import {
   loadShippedOrders, saveShippedOrders, loadOrders, saveOrders,
-  loadMappings, lookupMapping,
+  loadMappings, saveMappings, lookupMapping, makeMappingKey,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 
@@ -111,6 +111,14 @@ function mallStyle(channel: string) {
   return MALL_COLORS[channel] ?? { color: '#64748b', bg: '#f8fafc' }
 }
 
+/* ─── 바코드 미설정 경고 타입 ────────────────────────────── */
+interface UnmappedItem {
+  product_name: string
+  option: string
+  mappingKey: string
+  orders: { id: string; order_number: string }[]
+}
+
 /* ─── 인라인 편집 타입 ───────────────────────────────────── */
 interface EditFields {
   shipped_at     : string
@@ -144,6 +152,11 @@ export default function ShippingHistoryPage() {
   const [csModal,  setCsModal]  = useState(false)
   const [csType,   setCsType]   = useState<CsType>('return')
   const [csReason, setCsReason] = useState<CsReason>('simple_change')
+
+  /* 바코드 미설정 경고 모달 */
+  const [barcodeWarnModal, setBarcodeWarnModal] = useState(false)
+  const [unmappedItems,    setUnmappedItems]    = useState<UnmappedItem[]>([])
+  const [unmappedInputs,   setUnmappedInputs]   = useState<Record<string, string>>({})
 
   useEffect(() => {
     setShipped(loadShippedOrders())
@@ -325,22 +338,20 @@ export default function ShippingHistoryPage() {
     URL.revokeObjectURL(url)
   }
 
-  /* 출고확정 */
+  /* ── 출고확정 실제 처리 ── */
   const [isConfirming, setIsConfirming] = useState(false)
-  const handleConfirmShipping = async () => {
-    if (checked.size === 0) return
-    const toConfirm = displayOrders.filter(o => checked.has(o.id))
-    if (!confirm(`선택한 ${toConfirm.length}건을 출고확정하시겠습니까?\n바코드 기준으로 상품 재고가 차감됩니다.`)) return
+
+  const doConfirmShipping = async (toConfirm: ShippedOrder[]) => {
     setIsConfirming(true)
     try {
-      const mappings = loadMappings()
-      const products = loadCachedProducts()
+      const currentMappings = loadMappings()
+      const products        = loadCachedProducts()
       const stockChanges: Record<string, Record<number, number>> = {}
       const notFound: string[] = []
       toConfirm.forEach(order => {
         const item = order.items[0]
         if (!item) return
-        const mapping = lookupMapping(mappings, item.product_name ?? '', item.option)
+        const mapping = lookupMapping(currentMappings, item.product_name ?? '', item.option)
         const barcode = mapping.barcode
         if (!barcode) { notFound.push(item.product_name ?? '?'); return }
         let found = false
@@ -368,11 +379,88 @@ export default function ShippingHistoryPage() {
         if (!p) return
         await fetch('/api/pm-products', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid, options: p.options }) })
       }))
-      const confirmedIds  = new Set(toConfirm.map(o => o.id))
+      const confirmedIds   = new Set(toConfirm.map(o => o.id))
       const updatedShipped = shipped.map(o => confirmedIds.has(o.id) ? { ...o, status: 'delivered' as const } : o)
-      saveShippedOrders(updatedShipped); setShipped(updatedShipped); setChecked(new Set())
-      alert(notFound.length > 0 ? `${toConfirm.length}건 출고확정 완료.\n재고 미차감: ${[...new Set(notFound)].join(', ')}` : `${toConfirm.length}건 출고확정 완료.`)
-    } finally { setIsConfirming(false) }
+      saveShippedOrders(updatedShipped)
+      setShipped(updatedShipped)
+      setChecked(new Set())
+      alert(notFound.length > 0
+        ? `${toConfirm.length}건 출고확정 완료.\n재고 미차감: ${[...new Set(notFound)].join(', ')}`
+        : `${toConfirm.length}건 출고확정 완료.`)
+    } finally {
+      setIsConfirming(false)
+    }
+  }
+
+  /* ── 출고확정 버튼: 바코드 미설정 사전 점검 ── */
+  const handleConfirmShipping = () => {
+    if (checked.size === 0) return
+    const toConfirm     = displayOrders.filter(o => checked.has(o.id))
+    const currentMappings = loadMappings()
+
+    // 바코드 없는 (product_name, option) 쌍 수집
+    const seen = new Map<string, UnmappedItem>()
+    toConfirm.forEach(order => {
+      const item = order.items[0]
+      if (!item) return
+      const mapping = lookupMapping(currentMappings, item.product_name ?? '', item.option)
+      if (!mapping.barcode) {
+        const key = makeMappingKey(item.product_name, item.option)
+        if (!seen.has(key)) {
+          seen.set(key, {
+            product_name: item.product_name ?? '',
+            option:       item.option ?? '',
+            mappingKey:   key,
+            orders:       [],
+          })
+        }
+        seen.get(key)!.orders.push({ id: order.id, order_number: order.order_number })
+      }
+    })
+
+    if (seen.size > 0) {
+      // 바코드 미설정 항목이 있으면 경고 모달 표시
+      const items = [...seen.values()]
+      setUnmappedItems(items)
+      setUnmappedInputs(Object.fromEntries(items.map(u => [u.mappingKey, ''])))
+      setBarcodeWarnModal(true)
+      return
+    }
+
+    // 모두 매핑된 경우 바로 진행
+    if (!confirm(`선택한 ${toConfirm.length}건을 출고확정하시겠습니까?\n바코드 기준으로 상품 재고가 차감됩니다.`)) return
+    doConfirmShipping(toConfirm)
+  }
+
+  /* ── 바코드 저장 후 출고확정 ── */
+  const handleSaveBarcodeAndConfirm = () => {
+    // 모든 입력 필드 채워졌는지 검증
+    const missing = unmappedItems.filter(u => !unmappedInputs[u.mappingKey]?.trim())
+    if (missing.length > 0) {
+      alert(`바코드를 입력하지 않은 항목이 ${missing.length}개 있습니다.\n모든 항목에 바코드를 입력해주세요.`)
+      return
+    }
+
+    // 매핑 저장
+    const currentMappings = loadMappings()
+    const updated = { ...currentMappings }
+    for (const item of unmappedItems) {
+      const barcode = unmappedInputs[item.mappingKey].trim()
+      updated[item.mappingKey] = {
+        abbreviation: currentMappings[item.mappingKey]?.abbreviation ?? '',
+        loca:         currentMappings[item.mappingKey]?.loca         ?? '',
+        ...currentMappings[item.mappingKey],
+        barcode,
+      }
+    }
+    saveMappings(updated)
+    setMappings(updated)
+    setBarcodeWarnModal(false)
+
+    // 저장 완료 후 출고확정 진행
+    const toConfirm = displayOrders.filter(o => checked.has(o.id))
+    if (!confirm(`바코드 매핑 완료! ${toConfirm.length}건을 출고확정하시겠습니까?`)) return
+    doConfirmShipping(toConfirm)
   }
 
   /* ── 편집 인풋 스타일 ── */
@@ -692,6 +780,117 @@ export default function ShippingHistoryPage() {
       </div>
 
       <style>{`@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }`}</style>
+
+      {/* ── 바코드 미설정 경고 모달 ── */}
+      {barcodeWarnModal && (
+        <div onClick={e => { if (e.target === e.currentTarget) setBarcodeWarnModal(false) }}
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
+          <div style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 580, maxHeight: '88vh', overflow: 'auto', boxShadow: '0 24px 64px rgba(15,23,42,0.2)' }}>
+
+            {/* 모달 헤더 */}
+            <div style={{ padding: '18px 22px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 38, height: 38, borderRadius: 12, background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle size={20} style={{ color: '#f97316' }} />
+              </div>
+              <div>
+                <p style={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>바코드 미설정 상품</p>
+                <p style={{ fontSize: 11.5, color: '#94a3b8' }}>
+                  바코드가 없는 상품이 <span style={{ color: '#f97316', fontWeight: 800 }}>{unmappedItems.length}종</span> 있습니다. 바코드를 입력해야 출고확정이 가능합니다.
+                </p>
+              </div>
+              <div style={{ flex: 1 }} />
+              <button onClick={() => setBarcodeWarnModal(false)}
+                style={{ width: 30, height: 30, borderRadius: 8, border: 'none', background: '#f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <X size={15} style={{ color: '#64748b' }} />
+              </button>
+            </div>
+
+            <div style={{ padding: '20px 22px', display: 'grid', gap: 14 }}>
+
+              {/* 안내 배너 */}
+              <div style={{ background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: 10, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+                <AlertTriangle size={16} style={{ color: '#f97316', flexShrink: 0, marginTop: 1 }} />
+                <p style={{ fontSize: 12, color: '#9a3412', lineHeight: 1.6 }}>
+                  아래 상품들은 매핑 테이블에 바코드가 없습니다.<br />
+                  각 항목에 바코드를 직접 입력하면 매핑이 저장되고 출고확정이 진행됩니다.
+                </p>
+              </div>
+
+              {/* 미설정 항목 목록 + 바코드 입력 */}
+              <div style={{ display: 'grid', gap: 10 }}>
+                {unmappedItems.map((u, idx) => (
+                  <div key={u.mappingKey} style={{ border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '14px 16px', background: '#fafafa' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                      <div style={{ width: 22, height: 22, borderRadius: 6, background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                        <span style={{ fontSize: 10, fontWeight: 900, color: '#f97316' }}>{idx + 1}</span>
+                      </div>
+                      <div style={{ flex: 1, overflow: 'hidden' }}>
+                        <p style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          {u.product_name || '(상품명 없음)'}
+                        </p>
+                        {u.option && (
+                          <p style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>[{u.option}]</p>
+                        )}
+                      </div>
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 5, flexShrink: 0 }}>
+                        {u.orders.length}건
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <label style={{ fontSize: 11, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap' }}>바코드</label>
+                      <input
+                        value={unmappedInputs[u.mappingKey] ?? ''}
+                        onChange={e => setUnmappedInputs(prev => ({ ...prev, [u.mappingKey]: e.target.value }))}
+                        placeholder="바코드를 입력하세요"
+                        style={{
+                          flex: 1, height: 34, fontSize: 12.5, fontWeight: 700,
+                          border: `1.5px solid ${unmappedInputs[u.mappingKey]?.trim() ? '#059669' : '#e2e8f0'}`,
+                          borderRadius: 8, padding: '0 10px', outline: 'none',
+                          fontFamily: 'monospace', background: '#fff', color: '#0f172a',
+                          transition: 'border-color 150ms',
+                        }}
+                      />
+                      {unmappedInputs[u.mappingKey]?.trim() && (
+                        <CheckCircle2 size={18} style={{ color: '#059669', flexShrink: 0 }} />
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* 진행 상황 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 8 }}>
+                <span style={{ fontSize: 12, color: '#64748b' }}>입력 완료:</span>
+                <span style={{ fontSize: 12, fontWeight: 900, color: '#059669' }}>
+                  {Object.values(unmappedInputs).filter(v => v.trim()).length}
+                </span>
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>/ {unmappedItems.length}개</span>
+              </div>
+
+              {/* 버튼 */}
+              <div style={{ display: 'flex', gap: 10 }}>
+                <button onClick={() => setBarcodeWarnModal(false)}
+                  style={{ flex: 1, padding: '12px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: 13, fontWeight: 800, cursor: 'pointer' }}>
+                  취소
+                </button>
+                <button
+                  onClick={handleSaveBarcodeAndConfirm}
+                  disabled={isConfirming}
+                  style={{
+                    flex: 2, padding: '12px 0', border: 'none', borderRadius: 10,
+                    fontSize: 13, fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                    background: Object.values(unmappedInputs).every(v => v.trim()) ? '#059669' : '#94a3b8',
+                    color: '#fff', transition: 'background 200ms',
+                  }}>
+                  <PackageCheck size={15} />
+                  {isConfirming ? '처리중...' : '바코드 저장 후 출고확정'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── CS접수 모달 ── */}
       {csModal && (
