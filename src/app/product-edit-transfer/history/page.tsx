@@ -194,12 +194,28 @@ export default function ShippingHistoryPage() {
   const todayShipped = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,10) === today).length, [shipped, today])
   const monthShipped = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,7) === curYM).length, [shipped, curYM])
 
-  /* 쇼핑몰별 출고수량 (현재 표시 목록 기준) */
+  /* 쇼핑몰별 출고수량 (당월 누적 기준) */
   const mallShipStats = useMemo(() => {
     const map: Record<string, number> = {}
-    displayOrders.forEach(o => { map[o.channel] = (map[o.channel] || 0) + 1 })
+    shipped
+      .filter(o => (o.shipped_at ?? o.order_date)?.slice(0, 7) === curYM)
+      .forEach(o => { map[o.channel] = (map[o.channel] || 0) + 1 })
     return Object.entries(map).sort((a, b) => b[1] - a[1])
-  }, [displayOrders])
+  }, [shipped, curYM])
+
+  /* 선택한 쇼핑몰의 당월 주문 목록 */
+  const [selectedMall, setSelectedMall] = useState<string | null>(null)
+  const mallOrderList = useMemo(() => {
+    if (!selectedMall) return []
+    return shipped
+      .filter(o =>
+        (o.shipped_at ?? o.order_date)?.slice(0, 7) === curYM &&
+        o.channel === selectedMall
+      )
+      .sort((a, b) =>
+        (b.shipped_at ?? b.order_date).localeCompare(a.shipped_at ?? a.order_date)
+      )
+  }, [shipped, curYM, selectedMall])
 
   /* 체크박스 */
   const allChecked = displayOrders.length > 0 && displayOrders.every(o => checked.has(o.id))
@@ -506,41 +522,110 @@ export default function ShippingHistoryPage() {
             <Truck size={13} style={{ color: '#64748b' }} />
             <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>쇼핑몰별 출고수량</span>
             <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
-              ({viewMode === 'daily' ? selDate : selMonth.replace('-','년 ')+'월'} 기준 · {displayOrders.length}건)
+              ({curYM.replace('-','년 ')}월 누적 · {mallShipStats.reduce((s,[,c])=>s+c,0)}건)
             </span>
+            <span style={{ fontSize: 10, color: '#94a3b8', marginLeft: 4 }}>버튼 클릭 → 주문목록</span>
           </div>
           {mallShipStats.length === 0 ? (
-            <p style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>해당 기간 출고내역 없음</p>
+            <p style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>이번달 출고내역 없음</p>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 7 }}>
               {mallShipStats.map(([ch, cnt], i) => {
                 const max = mallShipStats[0][1]
                 const pct = Math.round((cnt / max) * 100)
                 const medals = ['🥇','🥈','🥉']
+                const isSelected = selectedMall === ch
                 return (
-                  <div key={ch} style={{
-                    borderRadius: 10, padding: '8px 12px',
-                    background: i === 0 ? '#fef9c3' : i === 1 ? '#f1f5f9' : i === 2 ? '#fff7ed' : '#f8fafc',
-                    border: `1.5px solid ${i===0?'#fde047':i===1?'#e2e8f0':i===2?'#fed7aa':'#f1f5f9'}`,
-                  }}>
+                  <button key={ch} onClick={() => setSelectedMall(isSelected ? null : ch)}
+                    style={{
+                      borderRadius: 10, padding: '8px 12px', cursor: 'pointer', textAlign: 'left', width: '100%',
+                      background: isSelected ? '#eff6ff' : i === 0 ? '#fef9c3' : i === 1 ? '#f1f5f9' : i === 2 ? '#fff7ed' : '#f8fafc',
+                      border: `1.5px solid ${isSelected?'#2563eb':i===0?'#fde047':i===1?'#e2e8f0':i===2?'#fed7aa':'#f1f5f9'}`,
+                      transition: 'all 150ms',
+                    }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 11.5, fontWeight: 800, color: '#334155' }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 800, color: isSelected ? '#2563eb' : '#334155' }}>
                         {i < 3 ? <span style={{ marginRight: 3 }}>{medals[i]}</span> : null}{ch}
                       </span>
-                      <span style={{ fontSize: 14, fontWeight: 900, color: i === 0 ? '#92400e' : i === 1 ? '#475569' : i === 2 ? '#c2410c' : '#64748b' }}>
+                      <span style={{ fontSize: 14, fontWeight: 900, color: isSelected ? '#2563eb' : i === 0 ? '#92400e' : i === 1 ? '#475569' : i === 2 ? '#c2410c' : '#64748b' }}>
                         {cnt}건
                       </span>
                     </div>
                     <div style={{ height: 4, background: '#e2e8f0', borderRadius: 99 }}>
-                      <div style={{ width: `${pct}%`, height: '100%', borderRadius: 99, background: i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#f97316':'#cbd5e1', transition: 'width 400ms' }} />
+                      <div style={{ width: `${pct}%`, height: '100%', borderRadius: 99, background: isSelected?'#3b82f6':i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#f97316':'#cbd5e1', transition: 'width 400ms' }} />
                     </div>
-                  </div>
+                  </button>
                 )
               })}
             </div>
           )}
         </div>
       </div>
+
+      {/* 선택된 쇼핑몰 주문 목록 */}
+      {selectedMall && (
+        <div className="pm-card" style={{ marginBottom: 14, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, background: '#eff6ff' }}>
+            <Truck size={13} style={{ color: '#2563eb' }} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#1d4ed8' }}>
+              {selectedMall} — {curYM.replace('-','년 ')}월 출고 목록
+            </span>
+            <span style={{ fontSize: 11, color: '#93c5fd', fontWeight: 600 }}>{mallOrderList.length}건</span>
+            <button onClick={() => setSelectedMall(null)}
+              style={{ marginLeft: 'auto', width: 24, height: 24, borderRadius: 6, border: 'none', background: '#dbeafe', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <X size={13} style={{ color: '#2563eb' }} />
+            </button>
+          </div>
+          <div style={{ maxHeight: 280, overflowY: 'auto' }}>
+            {mallOrderList.length === 0 ? (
+              <p style={{ padding: '16px', fontSize: 12, color: '#94a3b8' }}>목록 없음</p>
+            ) : (
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                  <tr>
+                    {['출고일','수령인','상품명','옵션','수량','운송장번호'].map(h => (
+                      <th key={h} style={{ padding: '6px 10px', fontWeight: 800, color: '#64748b', fontSize: 10.5, textAlign: 'left', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {mallOrderList.map(o => {
+                    const item = o.items[0]
+                    return (
+                      <tr key={o.id} style={{ borderBottom: '1px solid #f8fafc' }}
+                        onMouseEnter={e => { e.currentTarget.style.background = '#f0f9ff' }}
+                        onMouseLeave={e => { e.currentTarget.style.background = '' }}>
+                        <td style={{ padding: '7px 10px', color: '#64748b', fontSize: 11, whiteSpace: 'nowrap' }}>
+                          {(o.shipped_at ?? o.order_date)?.slice(0, 10)}
+                        </td>
+                        <td style={{ padding: '7px 10px', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>
+                          {o.customer_name}
+                        </td>
+                        <td style={{ padding: '7px 10px', color: '#0f172a', maxWidth: 200 }}>
+                          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {item?.product_name ?? '-'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '7px 10px', color: '#64748b', fontSize: 11, maxWidth: 120 }}>
+                          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {item?.option ? `[${item.option}]` : '-'}
+                          </span>
+                        </td>
+                        <td style={{ padding: '7px 10px', fontWeight: 800, color: '#2563eb', textAlign: 'center', whiteSpace: 'nowrap' }}>
+                          {item?.quantity ?? 1}
+                        </td>
+                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11, color: '#475569', whiteSpace: 'nowrap' }}>
+                          {o.tracking_number ?? '-'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* 뷰 토글 + 날짜 네비 + 검색 + 버튼 */}
       <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>

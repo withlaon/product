@@ -43,9 +43,9 @@ function daysInMonth(ym: string) {
   return new Date(y, m, 0).getDate()
 }
 function fmtMoney(v: number) {
-  if (v >= 10000000) return `${(v/10000000).toFixed(1)}천만`
+  if (v >= 10000000) return `${Math.round(v/10000000)}천만`
   if (v >= 10000)    return `${Math.round(v/10000)}만`
-  return `${v.toLocaleString()}`
+  return `${Math.round(v).toLocaleString()}`
 }
 
 /* ── 선 그래프 ────────────────────────────────────────────── */
@@ -194,7 +194,7 @@ function LineChart({ data }: { data: ChartPoint[] }) {
         }}>
           <p style={{ fontSize:9.5, color:'#94a3b8', fontWeight:700, marginBottom:3 }}>{selMonthLabel(tip.day)}</p>
           <p style={{ fontSize:11.5, color:'#93c5fd', fontWeight:800, marginBottom:1 }}>📦 {tip.count}건</p>
-          <p style={{ fontSize:11.5, color:'#c4b5fd', fontWeight:800 }}>₩{tip.amount.toLocaleString()}</p>
+          <p style={{ fontSize:11.5, color:'#c4b5fd', fontWeight:800 }}>₩{Math.round(tip.amount).toLocaleString()}</p>
         </div>
       )}
     </div>
@@ -525,7 +525,7 @@ export default function DashboardPage() {
           { title:'전체 상품',   value: products.length?`${products.length}개`:'0',       sub:`재고부족 ${lowStock.length} · 품절 ${soldOut.length}`,                                                                      icon:Package,       bg:'#eff6ff', ic:'#2563eb', href:'/products',          fs:18 },
           { title:'오늘 주문',   value: todayOrders.length?`${todayOrders.length}건`:'0',  sub: todayOrders.length?`미처리 ${todayOrders.filter(o=>o.status==='pending'||o.status==='confirmed').length}건`:'주문없음',    icon:ShoppingCart,  bg:'#ecfdf5', ic:'#059669', href:'/product-transfer',  fs:18 },
           { title:'재고 부족',   value: lowStock.length?`${lowStock.length}개`:'0',         sub: lowStock.length?'3개 이하 옵션':'재고 정상',                                                                                icon:AlertTriangle, bg:'#fffbeb', ic:'#d97706', href:'/inventory',         fs:18 },
-          { title:'이번달 매출', value: monthRevenue>0?`₩${monthRevenue.toLocaleString()}`:'₩0', sub:`${curYM.replace('-','년 ')}월`,                                                                                      icon:TrendingUp,    bg:'#f5f3ff', ic:'#7c3aed', href:'/product-transfer',  fs:14 },
+          { title:'이번달 매출', value: monthRevenue>0?`₩${Math.round(monthRevenue).toLocaleString()}`:'₩0', sub:`${curYM.replace('-','년 ')}월`,                                                                                      icon:TrendingUp,    bg:'#f5f3ff', ic:'#7c3aed', href:'/product-transfer',  fs:14 },
         ].map(s => (
           <Link key={s.title} href={s.href} style={{ textDecoration:'none' }}>
             <div className="pm-card" style={{ padding:'9px 12px', cursor:'pointer', display:'flex', alignItems:'center', gap:9 }}>
@@ -603,7 +603,7 @@ export default function DashboardPage() {
             <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
               <span style={{ fontSize:9.5, fontWeight:800, color:'#7c3aed' }}>● 판매금액</span>
               <span style={{ fontSize:9, color:'#94a3b8' }}>
-                {selMonth.replace('-','년 ')}월 합계 ₩{monthRevSel.toLocaleString()}
+                {selMonth.replace('-','년 ')}월 합계 ₩{Math.round(monthRevSel).toLocaleString()}
               </span>
             </div>
             <div style={{ flex:1, minHeight:0 }}>
@@ -614,7 +614,7 @@ export default function DashboardPage() {
                 : <SingleLineChart
                     data={chartData.map(d => ({ day:d.day, value:d.amount }))}
                     color="#7c3aed" gradId="dash-amt"
-                    formatTip={v => `₩${v.toLocaleString()}`}
+                    formatTip={v => `₩${Math.round(v).toLocaleString()}`}
                   />
               }
             </div>
@@ -654,7 +654,7 @@ export default function DashboardPage() {
                 <div key={b.label} style={{ background:b.bg, borderRadius:8, padding:'5px 8px' }}>
                   <p style={{ fontSize:9, fontWeight:800, color:'#94a3b8', marginBottom:1 }}>{b.label}</p>
                   <p style={{ fontSize:12, fontWeight:900, color:b.color, lineHeight:1, wordBreak:'break-all' }}>
-                    {b.prefix}{b.value.toLocaleString()}
+                    {b.prefix}{Math.round(b.value).toLocaleString()}
                   </p>
                 </div>
               ))}
