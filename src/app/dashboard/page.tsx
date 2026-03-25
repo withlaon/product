@@ -14,9 +14,9 @@ import { supabase } from '@/lib/supabase'
 
 /* ── 헬퍼 ─────────────────────────────────────────────────── */
 interface CachedOption { name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
-interface CachedProduct { id: string; name?: string; status?: string; options: CachedOption[] }
+interface CachedProduct { id: string; code?: string; name?: string; status?: string; options: CachedOption[]; cost_price?: number; cost_currency?: string }
 interface CsItem { id: string; status?: string; created_at?: string; [k: string]: unknown }
-interface PurchaseItem { ordered: number; received: number }
+interface PurchaseItem { product_code?: string; ordered: number; received: number }
 interface Purchase { id: string; order_date: string; status: string; items: PurchaseItem[] }
 
 function loadCachedProducts(): CachedProduct[] {
@@ -208,6 +208,88 @@ function selMonthLabel(day: number) {
   return `${y}.${m}.${String(day).padStart(2,'0')}`
 }
 
+/* ── 단일 선 그래프 (가는 선, hover 툴팁) ────────────────── */
+interface SimplePoint { day: number; value: number }
+function SingleLineChart({ data, color, gradId, formatTip }: {
+  data: SimplePoint[]
+  color: string
+  gradId: string
+  formatTip: (v: number) => string
+}) {
+  const [tipIdx, setTipIdx] = useState<number | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ w: 400, h: 56 })
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      if (width > 10 && height > 10) setSize({ w: Math.round(width), h: Math.round(height) })
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+  const W = size.w; const H = size.h
+  const padL = 4; const padR = 4; const padT = 3; const padB = 13
+  const cW = W - padL - padR; const cH = H - padT - padB
+  const maxV = Math.max(...data.map(d => d.value), 1)
+  const cols = data.length
+  const xPos = (i: number) => cols <= 1 ? padL + cW / 2 : padL + (i / (cols - 1)) * cW
+  const yVal = (v: number) => padT + cH - (v / maxV) * cH
+  const linePath = data.map((d, i) => `${i===0?'M':'L'}${xPos(i).toFixed(1)},${yVal(d.value).toFixed(1)}`).join(' ')
+  const fillPath = cols > 0
+    ? linePath + ` L${xPos(cols-1).toFixed(1)},${(padT+cH).toFixed(1)} L${padL},${(padT+cH).toFixed(1)} Z`
+    : ''
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (W / rect.width)
+    let nearest = 0; let minDist = Infinity
+    data.forEach((_, i) => { const dx = Math.abs(xPos(i) - mx); if (dx < minDist) { minDist = dx; nearest = i } })
+    setTipIdx(nearest)
+  }
+  const tip = tipIdx !== null ? data[tipIdx] : null
+  const tipX = tipIdx !== null ? xPos(tipIdx) : 0
+  const tipXPct = W > 0 ? (tipX / W) * 100 : 0
+  return (
+    <div ref={containerRef} style={{ position:'relative', width:'100%', height:'100%' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%"
+        style={{ display:'block', overflow:'visible', cursor:'crosshair' }}
+        onMouseMove={handleMouseMove} onMouseLeave={() => setTipIdx(null)}>
+        <defs>
+          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.18}/>
+            <stop offset="100%" stopColor={color} stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <line x1={padL} y1={padT+cH} x2={W-padR} y2={padT+cH} stroke="#f1f5f9" strokeWidth={0.8}/>
+        {fillPath && <path d={fillPath} fill={`url(#${gradId})`}/>}
+        {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth={1} strokeLinejoin="round" strokeLinecap="round"/>}
+        {tipIdx !== null && (data[tipIdx]?.value ?? 0) > 0 && (
+          <circle cx={xPos(tipIdx)} cy={yVal(data[tipIdx].value)} r={2.8} fill={color} stroke="#fff" strokeWidth={1.5}/>
+        )}
+        {tipIdx !== null && (
+          <line x1={tipX} y1={padT} x2={tipX} y2={padT+cH} stroke="#94a3b8" strokeWidth={0.7} strokeDasharray="3 2" opacity={0.5}/>
+        )}
+        {data.map((d, i) => (d.day === 1 || d.day % 5 === 0) && (
+          <text key={i} x={xPos(i)} y={H-1} textAnchor="middle" fontSize={7.5} fill="#cbd5e1">{d.day}</text>
+        ))}
+      </svg>
+      {tip && tipIdx !== null && (
+        <div style={{
+          position:'absolute', top:'5%', pointerEvents:'none', zIndex:20,
+          left:`${tipXPct > 70 ? tipXPct - 14 : tipXPct + 1}%`,
+          transform: tipXPct > 70 ? 'translateX(-100%)' : 'none',
+          background:'rgba(15,23,42,0.92)', borderRadius:7, padding:'5px 9px',
+          boxShadow:'0 2px 12px rgba(0,0,0,0.22)',
+        }}>
+          <p style={{ fontSize:9, color:'#94a3b8', fontWeight:700, marginBottom:2 }}>{selMonthLabel(tip.day)}</p>
+          <p style={{ fontSize:12, color:'#fff', fontWeight:800 }}>{formatTip(tip.value)}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── 대시보드 ─────────────────────────────────────────────── */
 export default function DashboardPage() {
   const today    = getToday()
@@ -372,6 +454,50 @@ export default function DashboardPage() {
   const monthTotal  = useMemo(() => chartData.reduce((s,d) => s+d.count, 0), [chartData])
   const monthRevSel = useMemo(() => chartData.reduce((s,d) => s+d.amount, 0), [chartData])
 
+  /* ── 당월 매입액 (발주금액: KRW 그대로, CNY는 환율 × 1.475) ── */
+  const monthPurchaseCost = useMemo(() => {
+    const EX = 210
+    return purchases
+      .filter(p => p.order_date?.slice(0,7) === selMonth)
+      .reduce((sum, p) => sum + p.items.reduce((is, item) => {
+        if (!item.product_code) return is
+        const prod = products.find(pp => pp.code === item.product_code)
+        if (!prod?.cost_price) return is
+        const isKrw = !prod.cost_currency || prod.cost_currency === 'KRW' || prod.cost_currency === '원'
+        return is + (isKrw ? prod.cost_price : prod.cost_price * EX * 1.475) * item.ordered
+      }, 0), 0)
+  }, [purchases, products, selMonth])
+
+  /* ── 당월 택배비 (고유 운송장번호 × 2800원) ── */
+  const monthShippingFee = useMemo(() => {
+    const uniq = new Set(
+      shipped
+        .filter(o => (o.shipped_at ?? o.order_date)?.slice(0,7) === selMonth && o.tracking_number)
+        .map(o => o.tracking_number!)
+    )
+    return uniq.size * 2800
+  }, [shipped, selMonth])
+
+  /* ── 당월 순이익 ── */
+  const monthProfit = useMemo(
+    () => monthRevSel - monthPurchaseCost - monthShippingFee,
+    [monthRevSel, monthPurchaseCost, monthShippingFee]
+  )
+
+  /* ── 쇼핑몰별 판매건수 ── */
+  const mallSales = useMemo(() => {
+    const map: Record<string, number> = {}
+    allOrdersMerged
+      .filter(o => o.order_date?.slice(0,7) === selMonth && o.status !== 'cancelled')
+      .forEach(o => {
+        const ch = (o as unknown as { channel?: string; import_source?: string }).channel
+               || (o as unknown as { import_source?: string }).import_source
+               || '기타'
+        map[ch] = (map[ch] || 0) + 1
+      })
+    return Object.entries(map).sort((a, b) => b[1] - a[1])
+  }, [allOrdersMerged, selMonth])
+
   /* ── CS ── */
   const openCs = useMemo(() => csItems.filter(c => c.status !== 'resolved' && c.status !== 'closed'), [csItems])
 
@@ -435,78 +561,123 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      {/* ── 중단: 차트(1.5배 가로) + 우측 패널 ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'3fr 2fr', gap:10, flex:'1 1 0', minHeight:0 }}>
+      {/* ── 중단: 차트(넓게) + 우측 패널 ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'5fr 2fr', gap:10, flex:'1 1 0', minHeight:0 }}>
 
-        {/* 월별 선 그래프 */}
+        {/* 월별 주문 현황 (4줄) */}
         <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
           {/* 헤더 */}
-          <div style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-            <div style={{ width:22,height:22,borderRadius:7,background:'#eff6ff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-              <ShoppingCart size={11} color="#2563eb" />
+          <div style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 14px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+            <div style={{ width:20,height:20,borderRadius:7,background:'#eff6ff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+              <ShoppingCart size={10} color="#2563eb" />
             </div>
             <span style={{ fontSize:12,fontWeight:800,color:'#0f172a',flexShrink:0 }}>월별 주문 현황</span>
-            {/* 범례 */}
-            <span style={{ display:'flex',alignItems:'center',gap:3,fontSize:9,color:'#2563eb',fontWeight:700,flexShrink:0 }}>
-              <svg width="14" height="4" style={{ display:'inline-block',verticalAlign:'middle' }}>
-                <line x1="0" y1="2" x2="14" y2="2" stroke="#2563eb" strokeWidth="1.5"/>
-              </svg>주문수
-            </span>
-            <span style={{ display:'flex',alignItems:'center',gap:3,fontSize:9,color:'#818cf8',fontWeight:700,flexShrink:0 }}>
-              <svg width="14" height="4" style={{ display:'inline-block',verticalAlign:'middle' }}>
-                <line x1="0" y1="2" x2="14" y2="2" stroke="#818cf8" strokeWidth="1" strokeDasharray="4 2"/>
-              </svg>매출
-            </span>
-            {/* 마지막 업데이트 시간 */}
             {lastUpdate && (
               <span style={{ fontSize:9, color:'#cbd5e1', fontWeight:600, flexShrink:0 }}>
-                {lastUpdate.getHours().toString().padStart(2,'0')}:{lastUpdate.getMinutes().toString().padStart(2,'0')}:{lastUpdate.getSeconds().toString().padStart(2,'0')} 기준
+                {lastUpdate.getHours().toString().padStart(2,'0')}:{lastUpdate.getMinutes().toString().padStart(2,'0')} 기준
               </span>
             )}
-            {/* 오른쪽: 새로고침 + 월 네비 + 통계 가로 배치 */}
-            <div style={{ display:'flex', alignItems:'center', gap:6, marginLeft:'auto' }}>
-              {/* 수동 새로고침 버튼 */}
-              <button
-                onClick={handleRefresh}
-                title="데이터 새로고침"
-                style={{ width:22,height:22,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center', flexShrink:0 }}>
-                <RefreshCw size={11} color="#64748b" style={{ animation: refreshing ? 'spin 0.6s linear infinite' : 'none' }} />
+            <div style={{ display:'flex', alignItems:'center', gap:5, marginLeft:'auto' }}>
+              <button onClick={handleRefresh} title="새로고침"
+                style={{ width:20,height:20,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
+                <RefreshCw size={10} color="#64748b" style={{ animation: refreshing ? 'spin 0.6s linear infinite' : 'none' }} />
               </button>
-              {/* 월 네비 */}
               <div style={{ display:'flex', alignItems:'center', gap:2 }}>
                 <button onClick={() => setSelMonth(m => shiftMonth(m,-1))}
-                  style={{ width:22,height:22,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
-                  <ChevronLeft size={11} />
+                  style={{ width:20,height:20,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
+                  <ChevronLeft size={10} />
                 </button>
-                <span style={{ fontSize:11,fontWeight:800,color:'#0f172a',minWidth:62,textAlign:'center' }}>
+                <span style={{ fontSize:11,fontWeight:800,color:'#0f172a',minWidth:56,textAlign:'center' }}>
                   {selMonth.replace('-','년 ')}월
                 </span>
-                <button onClick={() => setSelMonth(m => shiftMonth(m,1))}
-                  disabled={selMonth >= curYM}
-                  style={{ width:22,height:22,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:selMonth>=curYM?'not-allowed':'pointer',opacity:selMonth>=curYM?0.4:1,display:'flex',alignItems:'center',justifyContent:'center' }}>
-                  <ChevronRight size={11} />
+                <button onClick={() => setSelMonth(m => shiftMonth(m,1))} disabled={selMonth >= curYM}
+                  style={{ width:20,height:20,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:selMonth>=curYM?'not-allowed':'pointer',opacity:selMonth>=curYM?0.4:1,display:'flex',alignItems:'center',justifyContent:'center' }}>
+                  <ChevronRight size={10} />
                 </button>
-              </div>
-              {/* 통계: 주문수 | 매출 가로 한 줄 */}
-              <div style={{ display:'flex', alignItems:'center', gap:5, background:'#f8fafc', borderRadius:7, padding:'4px 10px', border:'1px solid #f1f5f9' }}>
-                <span style={{ fontSize:9, color:'#94a3b8', fontWeight:700 }}>주문수</span>
-                <span style={{ fontSize:13, fontWeight:900, color:'#3b82f6' }}>{monthTotal}건</span>
-                <span style={{ color:'#e2e8f0', fontSize:13, margin:'0 1px' }}>|</span>
-                <span style={{ fontSize:9, color:'#94a3b8', fontWeight:700 }}>매출</span>
-                <span style={{ fontSize:13, fontWeight:900, color:'#7c3aed' }}>₩{fmtMoney(monthRevSel)}</span>
               </div>
             </div>
           </div>
-          {/* 차트 영역: flex:1 + height:100% 체인으로 LineChart가 컨테이너를 완전히 채움 */}
-          <div style={{ flex:1, padding:'8px 12px 6px', overflow:'hidden', minHeight:0 }}>
-            {monthTotal === 0 ? (
-              <div style={{ width:'100%', height:'100%', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'#cbd5e1' }}>
-                <ShoppingCart size={22} style={{ opacity:0.15, marginBottom:6 }} />
-                <p style={{ fontSize:11,fontWeight:700 }}>{selMonth.replace('-','년 ')}월 주문 없음</p>
-              </div>
-            ) : (
-              <LineChart data={chartData} />
-            )}
+
+          {/* ─ 1줄: 판매금액 선그래프 ─ */}
+          <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+              <span style={{ fontSize:9.5, fontWeight:800, color:'#7c3aed' }}>● 판매금액</span>
+              <span style={{ fontSize:9, color:'#94a3b8' }}>
+                {selMonth.replace('-','년 ')}월 합계 ₩{monthRevSel.toLocaleString()}
+              </span>
+            </div>
+            <div style={{ flex:1, minHeight:0 }}>
+              {monthTotal === 0
+                ? <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <span style={{ fontSize:10, color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
+                  </div>
+                : <SingleLineChart
+                    data={chartData.map(d => ({ day:d.day, value:d.amount }))}
+                    color="#7c3aed" gradId="dash-amt"
+                    formatTip={v => `₩${v.toLocaleString()}`}
+                  />
+              }
+            </div>
+          </div>
+
+          {/* ─ 2줄: 판매수량 선그래프 ─ */}
+          <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
+              <span style={{ fontSize:9.5, fontWeight:800, color:'#2563eb' }}>● 판매수량</span>
+              <span style={{ fontSize:9, color:'#94a3b8' }}>
+                {selMonth.replace('-','년 ')}월 합계 {monthTotal}건
+              </span>
+            </div>
+            <div style={{ flex:1, minHeight:0 }}>
+              {monthTotal === 0
+                ? <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <span style={{ fontSize:10, color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
+                  </div>
+                : <SingleLineChart
+                    data={chartData.map(d => ({ day:d.day, value:d.count }))}
+                    color="#2563eb" gradId="dash-cnt"
+                    formatTip={v => `${v}건`}
+                  />
+              }
+            </div>
+          </div>
+
+          {/* ─ 3줄: 당월 재무 요약 ─ */}
+          <div style={{ flexShrink:0, borderBottom:'1px solid #f8fafc', padding:'6px 14px' }}>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6 }}>
+              {[
+                { label:'매출액',   value:monthRevSel,       color:'#7c3aed', bg:'#f5f3ff', prefix:'₩' },
+                { label:'매입액',   value:monthPurchaseCost, color:'#2563eb', bg:'#eff6ff', prefix:'₩' },
+                { label:'택배비',   value:monthShippingFee,  color:'#059669', bg:'#f0fdf4', prefix:'₩' },
+                { label:'순이익',   value:monthProfit,       color: monthProfit >= 0 ? '#059669' : '#dc2626', bg: monthProfit >= 0 ? '#f0fdf4' : '#fff1f2', prefix:'₩' },
+              ].map(b => (
+                <div key={b.label} style={{ background:b.bg, borderRadius:8, padding:'5px 8px' }}>
+                  <p style={{ fontSize:9, fontWeight:800, color:'#94a3b8', marginBottom:1 }}>{b.label}</p>
+                  <p style={{ fontSize:12, fontWeight:900, color:b.color, lineHeight:1, wordBreak:'break-all' }}>
+                    {b.prefix}{b.value.toLocaleString()}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* ─ 4줄: 쇼핑몰별 판매수량 ─ */}
+          <div style={{ flexShrink:0, padding:'5px 14px 6px' }}>
+            <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8', marginBottom:5 }}>쇼핑몰별 판매수량</p>
+            {mallSales.length === 0
+              ? <span style={{ fontSize:10, color:'#e2e8f0' }}>-</span>
+              : <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                  {mallSales.map(([ch, cnt], i) => (
+                    <div key={ch} style={{ display:'flex', alignItems:'center', gap:3, borderRadius:6, padding:'3px 8px',
+                      background: i === 0 ? '#fef9c3' : i === 1 ? '#f1f5f9' : '#f8fafc',
+                      border: `1px solid ${i===0?'#fde047':i===1?'#e2e8f0':'#f1f5f9'}` }}>
+                      <span style={{ fontSize:8.5 }}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':''}</span>
+                      <span style={{ fontSize:10, fontWeight:700, color:'#475569' }}>{ch}</span>
+                      <span style={{ fontSize:11, fontWeight:900, color: i<3?'#0f172a':'#64748b' }}>{cnt}건</span>
+                    </div>
+                  ))}
+                </div>
+            }
           </div>
         </div>
 

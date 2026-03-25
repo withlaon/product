@@ -194,6 +194,13 @@ export default function ShippingHistoryPage() {
   const todayShipped = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,10) === today).length, [shipped, today])
   const monthShipped = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,7) === curYM).length, [shipped, curYM])
 
+  /* 쇼핑몰별 출고수량 (현재 표시 목록 기준) */
+  const mallShipStats = useMemo(() => {
+    const map: Record<string, number> = {}
+    displayOrders.forEach(o => { map[o.channel] = (map[o.channel] || 0) + 1 })
+    return Object.entries(map).sort((a, b) => b[1] - a[1])
+  }, [displayOrders])
+
   /* 체크박스 */
   const allChecked = displayOrders.length > 0 && displayOrders.every(o => checked.has(o.id))
   const toggleAll  = () => {
@@ -474,21 +481,65 @@ export default function ShippingHistoryPage() {
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>
 
-      {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12, marginBottom: 20 }}>
-        {[
-          { label: '오늘 출고',   value: todayShipped,   color: '#2563eb', bg: '#eff6ff', icon: <Truck size={18} style={{ color: '#2563eb' }} /> },
-          { label: '이번달 출고', value: monthShipped,   color: '#7c3aed', bg: '#f5f3ff', icon: <CheckCircle2 size={18} style={{ color: '#7c3aed' }} /> },
-          { label: '전체 출고',   value: shipped.length, color: '#059669', bg: '#ecfdf5', icon: <Package size={18} style={{ color: '#059669' }} /> },
-        ].map(k => (
-          <div key={k.label} className="pm-card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: k.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{k.icon}</div>
-            <div>
-              <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
-              <p style={{ fontSize: 11.5, color: '#94a3b8', fontWeight: 700, marginTop: 3 }}>{k.label}</p>
+      {/* KPI + 쇼핑몰별 출고수량 */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 12, marginBottom: 14 }}>
+        {/* KPI 3개 */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 8 }}>
+          {[
+            { label: '오늘 출고',   value: todayShipped,   color: '#2563eb', bg: '#eff6ff', icon: <Truck size={16} style={{ color: '#2563eb' }} /> },
+            { label: '이번달 출고', value: monthShipped,   color: '#7c3aed', bg: '#f5f3ff', icon: <CheckCircle2 size={16} style={{ color: '#7c3aed' }} /> },
+            { label: '전체 출고',   value: shipped.length, color: '#059669', bg: '#ecfdf5', icon: <Package size={16} style={{ color: '#059669' }} /> },
+          ].map(k => (
+            <div key={k.label} className="pm-card" style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 34, height: 34, borderRadius: 10, background: k.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{k.icon}</div>
+              <div>
+                <p style={{ fontSize: 20, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
+                <p style={{ fontSize: 11, color: '#94a3b8', fontWeight: 700, marginTop: 2 }}>{k.label}</p>
+              </div>
             </div>
+          ))}
+        </div>
+
+        {/* 쇼핑몰별 출고수량 + TOP3 */}
+        <div className="pm-card" style={{ padding: '12px 16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+            <Truck size={13} style={{ color: '#64748b' }} />
+            <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>쇼핑몰별 출고수량</span>
+            <span style={{ fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
+              ({viewMode === 'daily' ? selDate : selMonth.replace('-','년 ')+'월'} 기준 · {displayOrders.length}건)
+            </span>
           </div>
-        ))}
+          {mallShipStats.length === 0 ? (
+            <p style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>해당 기간 출고내역 없음</p>
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 7 }}>
+              {mallShipStats.map(([ch, cnt], i) => {
+                const max = mallShipStats[0][1]
+                const pct = Math.round((cnt / max) * 100)
+                const medals = ['🥇','🥈','🥉']
+                return (
+                  <div key={ch} style={{
+                    borderRadius: 10, padding: '8px 12px',
+                    background: i === 0 ? '#fef9c3' : i === 1 ? '#f1f5f9' : i === 2 ? '#fff7ed' : '#f8fafc',
+                    border: `1.5px solid ${i===0?'#fde047':i===1?'#e2e8f0':i===2?'#fed7aa':'#f1f5f9'}`,
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11.5, fontWeight: 800, color: '#334155' }}>
+                        {i < 3 ? <span style={{ marginRight: 3 }}>{medals[i]}</span> : null}{ch}
+                      </span>
+                      <span style={{ fontSize: 14, fontWeight: 900, color: i === 0 ? '#92400e' : i === 1 ? '#475569' : i === 2 ? '#c2410c' : '#64748b' }}>
+                        {cnt}건
+                      </span>
+                    </div>
+                    <div style={{ height: 4, background: '#e2e8f0', borderRadius: 99 }}>
+                      <div style={{ width: `${pct}%`, height: '100%', borderRadius: 99, background: i===0?'#f59e0b':i===1?'#94a3b8':i===2?'#f97316':'#cbd5e1', transition: 'width 400ms' }} />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* 뷰 토글 + 날짜 네비 + 검색 + 버튼 */}
