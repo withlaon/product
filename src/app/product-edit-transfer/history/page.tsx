@@ -447,8 +447,8 @@ export default function ShippingHistoryPage() {
     for (const item of unmappedItems) {
       const barcode = unmappedInputs[item.mappingKey].trim()
       updated[item.mappingKey] = {
-        abbreviation: currentMappings[item.mappingKey]?.abbreviation ?? '',
-        loca:         currentMappings[item.mappingKey]?.loca         ?? '',
+        abbreviation: '',
+        loca:         '',
         ...currentMappings[item.mappingKey],
         barcode,
       }

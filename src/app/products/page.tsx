@@ -108,6 +108,16 @@ const DEF_BASIC_INFO: BasicInfo = {
   legal_notice:'', notes:'',
 }
 
+/* ─── 특이사항 localStorage 헬퍼 ────────────────────────── */
+const SPECIAL_NOTES_KEY = 'pm_special_notes_v1'
+interface SpecialNote { note: string; date: string }
+function loadSpecialNotes(): Record<string, SpecialNote> {
+  try { const r = localStorage.getItem(SPECIAL_NOTES_KEY); return r ? JSON.parse(r) : {} } catch { return {} }
+}
+function saveSpecialNotes(data: Record<string, SpecialNote>) {
+  try { localStorage.setItem(SPECIAL_NOTES_KEY, JSON.stringify(data)) } catch {}
+}
+
 const CNY_TO_KRW = 210
 const DEFAULT_CATS = ['전체'] // '전체' 탭은 항상 고정, 나머지는 extraCats로 관리
 const INIT_EXTRA_CATS = ['가방', '의류', '잡화'] // 앱 최초 실행 시 기본 카테고리
@@ -884,8 +894,11 @@ export default function ProductsPage() {
     code:string; name:string; abbr:string; category:string; newCat:string; supplier:string; loca:string
     cost_price:string; cost_currency:CostCurrency; status:ProductStatus; options:EditOptRow[]
     promo_text:string
+    special_notes:string
   }
   const [editForm, setEditForm] = useState<EditFormState | null>(null)
+  const [specialNotes, setSpecialNotes] = useState<Record<string, SpecialNote>>({})
+  useEffect(() => { setSpecialNotes(loadSpecialNotes()) }, [])
 
   /* ── 전체 옵션 재고=0 상품 자동 품절 처리 ── */
   const autoMarkSoldout = async (loaded: Product[]) => {
@@ -1166,6 +1179,7 @@ export default function ProductsPage() {
       status: p.status,
       options: initOptions(p),
       promo_text: p.promo_text ?? '',
+      special_notes: loadSpecialNotes()[p.id]?.note ?? '',
     })
     setIsEdit(p)
     // 이미지 포함 전체 데이터 백그라운드 로드
@@ -1226,6 +1240,20 @@ export default function ProductsPage() {
         saveCats(updated)
         return updated
       })
+      // 특이사항 localStorage 저장
+      const noteText = editForm.special_notes.trim()
+      const prevNotes = loadSpecialNotes()
+      if (noteText) {
+        const today = new Date().toISOString().slice(0, 10)
+        const existingDate = prevNotes[isEdit.id]?.date
+        const updatedNotes = { ...prevNotes, [isEdit.id]: { note: noteText, date: existingDate && prevNotes[isEdit.id]?.note === noteText ? existingDate : today } }
+        saveSpecialNotes(updatedNotes)
+        setSpecialNotes(updatedNotes)
+      } else {
+        const { [isEdit.id]: _, ...rest } = prevNotes
+        saveSpecialNotes(rest)
+        setSpecialNotes(rest)
+      }
       setIsEdit(null)
       setEditForm(null)
     } catch (e: unknown) {
@@ -2257,6 +2285,12 @@ export default function ProductsPage() {
                           {tot===0 ? '품절':'부족'}
                         </span>}
                       </p>
+                      {specialNotes[p.id] && (
+                        <div style={{ marginTop:5, padding:'4px 8px', background:'#fff1f2', borderRadius:6, borderLeft:'3px solid #dc2626' }}>
+                          <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8', marginBottom:1 }}>{specialNotes[p.id].date} 등록</p>
+                          <p style={{ fontSize:11.5, fontWeight:800, color:'#dc2626', lineHeight:1.5, wordBreak:'break-all' }}>{specialNotes[p.id].note}</p>
+                        </div>
+                      )}
                     </td>
 
                     {/* 옵션명/바코드/재고 세분화 */}
@@ -3082,6 +3116,32 @@ export default function ProductsPage() {
                 style={{ width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:64, lineHeight:1.6 }}
               />
               <p style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, marginTop:4 }}>쇼핑몰 상품 노출 시 사용되는 짧은 홍보 문구입니다.</p>
+            </div>
+
+            {/* 특이사항 */}
+            <div style={{ marginTop:16 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, paddingBottom:6, borderBottom:'1px solid #fff1f2', marginBottom:10 }}>
+                <p style={{ fontSize:12, fontWeight:800, color:'#dc2626' }}>⚠️ 특이사항</p>
+                {isEdit && specialNotes[isEdit.id] && (
+                  <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600 }}>등록일: {specialNotes[isEdit.id].date}</span>
+                )}
+                {editForm.special_notes.trim() && (
+                  <button
+                    type="button"
+                    onClick={() => setEditForm(f => f ? ({ ...f, special_notes: '' }) : f)}
+                    style={{ marginLeft:'auto', fontSize:11, fontWeight:800, color:'#ef4444', background:'#fff1f2', border:'1px solid #fecaca', borderRadius:6, padding:'2px 8px', cursor:'pointer' }}
+                  >
+                    삭제
+                  </button>
+                )}
+              </div>
+              <textarea
+                value={editForm.special_notes}
+                onChange={e => setEditForm(f => f ? ({ ...f, special_notes: e.target.value }) : f)}
+                placeholder="주의사항, 불량 이슈, 특별 관리 안내 등을 입력하세요 (입력 시 상품 목록에 빨간 글씨로 표시됩니다)"
+                style={{ width:'100%', border:'1.5px solid #fca5a5', borderRadius:8, padding:'8px 10px', fontSize:13, outline:'none', resize:'vertical', minHeight:64, lineHeight:1.6, color:'#991b1b', background:'#fff9f9' }}
+              />
+              <p style={{ fontSize:10.5, color:'#f87171', fontWeight:600, marginTop:4 }}>내용을 비우고 저장하면 특이사항이 삭제됩니다.</p>
             </div>
 
           </div>
