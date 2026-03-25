@@ -445,13 +445,10 @@ export default function ShippingHistoryPage() {
     const currentMappings = loadMappings()
     const updated = { ...currentMappings }
     for (const item of unmappedItems) {
-      const barcode = unmappedInputs[item.mappingKey].trim()
-      updated[item.mappingKey] = {
-        abbreviation: '',
-        loca:         '',
-        ...currentMappings[item.mappingKey],
-        barcode,
-      }
+      const barcode  = unmappedInputs[item.mappingKey].trim()
+      const existing = currentMappings[item.mappingKey]
+      const base     = existing ? { ...existing } : { abbreviation: '', loca: '' }
+      updated[item.mappingKey] = { ...base, barcode }
     }
     saveMappings(updated)
     setMappings(updated)
