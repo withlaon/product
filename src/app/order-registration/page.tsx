@@ -435,26 +435,64 @@ export default function OrderRegistrationPage() {
     setSelectedOrder(null)
   }
 
-  /* ─── 직접등록: 상품약어·바코드 자동 조회 ─────────────── */
+  /* ─── 직접등록: 상품명·약어·바코드 자동 조회 ───────────── */
   useEffect(() => {
     if (!directMode) return
-    if (!directForm.productName.trim()) {
+
+    const code = directForm.productCode.trim()
+    const name = directForm.productName.trim()
+    const opt  = directForm.option.trim()
+
+    // 1순위: 상품코드로 상품 캐시에서 조회 → 상품명·약어·바코드 자동입력
+    if (code) {
+      try {
+        const raw = localStorage.getItem('pm_products_cache_v1')
+        if (raw) {
+          const { data } = JSON.parse(raw) as {
+            ts: number
+            data: Array<{
+              code: string; name: string; abbr: string
+              options?: Array<{ name: string; barcode: string }>
+            }>
+          }
+          const prod = Array.isArray(data)
+            ? data.find(p => p.code?.toLowerCase() === code.toLowerCase())
+            : undefined
+          if (prod) {
+            let barcode = ''
+            if (opt && prod.options?.length) {
+              const ol = opt.toLowerCase()
+              const matched = prod.options.find(o =>
+                o.name.toLowerCase().includes(ol) || ol.includes(o.name.toLowerCase())
+              )
+              barcode = matched?.barcode || ''
+            }
+            setDirectForm(prev => ({
+              ...prev,
+              productName:  prod.name,
+              abbreviation: prod.abbr || '',
+              barcode,
+            }))
+            return
+          }
+        }
+      } catch {}
+    }
+
+    // 2순위: 상품명으로 매핑 테이블에서 약어·바코드 조회
+    if (!name) {
       setDirectForm(prev => ({ ...prev, abbreviation: '', barcode: '' }))
       return
     }
     const mappings = loadMappings()
-    const mapping  = lookupMapping(
-      mappings,
-      directForm.productName.trim(),
-      directForm.option.trim() || undefined,
-    )
+    const mapping  = lookupMapping(mappings, name, opt || undefined)
     setDirectForm(prev => ({
       ...prev,
       abbreviation: mapping.abbreviation || '',
       barcode:      mapping.barcode      || '',
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directForm.productName, directForm.option, directMode])
+  }, [directForm.productCode, directForm.productName, directForm.option, directMode])
 
   /* ─── 직접등록 저장 ───────────────────────────────────── */
   const handleDirectSave = () => {
@@ -790,10 +828,10 @@ export default function OrderRegistrationPage() {
               {/* 상품명 */}
               <div style={{ gridColumn: '1 / -1' }}>
                 <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
-                  상품명 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 10, textTransform: 'none' }}>3개 중 2개 · 입력 시 약어·바코드 자동 조회</span>
+                  상품명 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 10, textTransform: 'none' }}>3개 중 2개 · 상품코드 입력 시 자동조회</span>
                 </p>
                 <input value={directForm.productName} onChange={e => setDirectForm(p => ({ ...p, productName: e.target.value }))}
-                  placeholder="상품명"
+                  placeholder="상품코드 입력 시 자동 조회되거나 직접 입력"
                   style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
@@ -803,7 +841,7 @@ export default function OrderRegistrationPage() {
                   상품약어 <span style={{ fontWeight: 600, fontSize: 10, color: '#a78bfa' }}>자동생성</span>
                 </p>
                 <div style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid #ede9fe', background: '#f5f3ff', fontSize: 13, fontWeight: 700, color: directForm.abbreviation ? '#7c3aed' : '#c4b5fd', minHeight: 38, display: 'flex', alignItems: 'center' }}>
-                  {directForm.abbreviation || '상품명 입력 후 자동 조회'}
+                  {directForm.abbreviation || '상품코드 입력 후 자동 조회'}
                 </div>
               </div>
 
@@ -813,7 +851,7 @@ export default function OrderRegistrationPage() {
                   바코드 <span style={{ fontWeight: 600, fontSize: 10, color: '#a78bfa' }}>자동생성</span>
                 </p>
                 <div style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid #ede9fe', background: '#f5f3ff', fontSize: 13, fontWeight: 700, color: directForm.barcode ? '#7c3aed' : '#c4b5fd', minHeight: 38, display: 'flex', alignItems: 'center' }}>
-                  {directForm.barcode || '옵션 입력 후 자동 조회'}
+                  {directForm.barcode || '상품코드+옵션 입력 후 자동 조회'}
                 </div>
               </div>
 
