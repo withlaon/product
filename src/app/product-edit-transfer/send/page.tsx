@@ -170,6 +170,17 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
       })
     })
   }
+  // 토스쇼핑: 1행 빈 행 / 2행 헤더 / 3행~ 데이터
+  if (mallId === 'tossshopping' && rows.length > 0) {
+    const headers = Object.keys(rows[0])
+    const aoa: unknown[][] = [
+      [],        // 1번 행: 빈 행
+      headers,   // 2번 행: 헤더
+      ...rows.map(r => headers.map(h => r[h] ?? '')),  // 3번 행~: 데이터
+    ]
+    triggerExcelDownloadNoHeader(aoa, `${mallLabel}_송장_${todayStr()}.xlsx`)
+    return
+  }
   triggerExcelDownload(rows, `${mallLabel}_송장_${todayStr()}.xlsx`)
 }
 
