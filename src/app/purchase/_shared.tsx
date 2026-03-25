@@ -3,12 +3,16 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 
 /* ── 발주 금액 계산 상수 ── */
 export const DEFAULT_EXCHANGE_RATE = 210
-/** 원가 → 발주금액 환산: 원화기준 단가 × 관부가세(1.18) × 마진(1.25) */
+/** 원가 → 발주금액 환산: 외화기준 단가 × 환율 × 관부가세(1.18) × 마진(1.25) */
 export const PRICE_FACTOR = 1.18 * 1.25  // = 1.475
-/** 단가(원화 환산 후) → 발주금액 단가 (관부가세·마진 포함) */
+/** 단가 → 발주금액 단가
+ *  - 원화(원/KRW): 그대로 (관부가세·마진 미적용)
+ *  - 외화(CNY 등): 환율 환산 후 PRICE_FACTOR 적용
+ */
 export function unitToOrderKrw(costPrice: number, currency: string, exchangeRate: number): number {
-  const krwBase = currency === '원' ? costPrice : costPrice * exchangeRate
-  return krwBase * PRICE_FACTOR
+  const isKrw = currency === '원' || currency === 'KRW'
+  if (isKrw) return costPrice
+  return costPrice * exchangeRate * PRICE_FACTOR
 }
 
 /* ── 타입 ── */
