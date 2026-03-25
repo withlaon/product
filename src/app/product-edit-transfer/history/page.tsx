@@ -224,7 +224,7 @@ export default function ShippingHistoryPage() {
           map[key].quantity += item.quantity
         })
       })
-    return Object.values(map).sort((a, b) => a.barcode.localeCompare(b.barcode))
+    return Object.values(map).sort((a, b) => b.quantity - a.quantity)
   }, [shipped, curYM, selectedMall])
 
   /* 체크박스 */
