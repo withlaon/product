@@ -203,18 +203,28 @@ export default function ShippingHistoryPage() {
     return Object.entries(map).sort((a, b) => b[1] - a[1])
   }, [shipped, curYM])
 
-  /* 선택한 쇼핑몰의 당월 주문 목록 */
+  /* 선택한 쇼핑몰의 당월 상품별 누적 출고수량 */
   const [selectedMall, setSelectedMall] = useState<string | null>(null)
-  const mallOrderList = useMemo(() => {
+  type MallProductStat = { product_name: string; option: string; barcode: string; quantity: number }
+  const mallOrderList = useMemo((): MallProductStat[] => {
     if (!selectedMall) return []
-    return shipped
+    const map: Record<string, MallProductStat> = {}
+    shipped
       .filter(o =>
         (o.shipped_at ?? o.order_date)?.slice(0, 7) === curYM &&
         o.channel === selectedMall
       )
-      .sort((a, b) =>
-        (b.shipped_at ?? b.order_date).localeCompare(a.shipped_at ?? a.order_date)
-      )
+      .forEach(o => {
+        o.items.forEach(item => {
+          const barcode = (item.sku ?? '').trim()
+          const key = barcode || `${item.product_name}__${item.option ?? ''}`
+          if (!map[key]) {
+            map[key] = { product_name: item.product_name, option: item.option ?? '', barcode, quantity: 0 }
+          }
+          map[key].quantity += item.quantity
+        })
+      })
+    return Object.values(map).sort((a, b) => a.barcode.localeCompare(b.barcode))
   }, [shipped, curYM, selectedMall])
 
   /* 체크박스 */
@@ -562,15 +572,15 @@ export default function ShippingHistoryPage() {
         </div>
       </div>
 
-      {/* 선택된 쇼핑몰 주문 목록 */}
+      {/* 선택된 쇼핑몰 상품별 누적 출고수량 */}
       {selectedMall && (
         <div className="pm-card" style={{ marginBottom: 14, overflow: 'hidden' }}>
           <div style={{ padding: '10px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, background: '#eff6ff' }}>
             <Truck size={13} style={{ color: '#2563eb' }} />
             <span style={{ fontSize: 13, fontWeight: 800, color: '#1d4ed8' }}>
-              {selectedMall} — {curYM.replace('-','년 ')}월 출고 목록
+              {selectedMall} — {curYM.replace('-','년 ')}월 상품별 출고수량
             </span>
-            <span style={{ fontSize: 11, color: '#93c5fd', fontWeight: 600 }}>{mallOrderList.length}건</span>
+            <span style={{ fontSize: 11, color: '#93c5fd', fontWeight: 600 }}>{mallOrderList.length}종</span>
             <button onClick={() => setSelectedMall(null)}
               style={{ marginLeft: 'auto', width: 24, height: 24, borderRadius: 6, border: 'none', background: '#dbeafe', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <X size={13} style={{ color: '#2563eb' }} />
@@ -583,43 +593,34 @@ export default function ShippingHistoryPage() {
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                   <tr>
-                    {['출고일','수령인','상품명','옵션','수량','운송장번호'].map(h => (
-                      <th key={h} style={{ padding: '6px 10px', fontWeight: 800, color: '#64748b', fontSize: 10.5, textAlign: 'left', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
+                    {['상품명','옵션','바코드','수량'].map(h => (
+                      <th key={h} style={{ padding: '6px 10px', fontWeight: 800, color: '#64748b', fontSize: 10.5, textAlign: h === '수량' ? 'center' : 'left', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {mallOrderList.map(o => {
-                    const item = o.items[0]
-                    return (
-                      <tr key={o.id} style={{ borderBottom: '1px solid #f8fafc' }}
-                        onMouseEnter={e => { e.currentTarget.style.background = '#f0f9ff' }}
-                        onMouseLeave={e => { e.currentTarget.style.background = '' }}>
-                        <td style={{ padding: '7px 10px', color: '#64748b', fontSize: 11, whiteSpace: 'nowrap' }}>
-                          {(o.shipped_at ?? o.order_date)?.slice(0, 10)}
-                        </td>
-                        <td style={{ padding: '7px 10px', fontWeight: 700, color: '#334155', whiteSpace: 'nowrap' }}>
-                          {o.customer_name}
-                        </td>
-                        <td style={{ padding: '7px 10px', color: '#0f172a', maxWidth: 200 }}>
-                          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {item?.product_name ?? '-'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '7px 10px', color: '#64748b', fontSize: 11, maxWidth: 120 }}>
-                          <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {item?.option ? `[${item.option}]` : '-'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '7px 10px', fontWeight: 800, color: '#2563eb', textAlign: 'center', whiteSpace: 'nowrap' }}>
-                          {item?.quantity ?? 1}
-                        </td>
-                        <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11, color: '#475569', whiteSpace: 'nowrap' }}>
-                          {o.tracking_number ?? '-'}
-                        </td>
-                      </tr>
-                    )
-                  })}
+                  {mallOrderList.map((row, idx) => (
+                    <tr key={idx} style={{ borderBottom: '1px solid #f8fafc' }}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#f0f9ff' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = '' }}>
+                      <td style={{ padding: '7px 10px', color: '#0f172a', maxWidth: 220 }}>
+                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {row.product_name || '-'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '7px 10px', color: '#64748b', fontSize: 11, maxWidth: 140 }}>
+                        <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {row.option ? `[${row.option}]` : '-'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 11, color: '#475569', whiteSpace: 'nowrap' }}>
+                        {row.barcode || '-'}
+                      </td>
+                      <td style={{ padding: '7px 10px', fontWeight: 900, color: '#2563eb', textAlign: 'center', fontSize: 13, whiteSpace: 'nowrap' }}>
+                        {row.quantity}
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             )}
