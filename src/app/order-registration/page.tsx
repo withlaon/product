@@ -1,15 +1,16 @@
 'use client'
 
 import { useState, useEffect, useRef } from 'react'
+import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import {
   Upload, ChevronLeft, ChevronRight, Package,
   CheckCircle2, AlertCircle, Store, FileSpreadsheet,
-  CheckSquare, Square, Trash2, PackageCheck,
+  CheckSquare, Square, Trash2, PackageCheck, PenLine,
 } from 'lucide-react'
 import {
   loadOrders, saveOrders, toOrderDate,
-  loadMappings, saveMappings, makeMappingKey, mpToChannel,
+  loadMappings, saveMappings, makeMappingKey, mpToChannel, lookupMapping,
 } from '@/lib/orders'
 import type { Order } from '@/lib/orders'
 
@@ -46,12 +47,35 @@ interface RegOrder {
 }
 
 interface DayData {
-  mall: MallId
+  mall: string
   date: string
   orders: RegOrder[]
   raw_rows?: Record<string, unknown>[]  // 원본 Excel 행 (송장전송 파일 재생성용)
   uploaded_at: string
 }
+
+/* ─── 직접등록 폼 타입 ───────────────────────────────────── */
+interface DirectForm {
+  mall: string
+  orderNumber: string
+  productCode: string
+  option: string
+  productName: string
+  abbreviation: string
+  barcode: string
+  quantity: number
+  recipientName: string
+  recipientAddress: string
+  phone: string
+  deliveryMessage: string
+}
+
+const emptyDirectForm = (): DirectForm => ({
+  mall: '', orderNumber: '', productCode: '', option: '',
+  productName: '', abbreviation: '', barcode: '',
+  quantity: 1, recipientName: '', recipientAddress: '',
+  phone: '', deliveryMessage: '',
+})
 
 /* ─── 상태 맵 ────────────────────────────────────────────── */
 const STATUS_MAP = {
@@ -63,11 +87,11 @@ const STATUS_MAP = {
 } as const
 
 /* ─── 스토리지 헬퍼 ──────────────────────────────────────── */
-function storageKey(mall: MallId, date: string) {
+function storageKey(mall: string, date: string) {
   return `order_reg_v1_${mall}_${date}`
 }
 
-function loadDayData(mall: MallId, date: string): DayData | null {
+function loadDayData(mall: string, date: string): DayData | null {
   try {
     const raw = localStorage.getItem(storageKey(mall, date))
     return raw ? (JSON.parse(raw) as DayData) : null
@@ -81,7 +105,7 @@ function saveDayData(data: DayData) {
 }
 
 /* ─── 모든 날짜의 DayData 조회 (다운로드용) ─────────────── */
-export function loadAllDayData(mall: MallId): DayData[] {
+export function loadAllDayData(mall: string): DayData[] {
   const result: DayData[] = []
   try {
     const prefix = `order_reg_v1_${mall}_`
@@ -334,6 +358,13 @@ export default function OrderRegistrationPage() {
   const [checkedIds, setCheckedIds]     = useState<Set<string>>(new Set())
   const fileRef = useRef<HTMLInputElement>(null)
 
+  /* 직접등록 */
+  const router = useRouter()
+  const [directMode, setDirectMode]     = useState(false)
+  const [directForm, setDirectForm]     = useState<DirectForm>(emptyDirectForm())
+  const [directSaving, setDirectSaving] = useState(false)
+  const [directMsg, setDirectMsg]       = useState<{ text: string; ok: boolean } | null>(null)
+
   const isToday   = currentDate === today
   const canGoNext = currentDate < today
 
@@ -391,9 +422,113 @@ export default function OrderRegistrationPage() {
 
   const handleMallSelect = (mall: MallId) => {
     setSelectedMall(mall)
+    setDirectMode(false)
     setCurrentDate(today)
     setImportMsg(null)
     setSelectedOrder(null)
+  }
+
+  const handleDirectSelect = () => {
+    setSelectedMall(null)
+    setDirectMode(true)
+    setImportMsg(null)
+    setSelectedOrder(null)
+  }
+
+  /* ─── 직접등록: 상품약어·바코드 자동 조회 ─────────────── */
+  useEffect(() => {
+    if (!directMode) return
+    if (!directForm.productName.trim()) {
+      setDirectForm(prev => ({ ...prev, abbreviation: '', barcode: '' }))
+      return
+    }
+    const mappings = loadMappings()
+    const mapping  = lookupMapping(
+      mappings,
+      directForm.productName.trim(),
+      directForm.option.trim() || undefined,
+    )
+    setDirectForm(prev => ({
+      ...prev,
+      abbreviation: mapping.abbreviation || '',
+      barcode:      mapping.barcode      || '',
+    }))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [directForm.productName, directForm.option, directMode])
+
+  /* ─── 직접등록 저장 ───────────────────────────────────── */
+  const handleDirectSave = () => {
+    const filledCount = [directForm.productCode, directForm.option, directForm.productName]
+      .filter(v => v.trim()).length
+    if (filledCount < 2) {
+      setDirectMsg({ text: '상품코드 · 옵션 · 상품명 중 최소 2개를 입력해주세요.', ok: false })
+      return
+    }
+    if (!directForm.recipientName.trim()) {
+      setDirectMsg({ text: '수령인을 입력해주세요.', ok: false })
+      return
+    }
+    if (!directForm.recipientAddress.trim()) {
+      setDirectMsg({ text: '수령인 주소를 입력해주세요.', ok: false })
+      return
+    }
+
+    setDirectSaving(true)
+    const id         = `${Date.now()}-${Math.random().toString(36).slice(2)}`
+    const orderNum   = directForm.orderNumber.trim() || `DIRECT-${Date.now()}`
+    const uploadedAt = new Date().toISOString()
+
+    const newRegOrder: RegOrder = {
+      id,
+      order_number:     orderNum,
+      customer_name:    directForm.recipientName.trim(),
+      customer_phone:   directForm.phone.trim(),
+      shipping_address: directForm.recipientAddress.trim(),
+      items: [{
+        product_name: directForm.productName.trim() || directForm.productCode.trim(),
+        sku:          directForm.productCode.trim(),
+        quantity:     directForm.quantity,
+        option:       directForm.option.trim(),
+      }],
+      total_amount: 0,
+      status:  'pending',
+      memo:    directForm.deliveryMessage.trim(),
+      extra_data: {
+        import_source: '직접등록',
+        쇼핑몰:  directForm.mall.trim(),
+        상품약어: directForm.abbreviation,
+        바코드:  directForm.barcode,
+      },
+    }
+
+    // order_reg_v1_direct_{today} 에 누적 저장
+    const existingDay = loadDayData('direct', today)
+    const updatedDay: DayData = existingDay
+      ? { ...existingDay, orders: [...existingDay.orders, newRegOrder] }
+      : { mall: 'direct', date: today, orders: [newRegOrder], uploaded_at: uploadedAt }
+    saveDayData(updatedDay)
+
+    // pm_orders_v1 에 추가
+    const syncOrder: Order = {
+      id,
+      order_date:       today,
+      order_number:     orderNum,
+      channel:          directForm.mall.trim() || '직접등록',
+      customer_name:    directForm.recipientName.trim(),
+      customer_phone:   directForm.phone.trim(),
+      shipping_address: directForm.recipientAddress.trim(),
+      items:            newRegOrder.items,
+      total_amount:     0,
+      status:           'pending',
+      memo:             directForm.deliveryMessage.trim(),
+      uploaded_at:      uploadedAt,
+      extra_data:       newRegOrder.extra_data,
+    }
+    saveOrders([...loadOrders(), syncOrder])
+
+    setDirectSaving(false)
+    setDirectMsg({ text: '등록 완료! 주문관리로 이동합니다...', ok: true })
+    setTimeout(() => router.push('/product-transfer'), 800)
   }
 
   /* ─── 파일 업로드 처리 ───────────────────────────────── */
@@ -572,11 +707,179 @@ export default function OrderRegistrationPage() {
             상품명(관리용) 자동 매핑
           </p>
         </div>
+
+        {/* 구분선 */}
+        <div style={{ height: 1, background: '#f1f5f9', margin: '8px 2px' }} />
+
+        {/* 직접등록 버튼 */}
+        <button
+          onClick={handleDirectSelect}
+          style={{
+            width: '100%', padding: '10px 12px', borderRadius: 10,
+            border: directMode ? '1.5px solid #7c3aed50' : '1.5px solid transparent',
+            cursor: 'pointer', textAlign: 'left',
+            fontSize: 13.5, fontWeight: directMode ? 800 : 600,
+            color: directMode ? '#7c3aed' : '#64748b',
+            background: directMode ? '#f5f3ff' : 'transparent',
+            transition: 'all 150ms ease',
+            display: 'flex', alignItems: 'center', gap: 8,
+          }}
+          onMouseEnter={e => { if (!directMode) { e.currentTarget.style.background = '#f8fafc'; e.currentTarget.style.color = '#374151' } }}
+          onMouseLeave={e => { if (!directMode) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#64748b' } }}
+        >
+          {directMode && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#7c3aed', flexShrink: 0 }} />}
+          <PenLine size={13} style={{ flexShrink: 0, color: directMode ? '#7c3aed' : '#94a3b8' }} />
+          직접등록
+        </button>
       </div>
 
       {/* 오른쪽: 컨텐츠 */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 12, minWidth: 0 }}>
-        {!selectedMall ? (
+        {directMode ? (
+          /* ─── 직접등록 폼 ─────────────────────────────────── */
+          <div className="pm-card" style={{ flex: 1, overflow: 'auto', padding: 28 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 12, background: '#f5f3ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <PenLine size={18} style={{ color: '#7c3aed' }} />
+              </div>
+              <div>
+                <h2 style={{ fontSize: 16, fontWeight: 900, color: '#0f172a', margin: 0 }}>직접 주문 등록</h2>
+                <p style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600, margin: '2px 0 0' }}>
+                  상품코드 · 옵션 · 상품명 중 2개 이상 입력 필요 · 저장 후 주문관리로 이동
+                </p>
+              </div>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 20px' }}>
+              {/* 쇼핑몰 */}
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>쇼핑몰</p>
+                <input value={directForm.mall} onChange={e => setDirectForm(p => ({ ...p, mall: e.target.value }))}
+                  placeholder="예: 네이버스마트스토어"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 주문번호 */}
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>주문번호</p>
+                <input value={directForm.orderNumber} onChange={e => setDirectForm(p => ({ ...p, orderNumber: e.target.value }))}
+                  placeholder="미입력 시 자동 생성"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 상품코드 */}
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  상품코드 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 10, textTransform: 'none' }}>3개 중 2개</span>
+                </p>
+                <input value={directForm.productCode} onChange={e => setDirectForm(p => ({ ...p, productCode: e.target.value }))}
+                  placeholder="상품 코드"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 옵션 */}
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  옵션 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 10, textTransform: 'none' }}>3개 중 2개</span>
+                </p>
+                <input value={directForm.option} onChange={e => setDirectForm(p => ({ ...p, option: e.target.value }))}
+                  placeholder="예: 블랙 / L"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 상품명 */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  상품명 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 10, textTransform: 'none' }}>3개 중 2개 · 입력 시 약어·바코드 자동 조회</span>
+                </p>
+                <input value={directForm.productName} onChange={e => setDirectForm(p => ({ ...p, productName: e.target.value }))}
+                  placeholder="상품명"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 상품약어 auto */}
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  상품약어 <span style={{ fontWeight: 600, fontSize: 10, color: '#a78bfa' }}>자동생성</span>
+                </p>
+                <div style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid #ede9fe', background: '#f5f3ff', fontSize: 13, fontWeight: 700, color: directForm.abbreviation ? '#7c3aed' : '#c4b5fd', minHeight: 38, display: 'flex', alignItems: 'center' }}>
+                  {directForm.abbreviation || '상품명 입력 후 자동 조회'}
+                </div>
+              </div>
+
+              {/* 바코드 auto */}
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  바코드 <span style={{ fontWeight: 600, fontSize: 10, color: '#a78bfa' }}>자동생성</span>
+                </p>
+                <div style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid #ede9fe', background: '#f5f3ff', fontSize: 13, fontWeight: 700, color: directForm.barcode ? '#7c3aed' : '#c4b5fd', minHeight: 38, display: 'flex', alignItems: 'center' }}>
+                  {directForm.barcode || '옵션 입력 후 자동 조회'}
+                </div>
+              </div>
+
+              {/* 수량 */}
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>수량 <span style={{ color: '#ef4444' }}>*</span></p>
+                <input type="number" min={1} value={directForm.quantity}
+                  onChange={e => setDirectForm(p => ({ ...p, quantity: Math.max(1, parseInt(e.target.value) || 1) }))}
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 전화번호 */}
+              <div>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>전화번호</p>
+                <input value={directForm.phone} onChange={e => setDirectForm(p => ({ ...p, phone: e.target.value }))}
+                  placeholder="010-0000-0000"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 수령인 */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>수령인 <span style={{ color: '#ef4444' }}>*</span></p>
+                <input value={directForm.recipientName} onChange={e => setDirectForm(p => ({ ...p, recipientName: e.target.value }))}
+                  placeholder="수령인 이름"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 수령인 주소 */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>수령인 주소 <span style={{ color: '#ef4444' }}>*</span></p>
+                <input value={directForm.recipientAddress} onChange={e => setDirectForm(p => ({ ...p, recipientAddress: e.target.value }))}
+                  placeholder="배송 주소 입력"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+
+              {/* 배송메세지 */}
+              <div style={{ gridColumn: '1 / -1' }}>
+                <p style={{ fontSize: 11, fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>배송메세지</p>
+                <input value={directForm.deliveryMessage} onChange={e => setDirectForm(p => ({ ...p, deliveryMessage: e.target.value }))}
+                  placeholder="배송 요청사항"
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 13, color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+              </div>
+            </div>
+
+            {directMsg && (
+              <div style={{ marginTop: 16, display: 'flex', alignItems: 'center', gap: 7, padding: '9px 14px', borderRadius: 9, background: directMsg.ok ? '#ecfdf5' : '#fef2f2', border: `1px solid ${directMsg.ok ? '#bbf7d0' : '#fecaca'}` }}>
+                {directMsg.ok
+                  ? <CheckCircle2 size={14} style={{ color: '#059669', flexShrink: 0 }} />
+                  : <AlertCircle size={14} style={{ color: '#dc2626', flexShrink: 0 }} />}
+                <span style={{ fontSize: 13, fontWeight: 700, color: directMsg.ok ? '#059669' : '#dc2626' }}>{directMsg.text}</span>
+              </div>
+            )}
+
+            <div style={{ marginTop: 20, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <button onClick={handleDirectSave} disabled={directSaving}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 24px', background: '#7c3aed', color: 'white', borderRadius: 10, fontSize: 13.5, fontWeight: 800, border: 'none', cursor: directSaving ? 'not-allowed' : 'pointer', opacity: directSaving ? 0.6 : 1 }}>
+                <PackageCheck size={15} />
+                {directSaving ? '저장 중...' : '저장 후 주문관리로 이동'}
+              </button>
+              <button onClick={() => { setDirectForm(emptyDirectForm()); setDirectMsg(null) }}
+                style={{ padding: '10px 18px', background: '#f1f5f9', color: '#64748b', borderRadius: 10, fontSize: 13, fontWeight: 700, border: '1px solid #e2e8f0', cursor: 'pointer' }}>
+                초기화
+              </button>
+            </div>
+          </div>
+        ) : !selectedMall ? (
           <div className="pm-card" style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', flexDirection: 'column', gap: 14 }}>
             <div style={{ width: 72, height: 72, borderRadius: 20, background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <Store size={32} style={{ color: '#cbd5e1' }} />
