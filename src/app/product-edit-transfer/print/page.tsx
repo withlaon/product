@@ -10,9 +10,9 @@ import {
 import {
   loadInvoiceQueue, saveInvoiceQueue,
   loadShippedOrders, saveShippedOrders,
-  loadMappings, lookupMapping,
+  loadMappings, lookupMapping, extractColor,
 } from '@/lib/orders'
-import type { Order, ShippedOrder } from '@/lib/orders'
+import type { Order, ShippedOrder, MappingStore } from '@/lib/orders'
 
 /** [색상=베이지, 사이즈=FREE] → [베이지,FREE] 변환 */
 function formatOption(option: string): string {
@@ -35,6 +35,97 @@ function shiftDate(dateStr: string, delta: number): string {
   const [y, m, d] = dateStr.split('-').map(Number)
   const dt = new Date(y, m - 1, d + delta)
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
+/* ─── 피킹리스트 출력 ─────────────────────────────────────── */
+function printPickingList(orders: Order[], mappings: MappingStore) {
+  interface PickRow {
+    order_number: string
+    customer_name: string
+    shipping_address: string
+    abbreviation: string
+    color: string
+    quantity: number
+    loca: string
+  }
+
+  const rows: PickRow[] = []
+  for (const order of orders) {
+    for (const item of order.items) {
+      const m = lookupMapping(mappings, item.product_name, item.option)
+      rows.push({
+        order_number:  order.order_number,
+        customer_name: order.customer_name,
+        shipping_address: order.shipping_address,
+        abbreviation:  m.abbreviation || item.product_name,
+        color:         extractColor(item.option ?? ''),
+        quantity:      item.quantity,
+        loca:          m.loca ?? '',
+      })
+    }
+  }
+
+  // LOCA 내림차순 정렬
+  rows.sort((a, b) => b.loca.localeCompare(a.loca, 'ko'))
+
+  // 합포장: 같은 수령인+주소 카운트
+  const addrCount: Record<string, number> = {}
+  for (const r of rows) {
+    const k = `${r.customer_name}||${r.shipping_address}`
+    addrCount[k] = (addrCount[k] ?? 0) + 1
+  }
+
+  const today = getToday()
+  const trRows = rows.map((r, i) => {
+    const k = `${r.customer_name}||${r.shipping_address}`
+    const isDup  = addrCount[k] > 1
+    const isQty2 = r.quantity >= 2
+    let bg = ''
+    if (isDup && isQty2) bg = 'background:#bbf7d0'
+    else if (isDup)      bg = 'background:#bfdbfe'
+    else if (isQty2)     bg = 'background:#fef9c3'
+    return `<tr style="${bg}">
+      <td style="text-align:center">${i + 1}</td>
+      <td><b>${r.customer_name}</b></td>
+      <td>${r.abbreviation}</td>
+      <td>${r.color}</td>
+      <td style="text-align:center;font-weight:900;${isQty2 ? 'color:#b45309' : ''}">${r.quantity}</td>
+      <td style="text-align:center;font-family:monospace">${r.loca}</td>
+    </tr>`
+  }).join('')
+
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
+<title>피킹리스트 ${today}</title>
+<style>
+  @page{size:A4 portrait;margin:12mm 10mm}
+  body{font-family:'Malgun Gothic',sans-serif;margin:0;padding:10px}
+  h2{margin:0 0 10px;font-size:14px}
+  table{width:100%;border-collapse:collapse;font-size:11px}
+  th,td{border:1px solid #475569;padding:5px 8px}
+  th{background:#1e293b;color:#fff;font-weight:800;text-align:left}
+  .btn{padding:8px 18px;background:#1e293b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;margin-bottom:12px}
+  @media print{.btn{display:none}body{padding:0}h2{font-size:13px}}
+</style></head><body>
+<h2>📋 피킹리스트 — ${today} (${rows.length}건)</h2>
+<button class="btn" onclick="window.print()">🖨 인쇄</button>
+<table>
+  <thead><tr>
+    <th style="width:36px">NO</th>
+    <th>수령인</th>
+    <th>상품약어</th>
+    <th>색상</th>
+    <th style="width:46px">수량</th>
+    <th style="width:70px">LOCA</th>
+  </tr></thead>
+  <tbody>${trRows}</tbody>
+</table>
+<div style="margin-top:14px;font-size:11px;color:#64748b">
+  ● 파란배경: 합포장(동일 수령인·주소)&nbsp;&nbsp;● 노란배경: 수량 2개 이상&nbsp;&nbsp;● 초록배경: 합포장+2개이상
+</div>
+</body></html>`
+
+  const w = window.open('', '_blank', 'width=900,height=720')
+  if (w) { w.document.write(html); w.document.close() }
 }
 
 const CARRIERS = ['CJ대한통운', '롯데택배', '한진택배', '우체국택배', '로젠택배', '쿠팡로켓', '직접입력']
@@ -203,6 +294,15 @@ export default function InvoicePrintPage() {
     setCheckedPrint(new Set())
   }
 
+  /* 피킹리스트 출력 */
+  const handlePickingList = () => {
+    const targets = checkedPrint.size > 0
+      ? filtered.filter(o => checkedPrint.has(o.id))
+      : filtered
+    if (targets.length === 0) return alert('출력할 주문이 없습니다.')
+    printPickingList(targets, loadMappings())
+  }
+
   /* 전체 다운로드 (CJ 양식) */
   const downloadPrintFile = () => {
     const targets = checkedPrint.size > 0
@@ -361,6 +461,12 @@ export default function InvoicePrintPage() {
           style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#ecfdf5', color: '#059669', borderRadius: 9, fontSize: 12, fontWeight: 800, border: '1.5px solid #bbf7d0', cursor: 'pointer' }}>
           <FileDown size={13} />
           {checkedCount > 0 ? `선택 ${checkedCount}건 다운로드` : '전체 다운로드'}
+        </button>
+
+        {/* 피킹리스트 출력 */}
+        <button onClick={handlePickingList}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#059669', color: 'white', borderRadius: 9, fontSize: 12, fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+          <Printer size={13} />피킹리스트 출력
         </button>
 
         {/* 송장출력용 파일 */}
