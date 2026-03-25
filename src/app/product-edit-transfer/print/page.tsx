@@ -37,6 +37,21 @@ function shiftDate(dateStr: string, delta: number): string {
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
 }
 
+/* ─── 색상명 → CSS 색상 ───────────────────────────────────── */
+const COLOR_CSS_MAP: Record<string, string> = {
+  '블랙': '#111827',    '화이트': '#9ca3af',  '레드': '#dc2626',
+  '블루': '#2563eb',    '그린': '#16a34a',    '옐로우': '#ca8a04',
+  '핑크': '#db2777',    '퍼플': '#7c3aed',    '오렌지': '#ea580c',
+  '그레이': '#6b7280',  '네이비': '#1e3a8a',  '베이지': '#a16207',
+  '아이보리': '#78716c','브라운': '#92400e',   '카키': '#4d7c0f',
+  '민트': '#0d9488',    '라벤더': '#8b5cf6',  '골드': '#b45309',
+  '실버': '#71717a',    '샴페인': '#a16207',
+}
+/* 합포장 그룹용 글씨 색상 팔레트 */
+const DUP_NAME_COLORS = [
+  '#1d4ed8','#dc2626','#7c3aed','#059669','#d97706','#c2410c','#0369a1','#9333ea',
+]
+
 /* ─── 피킹리스트 출력 ─────────────────────────────────────── */
 function printPickingList(orders: Order[], mappings: MappingStore) {
   interface PickRow {
@@ -49,18 +64,40 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     loca: string
   }
 
+  // 상품 캐시 로드 (바코드 → 색상명 자동 조회)
+  type CacheOpt  = { barcode: string; korean_name: string }
+  type CacheProd = { id: string; options?: CacheOpt[] }
+  let productCache: CacheProd[] = []
+  try {
+    const raw = localStorage.getItem('pm_products_cache_v1')
+    if (raw) {
+      const { data } = JSON.parse(raw) as { ts: number; data: CacheProd[] }
+      if (Array.isArray(data)) productCache = data
+    }
+  } catch {}
+
   const rows: PickRow[] = []
   for (const order of orders) {
     for (const item of order.items) {
       const m = lookupMapping(mappings, item.product_name, item.option)
+
+      // 색상: 바코드 기준 캐시 조회 → fallback: option 텍스트 추출
+      let color = ''
+      if (m.product_id && m.barcode) {
+        const prod = productCache.find(p => p.id === m.product_id)
+        const opt  = prod?.options?.find(o => o.barcode === m.barcode)
+        if (opt?.korean_name) color = opt.korean_name
+      }
+      if (!color) color = extractColor(item.option ?? '')
+
       rows.push({
-        order_number:  order.order_number,
-        customer_name: order.customer_name,
+        order_number:     order.order_number,
+        customer_name:    order.customer_name,
         shipping_address: order.shipping_address,
-        abbreviation:  m.abbreviation || item.product_name,
-        color:         extractColor(item.option ?? ''),
-        quantity:      item.quantity,
-        loca:          m.loca ?? '',
+        abbreviation:     m.abbreviation || item.product_name,
+        color,
+        quantity: item.quantity,
+        loca:     m.loca ?? '',
       })
     }
   }
@@ -68,28 +105,48 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
   // LOCA 내림차순 정렬
   rows.sort((a, b) => b.loca.localeCompare(a.loca, 'ko'))
 
-  // 합포장: 같은 수령인+주소 카운트
+  // 합포장 카운트 (같은 수령인+주소)
   const addrCount: Record<string, number> = {}
   for (const r of rows) {
     const k = `${r.customer_name}||${r.shipping_address}`
     addrCount[k] = (addrCount[k] ?? 0) + 1
   }
 
+  // 합포장 그룹별 수령인 이름 글씨 색상 할당
+  const groupColor: Record<string, string> = {}
+  let dupColorIdx = 0
+  for (const r of rows) {
+    const k = `${r.customer_name}||${r.shipping_address}`
+    if (addrCount[k] > 1 && !groupColor[k]) {
+      groupColor[k] = DUP_NAME_COLORS[dupColorIdx % DUP_NAME_COLORS.length]
+      dupColorIdx++
+    }
+  }
+
   const today = getToday()
   const trRows = rows.map((r, i) => {
-    const k = `${r.customer_name}||${r.shipping_address}`
+    const k      = `${r.customer_name}||${r.shipping_address}`
     const isDup  = addrCount[k] > 1
     const isQty2 = r.quantity >= 2
     let bg = ''
     if (isDup && isQty2) bg = 'background:#bbf7d0'
     else if (isDup)      bg = 'background:#bfdbfe'
     else if (isQty2)     bg = 'background:#fef9c3'
+
+    const nameStyle = isDup
+      ? `color:${groupColor[k]};font-weight:900`
+      : 'font-weight:700'
+    const qtyStyle  = isQty2
+      ? 'text-align:center;font-weight:900;color:#dc2626'
+      : 'text-align:center;font-weight:700'
+    const colorCss  = COLOR_CSS_MAP[r.color] ?? '#374151'
+
     return `<tr style="${bg}">
       <td style="text-align:center">${i + 1}</td>
-      <td><b>${r.customer_name}</b></td>
+      <td><span style="${nameStyle}">${r.customer_name}</span></td>
       <td>${r.abbreviation}</td>
-      <td>${r.color}</td>
-      <td style="text-align:center;font-weight:900;${isQty2 ? 'color:#b45309' : ''}">${r.quantity}</td>
+      <td contenteditable="true" style="color:${colorCss};font-weight:700;cursor:text">${r.color}</td>
+      <td style="${qtyStyle}">${r.quantity}</td>
       <td style="text-align:center;font-family:monospace">${r.loca}</td>
     </tr>`
   }).join('')
@@ -97,14 +154,16 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>피킹리스트 ${today}</title>
 <style>
-  @page{size:A4 portrait;margin:12mm 10mm}
+  @page{size:A4 portrait;margin:12mm 10mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
   body{font-family:'Malgun Gothic',sans-serif;margin:0;padding:10px}
   h2{margin:0 0 10px;font-size:14px}
   table{width:100%;border-collapse:collapse;font-size:11px}
   th,td{border:1px solid #475569;padding:5px 8px}
   th{background:#1e293b;color:#fff;font-weight:800;text-align:left}
+  [contenteditable]{outline:none;border-bottom:1px dashed #cbd5e1}
+  [contenteditable]:focus{background:rgba(255,251,235,0.9);border-radius:2px;border-bottom-color:#f59e0b}
   .btn{padding:8px 18px;background:#1e293b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;margin-bottom:12px}
-  @media print{.btn{display:none}body{padding:0}h2{font-size:13px}}
+  @media print{.btn{display:none}body{padding:0}h2{font-size:13px}[contenteditable]{border-bottom:none}}
 </style></head><body>
 <h2>📋 피킹리스트 — ${today} (${rows.length}건)</h2>
 <button class="btn" onclick="window.print()">🖨 인쇄</button>
@@ -113,14 +172,16 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     <th style="width:36px">NO</th>
     <th>수령인</th>
     <th>상품약어</th>
-    <th>색상</th>
+    <th style="width:64px">색상</th>
     <th style="width:46px">수량</th>
     <th style="width:70px">LOCA</th>
   </tr></thead>
   <tbody>${trRows}</tbody>
 </table>
-<div style="margin-top:14px;font-size:11px;color:#64748b">
-  ● 파란배경: 합포장(동일 수령인·주소)&nbsp;&nbsp;● 노란배경: 수량 2개 이상&nbsp;&nbsp;● 초록배경: 합포장+2개이상
+<div style="margin-top:14px;font-size:10.5px;color:#64748b;line-height:1.8">
+  ● 파란배경: 합포장(동일 수령인·주소) — 수령인 이름 색상으로 그룹 구분<br>
+  ● 노란배경: 수량 2개 이상(수량 빨간색) &nbsp; ● 초록배경: 합포장+2개이상<br>
+  ※ 색상 칸 클릭 → 직접 수정 가능 · 수정 후 인쇄 버튼 클릭
 </div>
 </body></html>`
 
