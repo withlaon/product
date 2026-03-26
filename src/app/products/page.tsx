@@ -1277,7 +1277,7 @@ export default function ProductsPage() {
 
     return products.filter(p => {
       const q   = search.trim()
-      const mS  = !q || p.name.includes(q) || p.code.includes(q) || p.options.some(o => o.barcode.includes(q) || o.name.includes(q))
+      const mS  = !q || p.name.includes(q) || p.code.includes(q) || (p.abbr && p.abbr.includes(q)) || p.options.some(o => o.barcode.includes(q) || o.name.includes(q))
       const mC  = activeTab === '전체' || p.category === activeTab
       let mSt = true
       if (statusFilter === '__low_stock__') {
