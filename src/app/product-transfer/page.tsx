@@ -474,10 +474,12 @@ export default function OrdersPage() {
 
   /* 매핑 모달 열기 - 즉시 표시, 상품은 백그라운드 로드 */
   const openMapping = () => {
-    // 당일 주문만 매핑 대상으로 수집 (이전 날짜 주문 제외)
+    // 선택된 주문이 있으면 그것만, 없으면 당일 주문 전체 대상
+    const targetOrders = checked.size > 0
+      ? orders.filter(o => checked.has(o.id))
+      : orders.filter(o => o.order_date === today)
     const keySet: Record<string, boolean> = {}
-    orders
-      .filter(o => o.order_date === today)
+    targetOrders
       .forEach(o => {
         o.items.forEach(i => {
           const key = makeMappingKey(i.product_name, i.option ?? '')
@@ -527,10 +529,65 @@ export default function OrdersPage() {
     const matchOption = (opt: string, productOpts: MyProductOption[]): MyProductOption | undefined => {
       if (!opt) return undefined
       const normOpt = normalize(opt)
+
+      // 1. 정확 일치 (이름 또는 한글명)
+      const exact = productOpts.find(o => normalize(o.name) === normOpt) ??
+                    productOpts.find(o => o.korean_name && normalize(o.korean_name) === normOpt)
+      if (exact) return exact
+
+      // 2. 의류 "[색상=X, 사이즈=Y]" 형식 파싱
+      const colorM = opt.match(/색상\s*[=:]\s*([^,\]\n]+)/i)
+      const sizeM  = opt.match(/사이즈\s*[=:]\s*([^,\]\n]+)/i)
+      if (colorM) {
+        const nc = normalize(colorM[1])
+        const ns = sizeM ? normalize(sizeM[1]) : null
+        if (ns) {
+          const cs = productOpts.find(o =>
+            o.korean_name && normalize(o.korean_name) === nc &&
+            normalize(o.size ?? 'free') === ns
+          )
+          if (cs) return cs
+        }
+        const co = productOpts.find(o => o.korean_name && normalize(o.korean_name) === nc)
+        if (co) return co
+      }
+
+      // 3. "색상/사이즈" 슬래시 형식 파싱 (예: "베이지/M", "베이지/FREE")
+      const slashParts = opt.split('/')
+      if (slashParts.length >= 2) {
+        const nc = normalize(slashParts[0].trim())
+        const ns = normalize(slashParts[slashParts.length - 1].trim())
+        const slashMatch =
+          productOpts.find(o =>
+            o.korean_name && normalize(o.korean_name) === nc &&
+            normalize(o.size ?? 'free') === ns
+          ) ??
+          productOpts.find(o =>
+            normalize(o.name) === nc &&
+            normalize(o.size ?? 'free') === ns
+          )
+        if (slashMatch) return slashMatch
+      }
+
+      // 4. 한글명 contains 매칭 + 동일 색상 여러 사이즈일 때 사이즈로 추가 필터
+      const colorCandidates = productOpts.filter(o =>
+        o.korean_name && normalize(o.korean_name).length > 0 &&
+        normOpt.includes(normalize(o.korean_name))
+      )
+      if (colorCandidates.length === 1) return colorCandidates[0]
+      if (colorCandidates.length > 1) {
+        // 옵션 문자열 안에 사이즈가 포함된 후보 우선
+        const withSize = colorCandidates.find(o => {
+          const ns = normalize(o.size ?? 'free')
+          return ns !== 'free' && normOpt.includes(ns)
+        })
+        if (withSize) return withSize
+        // FREE 사이즈 후보 반환
+        return colorCandidates.find(o => normalize(o.size ?? 'free') === 'free') ?? colorCandidates[0]
+      }
+
+      // 5. 이름 contains 또는 한글명이 옵션 문자열에 포함
       return (
-        productOpts.find(o => normalize(o.name) === normOpt) ??
-        productOpts.find(o => o.korean_name && normalize(o.korean_name) === normOpt) ??
-        productOpts.find(o => o.korean_name && normOpt.includes(normalize(o.korean_name))) ??
         productOpts.find(o => normalize(o.name) !== '' && normOpt.includes(normalize(o.name))) ??
         productOpts.find(o => o.korean_name && normalize(o.korean_name).includes(normOpt))
       )
