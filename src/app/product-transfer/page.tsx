@@ -665,14 +665,15 @@ export default function OrdersPage() {
     }))
   }
 
-  /* 매핑에서 옵션 선택 시 (바코드 자동 채움) */
-  const handleOptionSelect = (key: string, optName: string) => {
+  /* 매핑에서 옵션 선택 시 (바코드 자동 채움) — 인덱스 기반으로 의류 중복 name 문제 해결 */
+  const handleOptionSelect = (key: string, optIdxStr: string) => {
     const m = draftMappings[key]
     const product = myProducts.find(p => p.id === m?.product_id)
-    const opt = product?.options.find(o => o.name === optName)
+    const idx = parseInt(optIdxStr, 10)
+    const opt = !isNaN(idx) && product ? product.options[idx] : undefined
     setDraftMappings(prev => ({
       ...prev,
-      [key]: { ...prev[key], my_option_name: optName, barcode: opt?.barcode ?? prev[key].barcode },
+      [key]: { ...prev[key], my_option_name: opt?.name ?? '', barcode: opt?.barcode ?? prev[key].barcode },
     }))
   }
 
@@ -1214,17 +1215,30 @@ export default function OrdersPage() {
                       onChange={pid => handleProductSelect(key, pid)}
                     />
 
-                    {/* 내 옵션 선택 */}
+                    {/* 내 옵션 선택 — value를 index로 관리해 name 중복·빈값 문제 해결 */}
                     <select
-                      value={m.my_option_name ?? ''}
+                      value={(() => {
+                        if (!selectedProduct) return ''
+                        // 바코드 우선 매칭 (가장 정확)
+                        if (m.barcode) {
+                          const bi = selectedProduct.options.findIndex(o => o.barcode === m.barcode)
+                          if (bi >= 0) return String(bi)
+                        }
+                        // 옵션명으로 매칭
+                        if (m.my_option_name !== undefined && m.my_option_name !== '') {
+                          const ni = selectedProduct.options.findIndex(o => o.name === m.my_option_name)
+                          if (ni >= 0) return String(ni)
+                        }
+                        return ''
+                      })()}
                       disabled={!selectedProduct}
                       onChange={e => handleOptionSelect(key, e.target.value)}
                       style={{ height: 34, borderRadius: 8, border: '1.5px solid #e2e8f0', padding: '0 8px', fontSize: 11.5, outline: 'none', width: '100%', background: !selectedProduct ? '#f8fafc' : 'white', color: !selectedProduct ? '#94a3b8' : '#0f172a', cursor: !selectedProduct ? 'not-allowed' : 'pointer' }}
                     >
                       <option value="">-- 선택 --</option>
-                      {selectedProduct?.options.map(opt => {
+                      {selectedProduct?.options.map((opt, idx) => {
                         const label = `${opt.korean_name || opt.name}${opt.size && opt.size !== 'FREE' ? ' / ' + opt.size : ''}`
-                        return <option key={opt.name + opt.size} value={opt.name}>{label}</option>
+                        return <option key={idx} value={String(idx)}>{label}</option>
                       })}
                     </select>
 
