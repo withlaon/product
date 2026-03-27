@@ -1,13 +1,15 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import {
   Send, Search, Package, Truck, Download, FileDown,
-  CheckSquare, Square, ChevronLeft, ChevronRight,
+  CheckSquare, Square, ChevronLeft, ChevronRight, ArrowRight,
 } from 'lucide-react'
 import {
   loadShippedOrders,
+  saveShippedOrders,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 import { loadAllDayData } from '@/app/order-registration/page'
@@ -187,6 +189,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
 /* ─── 페이지 ─────────────────────────────────────────────── */
 export default function InvoiceSendPage() {
   const today = getToday()
+  const router = useRouter()
   const [allShipped, setAllShipped] = useState<ShippedOrder[]>([])
   const [search, setSearch]         = useState('')
   const [checked, setChecked]       = useState<Set<string>>(new Set())
@@ -195,9 +198,30 @@ export default function InvoiceSendPage() {
   const [showAllDates, setShowAllDates] = useState(false)
 
   useEffect(() => {
-    // pm_shipped_orders_v1에서 status='shipped'인 것만 표시
-    setAllShipped(loadShippedOrders().filter(o => o.status === 'shipped'))
+    // pm_shipped_orders_v1에서 status='shipped' AND history_moved가 아닌 것만 표시
+    setAllShipped(loadShippedOrders().filter(o => o.status === 'shipped' && !o.history_moved))
   }, [])
+
+  /* 출고내역 탭으로 이동 (단건) */
+  const handleMoveToHistory = (orderId: string) => {
+    const all = loadShippedOrders()
+    const updated = all.map(o => o.id === orderId ? { ...o, history_moved: true } : o)
+    saveShippedOrders(updated)
+    setAllShipped(prev => prev.filter(o => o.id !== orderId))
+    setChecked(prev => { const n = new Set(prev); n.delete(orderId); return n })
+    router.push('/product-edit-transfer/history')
+  }
+
+  /* 출고내역 탭으로 이동 (선택 항목 일괄) */
+  const handleMoveCheckedToHistory = () => {
+    if (checked.size === 0) return
+    const all = loadShippedOrders()
+    const updated = all.map(o => checked.has(o.id) ? { ...o, history_moved: true } : o)
+    saveShippedOrders(updated)
+    setAllShipped(prev => prev.filter(o => !checked.has(o.id)))
+    setChecked(new Set())
+    router.push('/product-edit-transfer/history')
+  }
 
   const filtered = useMemo(() => {
     let list = allShipped
@@ -329,9 +353,16 @@ export default function InvoiceSendPage() {
         </button>
 
         {checked.size > 0 && (
-          <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>
-            {checked.size}건 선택
-          </span>
+          <>
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>
+              {checked.size}건 선택
+            </span>
+            <button
+              onClick={handleMoveCheckedToHistory}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              <ArrowRight size={13} /> 선택 항목 출고내역으로 이동
+            </button>
+          </>
         )}
       </div>
 
@@ -352,11 +383,11 @@ export default function InvoiceSendPage() {
           </div>
         ) : (
           <div>
-            <div style={{ display: 'grid', gridTemplateColumns: '32px 140px 72px 90px 1fr 160px 90px', gap: 10, padding: '8px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '32px 140px 72px 90px 1fr 160px 90px 100px', gap: 10, padding: '8px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
               <span onClick={toggleAll} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                 {allChecked ? <CheckSquare size={14} style={{ color: '#2563eb' }} /> : <Square size={14} style={{ color: '#cbd5e1' }} />}
               </span>
-              {['주문번호', '날짜', '채널', '상품명', '운송장번호', '수취인'].map(h => (
+              {['주문번호', '날짜', '채널', '상품명', '운송장번호', '수취인', '출고내역이동'].map(h => (
                 <span key={h} style={{ fontSize: 10.5, fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
               ))}
             </div>
@@ -367,7 +398,7 @@ export default function InvoiceSendPage() {
               const mallDef   = DOWNLOAD_MALLS.find(m => m.id === importSrc || m.label === importSrc)
               return (
                 <div key={order.id}
-                  style={{ display: 'grid', gridTemplateColumns: '32px 140px 72px 90px 1fr 160px 90px', gap: 10, padding: '11px 20px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: isChk ? '#eff6ff' : 'transparent', transition: 'background 100ms', cursor: 'pointer' }}
+                  style={{ display: 'grid', gridTemplateColumns: '32px 140px 72px 90px 1fr 160px 90px 100px', gap: 10, padding: '11px 20px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: isChk ? '#eff6ff' : 'transparent', transition: 'background 100ms', cursor: 'pointer' }}
                   onClick={() => toggleOne(order.id)}
                 >
                   <span style={{ display: 'flex', alignItems: 'center' }}>
@@ -383,6 +414,14 @@ export default function InvoiceSendPage() {
                   </span>
                   <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#334155', fontWeight: 700 }}>{order.tracking_number}</span>
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
+                  <button
+                    onClick={e => { e.stopPropagation(); handleMoveToHistory(order.id) }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 8px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    onMouseEnter={e => { e.currentTarget.style.background = '#6d28d9' }}
+                    onMouseLeave={e => { e.currentTarget.style.background = '#7c3aed' }}
+                  >
+                    <ArrowRight size={11} /> 출고내역
+                  </button>
                 </div>
               )
             })}

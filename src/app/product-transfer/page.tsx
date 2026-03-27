@@ -13,6 +13,7 @@ import {
   loadOrders, saveOrders, loadMappings, saveMappings, extractColor,
   saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
   loadInvoiceQueue, saveInvoiceQueue,
+  loadShippedOrders, saveShippedOrders,
 } from '@/lib/orders'
 import type { Order, MappingStore } from '@/lib/orders'
 
@@ -680,6 +681,22 @@ export default function OrdersPage() {
   const saveMapping = () => {
     saveMappings(draftMappings)
     setMappings(draftMappings)
+
+    // 매핑 저장 시 pm_shipped_orders_v1의 item.sku도 바코드로 업데이트
+    // → 출고내역 탭에서 바코드가 즉시 반영되도록
+    const shippedOrders = loadShippedOrders()
+    const updatedShipped = shippedOrders.map(order => ({
+      ...order,
+      items: order.items.map(item => {
+        const mapping = lookupMapping(draftMappings, item.product_name, item.option)
+        if (mapping?.barcode) {
+          return { ...item, sku: mapping.barcode }
+        }
+        return item
+      }),
+    }))
+    saveShippedOrders(updatedShipped)
+
     setShowMapping(false)
   }
 

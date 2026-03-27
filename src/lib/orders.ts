@@ -1,7 +1,8 @@
 /* ─── 출고내역 타입 ─────────────────────────────────────── */
 export interface ShippedOrder extends Omit<Order, 'status'> {
   status: 'shipped' | 'delivered'
-  shipped_at: string   // 출고확정 시각 ISO string
+  shipped_at: string        // 출고확정 시각 ISO string
+  history_moved?: boolean   // 송장전송파일 탭에서 출고내역 탭으로 이동 완료 여부
 }
 
 export const SHIPPED_ORDERS_KEY = 'pm_shipped_orders_v1'

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
-import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search, HeadphonesIcon, AlertTriangle, Clock, RefreshCw } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search, HeadphonesIcon, AlertTriangle, Clock, RefreshCw, TrendingDown } from 'lucide-react'
 import {
   loadShippedOrders, saveShippedOrders, loadOrders, saveOrders,
   loadMappings, saveMappings, lookupMapping, makeMappingKey,
@@ -52,8 +52,8 @@ function lookupProductByBarcode(barcode: string) {
 }
 
 /* 로컬 캐시에서 상품 목록 로드 */
-type CachedOption = { barcode?: string; name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
-type CachedProduct = { id: string; options: CachedOption[] }
+type CachedOption  = { barcode?: string; name?: string; korean_name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
+type CachedProduct = { id: string; name?: string; abbr?: string; options: CachedOption[] }
 function loadCachedProducts(): CachedProduct[] {
   try {
     const raw = localStorage.getItem('pm_products_cache_v1')
@@ -158,8 +158,26 @@ export default function ShippingHistoryPage() {
   const [unmappedItems,    setUnmappedItems]    = useState<UnmappedItem[]>([])
   const [unmappedInputs,   setUnmappedInputs]   = useState<Record<string, string>>({})
 
+  /* 출고확정 후 재고현황 모달 */
+  interface StockResultItem {
+    productName : string
+    optionName  : string
+    barcode     : string
+    stock       : number
+  }
+  interface StockResultData {
+    confirmedCount : number
+    zeroItems      : StockResultItem[]
+    lowItems       : StockResultItem[]   // 1 ~ LOW_STOCK_THRESHOLD 개
+    notFoundNames  : string[]
+  }
+  const LOW_STOCK_THRESHOLD = 10
+  const [stockResultModal, setStockResultModal] = useState(false)
+  const [stockResultData,  setStockResultData]  = useState<StockResultData | null>(null)
+
   useEffect(() => {
-    setShipped(loadShippedOrders())
+    // history_moved=true 인 주문만 출고내역에 표시
+    setShipped(loadShippedOrders().filter(o => o.history_moved === true))
     setMappings(loadMappings())
   }, [])
 
@@ -417,9 +435,33 @@ export default function ShippingHistoryPage() {
       saveShippedOrders(updatedShipped)
       setShipped(updatedShipped)
       setChecked(new Set())
-      alert(notFound.length > 0
-        ? `${toConfirm.length}건 출고확정 완료.\n재고 미차감: ${[...new Set(notFound)].join(', ')}`
-        : `${toConfirm.length}건 출고확정 완료.`)
+
+      /* ── 재고현황 수집 (0개·부족 상품) ── */
+      const zeroItems: StockResultItem[] = []
+      const lowItems:  StockResultItem[] = []
+      updatedProducts.forEach(p => {
+        const changes = stockChanges[p.id]
+        if (!changes) return
+        p.options.forEach((opt, i) => {
+          if (!(i in changes)) return
+          const stock = opt.current_stock ?? 0
+          const row: StockResultItem = {
+            productName: p.name ?? p.abbr ?? p.id,
+            optionName : opt.korean_name ?? opt.name ?? '',
+            barcode    : opt.barcode ?? '',
+            stock,
+          }
+          if (stock === 0)                                  zeroItems.push(row)
+          else if (stock > 0 && stock <= LOW_STOCK_THRESHOLD) lowItems.push(row)
+        })
+      })
+      setStockResultData({
+        confirmedCount: toConfirm.length,
+        zeroItems,
+        lowItems,
+        notFoundNames : [...new Set(notFound)],
+      })
+      setStockResultModal(true)
     } finally {
       setIsConfirming(false)
     }
@@ -1134,6 +1176,140 @@ export default function ShippingHistoryPage() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 출고확정 후 재고현황 팝업 ── */}
+      {stockResultModal && stockResultData && (
+        <div
+          style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1100, padding: 20 }}
+        >
+          <div style={{ background: '#fff', borderRadius: 20, width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 28px 72px rgba(15,23,42,0.22)' }}>
+
+            {/* 헤더 */}
+            <div style={{ padding: '20px 24px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 40, height: 40, borderRadius: 13, background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <PackageCheck size={20} style={{ color: '#059669' }} />
+              </div>
+              <div>
+                <p style={{ fontSize: 15.5, fontWeight: 900, color: '#0f172a', margin: 0 }}>출고확정 완료</p>
+                <p style={{ fontSize: 12, color: '#64748b', marginTop: 2 }}>
+                  <span style={{ fontWeight: 800, color: '#059669' }}>{stockResultData.confirmedCount}건</span> 출고확정 · 재고 차감 결과
+                </p>
+              </div>
+            </div>
+
+            <div style={{ padding: '18px 24px', display: 'grid', gap: 16 }}>
+
+              {/* 재고 미차감 상품 (바코드 없음) */}
+              {stockResultData.notFoundNames.length > 0 && (
+                <div style={{ background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: 12, padding: '12px 16px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
+                    <AlertTriangle size={15} style={{ color: '#f97316', flexShrink: 0 }} />
+                    <span style={{ fontSize: 12.5, fontWeight: 800, color: '#9a3412' }}>재고 미차감 상품 ({stockResultData.notFoundNames.length}종)</span>
+                    <span style={{ fontSize: 11, color: '#c2410c' }}>— 바코드 매핑 없음</span>
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+                    {stockResultData.notFoundNames.map((name, i) => (
+                      <span key={i} style={{ fontSize: 11.5, fontWeight: 700, background: '#ffedd5', color: '#9a3412', padding: '3px 10px', borderRadius: 6 }}>{name}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 재고 소진 (0개) */}
+              {stockResultData.zeroItems.length > 0 ? (
+                <div style={{ border: '2px solid #fecaca', borderRadius: 12, overflow: 'hidden' }}>
+                  <div style={{ background: '#fef2f2', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <Package size={14} style={{ color: '#dc2626' }} />
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 900, color: '#dc2626' }}>재고 소진 상품</span>
+                    <span style={{ fontSize: 12, fontWeight: 800, background: '#dc2626', color: '#fff', padding: '1px 8px', borderRadius: 20, marginLeft: 2 }}>{stockResultData.zeroItems.length}종</span>
+                  </div>
+                  <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {stockResultData.zeroItems.map((item, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', borderBottom: i < stockResultData.zeroItems.length - 1 ? '1px solid #fff1f2' : 'none', background: i % 2 === 0 ? '#fff' : '#fff8f8' }}>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                          <p style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a', margin: 0, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {item.productName}
+                          </p>
+                          {item.optionName && (
+                            <p style={{ fontSize: 11, color: '#64748b', margin: '1px 0 0' }}>[{item.optionName}]</p>
+                          )}
+                        </div>
+                        {item.barcode && (
+                          <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#94a3b8', flexShrink: 0 }}>{item.barcode}</span>
+                        )}
+                        <span style={{ fontSize: 13, fontWeight: 900, color: '#dc2626', background: '#fee2e2', padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>0개</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#f0fdf4', borderRadius: 10, border: '1px solid #bbf7d0' }}>
+                  <CheckCircle2 size={15} style={{ color: '#059669', flexShrink: 0 }} />
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#15803d' }}>재고 소진 상품 없음</span>
+                </div>
+              )}
+
+              {/* 재고 부족 (1 ~ LOW_STOCK_THRESHOLD) */}
+              {stockResultData.lowItems.length > 0 ? (
+                <div style={{ border: '2px solid #fde68a', borderRadius: 12, overflow: 'hidden' }}>
+                  <div style={{ background: '#fffbeb', padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ width: 28, height: 28, borderRadius: 8, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <TrendingDown size={14} style={{ color: '#d97706' }} />
+                    </div>
+                    <span style={{ fontSize: 13, fontWeight: 900, color: '#b45309' }}>재고 부족 상품</span>
+                    <span style={{ fontSize: 11.5, color: '#92400e' }}>({LOW_STOCK_THRESHOLD}개 이하)</span>
+                    <span style={{ fontSize: 12, fontWeight: 800, background: '#d97706', color: '#fff', padding: '1px 8px', borderRadius: 20, marginLeft: 2 }}>{stockResultData.lowItems.length}종</span>
+                  </div>
+                  <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+                    {stockResultData.lowItems.sort((a, b) => a.stock - b.stock).map((item, i) => (
+                      <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', borderBottom: i < stockResultData.lowItems.length - 1 ? '1px solid #fef9c3' : 'none', background: i % 2 === 0 ? '#fff' : '#fffdf0' }}>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                          <p style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a', margin: 0, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                            {item.productName}
+                          </p>
+                          {item.optionName && (
+                            <p style={{ fontSize: 11, color: '#64748b', margin: '1px 0 0' }}>[{item.optionName}]</p>
+                          )}
+                        </div>
+                        {item.barcode && (
+                          <span style={{ fontSize: 10.5, fontFamily: 'monospace', color: '#94a3b8', flexShrink: 0 }}>{item.barcode}</span>
+                        )}
+                        <span style={{
+                          fontSize: 13, fontWeight: 900, flexShrink: 0,
+                          color: item.stock <= 3 ? '#dc2626' : '#d97706',
+                          background: item.stock <= 3 ? '#fee2e2' : '#fef3c7',
+                          padding: '2px 10px', borderRadius: 20,
+                        }}>{item.stock}개</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#f0fdf4', borderRadius: 10, border: '1px solid #bbf7d0' }}>
+                  <CheckCircle2 size={15} style={{ color: '#059669', flexShrink: 0 }} />
+                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#15803d' }}>재고 부족 상품 없음</span>
+                </div>
+              )}
+
+            </div>
+
+            {/* 확인 버튼 */}
+            <div style={{ padding: '0 24px 22px' }}>
+              <button
+                onClick={() => setStockResultModal(false)}
+                style={{ width: '100%', padding: '13px 0', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 12, fontSize: 14, fontWeight: 800, cursor: 'pointer', transition: 'background 150ms' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#1e293b' }}
+                onMouseLeave={e => { e.currentTarget.style.background = '#0f172a' }}
+              >
+                확인
+              </button>
+            </div>
+
           </div>
         </div>
       )}
