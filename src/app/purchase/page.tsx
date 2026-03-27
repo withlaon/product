@@ -288,8 +288,53 @@ export default function PurchaseMainPage() {
         })
       }
     }
-    return rows.sort((a, b) => a.barcode.localeCompare(b.barcode))
+    return rows.sort((a, b) => {
+      const pc = a.productCode.localeCompare(b.productCode)
+      if (pc !== 0) return pc
+      const bc = (a.barcode || '').localeCompare(b.barcode || '')
+      if (bc !== 0) return bc
+      return a.orderDate.localeCompare(b.orderDate)
+    })
   }, [purchases])
+
+  /* ── 미입고 리스트: 상품 이미지 API 보강 (캐시에 image 없을 때) ── */
+  const miImageProdIdsKey = useMemo(() => {
+    const ids = new Set<string>()
+    for (const r of miItems) {
+      const p = products.find(x => x.code === r.productCode)
+      if (p?.id) ids.add(p.id)
+    }
+    return [...ids].sort().join(',')
+  }, [miItems, products])
+
+  const [miLoadedImages, setMiLoadedImages] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!miImageProdIdsKey) return
+    const prodIds = miImageProdIdsKey.split(',').filter(Boolean)
+    let cancelled = false
+    const chunks: string[][] = []
+    for (let i = 0; i < prodIds.length; i += 20) chunks.push(prodIds.slice(i, i + 20))
+    ;(async () => {
+      for (const chunk of chunks) {
+        if (cancelled) break
+        try {
+          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
+          if (!res.ok || cancelled) continue
+          const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
+          if (!Array.isArray(data)) continue
+          const imgs: Record<string, string> = {}
+          data.forEach(prod => (prod.options ?? []).forEach(o => {
+            if (o.barcode && o.image) imgs[String(o.barcode).trim()] = o.image
+          }))
+          if (!cancelled && Object.keys(imgs).length > 0) {
+            setMiLoadedImages(prev => ({ ...prev, ...imgs }))
+          }
+        } catch { /* ignore */ }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [miImageProdIdsKey])
 
   /* KPI */
   const poOrderedQty = useMemo(() =>
@@ -559,7 +604,7 @@ export default function PurchaseMainPage() {
               : <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                   <thead style={{ position:'sticky', top:0, zIndex:1 }}>
                     <tr style={{ background:'#f8fafc' }}>
-                      <th style={thStyle()}></th>
+                      <th style={thStyle()}>이미지</th>
                       <th style={thStyle()}>바코드</th>
                       <th style={thStyle('left')}>상품코드</th>
                       <th style={thStyle('left')}>옵션명</th>
@@ -571,7 +616,8 @@ export default function PurchaseMainPage() {
                   </thead>
                   <tbody>
                     {miItems.map((row, idx) => {
-                      const rowImg = (row.barcode && optImages[row.barcode]) || ''
+                      const bc = (row.barcode || '').trim()
+                      const rowImg = (bc && (miLoadedImages[bc] || optImages[bc])) || ''
                       return (
                       <tr key={idx}
                         style={{ borderBottom:'1px solid #f8fafc' }}

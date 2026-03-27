@@ -182,7 +182,7 @@ export default function ReceiveManagePage() {
   const uKey = (u: { prodId: string; barcode: string; optName: string }) =>
     `${u.prodId}||${u.barcode || u.optName}`
 
-  /* ── 왼쪽: 미입고 목록 (pm_products 기준 ordered > received, 상품코드 내림차순) ── */
+  /* ── 왼쪽: 미입고 목록 (pm_products 기준 ordered > received, 상품코드·바코드 오름차순) ── */
   const unreceivedList = useMemo(() => {
     const list: {
       prodId: string; prodCode: string; abbr: string; optName: string
@@ -204,7 +204,11 @@ export default function ReceiveManagePage() {
         }
       }
     }
-    return list.sort((a, b) => b.prodCode.localeCompare(a.prodCode))
+    return list.sort((a, b) => {
+      const c = a.prodCode.localeCompare(b.prodCode)
+      if (c !== 0) return c
+      return (a.barcode || '').localeCompare(b.barcode || '')
+    })
   }, [products])
 
   /* ── 오른쪽: 날짜 필터 입고 목록 (일별) ── */
@@ -222,7 +226,7 @@ export default function ReceiveManagePage() {
       })
   , [purchases, day])
 
-  /* ── 오른쪽: 펼친 아이템 목록 (상품코드 내림차순) ── */
+  /* ── 오른쪽: 펼친 아이템 목록 (상품코드·옵션·바코드 오름차순) ── */
   const rcItems = useMemo((): RcItem[] => {
     const items: RcItem[] = []
     for (const p of rcPurchases) {
@@ -257,7 +261,13 @@ export default function ReceiveManagePage() {
         })
       }
     }
-    return items.sort((a, b) => b.product_code.localeCompare(a.product_code))
+    return items.sort((a, b) => {
+      const c = a.product_code.localeCompare(b.product_code)
+      if (c !== 0) return c
+      const o = (a.option_name || '').localeCompare(b.option_name || '')
+      if (o !== 0) return o
+      return (a.barcode || '').localeCompare(b.barcode || '')
+    })
   }, [rcPurchases, products, confirmedKeys])
 
   /* ── 이미지 배치 로딩 ── */
@@ -734,12 +744,12 @@ export default function ReceiveManagePage() {
           )}
         </div>
 
-        {/* ══ 오른쪽: 오늘 일별 입고 목록 ══ */}
+        {/* ══ 오른쪽: 일별 입고 목록 ══ */}
         <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
           {/* 헤더 */}
           <div style={{ padding:'10px 14px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:8, flexShrink:0, flexWrap:'wrap' }}>
             <CheckCircle2 size={14} style={{ color:'#059669' }}/>
-            <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>오늘 일별 입고 목록</span>
+            <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>일별 입고 목록</span>
             <DayNav day={day} setDay={setDay}/>
             <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>{rcItems.length}건</span>
           </div>
