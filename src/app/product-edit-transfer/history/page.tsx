@@ -2,10 +2,10 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
-import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search, HeadphonesIcon, AlertTriangle, Clock, RefreshCw, TrendingDown } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search, HeadphonesIcon, AlertTriangle, Clock, RefreshCw, TrendingDown, Wand2, Zap } from 'lucide-react'
 import {
   loadShippedOrders, saveShippedOrders, loadOrders, saveOrders,
-  loadMappings, saveMappings, lookupMapping, makeMappingKey,
+  loadMappings, saveMappings, lookupMapping, makeMappingKey, extractColor,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 
@@ -69,6 +69,91 @@ function saveCachedProducts(products: CachedProduct[]) {
     const parsed = JSON.parse(raw)
     localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ...parsed, data: products }))
   } catch {}
+}
+
+/* ─── 바코드 자동매칭 ────────────────────────────────────── */
+interface AutoMatchResult {
+  barcode             : string
+  matchedProductName  : string
+  matchedOptionName   : string
+}
+
+function normalize(s: string) {
+  return s.toLowerCase().replace(/[\s\-_,./()（）【】\[\]]/g, '')
+}
+
+function autoMatchBarcode(
+  productName : string,
+  option      : string,
+  products    : CachedProduct[],
+): AutoMatchResult | null {
+  const normProd  = normalize(productName)
+  const normOpt   = normalize(option)
+  const color     = extractColor(option) // '블랙' '화이트' 등 표준화된 색상명
+
+  /* 1단계: 상품 후보 추출 */
+  // 정확 일치 (name 또는 abbr)
+  let candidates = products.filter(p =>
+    normalize(p.name  ?? '') === normProd ||
+    normalize(p.abbr  ?? '') === normProd
+  )
+  // 부분 포함 일치 (주문명이 더 길거나 짧은 경우)
+  if (candidates.length === 0) {
+    candidates = products.filter(p => {
+      const pn = normalize(p.name ?? '')
+      const pa = normalize(p.abbr ?? '')
+      return (pn.length > 0 && (normProd.includes(pn) || pn.includes(normProd))) ||
+             (pa.length > 0 && (normProd.includes(pa) || pa.includes(normProd)))
+    })
+  }
+  if (candidates.length === 0) return null
+
+  /* 2단계: 옵션 후보 매칭 */
+  for (const p of candidates) {
+    const opts = (p.options ?? []).filter(o => o.barcode)
+
+    // 옵션이 하나면 바로 반환
+    if (opts.length === 1) {
+      return {
+        barcode: opts[0].barcode!,
+        matchedProductName: p.name ?? p.abbr ?? '',
+        matchedOptionName : opts[0].korean_name ?? opts[0].name ?? '',
+      }
+    }
+
+    // 색상 기준 매칭
+    if (color) {
+      const byColor = opts.find(o => {
+        const oc = extractColor(o.korean_name ?? o.name ?? '')
+        const on = normalize(o.korean_name ?? o.name ?? '')
+        return oc === color ||
+               on.includes(normalize(color)) ||
+               normalize(color).includes(on)
+      })
+      if (byColor) {
+        return {
+          barcode: byColor.barcode!,
+          matchedProductName: p.name ?? p.abbr ?? '',
+          matchedOptionName : byColor.korean_name ?? byColor.name ?? '',
+        }
+      }
+    }
+
+    // 옵션 전체 텍스트 포함 매칭
+    const byText = opts.find(o => {
+      const on = normalize(o.korean_name ?? o.name ?? '')
+      return on.length > 0 && (normOpt.includes(on) || on.includes(normOpt))
+    })
+    if (byText) {
+      return {
+        barcode: byText.barcode!,
+        matchedProductName: p.name ?? p.abbr ?? '',
+        matchedOptionName : byText.korean_name ?? byText.name ?? '',
+      }
+    }
+  }
+
+  return null
 }
 
 /* ─── 날짜 유틸 ─────────────────────────────────────────── */
@@ -154,9 +239,11 @@ export default function ShippingHistoryPage() {
   const [csReason, setCsReason] = useState<CsReason>('simple_change')
 
   /* 바코드 미설정 경고 모달 */
-  const [barcodeWarnModal, setBarcodeWarnModal] = useState(false)
-  const [unmappedItems,    setUnmappedItems]    = useState<UnmappedItem[]>([])
-  const [unmappedInputs,   setUnmappedInputs]   = useState<Record<string, string>>({})
+  const [barcodeWarnModal,  setBarcodeWarnModal]  = useState(false)
+  const [unmappedItems,     setUnmappedItems]     = useState<UnmappedItem[]>([])
+  const [unmappedInputs,    setUnmappedInputs]    = useState<Record<string, string>>({})
+  const [autoFillResults,   setAutoFillResults]   = useState<Record<string, AutoMatchResult | null>>({})
+  const [autoMatchRan,      setAutoMatchRan]      = useState(false)
 
   /* 출고확정 후 재고현황 모달 */
   interface StockResultItem {
@@ -498,6 +585,8 @@ export default function ShippingHistoryPage() {
       const items = [...seen.values()]
       setUnmappedItems(items)
       setUnmappedInputs(Object.fromEntries(items.map(u => [u.mappingKey, ''])))
+      setAutoFillResults({})
+      setAutoMatchRan(false)
       setBarcodeWarnModal(true)
       return
     }
@@ -505,6 +594,25 @@ export default function ShippingHistoryPage() {
     // 모두 매핑된 경우 바로 진행
     if (!confirm(`선택한 ${toConfirm.length}건을 출고확정하시겠습니까?\n바코드 기준으로 상품 재고가 차감됩니다.`)) return
     doConfirmShipping(toConfirm)
+  }
+
+  /* ── 자동 바코드 매칭 ── */
+  const handleAutoMatch = () => {
+    const products = loadCachedProducts()
+    const results: Record<string, AutoMatchResult | null> = {}
+    const newInputs = { ...unmappedInputs }
+
+    for (const u of unmappedItems) {
+      // 이미 직접 입력된 경우 덮어쓰지 않음
+      if (newInputs[u.mappingKey]?.trim()) continue
+      const result = autoMatchBarcode(u.product_name, u.option, products)
+      results[u.mappingKey] = result
+      if (result) newInputs[u.mappingKey] = result.barcode
+    }
+
+    setAutoFillResults(results)
+    setUnmappedInputs(newInputs)
+    setAutoMatchRan(true)
   }
 
   /* ── 바코드 저장 후 출고확정 ── */
@@ -961,7 +1069,7 @@ export default function ShippingHistoryPage() {
       {barcodeWarnModal && (
         <div onClick={e => { if (e.target === e.currentTarget) setBarcodeWarnModal(false) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.55)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
-          <div style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 580, maxHeight: '88vh', overflow: 'auto', boxShadow: '0 24px 64px rgba(15,23,42,0.2)' }}>
+          <div style={{ background: '#fff', borderRadius: 18, width: '100%', maxWidth: 620, maxHeight: '90vh', overflow: 'auto', boxShadow: '0 24px 64px rgba(15,23,42,0.2)' }}>
 
             {/* 모달 헤더 */}
             <div style={{ padding: '18px 22px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -971,76 +1079,168 @@ export default function ShippingHistoryPage() {
               <div>
                 <p style={{ fontSize: 15, fontWeight: 900, color: '#0f172a' }}>바코드 미설정 상품</p>
                 <p style={{ fontSize: 11.5, color: '#94a3b8' }}>
-                  바코드가 없는 상품이 <span style={{ color: '#f97316', fontWeight: 800 }}>{unmappedItems.length}종</span> 있습니다. 바코드를 입력해야 출고확정이 가능합니다.
+                  바코드가 없는 상품이 <span style={{ color: '#f97316', fontWeight: 800 }}>{unmappedItems.length}종</span> 있습니다.
                 </p>
               </div>
               <div style={{ flex: 1 }} />
+              {/* 자동 설정 버튼 */}
+              <button
+                onClick={handleAutoMatch}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 6,
+                  padding: '8px 16px', borderRadius: 10, border: 'none',
+                  background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
+                  color: '#fff', fontSize: 12.5, fontWeight: 800, cursor: 'pointer',
+                  boxShadow: '0 2px 8px rgba(124,58,237,0.35)',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = '0.88' }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = '1' }}
+              >
+                <Wand2 size={14} /> 자동 설정
+              </button>
               <button onClick={() => setBarcodeWarnModal(false)}
                 style={{ width: 30, height: 30, borderRadius: 8, border: 'none', background: '#f1f5f9', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <X size={15} style={{ color: '#64748b' }} />
               </button>
             </div>
 
-            <div style={{ padding: '20px 22px', display: 'grid', gap: 14 }}>
+            <div style={{ padding: '18px 22px', display: 'grid', gap: 12 }}>
 
-              {/* 안내 배너 */}
-              <div style={{ background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: 10, padding: '12px 16px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-                <AlertTriangle size={16} style={{ color: '#f97316', flexShrink: 0, marginTop: 1 }} />
-                <p style={{ fontSize: 12, color: '#9a3412', lineHeight: 1.6 }}>
-                  아래 상품들은 매핑 테이블에 바코드가 없습니다.<br />
-                  각 항목에 바코드를 직접 입력하면 매핑이 저장되고 출고확정이 진행됩니다.
-                </p>
-              </div>
+              {/* 자동매칭 결과 요약 배너 */}
+              {autoMatchRan && (() => {
+                const autoCount   = Object.values(autoFillResults).filter(Boolean).length
+                const manualCount = unmappedItems.length - autoCount
+                return (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                    <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Zap size={14} style={{ color: '#059669', flexShrink: 0 }} />
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 900, color: '#059669', margin: 0 }}>자동완성 {autoCount}종</p>
+                        <p style={{ fontSize: 10.5, color: '#16a34a', margin: 0 }}>상품관리에서 매칭됨</p>
+                      </div>
+                    </div>
+                    <div style={{ background: manualCount > 0 ? '#fff7ed' : '#f8fafc', border: `1.5px solid ${manualCount > 0 ? '#fed7aa' : '#e2e8f0'}`, borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <Pencil size={14} style={{ color: manualCount > 0 ? '#d97706' : '#94a3b8', flexShrink: 0 }} />
+                      <div>
+                        <p style={{ fontSize: 13, fontWeight: 900, color: manualCount > 0 ? '#d97706' : '#94a3b8', margin: 0 }}>직접입력 {manualCount}종</p>
+                        <p style={{ fontSize: 10.5, color: manualCount > 0 ? '#92400e' : '#cbd5e1', margin: 0 }}>아래에서 직접 입력하세요</p>
+                      </div>
+                    </div>
+                  </div>
+                )
+              })()}
 
               {/* 미설정 항목 목록 + 바코드 입력 */}
               <div style={{ display: 'grid', gap: 10 }}>
-                {unmappedItems.map((u, idx) => (
-                  <div key={u.mappingKey} style={{ border: '1.5px solid #e2e8f0', borderRadius: 12, padding: '14px 16px', background: '#fafafa' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
-                      <div style={{ width: 22, height: 22, borderRadius: 6, background: '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                        <span style={{ fontSize: 10, fontWeight: 900, color: '#f97316' }}>{idx + 1}</span>
+                {unmappedItems.map((u, idx) => {
+                  const autoResult  = autoFillResults[u.mappingKey]
+                  const inputVal    = unmappedInputs[u.mappingKey] ?? ''
+                  const isAutoFilled = !!autoResult && inputVal === autoResult.barcode
+                  const isFilled    = inputVal.trim().length > 0
+                  // 자동완성 후 사용자가 값을 수정한 경우
+                  const isManualOverride = autoResult && inputVal.trim() && inputVal !== autoResult.barcode
+
+                  return (
+                    <div key={u.mappingKey} style={{
+                      border: `2px solid ${isAutoFilled ? '#86efac' : isFilled ? '#6ee7b7' : '#e2e8f0'}`,
+                      borderRadius: 12, padding: '14px 16px',
+                      background: isAutoFilled ? '#f0fdf4' : '#fafafa',
+                      transition: 'border-color 200ms, background 200ms',
+                    }}>
+                      {/* 상품 정보 행 */}
+                      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
+                        <div style={{ width: 22, height: 22, borderRadius: 6, background: isAutoFilled ? '#dcfce7' : '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
+                          <span style={{ fontSize: 10, fontWeight: 900, color: isAutoFilled ? '#059669' : '#f97316' }}>{idx + 1}</span>
+                        </div>
+                        <div style={{ flex: 1, overflow: 'hidden' }}>
+                          <p style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', margin: 0 }}>
+                            {u.product_name || '(상품명 없음)'}
+                          </p>
+                          {u.option && (
+                            <p style={{ fontSize: 11, color: '#64748b', margin: '2px 0 0' }}>[{u.option}]</p>
+                          )}
+                          {/* 자동매칭된 경우: 매칭된 상품 정보 표시 */}
+                          {autoResult && (
+                            <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <span style={{ fontSize: 10, fontWeight: 800, background: '#d1fae5', color: '#065f46', padding: '1px 6px', borderRadius: 4 }}>자동매칭</span>
+                              <span style={{ fontSize: 10.5, color: '#475569' }}>
+                                {autoResult.matchedProductName}
+                                {autoResult.matchedOptionName ? ` · ${autoResult.matchedOptionName}` : ''}
+                              </span>
+                            </div>
+                          )}
+                          {/* 매칭 실패 */}
+                          {autoMatchRan && autoFillResults[u.mappingKey] === null && (
+                            <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <span style={{ fontSize: 10, fontWeight: 800, background: '#fee2e2', color: '#991b1b', padding: '1px 6px', borderRadius: 4 }}>매칭 없음</span>
+                              <span style={{ fontSize: 10.5, color: '#94a3b8' }}>직접 입력하세요</span>
+                            </div>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 5, flexShrink: 0 }}>
+                          {u.orders.length}건
+                        </span>
                       </div>
-                      <div style={{ flex: 1, overflow: 'hidden' }}>
-                        <p style={{ fontSize: 12.5, fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
-                          {u.product_name || '(상품명 없음)'}
-                        </p>
-                        {u.option && (
-                          <p style={{ fontSize: 11, color: '#64748b', marginTop: 1 }}>[{u.option}]</p>
+
+                      {/* 바코드 입력 행 */}
+                      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                        <label style={{ fontSize: 11, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap' }}>바코드</label>
+                        <div style={{ flex: 1, position: 'relative' }}>
+                          <input
+                            value={inputVal}
+                            onChange={e => {
+                              setUnmappedInputs(prev => ({ ...prev, [u.mappingKey]: e.target.value }))
+                            }}
+                            placeholder={isAutoFilled ? '' : '바코드를 직접 입력하세요'}
+                            style={{
+                              width: '100%', height: 36, fontSize: 13, fontWeight: 700,
+                              border: `1.5px solid ${isAutoFilled ? '#059669' : isFilled ? '#2563eb' : '#e2e8f0'}`,
+                              borderRadius: 8, padding: '0 36px 0 10px', outline: 'none',
+                              fontFamily: 'monospace', background: isAutoFilled ? '#f0fdf4' : '#fff',
+                              color: '#0f172a', transition: 'border-color 150ms',
+                              boxSizing: 'border-box',
+                            }}
+                          />
+                          {isFilled && (
+                            <span style={{ position: 'absolute', right: 10, top: '50%', transform: 'translateY(-50%)' }}>
+                              {isAutoFilled
+                                ? <Zap size={15} style={{ color: '#059669' }} />
+                                : isManualOverride
+                                ? <Pencil size={14} style={{ color: '#2563eb' }} />
+                                : <CheckCircle2 size={15} style={{ color: '#059669' }} />}
+                            </span>
+                          )}
+                        </div>
+                        {/* 자동완성 값으로 되돌리기 */}
+                        {isManualOverride && autoResult && (
+                          <button
+                            onClick={() => setUnmappedInputs(prev => ({ ...prev, [u.mappingKey]: autoResult.barcode }))}
+                            style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#64748b', fontSize: 10.5, fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                            title="자동완성 값으로 되돌리기">
+                            ↩ 자동
+                          </button>
                         )}
                       </div>
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 5, flexShrink: 0 }}>
-                        {u.orders.length}건
-                      </span>
                     </div>
-                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                      <label style={{ fontSize: 11, fontWeight: 800, color: '#475569', whiteSpace: 'nowrap' }}>바코드</label>
-                      <input
-                        value={unmappedInputs[u.mappingKey] ?? ''}
-                        onChange={e => setUnmappedInputs(prev => ({ ...prev, [u.mappingKey]: e.target.value }))}
-                        placeholder="바코드를 입력하세요"
-                        style={{
-                          flex: 1, height: 34, fontSize: 12.5, fontWeight: 700,
-                          border: `1.5px solid ${unmappedInputs[u.mappingKey]?.trim() ? '#059669' : '#e2e8f0'}`,
-                          borderRadius: 8, padding: '0 10px', outline: 'none',
-                          fontFamily: 'monospace', background: '#fff', color: '#0f172a',
-                          transition: 'border-color 150ms',
-                        }}
-                      />
-                      {unmappedInputs[u.mappingKey]?.trim() && (
-                        <CheckCircle2 size={18} style={{ color: '#059669', flexShrink: 0 }} />
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               {/* 진행 상황 */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 12px', background: '#f8fafc', borderRadius: 8 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#f8fafc', borderRadius: 8, flexWrap: 'wrap' }}>
                 <span style={{ fontSize: 12, color: '#64748b' }}>입력 완료:</span>
-                <span style={{ fontSize: 12, fontWeight: 900, color: '#059669' }}>
+                <span style={{ fontSize: 13, fontWeight: 900, color: '#059669' }}>
                   {Object.values(unmappedInputs).filter(v => v.trim()).length}
                 </span>
-                <span style={{ fontSize: 12, color: '#94a3b8' }}>/ {unmappedItems.length}개</span>
+                <span style={{ fontSize: 12, color: '#94a3b8' }}>/ {unmappedItems.length}종</span>
+                {autoMatchRan && (
+                  <span style={{ fontSize: 11, color: '#7c3aed', fontWeight: 700, background: '#f5f3ff', padding: '2px 8px', borderRadius: 5 }}>
+                    자동완성 {Object.values(autoFillResults).filter(Boolean).length}종 포함
+                  </span>
+                )}
+                <span style={{ fontSize: 11, color: '#64748b', marginLeft: 'auto' }}>
+                  ※ 저장 시 다음에도 자동 적용
+                </span>
               </div>
 
               {/* 버튼 */}
