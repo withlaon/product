@@ -8,6 +8,7 @@ import {
   AlertTriangle, Image as ImageIcon, Trash2,
 } from 'lucide-react'
 import { loadShippedOrders, loadMappings, lookupMapping } from '@/lib/orders'
+import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
 
 /* ─── 타입 ──────────────────────────────────────────────────────── */
 type CsType   = 'return' | 'exchange'
@@ -39,6 +40,7 @@ function loadCs(): CsItem[] {
 }
 function saveCs(items: CsItem[]) {
   try { localStorage.setItem(CS_KEY, JSON.stringify(items)) } catch {}
+  broadcastDashboardRefresh()
 }
 
 /* ─── 상품 캐시 헬퍼 ─────────────────────────────────────────────── */

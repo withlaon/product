@@ -9,6 +9,7 @@ import {
   ClipboardList,
 } from 'lucide-react'
 import { loadOrders, loadShippedOrders, loadInvoiceQueue } from '@/lib/orders'
+import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
 import type { Order, ShippedOrder } from '@/lib/orders'
 import { supabase } from '@/lib/supabase'
 
@@ -325,57 +326,67 @@ export default function DashboardPage() {
       .then(({ data }) => { if (data) setPurchases(data as Purchase[]) })
   }, [])
 
+  /* ── 로컬 + 발주 전부 (실시간 대시보드 기준) ── */
+  const fullRefresh = useCallback(() => {
+    refreshLocal()
+    refreshPurchases()
+  }, [refreshLocal, refreshPurchases])
+
   /* ── 전체 새로고침 (버튼용) ── */
   const handleRefresh = useCallback(async () => {
     setRefreshing(true)
-    refreshLocal()
-    refreshPurchases()
+    fullRefresh()
     setTimeout(() => setRefreshing(false), 600)
-  }, [refreshLocal, refreshPurchases])
+  }, [fullRefresh])
 
   /* ── 초기 로드 ── */
   useEffect(() => {
-    refreshLocal()
-    refreshPurchases()
+    fullRefresh()
     setLoading(false)
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── SPA 내비게이션으로 대시보드 진입 시마다 갱신 ── */
   useEffect(() => {
-    if (!loading) refreshLocal()
+    if (!loading) fullRefresh()
   }, [pathname]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  /* ── 실시간 감지: storage(다른 탭) / visibilitychange / focus ── */
+  /* ── 실시간: storage(다른 탭) · 커스텀 이벤트(같은 탭) · visibility · focus ── */
   useEffect(() => {
     const WATCH_KEYS = new Set([
       'pm_orders_v1', 'pm_shipped_orders_v1', 'pm_invoice_queue_v1',
       'pm_products_cache_v1', 'pm_cs_v1',
+      'pm_dashboard_refresh_ts', 'pm_products_cache_sync', 'pm_products_mapping_signal',
     ])
     const onStorage = (e: StorageEvent) => {
-      if (e.key && WATCH_KEYS.has(e.key)) refreshLocal()
+      if (e.key && WATCH_KEYS.has(e.key)) fullRefresh()
     }
     const onVisible = () => {
-      if (document.visibilityState === 'visible') refreshLocal()
+      if (document.visibilityState === 'visible') fullRefresh()
     }
-    const onFocus = () => refreshLocal()
+    const onFocus = () => fullRefresh()
+    const onCustomRefresh = () => fullRefresh()
 
     window.addEventListener('storage', onStorage)
+    window.addEventListener(DASHBOARD_REFRESH_EVENT, onCustomRefresh)
+    window.addEventListener('pm_products_cache_sync', onCustomRefresh)
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('focus', onFocus)
     return () => {
       window.removeEventListener('storage', onStorage)
+      window.removeEventListener(DASHBOARD_REFRESH_EVENT, onCustomRefresh)
+      window.removeEventListener('pm_products_cache_sync', onCustomRefresh)
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('focus', onFocus)
     }
-  }, [refreshLocal])
+  }, [fullRefresh])
 
-  /* ── 30초 자동 폴링 ── */
+  /* ── 15초 폴링 (탭이 보일 때, 발주 포함 전체) ── */
   useEffect(() => {
     const id = setInterval(() => {
-      if (document.visibilityState === 'visible') refreshLocal()
-    }, 30_000)
+      if (document.visibilityState === 'visible') fullRefresh()
+    }, 15_000)
     return () => clearInterval(id)
-  }, [refreshLocal])
+  }, [fullRefresh])
 
   /* ── 세 저장소 중복 제거 합산 (KPI·차트 공통 기준) ── */
   const allOrdersMerged = useMemo(() => {

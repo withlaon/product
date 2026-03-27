@@ -8,6 +8,7 @@ import {
   loadMappings, saveMappings, lookupMapping, makeMappingKey, extractColor,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
+import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
 
 /* ─── CS 타입 & 헬퍼 ────────────────────────────────────── */
 type CsType   = 'return' | 'exchange'
@@ -26,6 +27,7 @@ function loadCs(): CsItem[] {
 }
 function saveCs(items: CsItem[]) {
   try { localStorage.setItem(CS_KEY, JSON.stringify(items)) } catch {}
+  broadcastDashboardRefresh()
 }
 
 /** 바코드로 상품 약어·옵션명·이미지 조회 */

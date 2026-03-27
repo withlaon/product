@@ -1,3 +1,5 @@
+import { broadcastDashboardRefresh } from './dashboard-sync'
+
 /* ─── 출고내역 타입 ─────────────────────────────────────── */
 export interface ShippedOrder extends Omit<Order, 'status'> {
   status: 'shipped' | 'delivered'
@@ -17,6 +19,7 @@ export function loadShippedOrders(): ShippedOrder[] {
 
 export function saveShippedOrders(orders: ShippedOrder[]) {
   try { localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(orders)) } catch {}
+  broadcastDashboardRefresh()
 }
 
 /* ─── 주문 타입 ─────────────────────────────────────────── */
@@ -58,6 +61,7 @@ export function loadOrders(): Order[] {
 
 export function saveOrders(orders: Order[]) {
   try { localStorage.setItem(ORDERS_KEY, JSON.stringify(orders)) } catch {}
+  broadcastDashboardRefresh()
 }
 
 /* ─── 송장출력/등록 대기 큐 (주문관리 → 송장출력/등록 이동용) ── */
@@ -72,6 +76,7 @@ export function loadInvoiceQueue(): Order[] {
 
 export function saveInvoiceQueue(orders: Order[]) {
   try { localStorage.setItem(INVOICE_QUEUE_KEY, JSON.stringify(orders)) } catch {}
+  broadcastDashboardRefresh()
 }
 
 /* ─── 선택 주문 임시 스토리지 (주문관리 → 송장등록 이동용) ── */
