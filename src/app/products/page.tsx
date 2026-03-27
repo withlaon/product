@@ -126,6 +126,25 @@ const CATS_STORAGE_KEY = 'pm_categories_v1'
 // 캐시 상수를 컴포넌트 바깥에 두어 useState 초기화 함수에서도 참조 가능
 const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
 const PRODUCTS_CACHE_TTL = 30 * 60 * 1000 // 30분
+/** 입고관리 등 다른 화면이 발주·입고(미입고) 수량을 즉시 맞추기 위한 동기 신호 */
+const PM_PRODUCTS_CACHE_SYNC_KEY = 'pm_products_cache_sync'
+
+function broadcastPmProductsQtySync() {
+  try { localStorage.setItem(PM_PRODUCTS_CACHE_SYNC_KEY, String(Date.now())) } catch {}
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
+  }
+}
+
+function patchProductInPmProductsCache(updated: Product) {
+  try {
+    const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
+    if (!raw) return
+    const parsed = JSON.parse(raw) as { ts: number; data: Product[] }
+    const newData = parsed.data.map(p => p.id === updated.id ? updated : p)
+    localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: newData }))
+  } catch { /* ignore */ }
+}
 
 /** TTL 관계없이 저장된 캐시 데이터 반환 (스테일 포함) */
 function loadProductsAnyCached(): Product[] {
@@ -1235,7 +1254,13 @@ export default function ProductsPage() {
         setEditSaveError(error.message)
         return
       }
-      setProducts(prev => prev.map(p => p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
+      setProducts(prev => {
+        const next = prev.map(p => (p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
+        const u = next.find(p => p.id === isEdit.id)
+        if (u) patchProductInPmProductsCache(u)
+        broadcastPmProductsQtySync()
+        return next
+      })
       if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
         const updated = [...prev, cat]
         saveCats(updated)
@@ -1861,6 +1886,8 @@ export default function ProductsPage() {
       updateCount > 0 ? `업데이트: ${updateCount}개` : '',
       errors.length > 0 ? `\n실패: ${errors.length}개\n${errors.slice(0,5).join('\n')}${errors.length>5?'\n...':''}` : '',
     ].filter(Boolean).join(' / ')
+    try { localStorage.removeItem(PRODUCTS_CACHE_KEY) } catch {}
+    broadcastPmProductsQtySync()
     alert(`엑셀 일괄등록 완료!\n${msg}`)
   }
 

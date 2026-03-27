@@ -17,6 +17,7 @@ import {
 
 const CACHE_KEY = 'pm_products_cache_v1'
 const CACHE_TTL = 30 * 60 * 1000
+const PM_PRODUCTS_CACHE_SYNC_KEY = 'pm_products_cache_sync'
 
 /* ──
   syncProductQty 성공 후 API 재조회 없이 로컬 products 상태를 직접 패치.
@@ -156,6 +157,26 @@ export default function ReceiveManagePage() {
     } catch { /* ignore */ }
   }, [])
   useEffect(() => { loadPurchases(); loadProducts() }, [loadPurchases, loadProducts])
+
+  /* ── 상품관리탭 발주·입고 변경 → 미입고 내역 실시간 반영 ── */
+  useEffect(() => {
+    const reload = () => { void loadProducts(true) }
+    const onStorage = (e: StorageEvent) => {
+      if (
+        e.key === PM_PRODUCTS_CACHE_SYNC_KEY ||
+        e.key === CACHE_KEY ||
+        e.key === 'pm_products_mapping_signal'
+      ) {
+        reload()
+      }
+    }
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('pm_products_cache_sync', reload)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('pm_products_cache_sync', reload)
+    }
+  }, [loadProducts])
 
   /* ── uKey: 미입고 항목 고유키 ── */
   const uKey = (u: { prodId: string; barcode: string; optName: string }) =>
