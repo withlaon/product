@@ -128,7 +128,6 @@ export default function ReceiveManagePage() {
   const [miSelected,    setMiSelected]    = useState<Set<string>>(new Set())
   const [miQtys,        setMiQtys]        = useState<Record<string, string>>({})
   const [loadedImages,  setLoadedImages]  = useState<Record<string, string>>({})
-  const [showHistory,   setShowHistory]   = useState(false)
 
   /* ── 데이터 로드 ── */
   const loadPurchases = useCallback(async () => {
@@ -645,7 +644,7 @@ export default function ReceiveManagePage() {
                             } else { setMiSelected(new Set()); setMiQtys({}) }
                           }} style={{ cursor:'pointer' }}/>
                       </th>
-                      {['이미지','상품약어 / 옵션','바코드','미입고'].map(h => (
+                      {['이미지','상품약어 / 옵션','바코드','미입고 / 입고수량'].map(h => (
                         <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -685,7 +684,16 @@ export default function ReceiveManagePage() {
                             <div style={{ fontSize:10.5, color:'#64748b', marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.optName}</div>
                           </td>
                           <td style={{ padding:'5px 8px', color:'#94a3b8', fontSize:10, fontFamily:'monospace', whiteSpace:'nowrap' }}>{u.barcode || '-'}</td>
-                          <td style={{ textAlign:'center', fontWeight:900, color:'#dc2626', fontSize:13, width:44 }}>{u.qty}</td>
+                          <td style={{ padding:'5px 6px', width:76, textAlign:'center' }} onClick={e => e.stopPropagation()}>
+                            {sel ? (
+                              <input type="number" min="1"
+                                value={miQtys[k] ?? ''}
+                                onChange={e => setMiQtys(prev => ({ ...prev, [k]: e.target.value }))}
+                                style={{ width:'100%', border:'1.5px solid #059669', borderRadius:6, padding:'3px 5px', fontSize:11.5, fontWeight:800, textAlign:'center', outline:'none', color:'#059669' }}/>
+                            ) : (
+                              <span style={{ fontWeight:900, color:'#dc2626', fontSize:13 }}>{u.qty}</span>
+                            )}
+                          </td>
                         </tr>
                       )
                     })}
@@ -694,175 +702,98 @@ export default function ReceiveManagePage() {
               )
             }
           </div>
+          {/* 미입고 입고확정 버튼 */}
+          {miSelected.size > 0 && (
+            <div style={{ padding:'10px 14px', borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
+              <button onClick={handleConfirmFromUnreceived} disabled={saving}
+                style={{ width:'100%', fontSize:12.5, fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:8, padding:'9px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
+                <CheckCircle2 size={13}/>{saving ? '처리 중...' : `입고확정 (${miSelected.size}종)`}
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* ══ 오른쪽: flex column 2-section ══ */}
-        <div style={{ display:'flex', flexDirection:'column', gap:10, overflow:'hidden' }}>
+        {/* ══ 오른쪽: 오늘 일별 입고 목록 ══ */}
+        <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
+          {/* 헤더 */}
+          <div style={{ padding:'10px 14px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:8, flexShrink:0, flexWrap:'wrap' }}>
+            <CheckCircle2 size={14} style={{ color:'#059669' }}/>
+            <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>오늘 일별 입고 목록</span>
+            <DayNav day={day} setDay={setDay}/>
+            <span style={{ fontSize:11, color:'#94a3b8', marginLeft:'auto' }}>{rcItems.length}건</span>
+          </div>
 
-          {/* ── 상단: 선택 항목 입고확정 ── */}
-          <div className="pm-card" style={{ flex:'1 1 0', display:'flex', flexDirection:'column', overflow:'hidden', padding:0, minHeight:0 }}>
-            {/* 헤더 */}
-            <div style={{ padding:'10px 14px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
-              <CheckCircle2 size={14} style={{ color:'#059669' }}/>
-              <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>입고확정</span>
-              {miSelected.size > 0 && (
-                <span style={{ fontSize:11, background:'#ecfdf5', color:'#059669', fontWeight:700, padding:'2px 8px', borderRadius:99 }}>{miSelected.size}종</span>
-              )}
+          {/* 컨텐츠 */}
+          {rcItems.length === 0 ? (
+            <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'#94a3b8', gap:8, padding:'2rem' }}>
+              <PackagePlus size={32} style={{ opacity:0.2 }}/>
+              <p style={{ fontSize:13, fontWeight:700 }}>{fmtDayLabel(day)} 입고 내역 없음</p>
+              <p style={{ fontSize:11, color:'#cbd5e1' }}>상단 입고 등록 버튼으로 내역을 추가하세요</p>
             </div>
-
-            {miSelected.size === 0 ? (
-              <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'#94a3b8', gap:8 }}>
-                <Package size={32} style={{ opacity:0.2 }}/>
-                <p style={{ fontSize:13, fontWeight:700 }}>왼쪽에서 미입고 항목을 선택하세요</p>
-                <p style={{ fontSize:11, color:'#cbd5e1' }}>선택 후 수량 입력 → 입고확정</p>
+          ) : (
+            <>
+              <div style={{ flex:1, overflowY:'auto' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                  <thead>
+                    <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
+                      <th style={{ padding:'5px 8px', borderBottom:'1px solid #f1f5f9', width:28 }}>
+                        <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ cursor:'pointer' }}/>
+                      </th>
+                      {['이미지','약어','옵션','바코드','수량','확정'].map(h => (
+                        <th key={h} style={{ padding:'5px 6px', fontWeight:800, color:'#64748b', fontSize:10, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rcItems.map(item => {
+                      const k = `${item.purchaseId}|${item.itemIndex}`
+                      const img = loadedImages[item.barcode] || item.optImage
+                      return (
+                        <tr key={k} style={{ borderBottom:'1px solid #f8fafc', background:item.confirmed ? '#f0fdf4' : 'white' }}>
+                          <td style={{ textAlign:'center', padding:'4px 8px' }}>
+                            <input type="checkbox" checked={selectedKeys.has(k)}
+                              onChange={e => {
+                                const ns = new Set(selectedKeys)
+                                e.target.checked ? ns.add(k) : ns.delete(k)
+                                setSelectedKeys(ns)
+                              }} style={{ cursor:'pointer' }}/>
+                          </td>
+                          <td style={{ textAlign:'center', padding:'4px 6px', width:40 }}>
+                            {img
+                              ? <img src={img} alt="" style={{ width:30, height:30, objectFit:'cover', borderRadius:5, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
+                              : <div style={{ width:30, height:30, background:'#f1f5f9', borderRadius:5, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                  <Package size={12} style={{ color:'#cbd5e1' }}/>
+                                </div>}
+                          </td>
+                          <td style={{ padding:'4px 6px', fontWeight:700, color:'#0f172a', fontSize:10.5, maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {item.prodAbbr || item.product_code}
+                          </td>
+                          <td style={{ padding:'4px 6px', color:'#475569', fontSize:10.5, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.option_name}</td>
+                          <td style={{ padding:'4px 6px', fontSize:9.5, fontFamily:'monospace', color: item.barcode ? '#64748b' : '#f59e0b', fontWeight: item.barcode ? 400 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {item.barcode || '미매핑'}
+                          </td>
+                          <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize:12 }}>{item.received}</td>
+                          <td style={{ textAlign:'center' }}>
+                            {item.confirmed
+                              ? <span style={{ fontSize:9, fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
+                              : <span style={{ fontSize:9, fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
               </div>
-            ) : (
-              <>
-                {/* 선택 항목 목록 */}
-                <div style={{ flex:1, overflowY:'auto' }}>
-                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
-                    <thead>
-                      <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
-                        {['이미지','약어 / 옵션 / 바코드','미입고','입고수량'].map(h => (
-                          <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {unreceivedList.filter(u => miSelected.has(uKey(u))).map((u, idx) => {
-                        const k = uKey(u)
-                        const img = loadedImages[u.barcode] || u.image
-                        return (
-                          <tr key={idx} style={{ borderBottom:'1px solid #f8fafc' }}>
-                            <td style={{ textAlign:'center', padding:'5px 6px', width:50 }}>
-                              {img
-                                ? <img src={img} alt="" style={{ width:38, height:38, objectFit:'cover', borderRadius:7, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
-                                : <div style={{ width:38, height:38, background:'#f1f5f9', borderRadius:7, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                                    <Package size={14} style={{ color:'#cbd5e1' }}/>
-                                  </div>}
-                            </td>
-                            <td style={{ padding:'5px 8px', minWidth:0 }}>
-                              <div style={{ fontSize:11.5, fontWeight:800, color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.abbr}</div>
-                              <div style={{ fontSize:10.5, color:'#64748b', marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.optName}</div>
-                              <div style={{ fontSize:9.5, color:'#94a3b8', fontFamily:'monospace', marginTop:1 }}>{u.barcode || '-'}</div>
-                            </td>
-                            <td style={{ textAlign:'center', fontWeight:900, color:'#dc2626', fontSize:13, width:46 }}>{u.qty}</td>
-                            <td style={{ padding:'5px 8px', width:80 }}>
-                              <input type="number" min="1" max={u.qty}
-                                value={miQtys[k] ?? ''}
-                                onChange={e => setMiQtys(prev => ({ ...prev, [k]: e.target.value }))}
-                                className="pm-input"
-                                style={{ width:'100%', textAlign:'center', fontWeight:800 }}/>
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-                {/* 확정 버튼 */}
+              {selectedKeys.size > 0 && (
                 <div style={{ padding:'10px 14px', borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
-                  <button onClick={handleConfirmFromUnreceived} disabled={saving}
+                  <button onClick={handleConfirm} disabled={saving}
                     style={{ width:'100%', fontSize:12.5, fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:8, padding:'9px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
-                    <CheckCircle2 size={13}/>{saving ? '처리 중...' : '입고확정'}
+                    <CheckCircle2 size={13}/>{saving ? '처리 중...' : `입고확정 (${selectedKeys.size}건)`}
                   </button>
                 </div>
-              </>
-            )}
-          </div>
-
-          {/* ── 하단: 일별 입고 목록 (토글) ── */}
-          <div className="pm-card" style={{ flexShrink:0, padding:0, overflow:'hidden' }}>
-            <button onClick={() => setShowHistory(v => !v)}
-              style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px', background:'none', border:'none', cursor:'pointer', fontSize:12.5, fontWeight:800, color:'#0f172a' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <span>📋 일별 입고 목록</span>
-                <DayNav day={day} setDay={setDay}/>
-              </div>
-              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                <span style={{ fontSize:11, color:'#94a3b8' }}>{rcItems.length}건</span>
-                {showHistory ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
-              </div>
-            </button>
-
-            {showHistory && (
-              <div style={{ borderTop:'1px solid #f1f5f9' }}>
-                {rcItems.length === 0
-                  ? (
-                    <div style={{ textAlign:'center', padding:'20px 0', color:'#94a3b8' }}>
-                      <PackagePlus size={24} style={{ opacity:0.2, margin:'0 auto 8px' }}/>
-                      <p style={{ fontSize:12, fontWeight:700 }}>{fmtDayLabel(day)} 입고 내역 없음</p>
-                    </div>
-                  )
-                  : (
-                    <>
-                      <div style={{ maxHeight:240, overflowY:'auto' }}>
-                        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
-                          <thead>
-                            <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
-                              <th style={{ padding:'5px 8px', borderBottom:'1px solid #f1f5f9', width:28 }}>
-                                <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ cursor:'pointer' }}/>
-                              </th>
-                              {['이미지','약어','옵션','바코드','수량','확정'].map(h => (
-                                <th key={h} style={{ padding:'5px 6px', fontWeight:800, color:'#64748b', fontSize:10, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {rcItems.map(item => {
-                              const k = `${item.purchaseId}|${item.itemIndex}`
-                              const img = loadedImages[item.barcode] || item.optImage
-                              return (
-                                <tr key={k} style={{ borderBottom:'1px solid #f8fafc', background:item.confirmed ? '#f0fdf4' : 'white' }}>
-                                  <td style={{ textAlign:'center', padding:'4px 8px' }}>
-                                    <input type="checkbox" checked={selectedKeys.has(k)}
-                                      onChange={e => {
-                                        const ns = new Set(selectedKeys)
-                                        e.target.checked ? ns.add(k) : ns.delete(k)
-                                        setSelectedKeys(ns)
-                                      }} style={{ cursor:'pointer' }}/>
-                                  </td>
-                                  <td style={{ textAlign:'center', padding:'4px 6px', width:40 }}>
-                                    {img
-                                      ? <img src={img} alt="" style={{ width:30, height:30, objectFit:'cover', borderRadius:5, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
-                                      : <div style={{ width:30, height:30, background:'#f1f5f9', borderRadius:5, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                                          <Package size={12} style={{ color:'#cbd5e1' }}/>
-                                        </div>}
-                                  </td>
-                                  <td style={{ padding:'4px 6px', fontWeight:700, color:'#0f172a', fontSize:10.5, maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                    {item.prodAbbr || item.product_code}
-                                  </td>
-                                  <td style={{ padding:'4px 6px', color:'#475569', fontSize:10.5, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.option_name}</td>
-                                  <td style={{ padding:'4px 6px', fontSize:9.5, fontFamily:'monospace', color: item.barcode ? '#64748b' : '#f59e0b', fontWeight: item.barcode ? 400 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                    {item.barcode || '미매핑'}
-                                  </td>
-                                  <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize:12 }}>{item.received}</td>
-                                  <td style={{ textAlign:'center' }}>
-                                    {item.confirmed
-                                      ? <span style={{ fontSize:9, fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
-                                      : <span style={{ fontSize:9, fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
-                                  </td>
-                                </tr>
-                              )
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                      {selectedKeys.size > 0 && (
-                        <div style={{ padding:'8px 14px', borderTop:'1px solid #f1f5f9' }}>
-                          <button onClick={handleConfirm} disabled={saving}
-                            style={{ width:'100%', fontSize:12, fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:7, padding:'7px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
-                            <CheckCircle2 size={12}/>{saving ? '처리 중...' : '선택 입고확정'}
-                          </button>
-                        </div>
-                      )}
-                    </>
-                  )
-                }
-              </div>
-            )}
-          </div>
-
+              )}
+            </>
+          )}
         </div>
       </div>
 
