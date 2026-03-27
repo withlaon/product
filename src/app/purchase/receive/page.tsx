@@ -1,7 +1,6 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx'
-import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
@@ -13,8 +12,11 @@ import {
 } from '../_shared'
 import {
   Edit2, Trash2, X, Plus, PackagePlus, CheckCircle2,
-  Upload, ChevronLeft, ChevronRight,
+  Upload, ChevronLeft, ChevronRight, Package, ChevronDown, ChevronUp,
 } from 'lucide-react'
+
+const CACHE_KEY = 'pm_products_cache_v1'
+const CACHE_TTL = 30 * 60 * 1000
 
 /* ── 일별 날짜 네비 ── */
 function DayNav({ day, setDay }: { day: string; setDay: (d: string) => void }) {
@@ -95,16 +97,75 @@ export default function ReceiveManagePage() {
   const [editFormData, setEditFormData] = useState<Purchase | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<Purchase | null>(null)
 
+  /* 미입고 선택 → 입고확정 */
+  const [miSelected,    setMiSelected]    = useState<Set<string>>(new Set())
+  const [miQtys,        setMiQtys]        = useState<Record<string, string>>({})
+  const [loadedImages,  setLoadedImages]  = useState<Record<string, string>>({})
+  const [showHistory,   setShowHistory]   = useState(false)
+
   /* ── 데이터 로드 ── */
   const loadPurchases = useCallback(async () => {
     const data = await apiFetchPurchases()
     setPurchases(data)
   }, [])
-  const loadProducts = useCallback(async () => {
-    const { data } = await supabase.from('pm_products').select('id,code,name,abbr,options')
-    if (data) setProducts(data as PmProduct[])
+  const loadProducts = useCallback(async (force = false) => {
+    if (!force) {
+      try {
+        const raw = localStorage.getItem(CACHE_KEY)
+        if (raw) {
+          const { ts, data } = JSON.parse(raw)
+          if (Date.now() - ts < CACHE_TTL && Array.isArray(data) && data.length > 0) {
+            setProducts(data as PmProduct[]); return
+          }
+        }
+      } catch { /* ignore */ }
+    }
+    try {
+      const res = await fetch(`/api/pm-products${force ? `?t=${Date.now()}` : ''}`)
+      if (res.ok) {
+        const data = await res.json()
+        setProducts(data as PmProduct[])
+        try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data })) } catch { /* ignore */ }
+      }
+    } catch { /* ignore */ }
   }, [])
   useEffect(() => { loadPurchases(); loadProducts() }, [loadPurchases, loadProducts])
+
+  /* ── 이미지 배치 로딩 ── */
+  const imageProdIdsKey = useMemo(
+    () => [...new Set([
+      ...unreceivedList.map(u => u.prodId),
+      ...rcItems.map(i => i.prodId),
+    ])].filter(Boolean).sort().join(','),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [products, purchases]
+  )
+  useEffect(() => {
+    if (!imageProdIdsKey) return
+    const prodIds = imageProdIdsKey.split(',').filter(Boolean)
+    let cancelled = false
+    const chunks: string[][] = []
+    for (let i = 0; i < prodIds.length; i += 20) chunks.push(prodIds.slice(i, i + 20))
+    ;(async () => {
+      for (const chunk of chunks) {
+        if (cancelled) break
+        try {
+          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
+          if (!res.ok || cancelled) continue
+          const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
+          if (!Array.isArray(data)) continue
+          const imgs: Record<string, string> = {}
+          data.forEach(prod => (prod.options ?? []).forEach(o => { if (o.barcode && o.image) imgs[o.barcode] = o.image }))
+          if (!cancelled && Object.keys(imgs).length > 0) setLoadedImages(prev => ({ ...prev, ...imgs }))
+        } catch { /* ignore */ }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [imageProdIdsKey])
+
+  /* ── uKey: 미입고 항목 고유키 ── */
+  const uKey = (u: { prodId: string; barcode: string; optName: string }) =>
+    `${u.prodId}||${u.barcode || u.optName}`
 
   /* ── 왼쪽: 미입고 목록 (pm_products 기준 ordered > received, 상품코드 내림차순) ── */
   const unreceivedList = useMemo(() => {
@@ -234,6 +295,33 @@ export default function ReceiveManagePage() {
     if (!deltas.length) {
       alert('바코드 또는 상품코드가 매핑된 상품이 없어 수량 반영이 되지 않았습니다.\n입고 상품의 바코드/상품코드를 확인해 주세요.')
     }
+  }
+
+  /* ── 미입고 선택 입고확정 ── */
+  const handleConfirmFromUnreceived = async () => {
+    const confirmed = unreceivedList.filter(u => miSelected.has(uKey(u)) && (Number(miQtys[uKey(u)]) || 0) > 0)
+    if (!confirmed.length) { alert('입고 수량을 1개 이상 입력하세요.'); return }
+    setSaving(true)
+    const items: PurchaseItem[] = confirmed.map(u => ({
+      product_code: u.prodCode, option_name: u.optName, barcode: u.barcode,
+      ordered:  Number(miQtys[uKey(u)]) || 0,
+      received: Number(miQtys[uKey(u)]) || 0,
+    }))
+    const { error } = await apiInsertPurchase({
+      order_date: getToday(), supplier: '미입고확정',
+      status: 'completed', ordered_at: new Date().toISOString(), received_at: new Date().toISOString(), items,
+    })
+    if (error) { alert(`입고 확정 실패: ${error}`); setSaving(false); return }
+    const deltas = confirmed.map((u, i) => ({
+      prodId: u.prodId, optName: items[i].option_name, barcode: u.barcode || undefined,
+      orderedDelta: 0, receivedDelta: items[i].received,
+    })).filter(d => d.prodId && d.receivedDelta > 0)
+    if (deltas.length) await syncProductQty(products, deltas)
+    localStorage.removeItem(CACHE_KEY)
+    localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
+    await loadPurchases(); await loadProducts(true)
+    setMiSelected(new Set()); setMiQtys({})
+    setSaving(false)
   }
 
   /* ── 수정 ── */
@@ -472,8 +560,21 @@ export default function ReceiveManagePage() {
         {/* ══ 왼쪽: 미입고 내역 ══ */}
         <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
           <div style={{ padding:'10px 14px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
-            <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>미입고 내역</span>
-            <span style={{ fontSize:11, color:'#94a3b8' }}>{unreceivedList.length}종</span>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>미입고 내역</span>
+              <span style={{ fontSize:11, color:'#94a3b8' }}>{unreceivedList.length}종</span>
+              {miSelected.size > 0 && (
+                <span style={{ fontSize:11, background:'#ecfdf5', color:'#059669', fontWeight:700, padding:'2px 8px', borderRadius:99 }}>
+                  {miSelected.size}개 선택
+                </span>
+              )}
+            </div>
+            {miSelected.size > 0 && (
+              <button onClick={() => { setMiSelected(new Set()); setMiQtys({}) }}
+                style={{ fontSize:11, color:'#94a3b8', background:'none', border:'none', cursor:'pointer', fontWeight:700 }}>
+                선택 해제
+              </button>
+            )}
           </div>
           <div style={{ flex:1, overflow:'auto' }}>
             {unreceivedList.length === 0
@@ -487,105 +588,58 @@ export default function ReceiveManagePage() {
                 <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                   <thead>
                     <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
-                      {['이미지','상품약어','옵션명','바코드','미입고'].map(h => (
-                        <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {unreceivedList.map((u, idx) => (
-                      <tr key={idx} style={{ borderBottom:'1px solid #f8fafc' }}>
-                        <td style={{ textAlign:'center', padding:'5px 6px' }}>
-                          {u.image
-                            ? <img src={u.image} alt="" style={{ width:32, height:32, objectFit:'cover', borderRadius:4 }}/>
-                            : <div style={{ width:32, height:32, background:'#f1f5f9', borderRadius:4, margin:'0 auto' }}/>}
-                        </td>
-                        <td style={{ padding:'5px 8px', fontWeight:700, color:'#0f172a', fontSize:11, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.abbr}</td>
-                        <td style={{ padding:'5px 8px', color:'#475569', fontSize:11, maxWidth:90, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.optName}</td>
-                        <td style={{ padding:'5px 8px', color:'#94a3b8', fontSize:10, fontFamily:'monospace' }}>{u.barcode || '-'}</td>
-                        <td style={{ textAlign:'center', fontWeight:900, color:'#dc2626', fontSize:13 }}>{u.qty}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              )
-            }
-          </div>
-        </div>
-
-        {/* ══ 오른쪽: 입고 목록 ══ */}
-        <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
-          {/* 날짜 네비 + 입고확정 버튼 */}
-          <div style={{ padding:'10px 12px', borderBottom:'1px solid #f1f5f9', flexShrink:0, display:'flex', flexDirection:'column', gap:8 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-              <DayNav day={day} setDay={setDay}/>
-              <span style={{ fontSize:11, color:'#94a3b8' }}>{rcItems.length}건</span>
-            </div>
-            <button onClick={handleConfirm} disabled={saving}
-              style={{ width:'100%', fontSize:12, fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:7, padding:'7px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
-              <CheckCircle2 size={12}/>{saving ? '처리 중...' : '입고확정'}
-            </button>
-          </div>
-
-          {/* 입고 아이템 목록 */}
-          <div style={{ flex:1, overflow:'auto' }}>
-            {rcItems.length === 0
-              ? (
-                <div style={{ textAlign:'center', padding:'40px 0', color:'#94a3b8' }}>
-                  <PackagePlus size={32} style={{ opacity:0.2, margin:'0 auto 10px' }}/>
-                  <p style={{ fontSize:13, fontWeight:700 }}>입고 내역이 없습니다</p>
-                  <p style={{ fontSize:11, color:'#cbd5e1', marginTop:4 }}>
-                    {fmtDayLabel(day)} 입고 등록된 항목이 없습니다
-                  </p>
-                </div>
-              )
-              : (
-                <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11.5 }}>
-                  <thead>
-                    <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
-                      <th style={{ padding:'6px 8px', borderBottom:'1px solid #f1f5f9', width:28 }}>
-                        <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ cursor:'pointer' }}/>
+                      <th style={{ padding:'6px 8px', borderBottom:'1px solid #f1f5f9', width:32, textAlign:'center' }}>
+                        <input type="checkbox"
+                          checked={unreceivedList.length > 0 && unreceivedList.every(u => miSelected.has(uKey(u)))}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              const ns = new Set<string>(); const nq: Record<string,string> = {}
+                              unreceivedList.forEach(u => { const k = uKey(u); ns.add(k); nq[k] = String(u.qty) })
+                              setMiSelected(ns); setMiQtys(nq)
+                            } else { setMiSelected(new Set()); setMiQtys({}) }
+                          }} style={{ cursor:'pointer' }}/>
                       </th>
-                      {['이미지','상품약어','옵션명','바코드','입고수량','확정'].map(h => (
+                      {['이미지','상품약어 / 옵션','바코드','미입고'].map(h => (
                         <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {rcItems.map(item => {
-                      const k = `${item.purchaseId}|${item.itemIndex}`
+                    {unreceivedList.map((u, idx) => {
+                      const k = uKey(u)
+                      const sel = miSelected.has(k)
+                      const img = loadedImages[u.barcode] || u.image
                       return (
-                        <tr key={k} style={{ borderBottom:'1px solid #f8fafc', background:item.confirmed ? '#f0fdf4' : 'white' }}>
-                          <td style={{ textAlign:'center', padding:'5px 8px' }}>
-                            <input type="checkbox" checked={selectedKeys.has(k)}
+                        <tr key={idx}
+                          onClick={() => {
+                            const ns = new Set(miSelected)
+                            if (sel) { ns.delete(k); setMiQtys(q => { const nq = {...q}; delete nq[k]; return nq }) }
+                            else { ns.add(k); setMiQtys(q => ({ ...q, [k]: String(u.qty) })) }
+                            setMiSelected(ns)
+                          }}
+                          style={{ borderBottom:'1px solid #f8fafc', background: sel ? '#f0fdf4' : undefined, cursor:'pointer', transition:'background 0.12s' }}>
+                          <td style={{ textAlign:'center', padding:'5px 8px' }} onClick={e => e.stopPropagation()}>
+                            <input type="checkbox" checked={sel}
                               onChange={e => {
-                                const ns = new Set(selectedKeys)
-                                e.target.checked ? ns.add(k) : ns.delete(k)
-                                setSelectedKeys(ns)
+                                const ns = new Set(miSelected)
+                                if (e.target.checked) { ns.add(k); setMiQtys(q => ({ ...q, [k]: String(u.qty) })) }
+                                else { ns.delete(k); setMiQtys(q => { const nq = {...q}; delete nq[k]; return nq }) }
+                                setMiSelected(ns)
                               }} style={{ cursor:'pointer' }}/>
                           </td>
-                          <td style={{ textAlign:'center', padding:'5px 6px' }}>
-                            {item.optImage
-                              ? <img src={item.optImage} alt="" style={{ width:32, height:32, objectFit:'cover', borderRadius:4 }}/>
-                              : <div style={{ width:32, height:32, background:'#f1f5f9', borderRadius:4, margin:'0 auto' }}/>}
+                          <td style={{ textAlign:'center', padding:'5px 6px', width:46 }}>
+                            {img
+                              ? <img src={img} alt="" style={{ width:36, height:36, objectFit:'cover', borderRadius:6, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
+                              : <div style={{ width:36, height:36, background:'#f1f5f9', borderRadius:6, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                  <Package size={14} style={{ color:'#cbd5e1' }}/>
+                                </div>}
                           </td>
-                          <td style={{ padding:'5px 8px', fontWeight:700, color:'#0f172a', fontSize:11, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                            {item.prodAbbr || item.product_code}
+                          <td style={{ padding:'5px 8px', minWidth:0 }}>
+                            <div style={{ fontSize:11.5, fontWeight:800, color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.abbr}</div>
+                            <div style={{ fontSize:10.5, color:'#64748b', marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.optName}</div>
                           </td>
-                          <td style={{ padding:'5px 8px', color:'#475569', fontSize:11, maxWidth:90, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                            {item.option_name}
-                          </td>
-                          <td style={{ padding:'5px 8px', fontSize:10, fontFamily:'monospace' }}>
-                            {item.barcode
-                              ? <span style={{ color:'#64748b' }}>{item.barcode}</span>
-                              : <span style={{ color:'#f59e0b', fontWeight:700, fontSize:10 }}>미매핑</span>}
-                          </td>
-                          <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize:13 }}>{item.received}</td>
-                          <td style={{ textAlign:'center' }}>
-                            {item.confirmed
-                              ? <span style={{ fontSize:10, fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 7px', borderRadius:99 }}>확정</span>
-                              : <span style={{ fontSize:10, fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 7px', borderRadius:99 }}>대기</span>}
-                          </td>
+                          <td style={{ padding:'5px 8px', color:'#94a3b8', fontSize:10, fontFamily:'monospace', whiteSpace:'nowrap' }}>{u.barcode || '-'}</td>
+                          <td style={{ textAlign:'center', fontWeight:900, color:'#dc2626', fontSize:13, width:44 }}>{u.qty}</td>
                         </tr>
                       )
                     })}
@@ -594,6 +648,175 @@ export default function ReceiveManagePage() {
               )
             }
           </div>
+        </div>
+
+        {/* ══ 오른쪽: flex column 2-section ══ */}
+        <div style={{ display:'flex', flexDirection:'column', gap:10, overflow:'hidden' }}>
+
+          {/* ── 상단: 선택 항목 입고확정 ── */}
+          <div className="pm-card" style={{ flex:'1 1 0', display:'flex', flexDirection:'column', overflow:'hidden', padding:0, minHeight:0 }}>
+            {/* 헤더 */}
+            <div style={{ padding:'10px 14px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:8, flexShrink:0 }}>
+              <CheckCircle2 size={14} style={{ color:'#059669' }}/>
+              <span style={{ fontSize:13, fontWeight:800, color:'#0f172a' }}>입고확정</span>
+              {miSelected.size > 0 && (
+                <span style={{ fontSize:11, background:'#ecfdf5', color:'#059669', fontWeight:700, padding:'2px 8px', borderRadius:99 }}>{miSelected.size}종</span>
+              )}
+            </div>
+
+            {miSelected.size === 0 ? (
+              <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'#94a3b8', gap:8 }}>
+                <Package size={32} style={{ opacity:0.2 }}/>
+                <p style={{ fontSize:13, fontWeight:700 }}>왼쪽에서 미입고 항목을 선택하세요</p>
+                <p style={{ fontSize:11, color:'#cbd5e1' }}>선택 후 수량 입력 → 입고확정</p>
+              </div>
+            ) : (
+              <>
+                {/* 선택 항목 목록 */}
+                <div style={{ flex:1, overflowY:'auto' }}>
+                  <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
+                    <thead>
+                      <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
+                        {['이미지','약어 / 옵션 / 바코드','미입고','입고수량'].map(h => (
+                          <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:10.5, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {unreceivedList.filter(u => miSelected.has(uKey(u))).map((u, idx) => {
+                        const k = uKey(u)
+                        const img = loadedImages[u.barcode] || u.image
+                        return (
+                          <tr key={idx} style={{ borderBottom:'1px solid #f8fafc' }}>
+                            <td style={{ textAlign:'center', padding:'5px 6px', width:50 }}>
+                              {img
+                                ? <img src={img} alt="" style={{ width:38, height:38, objectFit:'cover', borderRadius:7, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
+                                : <div style={{ width:38, height:38, background:'#f1f5f9', borderRadius:7, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                    <Package size={14} style={{ color:'#cbd5e1' }}/>
+                                  </div>}
+                            </td>
+                            <td style={{ padding:'5px 8px', minWidth:0 }}>
+                              <div style={{ fontSize:11.5, fontWeight:800, color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.abbr}</div>
+                              <div style={{ fontSize:10.5, color:'#64748b', marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.optName}</div>
+                              <div style={{ fontSize:9.5, color:'#94a3b8', fontFamily:'monospace', marginTop:1 }}>{u.barcode || '-'}</div>
+                            </td>
+                            <td style={{ textAlign:'center', fontWeight:900, color:'#dc2626', fontSize:13, width:46 }}>{u.qty}</td>
+                            <td style={{ padding:'5px 8px', width:80 }}>
+                              <input type="number" min="1" max={u.qty}
+                                value={miQtys[k] ?? ''}
+                                onChange={e => setMiQtys(prev => ({ ...prev, [k]: e.target.value }))}
+                                className="pm-input"
+                                style={{ width:'100%', textAlign:'center', fontWeight:800 }}/>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                {/* 확정 버튼 */}
+                <div style={{ padding:'10px 14px', borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
+                  <button onClick={handleConfirmFromUnreceived} disabled={saving}
+                    style={{ width:'100%', fontSize:12.5, fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:8, padding:'9px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
+                    <CheckCircle2 size={13}/>{saving ? '처리 중...' : '입고확정'}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── 하단: 일별 입고 목록 (토글) ── */}
+          <div className="pm-card" style={{ flexShrink:0, padding:0, overflow:'hidden' }}>
+            <button onClick={() => setShowHistory(v => !v)}
+              style={{ width:'100%', display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 14px', background:'none', border:'none', cursor:'pointer', fontSize:12.5, fontWeight:800, color:'#0f172a' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span>📋 일별 입고 목록</span>
+                <DayNav day={day} setDay={setDay}/>
+              </div>
+              <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                <span style={{ fontSize:11, color:'#94a3b8' }}>{rcItems.length}건</span>
+                {showHistory ? <ChevronUp size={13}/> : <ChevronDown size={13}/>}
+              </div>
+            </button>
+
+            {showHistory && (
+              <div style={{ borderTop:'1px solid #f1f5f9' }}>
+                {rcItems.length === 0
+                  ? (
+                    <div style={{ textAlign:'center', padding:'20px 0', color:'#94a3b8' }}>
+                      <PackagePlus size={24} style={{ opacity:0.2, margin:'0 auto 8px' }}/>
+                      <p style={{ fontSize:12, fontWeight:700 }}>{fmtDayLabel(day)} 입고 내역 없음</p>
+                    </div>
+                  )
+                  : (
+                    <>
+                      <div style={{ maxHeight:240, overflowY:'auto' }}>
+                        <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
+                          <thead>
+                            <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
+                              <th style={{ padding:'5px 8px', borderBottom:'1px solid #f1f5f9', width:28 }}>
+                                <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ cursor:'pointer' }}/>
+                              </th>
+                              {['이미지','약어','옵션','바코드','수량','확정'].map(h => (
+                                <th key={h} style={{ padding:'5px 6px', fontWeight:800, color:'#64748b', fontSize:10, textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {rcItems.map(item => {
+                              const k = `${item.purchaseId}|${item.itemIndex}`
+                              const img = loadedImages[item.barcode] || item.optImage
+                              return (
+                                <tr key={k} style={{ borderBottom:'1px solid #f8fafc', background:item.confirmed ? '#f0fdf4' : 'white' }}>
+                                  <td style={{ textAlign:'center', padding:'4px 8px' }}>
+                                    <input type="checkbox" checked={selectedKeys.has(k)}
+                                      onChange={e => {
+                                        const ns = new Set(selectedKeys)
+                                        e.target.checked ? ns.add(k) : ns.delete(k)
+                                        setSelectedKeys(ns)
+                                      }} style={{ cursor:'pointer' }}/>
+                                  </td>
+                                  <td style={{ textAlign:'center', padding:'4px 6px', width:40 }}>
+                                    {img
+                                      ? <img src={img} alt="" style={{ width:30, height:30, objectFit:'cover', borderRadius:5, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
+                                      : <div style={{ width:30, height:30, background:'#f1f5f9', borderRadius:5, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                          <Package size={12} style={{ color:'#cbd5e1' }}/>
+                                        </div>}
+                                  </td>
+                                  <td style={{ padding:'4px 6px', fontWeight:700, color:'#0f172a', fontSize:10.5, maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                    {item.prodAbbr || item.product_code}
+                                  </td>
+                                  <td style={{ padding:'4px 6px', color:'#475569', fontSize:10.5, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.option_name}</td>
+                                  <td style={{ padding:'4px 6px', fontSize:9.5, fontFamily:'monospace', color: item.barcode ? '#64748b' : '#f59e0b', fontWeight: item.barcode ? 400 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                    {item.barcode || '미매핑'}
+                                  </td>
+                                  <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize:12 }}>{item.received}</td>
+                                  <td style={{ textAlign:'center' }}>
+                                    {item.confirmed
+                                      ? <span style={{ fontSize:9, fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
+                                      : <span style={{ fontSize:9, fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                      {selectedKeys.size > 0 && (
+                        <div style={{ padding:'8px 14px', borderTop:'1px solid #f1f5f9' }}>
+                          <button onClick={handleConfirm} disabled={saving}
+                            style={{ width:'100%', fontSize:12, fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:7, padding:'7px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:4 }}>
+                            <CheckCircle2 size={12}/>{saving ? '처리 중...' : '선택 입고확정'}
+                          </button>
+                        </div>
+                      )}
+                    </>
+                  )
+                }
+              </div>
+            )}
+          </div>
+
         </div>
       </div>
 
