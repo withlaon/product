@@ -17,9 +17,35 @@ export function loadShippedOrders(): ShippedOrder[] {
   } catch { return [] }
 }
 
-export function saveShippedOrders(orders: ShippedOrder[]) {
-  try { localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(orders)) } catch {}
+/** 출고 저장소: id 기준 병합만 (전달하지 않은 id는 삭제하지 않음). 제거는 removeShippedOrdersByIds. */
+export function upsertShippedOrders(updates: ShippedOrder[]) {
+  if (updates.length === 0) return
+  try {
+    const prev = loadShippedOrders()
+    const upd  = new Map(updates.map(o => [o.id, o]))
+    const next: ShippedOrder[] = prev.map(o => upd.get(o.id) ?? o)
+    for (const o of updates) {
+      if (!prev.some(p => p.id === o.id)) next.push(o)
+    }
+    localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(next))
+  } catch {}
   broadcastDashboardRefresh()
+}
+
+/** 사용자가 명시적으로 삭제·출고취소한 출고 건만 제거 */
+export function removeShippedOrdersByIds(ids: string[]) {
+  if (ids.length === 0) return
+  try {
+    const idSet = new Set(ids)
+    const prev = loadShippedOrders()
+    localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(prev.filter(o => !idSet.has(o.id))))
+  } catch {}
+  broadcastDashboardRefresh()
+}
+
+/** @deprecated 호환용: 내용은 upsertShippedOrders 와 동일(부분 배열로 기존 데이터를 지우지 않음) */
+export function saveShippedOrders(orders: ShippedOrder[]) {
+  upsertShippedOrders(orders)
 }
 
 /** 출고내역 탭 표시 조건: 송장 탭에서 '이동'한 건 + history_moved 도입 이전 출고확정(delivered) 건 */
@@ -64,9 +90,35 @@ export function loadOrders(): Order[] {
   } catch { return [] }
 }
 
-export function saveOrders(orders: Order[]) {
-  try { localStorage.setItem(ORDERS_KEY, JSON.stringify(orders)) } catch {}
+/** 주문 저장소: id 기준 병합만. 삭제·큐 이동 등은 removeOrdersByIds. */
+export function upsertOrders(updates: Order[]) {
+  if (updates.length === 0) return
+  try {
+    const prev = loadOrders()
+    const upd  = new Map(updates.map(o => [o.id, o]))
+    const next: Order[] = prev.map(o => upd.get(o.id) ?? o)
+    for (const o of updates) {
+      if (!prev.some(p => p.id === o.id)) next.push(o)
+    }
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(next))
+  } catch {}
   broadcastDashboardRefresh()
+}
+
+/** 삭제 확인, 송장 큐 이동, 당일 재업로드 교체 등: 지정 id만 제거 */
+export function removeOrdersByIds(ids: string[]) {
+  if (ids.length === 0) return
+  try {
+    const idSet = new Set(ids)
+    const prev = loadOrders()
+    localStorage.setItem(ORDERS_KEY, JSON.stringify(prev.filter(o => !idSet.has(o.id))))
+  } catch {}
+  broadcastDashboardRefresh()
+}
+
+/** @deprecated 호환용: upsertOrders 와 동일 */
+export function saveOrders(orders: Order[]) {
+  upsertOrders(orders)
 }
 
 /* ─── 송장출력/등록 대기 큐 (주문관리 → 송장출력/등록 이동용) ── */
@@ -79,9 +131,34 @@ export function loadInvoiceQueue(): Order[] {
   } catch { return [] }
 }
 
-export function saveInvoiceQueue(orders: Order[]) {
-  try { localStorage.setItem(INVOICE_QUEUE_KEY, JSON.stringify(orders)) } catch {}
+/** 송장 큐: id 기준 병합만. 큐에서 빼기는 removeInvoiceQueueByIds. */
+export function upsertInvoiceQueue(updates: Order[]) {
+  if (updates.length === 0) return
+  try {
+    const prev = loadInvoiceQueue()
+    const upd  = new Map(updates.map(o => [o.id, o]))
+    const next: Order[] = prev.map(o => upd.get(o.id) ?? o)
+    for (const o of updates) {
+      if (!prev.some(p => p.id === o.id)) next.push(o)
+    }
+    localStorage.setItem(INVOICE_QUEUE_KEY, JSON.stringify(next))
+  } catch {}
   broadcastDashboardRefresh()
+}
+
+export function removeInvoiceQueueByIds(ids: string[]) {
+  if (ids.length === 0) return
+  try {
+    const idSet = new Set(ids)
+    const prev = loadInvoiceQueue()
+    localStorage.setItem(INVOICE_QUEUE_KEY, JSON.stringify(prev.filter(o => !idSet.has(o.id))))
+  } catch {}
+  broadcastDashboardRefresh()
+}
+
+/** @deprecated 호환용: upsertInvoiceQueue 와 동일 */
+export function saveInvoiceQueue(orders: Order[]) {
+  upsertInvoiceQueue(orders)
 }
 
 /* ─── 선택 주문 임시 스토리지 (주문관리 → 송장등록 이동용) ── */

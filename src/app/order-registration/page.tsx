@@ -9,7 +9,7 @@ import {
   CheckSquare, Square, Trash2, PackageCheck, PenLine,
 } from 'lucide-react'
 import {
-  loadOrders, saveOrders, toOrderDate,
+  loadOrders, upsertOrders, removeOrdersByIds, toOrderDate,
   loadMappings, saveMappings, makeMappingKey, mpToChannel, lookupMapping,
 } from '@/lib/orders'
 import type { Order } from '@/lib/orders'
@@ -404,7 +404,7 @@ export default function OrderRegistrationPage() {
     const deletedIds = new Set(
       dayData.orders.filter(o => checkedIds.has(o.id)).map(o => o.id)
     )
-    saveOrders(mainOrders.filter(o => !deletedIds.has(o.id)))
+    removeOrdersByIds([...deletedIds])
   }
 
   /* 주문확인 - 주문서등록 목록에서만 제거 (주문관리에는 유지) */
@@ -562,7 +562,7 @@ export default function OrderRegistrationPage() {
       uploaded_at:      uploadedAt,
       extra_data:       newRegOrder.extra_data,
     }
-    saveOrders([...loadOrders(), syncOrder])
+    upsertOrders([syncOrder])
 
     setDirectSaving(false)
     setDirectMsg({ text: '등록 완료! 주문관리로 이동합니다...', ok: true })
@@ -678,10 +678,11 @@ export default function OrderRegistrationPage() {
         const existingMain = loadOrders()
         // 같은 import_source+날짜 이전 업로드 제거
         const importSrc = isMarketPlus ? 'marketplus' : mallLabel  // tossshopping='토스쇼핑', always='올웨이즈', gsshop='지에스샵'
-        const filtered = existingMain.filter(o =>
-          !(o.extra_data?.['import_source'] === importSrc && o.order_date === today)
-        )
-        saveOrders([...filtered, ...syncOrders])
+        const toRemove = existingMain
+          .filter(o => o.extra_data?.['import_source'] === importSrc && o.order_date === today)
+          .map(o => o.id)
+        removeOrdersByIds(toRemove)
+        upsertOrders(syncOrders)
 
         setImportMsg({
           text: `${orders.length}건 등록 완료${isMarketPlus ? ` (매핑 ${Object.keys(autoMappingUpdates).length}건 자동 업데이트)` : ''} · 주문관리 동기화됨`,

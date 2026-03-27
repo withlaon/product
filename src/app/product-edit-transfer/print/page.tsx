@@ -8,8 +8,8 @@ import {
   ChevronLeft, ChevronRight,
 } from 'lucide-react'
 import {
-  loadInvoiceQueue, saveInvoiceQueue,
-  loadShippedOrders, saveShippedOrders,
+  loadInvoiceQueue, removeInvoiceQueueByIds,
+  loadShippedOrders, upsertShippedOrders,
   loadMappings, lookupMapping, extractColor,
 } from '@/lib/orders'
 import type { Order, ShippedOrder, MappingStore } from '@/lib/orders'
@@ -248,12 +248,12 @@ export default function InvoicePrintPage() {
     const newEntries: ShippedOrder[] = shippedOrders
       .filter(o => !existingIds.has(o.id))
       .map(o => ({ ...o, status: 'shipped' as const, shipped_at: now }))
-    if (newEntries.length > 0) saveShippedOrders([...existing, ...newEntries])
+    if (newEntries.length > 0) upsertShippedOrders(newEntries)
 
     // 큐에서 제거
     const savedIds = new Set(shippedOrders.map(o => o.id))
-    const remaining = orders.filter(o => !savedIds.has(o.id))
-    saveInvoiceQueue(remaining)
+    removeInvoiceQueueByIds([...savedIds])
+    const remaining = loadInvoiceQueue()
     setOrders(remaining)
     setCheckedPrint(new Set())
   }
@@ -349,9 +349,8 @@ export default function InvoicePrintPage() {
   const handleDelete = () => {
     if (checkedPrint.size === 0) return
     if (!confirm(`선택된 ${checkedPrint.size}건을 큐에서 삭제하시겠습니까?`)) return
-    const updated = orders.filter(o => !checkedPrint.has(o.id))
-    saveInvoiceQueue(updated)
-    setOrders(updated)
+    removeInvoiceQueueByIds([...checkedPrint])
+    setOrders(loadInvoiceQueue())
     setCheckedPrint(new Set())
   }
 

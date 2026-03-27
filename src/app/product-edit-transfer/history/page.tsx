@@ -4,7 +4,8 @@ import { useState, useEffect, useMemo } from 'react'
 import * as XLSX from 'xlsx'
 import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search, HeadphonesIcon, AlertTriangle, Clock, RefreshCw, TrendingDown, Wand2, Zap } from 'lucide-react'
 import {
-  loadShippedOrders, saveShippedOrders, loadOrders, saveOrders, isVisibleInShippingHistory,
+  loadShippedOrders, saveShippedOrders, removeShippedOrdersByIds,
+  loadOrders, saveOrders, isVisibleInShippingHistory,
   loadMappings, saveMappings, lookupMapping, makeMappingKey, extractColor,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
@@ -409,10 +410,8 @@ export default function ShippingHistoryPage() {
     if (!confirm(`선택한 ${checked.size}건의 출고를 취소하시겠습니까?`)) return
     const toCancel  = shipped.filter(o => checked.has(o.id))
     const cancelIds = new Set(toCancel.map(o => o.id))
-    const all       = loadShippedOrders()
-    const remaining = all.filter(o => !cancelIds.has(o.id))
-    saveShippedOrders(remaining)
-    setShipped(remaining.filter(isVisibleInShippingHistory))
+    removeShippedOrdersByIds([...cancelIds])
+    setShipped(loadShippedOrders().filter(isVisibleInShippingHistory))
     const allOrders = loadOrders()
     saveOrders(allOrders.map(o => cancelIds.has(o.id) ? { ...o, status: 'shipped' as const } : o))
     setChecked(new Set())

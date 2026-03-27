@@ -10,9 +10,9 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import {
-  loadOrders, saveOrders, loadMappings, saveMappings, extractColor,
+  loadOrders, saveOrders, removeOrdersByIds, loadMappings, saveMappings, extractColor,
   saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
-  loadInvoiceQueue, saveInvoiceQueue,
+  upsertInvoiceQueue,
   loadShippedOrders, saveShippedOrders,
 } from '@/lib/orders'
 import type { Order, MappingStore } from '@/lib/orders'
@@ -713,9 +713,8 @@ export default function OrdersPage() {
   const handleDeleteChecked = () => {
     if (checked.size === 0) return
     if (!confirm(`선택된 ${checked.size}건을 주문목록에서 삭제하시겠습니까?`)) return
-    const updated = orders.filter(o => !checked.has(o.id))
-    saveOrders(updated)
-    setOrders(updated)
+    removeOrdersByIds([...checked])
+    setOrders(prev => prev.filter(o => !checked.has(o.id)))
     setChecked(new Set())
   }
 
@@ -792,14 +791,11 @@ export default function OrdersPage() {
     // 선택 주문을 pm_orders_v1에서 제거하고 pm_invoice_queue_v1로 이동
     const targetIds = new Set(targets.map(o => o.id))
     const remaining = orders.filter(o => !targetIds.has(o.id))
-    saveOrders(remaining)
+    removeOrdersByIds([...targetIds])
     setOrders(remaining)
     setChecked(new Set())
 
-    const existingQueue = loadInvoiceQueue()
-    const existingQueueIds = new Set(existingQueue.map(o => o.id))
-    const newQueue = [...existingQueue, ...targets.filter(o => !existingQueueIds.has(o.id))]
-    saveInvoiceQueue(newQueue)
+    upsertInvoiceQueue(targets)
 
     router.push('/product-edit-transfer/print')
   }
