@@ -228,6 +228,8 @@ export default function ShippingHistoryPage() {
   const [viewMode,   setViewMode]   = useState<'daily' | 'monthly'>('daily')
   const [selDate,    setSelDate]    = useState(today)
   const [selMonth,   setSelMonth]   = useState(curYM)
+  /** false: 날짜/월만 표시(기본 오늘). true: 출고내역 탭에 쌓인 전체(과거 delivered 등 조회용). */
+  const [showAllDates, setShowAllDates] = useState(false)
   const [checked,    setChecked]    = useState<Set<string>>(new Set())
   const [mappings,   setMappings]   = useState<ReturnType<typeof loadMappings>>({})
   const [searchText, setSearchText] = useState('')
@@ -273,7 +275,9 @@ export default function ShippingHistoryPage() {
   /* 날짜/월별 필터 → 검색 */
   const displayOrders = useMemo(() => {
     let list: ShippedOrder[]
-    if (viewMode === 'daily') {
+    if (showAllDates) {
+      list = shipped
+    } else if (viewMode === 'daily') {
       list = shipped.filter(o => (o.shipped_at ?? o.order_date).slice(0, 10) === selDate)
     } else {
       list = shipped.filter(o => (o.shipped_at ?? o.order_date).slice(0, 7) === selMonth)
@@ -295,7 +299,7 @@ export default function ShippingHistoryPage() {
       })
     }
     return list
-  }, [shipped, viewMode, selDate, selMonth, searchText, mappings])
+  }, [shipped, showAllDates, viewMode, selDate, selMonth, searchText, mappings])
 
   /* KPI */
   const todayShipped = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,10) === today).length, [shipped, today])
@@ -881,7 +885,7 @@ export default function ShippingHistoryPage() {
         {/* 날짜별/월별 토글 */}
         <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1.5px solid #e2e8f0', flexShrink: 0 }}>
           {(['daily', 'monthly'] as const).map(m => (
-            <button key={m} onClick={() => setViewMode(m)}
+            <button key={m} onClick={() => { setShowAllDates(false); setViewMode(m) }}
               style={{ padding: '6px 14px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: 'pointer', background: viewMode === m ? '#0f172a' : 'transparent', color: viewMode === m ? '#fff' : '#64748b' }}>
               {m === 'daily' ? '날짜별' : '월별'}
             </button>
@@ -890,27 +894,47 @@ export default function ShippingHistoryPage() {
 
         {/* 날짜 네비 */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
-          <button onClick={() => viewMode === 'daily' ? setSelDate(shiftDate(selDate, -1)) : setSelMonth(shiftMonth(selMonth, -1))}
+          <button onClick={() => {
+            setShowAllDates(false)
+            if (viewMode === 'daily') setSelDate(shiftDate(selDate, -1))
+            else setSelMonth(shiftMonth(selMonth, -1))
+          }}
             style={{ width: 28, height: 28, borderRadius: 7, border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ChevronLeft size={14} />
           </button>
           <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a', minWidth: 190, textAlign: 'center' }}>
             {viewMode === 'daily' ? fmtDate(selDate) : `${selMonth.replace('-', '년 ')}월`}
           </span>
-          <button onClick={() => viewMode === 'daily' ? setSelDate(shiftDate(selDate, 1)) : setSelMonth(shiftMonth(selMonth, 1))}
+          <button onClick={() => {
+            setShowAllDates(false)
+            if (viewMode === 'daily') setSelDate(shiftDate(selDate, 1))
+            else setSelMonth(shiftMonth(selMonth, 1))
+          }}
             style={{ width: 28, height: 28, borderRadius: 7, border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ChevronRight size={14} />
           </button>
-          {viewMode === 'daily' && selDate !== today && (
-            <button onClick={() => setSelDate(today)}
+          {viewMode === 'daily' && selDate !== today && !showAllDates && (
+            <button onClick={() => { setShowAllDates(false); setSelDate(today) }}
               style={{ padding: '4px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: '#eff6ff', color: '#2563eb', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
               TODAY
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setShowAllDates(v => !v)}
+            style={{
+              padding: '4px 10px', borderRadius: 6,
+              border: `1.5px solid ${showAllDates ? '#0f172a' : '#e2e8f0'}`,
+              background: showAllDates ? '#0f172a' : '#fff',
+              color: showAllDates ? '#fff' : '#64748b',
+              fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer',
+            }}>
+            전체 기간
+          </button>
         </div>
 
         <input type="date" value={viewMode === 'daily' ? selDate : ''}
-          onChange={e => { if (e.target.value) { setViewMode('daily'); setSelDate(e.target.value) } }}
+          onChange={e => { if (e.target.value) { setShowAllDates(false); setViewMode('daily'); setSelDate(e.target.value) } }}
           style={{ height: 32, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: '#0f172a', cursor: 'pointer', outline: 'none' }}
         />
 
@@ -974,7 +998,11 @@ export default function ShippingHistoryPage() {
         <div style={{ padding: '11px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Truck size={14} style={{ color: '#64748b' }} />
           <span style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>
-            {viewMode === 'daily' ? `${selDate} 출고내역` : `${selMonth.replace('-', '년 ')}월 출고내역`}
+            {showAllDates
+              ? '전체 출고내역'
+              : viewMode === 'daily'
+                ? `${selDate} 출고내역`
+                : `${selMonth.replace('-', '년 ')}월 출고내역`}
           </span>
           <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>
             ({displayOrders.length}건{searchText ? ' · 검색결과' : ''})
@@ -1001,7 +1029,13 @@ export default function ShippingHistoryPage() {
           <div style={{ padding: '64px 20px', textAlign: 'center' }}>
             <Package size={40} style={{ margin: '0 auto 14px', opacity: 0.15, display: 'block' }} />
             <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#94a3b8' }}>
-              {shipped.length === 0 ? '출고내역이 없습니다' : searchText ? '검색 결과가 없습니다' : '해당 기간 출고내역이 없습니다'}
+              {shipped.length === 0
+                ? '출고내역이 없습니다. (localStorage 의 pm_shipped_orders_v1 데이터가 비어 있거나, 예전에 부분 저장으로 일부만 남았을 수 있습니다)'
+                : searchText
+                  ? '검색 결과가 없습니다'
+                  : showAllDates
+                    ? '조건에 맞는 출고가 없습니다'
+                    : '선택한 날짜·월에만 보고 있습니다. 과거 출고는 « 날짜 이동, 날짜 선택, 또는 상단 [전체 기간]을 눌러 보세요.'}
             </p>
           </div>
         ) : (

@@ -48,9 +48,11 @@ export function saveShippedOrders(orders: ShippedOrder[]) {
   upsertShippedOrders(orders)
 }
 
-/** 출고내역 탭 표시 조건: 송장 탭에서 '이동'한 건 + history_moved 도입 이전 출고확정(delivered) 건 */
+/** 출고내역 탭 표시 조건: 송장 탭에서 '이동'한 건 + 출고확정(delivered). stored JSON 에 status 대소문자/공백만 다른 경우 보정 */
 export function isVisibleInShippingHistory(o: ShippedOrder): boolean {
-  return o.history_moved === true || o.status === 'delivered'
+  if (o.history_moved === true) return true
+  const st = String((o as { status?: unknown }).status ?? '').trim().toLowerCase()
+  return st === 'delivered'
 }
 
 /* ─── 주문 타입 ─────────────────────────────────────────── */
