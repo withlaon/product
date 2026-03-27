@@ -225,6 +225,7 @@ export default function CsManagementPage() {
   const [processing, setProcessing] = useState<string | null>(null)
   const [editDraft,  setEditDraft]  = useState<CsItem | null>(null)
   const fileRef    = useRef<HTMLInputElement>(null)
+  const editBackdropRef = useRef(false)
 
   /* 드롭다운 */
   const [abbrSuggestions, setAbbrSuggestions] = useState<OptionSuggestion[]>([])
@@ -891,7 +892,9 @@ export default function CsManagementPage() {
 
       {/* ══════ 수정 모달 ══════════════════════════════════════════════ */}
       {editDraft && (
-        <div onClick={e => { if (e.target === e.currentTarget) setEditDraft(null) }}
+        <div
+          onMouseDown={e => { editBackdropRef.current = e.target === e.currentTarget }}
+          onClick={e => { if (editBackdropRef.current && e.target === e.currentTarget) setEditDraft(null) }}
           style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000, padding: 20 }}>
           <div className="pm-card animate-scale-in" style={{ width: '100%', maxWidth: 560, maxHeight: '90vh', overflow: 'auto' }}>
 
