@@ -91,6 +91,7 @@ export default function PurchaseManagePage() {
   const [editTarget,    setEditTarget]    = useState<Purchase | null>(null)
   const [editFormData,  setEditFormData]  = useState<Purchase | null>(null)
   const [deleteTarget,  setDeleteTarget]  = useState<Purchase | null>(null)
+  const [showAddModal,  setShowAddModal]  = useState(false)
 
   /* ── 데이터 로드 ── */
   const loadPurchases = useCallback(async () => {
@@ -694,8 +695,13 @@ export default function PurchaseManagePage() {
               </span>
             )}
             <button
+              onClick={() => setShowAddModal(true)}
+              style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 800, color: '#059669', background: '#ecfdf5', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Plus size={12} />발주등록
+            </button>
+            <button
               onClick={() => { loadPurchases(); loadProducts(true); setShippedOrders(loadShippedOrders()); setMappings(loadMappings()) }}
-              style={{ marginLeft: 'auto', fontSize: 11.5, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              style={{ fontSize: 11.5, fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
               <RefreshCw size={12} />새로고침
             </button>
           </div>
@@ -951,6 +957,19 @@ export default function PurchaseManagePage() {
         )}
       </div>
 
+      {/* ── 발주등록 — 상품 검색 모달 ── */}
+      {showAddModal && (
+        <AddProductModal
+          products={products}
+          qualImages={qualImages}
+          selectedKeys={selectedKeys}
+          onAdd={opt => {
+            if (!selectedKeys.has(opt.key)) setSelectedOpts(prev => [...prev, opt])
+          }}
+          onClose={() => setShowAddModal(false)}
+        />
+      )}
+
       {/* ── 입고 처리 모달 ── */}
       {receiveTarget && (
         <ReceiveModal purchase={receiveTarget} onClose={() => setReceiveTarget(null)} onSave={handleReceive} />
@@ -1005,6 +1024,155 @@ export default function PurchaseManagePage() {
         </Modal>
       )}
     </div>
+  )
+}
+
+/* ── 발주등록 — 상품 검색 모달 ── */
+function AddProductModal({
+  products, qualImages, selectedKeys, onAdd, onClose,
+}: {
+  products: PmProduct[]
+  qualImages: Record<string, string>
+  selectedKeys: Set<string>
+  onAdd: (opt: SelectedOpt) => void
+  onClose: () => void
+}) {
+  const [search, setSearch] = useState('')
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return []
+    const results: SelectedOpt[] = []
+    for (const prod of products) {
+      const abbrMatch = (prod.abbr || prod.name || '').toLowerCase().includes(q)
+      const codeMatch = (prod.code || '').toLowerCase().includes(q)
+      for (const opt of prod.options ?? []) {
+        const optMatch = (opt.name || '').toLowerCase().includes(q)
+        const bcMatch  = (opt.barcode || '').toLowerCase().includes(q)
+        if (abbrMatch || codeMatch || optMatch || bcMatch) {
+          const key = `${prod.id}__${opt.barcode || opt.name}`
+          results.push({
+            key,
+            prodId:       prod.id,
+            prodCode:     prod.code,
+            prodAbbr:     prod.abbr || prod.name,
+            optName:      opt.name,
+            barcode:      opt.barcode || '',
+            image:        opt.image || '',
+            currentStock: opt.current_stock ?? 0,
+            unreceived:   0,
+            sold:         0,
+            reason:       'lowStock',
+            qty:          '1',
+          })
+        }
+      }
+      if (results.length >= 80) break
+    }
+    return results
+  }, [search, products])
+
+  const stockColor = (s: number) => s === 0 ? '#dc2626' : s <= 3 ? '#d97706' : '#059669'
+  const stockBg    = (s: number) => s === 0 ? '#fff1f2' : s <= 3 ? '#fffbeb' : '#f0fdf4'
+
+  return (
+    <Modal isOpen onClose={onClose} title="발주등록 — 상품 검색" size="lg">
+      {/* 검색 입력 */}
+      <div style={{ marginBottom: 12 }}>
+        <input
+          autoFocus
+          placeholder="상품 약어, 품번, 옵션명, 바코드로 검색..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          className="pm-input"
+          style={{ width: '100%' }}
+        />
+      </div>
+
+      {!search.trim() ? (
+        <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8' }}>
+          <Package size={36} style={{ opacity: 0.2, margin: '0 auto 10px' }} />
+          <p style={{ fontSize: 13, fontWeight: 700 }}>검색어를 입력하세요</p>
+          <p style={{ fontSize: 11, color: '#cbd5e1', marginTop: 4 }}>약어, 품번, 옵션명, 바코드 모두 검색 가능합니다</p>
+        </div>
+      ) : filtered.length === 0 ? (
+        <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8' }}>
+          <p style={{ fontSize: 13, fontWeight: 700 }}>검색 결과가 없습니다</p>
+          <p style={{ fontSize: 11, color: '#cbd5e1', marginTop: 4 }}>다른 검색어를 입력해 보세요</p>
+        </div>
+      ) : (
+        <div style={{ maxHeight: 420, overflowY: 'auto', border: '1px solid #f1f5f9', borderRadius: 10, overflow: 'hidden' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+            <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+              <tr>
+                {['이미지', '약어 / 옵션 / 바코드', '현재고', ''].map(h => (
+                  <th key={h} style={{ padding: '7px 8px', fontWeight: 800, color: '#64748b', fontSize: 10.5, textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.map(item => {
+                const img = qualImages[item.barcode] || item.image
+                const alreadySel = selectedKeys.has(item.key)
+                return (
+                  <tr key={item.key} style={{ borderBottom: '1px solid #f8fafc', background: alreadySel ? '#f0fdf4' : undefined }}>
+                    {/* 이미지 */}
+                    <td style={{ padding: '5px 8px', textAlign: 'center', width: 50 }}>
+                      {img
+                        ? <img src={img} alt="" style={{ width: 38, height: 38, objectFit: 'cover', borderRadius: 7, border: '1px solid #e2e8f0', display: 'block', margin: '0 auto' }} />
+                        : <div style={{ width: 38, height: 38, background: '#f1f5f9', borderRadius: 7, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Package size={14} style={{ color: '#cbd5e1' }} />
+                          </div>
+                      }
+                    </td>
+                    {/* 약어·옵션·바코드 */}
+                    <td style={{ padding: '5px 8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                        <span style={{ fontSize: 11.5, fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.prodAbbr}</span>
+                        <span style={{ fontSize: 10, color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                        <span style={{ fontSize: 10.5, color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{item.optName}</span>
+                        <span style={{ fontSize: 10, color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                        <span style={{ fontSize: 9.5, color: '#94a3b8', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.barcode || '-'}</span>
+                      </div>
+                    </td>
+                    {/* 현재고 */}
+                    <td style={{ padding: '5px 8px', textAlign: 'center', width: 64 }}>
+                      <span style={{ fontSize: 12, fontWeight: 900, color: stockColor(item.currentStock), background: stockBg(item.currentStock), padding: '2px 8px', borderRadius: 99 }}>
+                        {item.currentStock}
+                      </span>
+                    </td>
+                    {/* 추가 버튼 */}
+                    <td style={{ padding: '5px 10px', textAlign: 'center', width: 76 }}>
+                      {alreadySel ? (
+                        <span style={{ fontSize: 11, fontWeight: 700, color: '#059669', background: '#ecfdf5', padding: '3px 9px', borderRadius: 6 }}>추가됨</span>
+                      ) : (
+                        <button
+                          onClick={() => onAdd(item)}
+                          style={{ fontSize: 11.5, fontWeight: 800, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 11px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <Plus size={11} />추가
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+          {filtered.length >= 80 && (
+            <p style={{ textAlign: 'center', fontSize: 11, color: '#94a3b8', padding: '8px 0', background: '#f8fafc' }}>
+              최대 80개까지 표시됩니다. 검색어를 더 구체적으로 입력하세요.
+            </p>
+          )}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
+        <button onClick={onClose}
+          style={{ fontSize: 13, fontWeight: 700, color: '#64748b', background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '8px 20px', cursor: 'pointer' }}>
+          닫기
+        </button>
+      </div>
+    </Modal>
   )
 }
 
