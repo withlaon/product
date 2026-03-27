@@ -747,7 +747,7 @@ export default function ShippingHistoryPage() {
 
   /* ── 편집 인풋 스타일 ── */
   const ei: React.CSSProperties = {
-    width: '100%', height: 28, fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 700,
+    width: '100%', height: 28, fontSize: '11px', fontWeight: 700,
     border: '1.5px solid #3b82f6', borderRadius: 6, padding: '0 6px',
     outline: 'none', background: '#fafcff', color: '#0f172a',
   }
@@ -771,8 +771,8 @@ export default function ShippingHistoryPage() {
             <div key={k.label} className="pm-card" style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 12 }}>
               <div style={{ width: 34, height: 34, borderRadius: 10, background: k.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{k.icon}</div>
               <div>
-                <p style={{ fontSize: 'calc(20px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 700, marginTop: 2 }}>{k.label}</p>
+                <p style={{ fontSize: '20px', fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
+                <p style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 700, marginTop: 2 }}>{k.label}</p>
               </div>
             </div>
           ))}
@@ -782,14 +782,14 @@ export default function ShippingHistoryPage() {
         <div className="pm-card" style={{ padding: '12px 16px' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
             <Truck size={13} style={{ color: '#64748b' }} />
-            <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>쇼핑몰별 출고수량</span>
-            <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>
+            <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>쇼핑몰별 출고수량</span>
+            <span style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600 }}>
               ({curYM.replace('-','년 ')}월 누적 · {mallShipStats.reduce((s,[,c])=>s+c,0)}건)
             </span>
-            <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', marginLeft: 4 }}>버튼 클릭 → 주문목록</span>
+            <span style={{ fontSize: '10px', color: '#94a3b8', marginLeft: 4 }}>버튼 클릭 → 주문목록</span>
           </div>
           {mallShipStats.length === 0 ? (
-            <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>이번달 출고내역 없음</p>
+            <p style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>이번달 출고내역 없음</p>
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(130px, 1fr))', gap: 7 }}>
               {mallShipStats.map(([ch, cnt], i) => {
@@ -806,10 +806,10 @@ export default function ShippingHistoryPage() {
                       transition: 'all 150ms',
                     }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: isSelected ? '#2563eb' : '#334155' }}>
+                      <span style={{ fontSize: '11.5px', fontWeight: 800, color: isSelected ? '#2563eb' : '#334155' }}>
                         {i < 3 ? <span style={{ marginRight: 3 }}>{medals[i]}</span> : null}{ch}
                       </span>
-                      <span style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: isSelected ? '#2563eb' : i === 0 ? '#92400e' : i === 1 ? '#475569' : i === 2 ? '#c2410c' : '#64748b' }}>
+                      <span style={{ fontSize: '14px', fontWeight: 900, color: isSelected ? '#2563eb' : i === 0 ? '#92400e' : i === 1 ? '#475569' : i === 2 ? '#c2410c' : '#64748b' }}>
                         {cnt}건
                       </span>
                     </div>
@@ -829,10 +829,10 @@ export default function ShippingHistoryPage() {
         <div className="pm-card" style={{ marginBottom: 14, overflow: 'hidden' }}>
           <div style={{ padding: '10px 16px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, background: '#eff6ff' }}>
             <Truck size={13} style={{ color: '#2563eb' }} />
-            <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#1d4ed8' }}>
+            <span style={{ fontSize: '13px', fontWeight: 800, color: '#1d4ed8' }}>
               {selectedMall} — {curYM.replace('-','년 ')}월 상품별 출고수량
             </span>
-            <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#93c5fd', fontWeight: 600 }}>{mallOrderList.length}종</span>
+            <span style={{ fontSize: '11px', color: '#93c5fd', fontWeight: 600 }}>{mallOrderList.length}종</span>
             <button onClick={() => setSelectedMall(null)}
               style={{ marginLeft: 'auto', width: 24, height: 24, borderRadius: 6, border: 'none', background: '#dbeafe', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <X size={13} style={{ color: '#2563eb' }} />
@@ -840,13 +840,13 @@ export default function ShippingHistoryPage() {
           </div>
           <div style={{ maxHeight: 280, overflowY: 'auto' }}>
             {mallOrderList.length === 0 ? (
-              <p style={{ padding: '16px', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>목록 없음</p>
+              <p style={{ padding: '16px', fontSize: '12px', color: '#94a3b8' }}>목록 없음</p>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                   <tr>
                     {['상품명','옵션','바코드','수량'].map(h => (
-                      <th key={h} style={{ padding: '6px 10px', fontWeight: 800, color: '#64748b', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', textAlign: h === '수량' ? 'center' : 'left', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '6px 10px', fontWeight: 800, color: '#64748b', fontSize: '10.5px', textAlign: h === '수량' ? 'center' : 'left', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -860,15 +860,15 @@ export default function ShippingHistoryPage() {
                           {row.product_name || '-'}
                         </span>
                       </td>
-                      <td style={{ padding: '7px 10px', color: '#64748b', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', maxWidth: 140 }}>
+                      <td style={{ padding: '7px 10px', color: '#64748b', fontSize: '11px', maxWidth: 140 }}>
                         <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {row.option ? `[${row.option}]` : '-'}
                         </span>
                       </td>
-                      <td style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#475569', whiteSpace: 'nowrap' }}>
+                      <td data-pm-barcode="1" style={{ padding: '7px 10px', fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap' }}>
                         {row.barcode || '-'}
                       </td>
-                      <td style={{ padding: '7px 10px', fontWeight: 900, color: '#2563eb', textAlign: 'center', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', whiteSpace: 'nowrap' }}>
+                      <td style={{ padding: '7px 10px', fontWeight: 900, color: '#2563eb', textAlign: 'center', fontSize: '13px', whiteSpace: 'nowrap' }}>
                         {row.quantity}
                       </td>
                     </tr>
@@ -886,7 +886,7 @@ export default function ShippingHistoryPage() {
         <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1.5px solid #e2e8f0', flexShrink: 0 }}>
           {(['daily', 'monthly'] as const).map(m => (
             <button key={m} onClick={() => { setShowAllDates(false); setViewMode(m) }}
-              style={{ padding: '6px 14px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: 'pointer', background: viewMode === m ? '#0f172a' : 'transparent', color: viewMode === m ? '#fff' : '#64748b' }}>
+              style={{ padding: '6px 14px', fontSize: '12.5px', fontWeight: 800, border: 'none', cursor: 'pointer', background: viewMode === m ? '#0f172a' : 'transparent', color: viewMode === m ? '#fff' : '#64748b' }}>
               {m === 'daily' ? '날짜별' : '월별'}
             </button>
           ))}
@@ -902,7 +902,7 @@ export default function ShippingHistoryPage() {
             style={{ width: 28, height: 28, borderRadius: 7, border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <ChevronLeft size={14} />
           </button>
-          <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a', minWidth: 190, textAlign: 'center' }}>
+          <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', minWidth: 190, textAlign: 'center' }}>
             {viewMode === 'daily' ? fmtDate(selDate) : `${selMonth.replace('-', '년 ')}월`}
           </span>
           <button onClick={() => {
@@ -915,7 +915,7 @@ export default function ShippingHistoryPage() {
           </button>
           {viewMode === 'daily' && selDate !== today && !showAllDates && (
             <button onClick={() => { setShowAllDates(false); setSelDate(today) }}
-              style={{ padding: '4px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: '#eff6ff', color: '#2563eb', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+              style={{ padding: '4px 10px', borderRadius: 6, border: '1.5px solid #2563eb', background: '#eff6ff', color: '#2563eb', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}>
               TODAY
             </button>
           )}
@@ -927,7 +927,7 @@ export default function ShippingHistoryPage() {
               border: `1.5px solid ${showAllDates ? '#0f172a' : '#e2e8f0'}`,
               background: showAllDates ? '#0f172a' : '#fff',
               color: showAllDates ? '#fff' : '#64748b',
-              fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer',
+              fontSize: '11.5px', fontWeight: 800, cursor: 'pointer',
             }}>
             전체 기간
           </button>
@@ -935,7 +935,7 @@ export default function ShippingHistoryPage() {
 
         <input type="date" value={viewMode === 'daily' ? selDate : ''}
           onChange={e => { if (e.target.value) { setShowAllDates(false); setViewMode('daily'); setSelDate(e.target.value) } }}
-          style={{ height: 32, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: '#0f172a', cursor: 'pointer', outline: 'none' }}
+          style={{ height: 32, fontSize: '12.5px', fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: '#0f172a', cursor: 'pointer', outline: 'none' }}
         />
 
         {/* 검색창 */}
@@ -945,7 +945,7 @@ export default function ShippingHistoryPage() {
             value={searchText}
             onChange={e => setSearchText(e.target.value)}
             placeholder="주문번호 · 쇼핑몰 · 수령인 · 바코드 · 운송장번호"
-            style={{ paddingLeft: 30, paddingRight: 30, height: 32, width: 300, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, border: '1.5px solid #e2e8f0', borderRadius: 8, outline: 'none', color: '#0f172a' }}
+            style={{ paddingLeft: 30, paddingRight: 30, height: 32, width: 300, fontSize: '12px', fontWeight: 600, border: '1.5px solid #e2e8f0', borderRadius: 8, outline: 'none', color: '#0f172a' }}
           />
           {searchText && (
             <button onClick={() => setSearchText('')}
@@ -960,33 +960,33 @@ export default function ShippingHistoryPage() {
         {/* 선택 액션 버튼 */}
         {checked.size > 0 && (
           <>
-            <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>{checked.size}건 선택</span>
+            <span style={{ fontSize: '12px', fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>{checked.size}건 선택</span>
             <button onClick={handleConfirmShipping} disabled={isConfirming}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: isConfirming ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: isConfirming ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12.5px', fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer' }}>
               <PackageCheck size={13} /> {isConfirming ? '처리중...' : '출고확정'}
             </button>
             {/* 재고 재반영 버튼 — 이미 출고확정(delivered)된 항목에 재고를 수동 차감 */}
             <button onClick={handleReapplyStock} disabled={isConfirming}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: isConfirming ? '#94a3b8' : '#0369a1', color: '#fff', border: 'none', borderRadius: 8, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: isConfirming ? '#94a3b8' : '#0369a1', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12.5px', fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer' }}>
               <RefreshCw size={13} /> 재고 재반영
             </button>
             {!changeDateMode ? (
               <button onClick={() => { setChangeDateMode(true); setNewDate(selDate) }}
-                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}>
                 <ChevronLeft size={13} /> 출고일 변경
               </button>
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
                 <input type="date" value={newDate} onChange={e => setNewDate(e.target.value)}
-                  style={{ height: 32, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, border: '1.5px solid #f59e0b', borderRadius: 8, padding: '0 8px', outline: 'none' }} />
+                  style={{ height: 32, fontSize: '12.5px', fontWeight: 700, border: '1.5px solid #f59e0b', borderRadius: 8, padding: '0 8px', outline: 'none' }} />
                 <button onClick={handleChangeDate}
-                  style={{ padding: '6px 12px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>적용</button>
+                  style={{ padding: '6px 12px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}>적용</button>
                 <button onClick={() => setChangeDateMode(false)}
-                  style={{ padding: '6px 10px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: 8, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', cursor: 'pointer' }}>취소</button>
+                  style={{ padding: '6px 10px', background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: 8, fontSize: '12px', cursor: 'pointer' }}>취소</button>
               </div>
             )}
             <button onClick={handleCancelShipping}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: '#ef4444', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}>
               <RotateCcw size={13} /> 출고취소
             </button>
           </>
@@ -997,14 +997,14 @@ export default function ShippingHistoryPage() {
       <div className="pm-card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '11px 20px', borderBottom: '1px solid #f1f5f9', background: '#f8fafc', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Truck size={14} style={{ color: '#64748b' }} />
-          <span style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>
+          <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>
             {showAllDates
               ? '전체 출고내역'
               : viewMode === 'daily'
                 ? `${selDate} 출고내역`
                 : `${selMonth.replace('-', '년 ')}월 출고내역`}
           </span>
-          <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>
+          <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>
             ({displayOrders.length}건{searchText ? ' · 검색결과' : ''})
           </span>
           <div style={{ flex: 1 }} />
@@ -1014,12 +1014,12 @@ export default function ShippingHistoryPage() {
               if (checked.size === 0) { alert('CS접수할 항목을 먼저 선택해주세요.'); return }
               setCsType('return'); setCsReason('simple_change'); setCsModal(true)
             }}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: checked.size > 0 ? '#7c3aed' : '#e9d5ff', color: checked.size > 0 ? '#fff' : '#a78bfa', border: 'none', borderRadius: 8, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', transition: 'all 150ms' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: checked.size > 0 ? '#7c3aed' : '#e9d5ff', color: checked.size > 0 ? '#fff' : '#a78bfa', border: 'none', borderRadius: 8, fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', transition: 'all 150ms' }}>
             <HeadphonesIcon size={13} /> CS접수{checked.size > 0 ? ` (${checked.size})` : ''}
           </button>
           {displayOrders.length > 0 && (
             <button onClick={handleDownloadHistory}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 8, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}>
               <FileDown size={13} /> 엑셀 다운로드
             </button>
           )}
@@ -1028,7 +1028,7 @@ export default function ShippingHistoryPage() {
         {displayOrders.length === 0 ? (
           <div style={{ padding: '64px 20px', textAlign: 'center' }}>
             <Package size={40} style={{ margin: '0 auto 14px', opacity: 0.15, display: 'block' }} />
-            <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#94a3b8' }}>
+            <p style={{ fontSize: '14px', fontWeight: 700, color: '#94a3b8' }}>
               {shipped.length === 0
                 ? '출고내역이 없습니다. (localStorage 의 pm_shipped_orders_v1 데이터가 비어 있거나, 예전에 부분 저장으로 일부만 남았을 수 있습니다)'
                 : searchText
@@ -1042,11 +1042,11 @@ export default function ShippingHistoryPage() {
           <div>
             {/* 컬럼 헤더 */}
             <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 16px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
-              <span onClick={toggleAll} style={{ cursor: 'pointer', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: allChecked ? '#2563eb' : '#cbd5e1' }}>
+              <span onClick={toggleAll} style={{ cursor: 'pointer', fontSize: '13px', color: allChecked ? '#2563eb' : '#cbd5e1' }}>
                 {allChecked ? '☑' : '☐'}
               </span>
               {['주문번호', '출고일', '쇼핑몰', '수령인', '바코드', '상품명/옵션', '판매가', '운송장번호', '수정'].map(h => (
-                <span key={h} style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.04em' }}>{h}</span>
+                <span key={h} style={{ fontSize: '10.5px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.04em' }}>{h}</span>
               ))}
             </div>
 
@@ -1064,9 +1064,9 @@ export default function ShippingHistoryPage() {
                 return (
                   <div key={o.id} style={{ borderBottom: '2px solid #3b82f6', background: '#f0f7ff' }}>
                     <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '10px 16px', alignItems: 'center' }}>
-                      <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#3b82f6' }}>✎</span>
+                      <span style={{ fontSize: '13px', color: '#3b82f6' }}>✎</span>
                       {/* 주문번호 (읽기전용) */}
-                      <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {o.order_number}
                       </span>
                       {/* 출고일 */}
@@ -1082,7 +1082,7 @@ export default function ShippingHistoryPage() {
                         onChange={e => setEditFields(f => f ? { ...f, customer_name: e.target.value } : f)}
                         style={ei} placeholder="수령인" />
                       {/* 바코드 */}
-                      <input value={editFields.barcode}
+                      <input data-pm-barcode="1" value={editFields.barcode}
                         onChange={e => setEditFields(f => f ? { ...f, barcode: e.target.value } : f)}
                         style={{ ...ei, fontFamily: 'monospace' }} placeholder="바코드" />
                       {/* 상품명/옵션 */}
@@ -1092,7 +1092,7 @@ export default function ShippingHistoryPage() {
                           style={ei} placeholder="상품명" />
                         <input value={editFields.option}
                           onChange={e => setEditFields(f => f ? { ...f, option: e.target.value } : f)}
-                          style={{ ...ei, fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))' }} placeholder="옵션" />
+                          style={{ ...ei, fontSize: '10.5px' }} placeholder="옵션" />
                       </div>
                       {/* 판매가 (수정 가능) */}
                       <input type="number" value={editFields.unit_price}
@@ -1105,11 +1105,11 @@ export default function ShippingHistoryPage() {
                       {/* 저장/취소 */}
                       <div style={{ display: 'flex', gap: 4 }}>
                         <button onClick={() => saveEdit(o.id)}
-                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, height: 28, background: '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, height: 28, background: '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>
                           <Check size={11} /> 저장
                         </button>
                         <button onClick={cancelEdit}
-                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, height: 28, background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: 6, fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                          style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, height: 28, background: '#f1f5f9', color: '#64748b', border: 'none', borderRadius: 6, fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>
                           <X size={11} /> 취소
                         </button>
                       </div>
@@ -1123,64 +1123,64 @@ export default function ShippingHistoryPage() {
                 <div key={o.id} onClick={() => toggleOne(o.id)}
                   style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '10px 16px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: isChk ? '#eff6ff' : isDelivered ? '#f0fdf4' : 'transparent', cursor: 'pointer', transition: 'background 100ms' }}>
 
-                  <span style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', color: isChk ? '#2563eb' : '#cbd5e1' }}>{isChk ? '☑' : '☐'}</span>
+                  <span style={{ fontSize: '14px', color: isChk ? '#2563eb' : '#cbd5e1' }}>{isChk ? '☑' : '☐'}</span>
 
                   {/* 주문번호 */}
-                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {o.order_number}
                   </span>
 
                   {/* 출고일 */}
-                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#64748b' }}>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>
                     {o.shipped_at ? o.shipped_at.slice(0, 10) : o.order_date}
                   </span>
 
                   {/* 쇼핑몰 */}
                   <span>
-                    <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: ms.color, background: ms.bg, padding: '2px 8px', borderRadius: 6 }}>
+                    <span style={{ fontSize: '11px', fontWeight: 800, color: ms.color, background: ms.bg, padding: '2px 8px', borderRadius: 6 }}>
                       {o.channel}
                     </span>
                   </span>
 
                   {/* 수령인 */}
-                  <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {o.customer_name}
                   </span>
 
                   {/* 바코드 */}
-                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span data-pm-barcode="1" style={{ fontSize: '11px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {barcode || '-'}
                   </span>
 
                   {/* 상품명/옵션/수량 */}
                   <div style={{ overflow: 'hidden' }}>
-                    <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                    <p style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                       {item?.product_name ?? '-'}
                     </p>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginTop: 1, overflow: 'hidden' }}>
                       {optLabel && (
-                        <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', flexShrink: 1 }}>
+                        <span style={{ fontSize: '10.5px', color: '#64748b', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', flexShrink: 1 }}>
                           {optLabel}
                         </span>
                       )}
-                      <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: '#f1f5f9', color: '#475569', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, background: '#f1f5f9', color: '#475569', padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap', flexShrink: 0 }}>
                         수량 {item?.quantity ?? 1}
                       </span>
                     </div>
                   </div>
 
                   {/* 판매가 */}
-                  <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#334155', textAlign: 'right' }}>
+                  <span style={{ fontSize: '12px', fontWeight: 800, color: '#334155', textAlign: 'right' }}>
                     {item?.unit_price ? item.unit_price.toLocaleString() : '-'}
                   </span>
 
                   {/* 운송장번호 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 2, overflow: 'hidden' }}>
-                    <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#334155', fontWeight: 700, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '11px', fontFamily: 'monospace', color: '#334155', fontWeight: 700, textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
                       {o.tracking_number ?? '-'}
                     </span>
                     {isDelivered && (
-                      <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#059669', background: '#dcfce7', padding: '1px 6px', borderRadius: 4, width: 'fit-content' }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, color: '#059669', background: '#dcfce7', padding: '1px 6px', borderRadius: 4, width: 'fit-content' }}>
                         출고확정
                       </span>
                     )}
@@ -1188,7 +1188,7 @@ export default function ShippingHistoryPage() {
 
                   {/* 수정 버튼 */}
                   <button onClick={e => { e.stopPropagation(); startEdit(o, barcode) }}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 10px', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 10px', background: '#f1f5f9', color: '#475569', border: '1px solid #e2e8f0', borderRadius: 7, fontSize: '11.5px', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => { e.currentTarget.style.background = '#eff6ff'; e.currentTarget.style.color = '#2563eb' }}
                     onMouseLeave={e => { e.currentTarget.style.background = '#f1f5f9'; e.currentTarget.style.color = '#475569' }}>
                     <Pencil size={11} /> 수정
@@ -1214,8 +1214,8 @@ export default function ShippingHistoryPage() {
                 <AlertTriangle size={20} style={{ color: '#f97316' }} />
               </div>
               <div>
-                <p style={{ fontSize: 'calc(15px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a' }}>바코드 미설정 상품</p>
-                <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>
+                <p style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>바코드 미설정 상품</p>
+                <p style={{ fontSize: '11.5px', color: '#94a3b8' }}>
                   바코드가 없는 상품이 <span style={{ color: '#f97316', fontWeight: 800 }}>{unmappedItems.length}종</span> 있습니다.
                 </p>
               </div>
@@ -1227,7 +1227,7 @@ export default function ShippingHistoryPage() {
                   display: 'flex', alignItems: 'center', gap: 6,
                   padding: '8px 16px', borderRadius: 10, border: 'none',
                   background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
-                  color: '#fff', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer',
+                  color: '#fff', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer',
                   boxShadow: '0 2px 8px rgba(124,58,237,0.35)',
                 }}
                 onMouseEnter={e => { e.currentTarget.style.opacity = '0.88' }}
@@ -1252,15 +1252,15 @@ export default function ShippingHistoryPage() {
                     <div style={{ background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Zap size={14} style={{ color: '#059669', flexShrink: 0 }} />
                       <div>
-                        <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#059669', margin: 0 }}>자동완성 {autoCount}종</p>
-                        <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#16a34a', margin: 0 }}>상품관리에서 매칭됨</p>
+                        <p style={{ fontSize: '13px', fontWeight: 900, color: '#059669', margin: 0 }}>자동완성 {autoCount}종</p>
+                        <p style={{ fontSize: '10.5px', color: '#16a34a', margin: 0 }}>상품관리에서 매칭됨</p>
                       </div>
                     </div>
                     <div style={{ background: manualCount > 0 ? '#fff7ed' : '#f8fafc', border: `1.5px solid ${manualCount > 0 ? '#fed7aa' : '#e2e8f0'}`, borderRadius: 10, padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 8 }}>
                       <Pencil size={14} style={{ color: manualCount > 0 ? '#d97706' : '#94a3b8', flexShrink: 0 }} />
                       <div>
-                        <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: manualCount > 0 ? '#d97706' : '#94a3b8', margin: 0 }}>직접입력 {manualCount}종</p>
-                        <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: manualCount > 0 ? '#92400e' : '#cbd5e1', margin: 0 }}>아래에서 직접 입력하세요</p>
+                        <p style={{ fontSize: '13px', fontWeight: 900, color: manualCount > 0 ? '#d97706' : '#94a3b8', margin: 0 }}>직접입력 {manualCount}종</p>
+                        <p style={{ fontSize: '10.5px', color: manualCount > 0 ? '#92400e' : '#cbd5e1', margin: 0 }}>아래에서 직접 입력하세요</p>
                       </div>
                     </div>
                   </div>
@@ -1287,20 +1287,20 @@ export default function ShippingHistoryPage() {
                       {/* 상품 정보 행 */}
                       <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 10 }}>
                         <div style={{ width: 22, height: 22, borderRadius: 6, background: isAutoFilled ? '#dcfce7' : '#fff7ed', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, marginTop: 1 }}>
-                          <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: isAutoFilled ? '#059669' : '#f97316' }}>{idx + 1}</span>
+                          <span style={{ fontSize: '10px', fontWeight: 900, color: isAutoFilled ? '#059669' : '#f97316' }}>{idx + 1}</span>
                         </div>
                         <div style={{ flex: 1, overflow: 'hidden' }}>
-                          <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', margin: 0 }}>
+                          <p style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', margin: 0 }}>
                             {u.product_name || '(상품명 없음)'}
                           </p>
                           {u.option && (
-                            <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#64748b', margin: '2px 0 0' }}>[{u.option}]</p>
+                            <p style={{ fontSize: '11px', color: '#64748b', margin: '2px 0 0' }}>[{u.option}]</p>
                           )}
                           {/* 자동매칭된 경우: 매칭된 상품 정보 표시 */}
                           {autoResult && (
                             <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
-                              <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: '#d1fae5', color: '#065f46', padding: '1px 6px', borderRadius: 4 }}>자동매칭</span>
-                              <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#475569' }}>
+                              <span style={{ fontSize: '10px', fontWeight: 800, background: '#d1fae5', color: '#065f46', padding: '1px 6px', borderRadius: 4 }}>자동매칭</span>
+                              <span style={{ fontSize: '10.5px', color: '#475569' }}>
                                 {autoResult.matchedProductName}
                                 {autoResult.matchedOptionName ? ` · ${autoResult.matchedOptionName}` : ''}
                               </span>
@@ -1309,19 +1309,19 @@ export default function ShippingHistoryPage() {
                           {/* 매칭 실패 */}
                           {autoMatchRan && autoFillResults[u.mappingKey] === null && (
                             <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 5 }}>
-                              <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: '#fee2e2', color: '#991b1b', padding: '1px 6px', borderRadius: 4 }}>매칭 없음</span>
-                              <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>직접 입력하세요</span>
+                              <span style={{ fontSize: '10px', fontWeight: 800, background: '#fee2e2', color: '#991b1b', padding: '1px 6px', borderRadius: 4 }}>매칭 없음</span>
+                              <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>직접 입력하세요</span>
                             </div>
                           )}
                         </div>
-                        <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 5, flexShrink: 0 }}>
+                        <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 5, flexShrink: 0 }}>
                           {u.orders.length}건
                         </span>
                       </div>
 
                       {/* 바코드 입력 행 */}
                       <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                        <label style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#475569', whiteSpace: 'nowrap' }}>바코드</label>
+                        <label style={{ fontSize: '11px', fontWeight: 800, color: '#475569', whiteSpace: 'nowrap' }}>바코드</label>
                         <div style={{ flex: 1, position: 'relative' }}>
                           <input
                             value={inputVal}
@@ -1330,7 +1330,7 @@ export default function ShippingHistoryPage() {
                             }}
                             placeholder={isAutoFilled ? '' : '바코드를 직접 입력하세요'}
                             style={{
-                              width: '100%', height: 36, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700,
+                              width: '100%', height: 36, fontSize: '13px', fontWeight: 700,
                               border: `1.5px solid ${isAutoFilled ? '#059669' : isFilled ? '#2563eb' : '#e2e8f0'}`,
                               borderRadius: 8, padding: '0 36px 0 10px', outline: 'none',
                               fontFamily: 'monospace', background: isAutoFilled ? '#f0fdf4' : '#fff',
@@ -1352,7 +1352,7 @@ export default function ShippingHistoryPage() {
                         {isManualOverride && autoResult && (
                           <button
                             onClick={() => setUnmappedInputs(prev => ({ ...prev, [u.mappingKey]: autoResult.barcode }))}
-                            style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#64748b', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
+                            style={{ padding: '6px 10px', borderRadius: 7, border: '1px solid #e2e8f0', background: '#f8fafc', color: '#64748b', fontSize: '10.5px', fontWeight: 700, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0 }}
                             title="자동완성 값으로 되돌리기">
                             ↩ 자동
                           </button>
@@ -1365,17 +1365,17 @@ export default function ShippingHistoryPage() {
 
               {/* 진행 상황 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 14px', background: '#f8fafc', borderRadius: 8, flexWrap: 'wrap' }}>
-                <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#64748b' }}>입력 완료:</span>
-                <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#059669' }}>
+                <span style={{ fontSize: '12px', color: '#64748b' }}>입력 완료:</span>
+                <span style={{ fontSize: '13px', fontWeight: 900, color: '#059669' }}>
                   {Object.values(unmappedInputs).filter(v => v.trim()).length}
                 </span>
-                <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>/ {unmappedItems.length}종</span>
+                <span style={{ fontSize: '12px', color: '#94a3b8' }}>/ {unmappedItems.length}종</span>
                 {autoMatchRan && (
-                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#7c3aed', fontWeight: 700, background: '#f5f3ff', padding: '2px 8px', borderRadius: 5 }}>
+                  <span style={{ fontSize: '11px', color: '#7c3aed', fontWeight: 700, background: '#f5f3ff', padding: '2px 8px', borderRadius: 5 }}>
                     자동완성 {Object.values(autoFillResults).filter(Boolean).length}종 포함
                   </span>
                 )}
-                <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#64748b', marginLeft: 'auto' }}>
+                <span style={{ fontSize: '11px', color: '#64748b', marginLeft: 'auto' }}>
                   ※ 저장 시 다음에도 자동 적용
                 </span>
               </div>
@@ -1383,7 +1383,7 @@ export default function ShippingHistoryPage() {
               {/* 버튼 */}
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => setBarcodeWarnModal(false)}
-                  style={{ flex: 1, padding: '12px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                  style={{ flex: 1, padding: '12px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}>
                   취소
                 </button>
                 <button
@@ -1391,7 +1391,7 @@ export default function ShippingHistoryPage() {
                   disabled={isConfirming}
                   style={{
                     flex: 2, padding: '12px 0', border: 'none', borderRadius: 10,
-                    fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer',
+                    fontSize: '13px', fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer',
                     display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                     background: Object.values(unmappedInputs).every(v => v.trim()) ? '#059669' : '#94a3b8',
                     color: '#fff', transition: 'background 200ms',
@@ -1417,8 +1417,8 @@ export default function ShippingHistoryPage() {
                 <HeadphonesIcon size={18} style={{ color: '#7c3aed' }} />
               </div>
               <div>
-                <p style={{ fontSize: 'calc(15px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a' }}>CS접수 등록</p>
-                <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>선택한 {checked.size}건을 CS접수로 등록합니다</p>
+                <p style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>CS접수 등록</p>
+                <p style={{ fontSize: '11.5px', color: '#94a3b8' }}>선택한 {checked.size}건을 CS접수로 등록합니다</p>
               </div>
               <div style={{ flex: 1 }} />
               <button onClick={() => setCsModal(false)}
@@ -1431,15 +1431,15 @@ export default function ShippingHistoryPage() {
 
               {/* 유형 선택 */}
               <div>
-                <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#475569', marginBottom: 10 }}>CS 유형</p>
+                <p style={{ fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: 10 }}>CS 유형</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   {([['return', '반품', RotateCcw, '#dc2626', '#fff1f2'], ['exchange', '교환', RefreshCw, '#7c3aed', '#f5f3ff']] as const).map(([val, label, Icon, color, bg]) => (
                     <div key={val} onClick={() => setCsType(val)}
                       style={{ padding: '14px 16px', borderRadius: 12, border: `2px solid ${csType === val ? color : '#e2e8f0'}`, background: csType === val ? bg : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'all 120ms' }}>
                       <Icon size={16} style={{ color, flexShrink: 0 }} />
                       <div>
-                        <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>{label}</p>
-                        <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>{val === 'return' ? '상품을 돌려받음' : '새 상품으로 교체'}</p>
+                        <p style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{label}</p>
+                        <p style={{ fontSize: '10.5px', color: '#94a3b8' }}>{val === 'return' ? '상품을 돌려받음' : '새 상품으로 교체'}</p>
                       </div>
                     </div>
                   ))}
@@ -1448,15 +1448,15 @@ export default function ShippingHistoryPage() {
 
               {/* 사유 선택 */}
               <div>
-                <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#475569', marginBottom: 10 }}>사유</p>
+                <p style={{ fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: 10 }}>사유</p>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   {([['simple_change', '단순변심', Clock, '#2563eb', '#eff6ff'], ['defective', '불량', AlertTriangle, '#f97316', '#fff7ed']] as const).map(([val, label, Icon, color, bg]) => (
                     <div key={val} onClick={() => setCsReason(val)}
                       style={{ padding: '14px 16px', borderRadius: 12, border: `2px solid ${csReason === val ? color : '#e2e8f0'}`, background: csReason === val ? bg : '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 10, transition: 'all 120ms' }}>
                       <Icon size={16} style={{ color, flexShrink: 0 }} />
                       <div>
-                        <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>{label}</p>
-                        <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>{val === 'defective' ? '불량수량 +처리' : '재고수량 +복원'}</p>
+                        <p style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>{label}</p>
+                        <p style={{ fontSize: '10.5px', color: '#94a3b8' }}>{val === 'defective' ? '불량수량 +처리' : '재고수량 +복원'}</p>
                       </div>
                     </div>
                   ))}
@@ -1465,7 +1465,7 @@ export default function ShippingHistoryPage() {
 
               {/* 선택 항목 미리보기 */}
               <div>
-                <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#475569', marginBottom: 8 }}>접수 대상 ({checked.size}건)</p>
+                <p style={{ fontSize: '12px', fontWeight: 800, color: '#475569', marginBottom: 8 }}>접수 대상 ({checked.size}건)</p>
                 <div style={{ border: '1.5px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', maxHeight: 200, overflowY: 'auto' }}>
                   {displayOrders.filter(o => checked.has(o.id)).map((o, idx) => {
                     const item    = o.items[0]
@@ -1475,23 +1475,23 @@ export default function ShippingHistoryPage() {
                     return (
                       <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: idx < checked.size - 1 ? '1px solid #f8fafc' : 'none', background: '#fafafe' }}>
                         <div style={{ width: 22, height: 22, borderRadius: 6, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                          <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#2563eb' }}>{idx + 1}</span>
+                          <span style={{ fontSize: '10px', fontWeight: 900, color: '#2563eb' }}>{idx + 1}</span>
                         </div>
                         <div style={{ flex: 1, overflow: 'hidden' }}>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                            <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>{o.customer_name}</span>
-                            <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>{o.channel}</span>
+                            <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a' }}>{o.customer_name}</span>
+                            <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>{o.channel}</span>
                             {/* 주문 수량 표시 */}
-                            <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#7c3aed', background: '#f5f3ff', padding: '1px 6px', borderRadius: 5 }}>
+                            <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#7c3aed', background: '#f5f3ff', padding: '1px 6px', borderRadius: 5 }}>
                               수량 {qty}개
                             </span>
                           </div>
                           <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginTop: 2 }}>
-                            <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#475569' }}>{barcode || '-'}</span>
-                            {item?.option && <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#64748b' }}>[{item.option}]</span>}
+                            <span data-pm-barcode="1" style={{ fontSize: '10px', fontFamily: 'monospace' }}>{barcode || '-'}</span>
+                            {item?.option && <span style={{ fontSize: '10px', color: '#64748b' }}>[{item.option}]</span>}
                           </div>
                         </div>
-                        <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#64748b', flexShrink: 0 }}>
+                        <span style={{ fontSize: '10.5px', fontFamily: 'monospace', color: '#64748b', flexShrink: 0 }}>
                           {o.tracking_number ?? '-'}
                         </span>
                       </div>
@@ -1503,11 +1503,11 @@ export default function ShippingHistoryPage() {
               {/* 등록 버튼 */}
               <div style={{ display: 'flex', gap: 10 }}>
                 <button onClick={() => setCsModal(false)}
-                  style={{ flex: 1, padding: '12px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                  style={{ flex: 1, padding: '12px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}>
                   취소
                 </button>
                 <button onClick={handleCsRegister}
-                  style={{ flex: 2, padding: '12px 0', background: csType === 'return' ? '#dc2626' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                  style={{ flex: 2, padding: '12px 0', background: csType === 'return' ? '#dc2626' : '#7c3aed', color: '#fff', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 800, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
                   {csType === 'return' ? <RotateCcw size={14} /> : <RefreshCw size={14} />}
                   {checked.size}건 {csType === 'return' ? '반품' : '교환'} 접수 등록
                 </button>
@@ -1530,8 +1530,8 @@ export default function ShippingHistoryPage() {
                 <PackageCheck size={20} style={{ color: '#059669' }} />
               </div>
               <div>
-                <p style={{ fontSize: 'calc(15.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a', margin: 0 }}>출고확정 완료</p>
-                <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#64748b', marginTop: 2 }}>
+                <p style={{ fontSize: '15.5px', fontWeight: 900, color: '#0f172a', margin: 0 }}>출고확정 완료</p>
+                <p style={{ fontSize: '12px', color: '#64748b', marginTop: 2 }}>
                   <span style={{ fontWeight: 800, color: '#059669' }}>{stockResultData.confirmedCount}건</span> 출고확정 · 재고 차감 결과
                 </p>
               </div>
@@ -1544,12 +1544,12 @@ export default function ShippingHistoryPage() {
                 <div style={{ background: '#fff7ed', border: '1.5px solid #fed7aa', borderRadius: 12, padding: '12px 16px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 8 }}>
                     <AlertTriangle size={15} style={{ color: '#f97316', flexShrink: 0 }} />
-                    <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#9a3412' }}>재고 미차감 상품 ({stockResultData.notFoundNames.length}종)</span>
-                    <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#c2410c' }}>— 바코드 매핑 없음</span>
+                    <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#9a3412' }}>재고 미차감 상품 ({stockResultData.notFoundNames.length}종)</span>
+                    <span style={{ fontSize: '11px', color: '#c2410c' }}>— 바코드 매핑 없음</span>
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {stockResultData.notFoundNames.map((name, i) => (
-                      <span key={i} style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, background: '#ffedd5', color: '#9a3412', padding: '3px 10px', borderRadius: 6 }}>{name}</span>
+                      <span key={i} style={{ fontSize: '11.5px', fontWeight: 700, background: '#ffedd5', color: '#9a3412', padding: '3px 10px', borderRadius: 6 }}>{name}</span>
                     ))}
                   </div>
                 </div>
@@ -1562,24 +1562,24 @@ export default function ShippingHistoryPage() {
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: '#fee2e2', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <Package size={14} style={{ color: '#dc2626' }} />
                     </div>
-                    <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#dc2626' }}>재고 소진 상품</span>
-                    <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: '#dc2626', color: '#fff', padding: '1px 8px', borderRadius: 20, marginLeft: 2 }}>{stockResultData.zeroItems.length}종</span>
+                    <span style={{ fontSize: '13px', fontWeight: 900, color: '#dc2626' }}>재고 소진 상품</span>
+                    <span style={{ fontSize: '12px', fontWeight: 800, background: '#dc2626', color: '#fff', padding: '1px 8px', borderRadius: 20, marginLeft: 2 }}>{stockResultData.zeroItems.length}종</span>
                   </div>
                   <div style={{ maxHeight: 200, overflowY: 'auto' }}>
                     {stockResultData.zeroItems.map((item, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', borderBottom: i < stockResultData.zeroItems.length - 1 ? '1px solid #fff1f2' : 'none', background: i % 2 === 0 ? '#fff' : '#fff8f8' }}>
                         <div style={{ flex: 1, overflow: 'hidden' }}>
-                          <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a', margin: 0, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          <p style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', margin: 0, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                             {item.productName}
                           </p>
                           {item.optionName && (
-                            <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#64748b', margin: '1px 0 0' }}>[{item.optionName}]</p>
+                            <p style={{ fontSize: '11px', color: '#64748b', margin: '1px 0 0' }}>[{item.optionName}]</p>
                           )}
                         </div>
                         {item.barcode && (
-                          <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#94a3b8', flexShrink: 0 }}>{item.barcode}</span>
+                          <span data-pm-barcode="1" style={{ fontSize: '10.5px', fontFamily: 'monospace', flexShrink: 0 }}>{item.barcode}</span>
                         )}
-                        <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#dc2626', background: '#fee2e2', padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>0개</span>
+                        <span style={{ fontSize: '13px', fontWeight: 900, color: '#dc2626', background: '#fee2e2', padding: '2px 10px', borderRadius: 20, flexShrink: 0 }}>0개</span>
                       </div>
                     ))}
                   </div>
@@ -1587,7 +1587,7 @@ export default function ShippingHistoryPage() {
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#f0fdf4', borderRadius: 10, border: '1px solid #bbf7d0' }}>
                   <CheckCircle2 size={15} style={{ color: '#059669', flexShrink: 0 }} />
-                  <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#15803d' }}>재고 소진 상품 없음</span>
+                  <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#15803d' }}>재고 소진 상품 없음</span>
                 </div>
               )}
 
@@ -1598,26 +1598,26 @@ export default function ShippingHistoryPage() {
                     <div style={{ width: 28, height: 28, borderRadius: 8, background: '#fef3c7', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <TrendingDown size={14} style={{ color: '#d97706' }} />
                     </div>
-                    <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#b45309' }}>재고 부족 상품</span>
-                    <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#92400e' }}>({LOW_STOCK_THRESHOLD}개 이하)</span>
-                    <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: '#d97706', color: '#fff', padding: '1px 8px', borderRadius: 20, marginLeft: 2 }}>{stockResultData.lowItems.length}종</span>
+                    <span style={{ fontSize: '13px', fontWeight: 900, color: '#b45309' }}>재고 부족 상품</span>
+                    <span style={{ fontSize: '11.5px', color: '#92400e' }}>({LOW_STOCK_THRESHOLD}개 이하)</span>
+                    <span style={{ fontSize: '12px', fontWeight: 800, background: '#d97706', color: '#fff', padding: '1px 8px', borderRadius: 20, marginLeft: 2 }}>{stockResultData.lowItems.length}종</span>
                   </div>
                   <div style={{ maxHeight: 200, overflowY: 'auto' }}>
                     {stockResultData.lowItems.sort((a, b) => a.stock - b.stock).map((item, i) => (
                       <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 16px', borderBottom: i < stockResultData.lowItems.length - 1 ? '1px solid #fef9c3' : 'none', background: i % 2 === 0 ? '#fff' : '#fffdf0' }}>
                         <div style={{ flex: 1, overflow: 'hidden' }}>
-                          <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a', margin: 0, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
+                          <p style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a', margin: 0, whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden' }}>
                             {item.productName}
                           </p>
                           {item.optionName && (
-                            <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#64748b', margin: '1px 0 0' }}>[{item.optionName}]</p>
+                            <p style={{ fontSize: '11px', color: '#64748b', margin: '1px 0 0' }}>[{item.optionName}]</p>
                           )}
                         </div>
                         {item.barcode && (
-                          <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#94a3b8', flexShrink: 0 }}>{item.barcode}</span>
+                          <span data-pm-barcode="1" style={{ fontSize: '10.5px', fontFamily: 'monospace', flexShrink: 0 }}>{item.barcode}</span>
                         )}
                         <span style={{
-                          fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, flexShrink: 0,
+                          fontSize: '13px', fontWeight: 900, flexShrink: 0,
                           color: item.stock <= 3 ? '#dc2626' : '#d97706',
                           background: item.stock <= 3 ? '#fee2e2' : '#fef3c7',
                           padding: '2px 10px', borderRadius: 20,
@@ -1629,7 +1629,7 @@ export default function ShippingHistoryPage() {
               ) : (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 14px', background: '#f0fdf4', borderRadius: 10, border: '1px solid #bbf7d0' }}>
                   <CheckCircle2 size={15} style={{ color: '#059669', flexShrink: 0 }} />
-                  <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#15803d' }}>재고 부족 상품 없음</span>
+                  <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#15803d' }}>재고 부족 상품 없음</span>
                 </div>
               )}
 
@@ -1639,7 +1639,7 @@ export default function ShippingHistoryPage() {
             <div style={{ padding: '0 24px 22px' }}>
               <button
                 onClick={() => setStockResultModal(false)}
-                style={{ width: '100%', padding: '13px 0', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 12, fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', transition: 'background 150ms' }}
+                style={{ width: '100%', padding: '13px 0', background: '#0f172a', color: '#fff', border: 'none', borderRadius: 12, fontSize: '14px', fontWeight: 800, cursor: 'pointer', transition: 'background 150ms' }}
                 onMouseEnter={e => { e.currentTarget.style.background = '#1e293b' }}
                 onMouseLeave={e => { e.currentTarget.style.background = '#0f172a' }}
               >

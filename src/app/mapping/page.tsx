@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { Upload, RefreshCw, Link2, Trash2, CheckCircle2, AlertCircle, FileSpreadsheet, X, Search, Store, Download } from 'lucide-react'
 import * as XLSX from 'xlsx'
@@ -215,7 +215,19 @@ export default function MappingPage() {
   }, [])
 
   const rows = mappings[selectedMall] || []
-  const filtered = rows.filter(row => {
+  /** 테이블 표시 순서: 등록 상품코드 오름차순, 동일 시 쇼핑몰 상품ID */
+  const sortedRows = useMemo(() => {
+    const r = mappings[selectedMall] || []
+    return [...r].sort((a, b) => {
+      const ac = (a.matched_product_code ?? '').trim().toLowerCase()
+      const bc = (b.matched_product_code ?? '').trim().toLowerCase()
+      const byCode = ac.localeCompare(bc, undefined, { numeric: true, sensitivity: 'base' })
+      if (byCode !== 0) return byCode
+      return (a.mall_product_id ?? '').localeCompare(b.mall_product_id ?? '', undefined, { numeric: true, sensitivity: 'base' })
+    })
+  }, [mappings, selectedMall])
+
+  const filtered = sortedRows.filter(row => {
     const q = searchQuery.toLowerCase()
     const mSearch = !searchQuery || row.mall_product_name.toLowerCase().includes(q) || row.mall_option.toLowerCase().includes(q) || row.mall_product_id.toLowerCase().includes(q)
     const mStatus = statusFilter === 'all' || row.status === statusFilter
@@ -493,14 +505,14 @@ export default function MappingPage() {
         overflowY: 'auto',
       }}>
         <div style={{ padding: '16px 16px 10px', borderBottom: '1px solid #f1f5f9' }}>
-          <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>연동 쇼핑몰</p>
+          <p style={{ fontSize: '11px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>연동 쇼핑몰</p>
         </div>
 
         {connectedMalls.length === 0 ? (
           <div style={{ padding: '24px 16px', textAlign: 'center' }}>
             <Store size={28} color="#e2e8f0" style={{ margin: '0 auto 8px' }} />
-            <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', fontWeight: 700, lineHeight: 1.5 }}>연동된 쇼핑몰이<br />없습니다</p>
-            <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#e2e8f0', marginTop: 6 }}>쇼핑몰 관리에서<br />먼저 연동해주세요</p>
+            <p style={{ fontSize: '11.5px', color: '#cbd5e1', fontWeight: 700, lineHeight: 1.5 }}>연동된 쇼핑몰이<br />없습니다</p>
+            <p style={{ fontSize: '11px', color: '#e2e8f0', marginTop: 6 }}>쇼핑몰 관리에서<br />먼저 연동해주세요</p>
           </div>
         ) : (
           <nav style={{ padding: '8px 8px' }}>
@@ -532,31 +544,31 @@ export default function MappingPage() {
                       style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0 }}
                       onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
                     />
-                    <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: isActive ? 900 : 700, color: isActive ? '#1d4ed8' : '#334155', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    <span style={{ fontSize: '12.5px', fontWeight: isActive ? 900 : 700, color: isActive ? '#1d4ed8' : '#334155', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {m.name}
                     </span>
                     {mappingStatus === 'complete' && (
-                      <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, background: '#ecfdf5', color: '#059669', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <span style={{ fontSize: '9px', fontWeight: 900, background: '#ecfdf5', color: '#059669', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
                         매핑완료
                       </span>
                     )}
                     {mappingStatus === 'partial' && (
-                      <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, background: '#fffbeb', color: '#b45309', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                      <span style={{ fontSize: '9px', fontWeight: 900, background: '#fffbeb', color: '#b45309', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
                         매핑중
                       </span>
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 4 }}>
-                    <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: isActive ? '#dbeafe' : '#f1f5f9', color: isActive ? '#1d4ed8' : '#64748b', padding: '1px 6px', borderRadius: 4 }}>
+                    <span style={{ fontSize: '10px', fontWeight: 800, background: isActive ? '#dbeafe' : '#f1f5f9', color: isActive ? '#1d4ed8' : '#64748b', padding: '1px 6px', borderRadius: 4 }}>
                       전체 {s.total}
                     </span>
                     {s.matched > 0 && (
-                      <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: '#ecfdf5', color: '#059669', padding: '1px 6px', borderRadius: 4 }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, background: '#ecfdf5', color: '#059669', padding: '1px 6px', borderRadius: 4 }}>
                         매핑 {s.matched}
                       </span>
                     )}
                     {s.unmatched > 0 && (
-                      <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: '#fff1f2', color: '#be123c', padding: '1px 6px', borderRadius: 4 }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, background: '#fff1f2', color: '#be123c', padding: '1px 6px', borderRadius: 4 }}>
                         미매핑 {s.unmatched}
                       </span>
                     )}
@@ -575,7 +587,7 @@ export default function MappingPage() {
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <div style={{ textAlign: 'center' }}>
               <Store size={48} color="#e2e8f0" style={{ margin: '0 auto 12px' }} />
-              <p style={{ fontSize: 'calc(15px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8' }}>쇼핑몰을 선택해주세요</p>
+              <p style={{ fontSize: '15px', fontWeight: 800, color: '#94a3b8' }}>쇼핑몰을 선택해주세요</p>
             </div>
           </div>
         ) : (
@@ -584,7 +596,7 @@ export default function MappingPage() {
             <div style={{ padding: '20px 24px 0', flexShrink: 0 }}>
               {/* 쇼핑몰명 + 통계 */}
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 16 }}>
-                <h2 style={{ fontSize: 'calc(16px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#1e293b' }}>{selectedMallName}</h2>
+                <h2 style={{ fontSize: '16px', fontWeight: 900, color: '#1e293b' }}>{selectedMallName}</h2>
                 {([
                   { label: '전체',   value: stats(selectedMall).total,     color: '#2563eb', bg: '#eff6ff', activeBg: '#2563eb', key: 'all'       as const },
                   { label: '매핑완료', value: stats(selectedMall).matched,  color: '#059669', bg: '#ecfdf5', activeBg: '#059669', key: 'matched'   as const },
@@ -602,8 +614,8 @@ export default function MappingPage() {
                         boxShadow: isActive ? `0 2px 8px ${k.activeBg}50` : 'none',
                       }}
                     >
-                      <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: isActive ? 'white' : k.color }}>{k.label}</span>
-                      <span style={{ fontSize: 'calc(15px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: isActive ? 'white' : k.color }}>{k.value}</span>
+                      <span style={{ fontSize: '11px', fontWeight: 800, color: isActive ? 'white' : k.color }}>{k.label}</span>
+                      <span style={{ fontSize: '15px', fontWeight: 900, color: isActive ? 'white' : k.color }}>{k.value}</span>
                     </button>
                   )
                 })}
@@ -618,7 +630,7 @@ export default function MappingPage() {
                     placeholder="상품명 또는 옵션명 검색"
                     value={searchQuery}
                     onChange={e => setSearchQuery(e.target.value)}
-                    style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#334155', width: '100%' }}
+                    style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: '12.5px', fontWeight: 600, color: '#334155', width: '100%' }}
                   />
                   {searchQuery && <button onClick={() => setSearchQuery('')} style={{ border: 'none', background: 'none', cursor: 'pointer', color: '#94a3b8', display: 'flex' }}><X size={12} /></button>}
                 </div>
@@ -626,14 +638,14 @@ export default function MappingPage() {
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFileChange} />
                 <button
                   onClick={handleDownloadTemplate}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'white', color: '#059669', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '7px 13px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'white', color: '#059669', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '7px 13px', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
                   title="매핑업로드 양식 다운로드"
                 >
                   <Download size={13} />업로드 양식다운
                 </button>
                 <button
                   onClick={() => fileRef.current?.click()}
-                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg,#2563eb,#1d4ed8)', color: 'white', border: 'none', borderRadius: 8, padding: '8px 14px', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
                 >
                   {importing ? <RefreshCw size={13} style={{ animation: 'spin-slow 0.7s linear infinite' }} /> : <Upload size={13} />}
                   엑셀 업로드
@@ -642,7 +654,7 @@ export default function MappingPage() {
                 {checkedIdxs.size > 0 && (
                   <button
                     onClick={handleDeleteChecked}
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#fff1f2', color: '#be123c', border: '1.5px solid #fecdd3', borderRadius: 8, padding: '7px 12px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: '#fff1f2', color: '#be123c', border: '1.5px solid #fecdd3', borderRadius: 8, padding: '7px 12px', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
                   >
                     <Trash2 size={13} />선택 삭제 ({checkedIdxs.size})
                   </button>
@@ -650,7 +662,7 @@ export default function MappingPage() {
                 {rows.length > 0 && checkedIdxs.size === 0 && (
                   <button
                     onClick={handleClearAll}
-                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'white', color: '#be123c', border: '1.5px solid #fecdd3', borderRadius: 8, padding: '7px 12px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
+                    style={{ display: 'flex', alignItems: 'center', gap: 5, background: 'white', color: '#be123c', border: '1.5px solid #fecdd3', borderRadius: 8, padding: '7px 12px', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
                   >
                     <Trash2 size={13} />전체 삭제
                   </button>
@@ -659,7 +671,7 @@ export default function MappingPage() {
 
               {/* 엑셀 안내 */}
               <div style={{ padding: '8px 12px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: 8, marginBottom: 14 }}>
-                <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#0369a1' }}>
+                <p style={{ fontSize: '11.5px', fontWeight: 700, color: '#0369a1' }}>
                   📋 양식 다운로드 후 <strong>상품코드</strong> 컬럼에 등록상품 코드를 입력하면 자동 매핑됩니다. 상품코드가 없으면 쇼핑몰상품ID와 등록상품 코드를 비교하여 매핑합니다. 매핑 안 된 항목은 <strong>수동매핑</strong> 버튼으로 직접 연결할 수 있습니다.
                 </p>
               </div>
@@ -671,7 +683,7 @@ export default function MappingPage() {
                 {filtered.length === 0 ? (
                   <div style={{ padding: '60px 20px', textAlign: 'center' }}>
                     <FileSpreadsheet size={40} color="#cbd5e1" style={{ margin: '0 auto 12px' }} />
-                    <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8' }}>
+                    <p style={{ fontSize: '14px', fontWeight: 800, color: '#94a3b8' }}>
                       {rows.length === 0 ? '엑셀 파일을 업로드하면 자동으로 매핑됩니다' : '검색 결과가 없습니다'}
                     </p>
                   </div>
@@ -688,7 +700,7 @@ export default function MappingPage() {
                             />
                           </th>
                           {['#', '쇼핑몰 상품ID', '상품코드', '쇼핑몰 상품명', '쇼핑몰 옵션', '매핑 상품명', '판매가', '상태', '관리'].map((h, i) => (
-                            <th key={i} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#94a3b8', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
+                            <th key={i} style={{ padding: '9px 12px', textAlign: 'left', fontSize: '10.5px', fontWeight: 900, color: '#94a3b8', whiteSpace: 'nowrap', textTransform: 'uppercase' }}>{h}</th>
                           ))}
                         </tr>
                       </thead>
@@ -706,40 +718,40 @@ export default function MappingPage() {
                                 <input type="checkbox" checked={isChecked} onChange={() => toggleCheck(realIdx)}
                                   style={{ cursor:'pointer', width:14, height:14 }} />
                               </td>
-                              <td style={{ padding: '9px 12px', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 700 }}>{realIdx + 1}</td>
-                              <td style={{ padding: '9px 12px', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.mall_product_id || '-'}</td>
+                              <td style={{ padding: '9px 12px', fontSize: '11.5px', color: '#94a3b8', fontWeight: 700 }}>{realIdx + 1}</td>
+                              <td data-pm-barcode="1" style={{ padding: '9px 12px', fontSize: '11.5px', fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.mall_product_id || '-'}</td>
                               <td style={{ padding: '9px 12px' }}>
                                 {row.matched_product_code ? (
-                                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, fontFamily: 'monospace', background: '#f0fdf4', color: '#059669', padding: '2px 7px', borderRadius: 5, whiteSpace: 'nowrap' }}>
+                                  <span data-pm-barcode="1" style={{ fontSize: '11px', fontWeight: 800, fontFamily: 'monospace', background: '#f1f5f9', padding: '2px 7px', borderRadius: 5, whiteSpace: 'nowrap' }}>
                                     {row.matched_product_code}
                                   </span>
-                                ) : <span style={{ color: '#e2e8f0', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))' }}>-</span>}
+                                ) : <span style={{ color: '#e2e8f0', fontSize: '11px' }}>-</span>}
                               </td>
-                              <td style={{ padding: '9px 12px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#1e293b', maxWidth: 160 }}>
+                              <td style={{ padding: '9px 12px', fontSize: '12.5px', fontWeight: 700, color: '#1e293b', maxWidth: 160 }}>
                                 <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.mall_product_name}</span>
                               </td>
-                              <td style={{ padding: '9px 12px', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#64748b', maxWidth: 120 }}>
+                              <td style={{ padding: '9px 12px', fontSize: '12px', color: '#64748b', maxWidth: 120 }}>
                                 <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{row.mall_option || '-'}</span>
                               </td>
-                              <td style={{ padding: '9px 12px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: row.matched_product_name ? '#1e293b' : '#cbd5e1', maxWidth: 160 }}>
+                              <td style={{ padding: '9px 12px', fontSize: '12.5px', fontWeight: 700, color: row.matched_product_name ? '#1e293b' : '#cbd5e1', maxWidth: 160 }}>
                                 <span style={{ display: 'block', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                   {row.matched_product_name || <span style={{ color: '#cbd5e1' }}>미매핑</span>}
                                 </span>
                               </td>
                               <td style={{ padding: '9px 12px' }}>
                                 {row.mall_price ? (
-                                  <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb' }}>
+                                  <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#2563eb' }}>
                                     {row.mall_price.toLocaleString()}원
                                   </span>
                                 ) : <span style={{ color: '#e2e8f0' }}>-</span>}
                               </td>
                               <td style={{ padding: '9px 12px' }}>
                                 {row.status === 'matched' ? (
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#ecfdf5', color: '#059669', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, padding: '3px 7px', borderRadius: 6 }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#ecfdf5', color: '#059669', fontSize: '10.5px', fontWeight: 800, padding: '3px 7px', borderRadius: 6 }}>
                                     <CheckCircle2 size={10} />완료
                                   </span>
                                 ) : (
-                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#fff1f2', color: '#be123c', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, padding: '3px 7px', borderRadius: 6 }}>
+                                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, background: '#fff1f2', color: '#be123c', fontSize: '10.5px', fontWeight: 800, padding: '3px 7px', borderRadius: 6 }}>
                                     <AlertCircle size={10} />미매핑
                                   </span>
                                 )}
@@ -748,7 +760,7 @@ export default function MappingPage() {
                                 <div style={{ display: 'flex', gap: 4 }}>
                                   <button
                                     onClick={() => openManual(row, realIdx)}
-                                    style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}
+                                    style={{ display: 'flex', alignItems: 'center', gap: 3, background: '#eff6ff', color: '#2563eb', border: 'none', borderRadius: 6, padding: '4px 8px', fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}
                                   ><Link2 size={10} />수동매핑</button>
                                   <button
                                     onClick={() => handleDeleteRow(realIdx)}
@@ -774,25 +786,25 @@ export default function MappingPage() {
         {manualTarget && (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
             <div style={{ background: '#f8fafc', borderRadius: 10, padding: '10px 14px', border: '1px solid #e2e8f0' }}>
-              <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', marginBottom: 4 }}>쇼핑몰 상품</p>
-              <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#1e293b' }}>{manualTarget.mall_product_name}</p>
-              {manualTarget.mall_option && <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', marginTop: 2 }}>옵션: {manualTarget.mall_option}</p>}
+              <p style={{ fontSize: '10.5px', fontWeight: 800, color: '#94a3b8', marginBottom: 4 }}>쇼핑몰 상품</p>
+              <p style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b' }}>{manualTarget.mall_product_name}</p>
+              {manualTarget.mall_option && <p style={{ fontSize: '11.5px', color: '#64748b', marginTop: 2 }}>옵션: {manualTarget.mall_option}</p>}
             </div>
 
             <div>
-              <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#334155', marginBottom: 6 }}>매핑할 상품 검색</p>
+              <p style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: 6 }}>매핑할 상품 검색</p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '7px 12px', marginBottom: 8 }}>
                 <Search size={13} color="#94a3b8" />
                 <input
                   placeholder="상품명 또는 코드"
                   value={manualSearch}
                   onChange={e => setManualSearch(e.target.value)}
-                  style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#334155', flex: 1 }}
+                  style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: '12.5px', fontWeight: 600, color: '#334155', flex: 1 }}
                 />
               </div>
               <div style={{ maxHeight: 180, overflowY: 'auto', border: '1.5px solid #e2e8f0', borderRadius: 8 }}>
                 {manualFiltered.length === 0 ? (
-                  <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))' }}>검색 결과 없음</div>
+                  <div style={{ padding: '20px', textAlign: 'center', color: '#94a3b8', fontSize: '12px' }}>검색 결과 없음</div>
                 ) : manualFiltered.map(p => (
                   <div
                     key={p.id}
@@ -804,8 +816,8 @@ export default function MappingPage() {
                     onMouseEnter={e => { if (manualSelProduct !== p.id) e.currentTarget.style.background = '#f8fafc' }}
                     onMouseLeave={e => { if (manualSelProduct !== p.id) e.currentTarget.style.background = 'transparent' }}
                   >
-                    <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#1e293b' }}>{p.name}</span>
-                    <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', marginLeft: 8 }}>{p.code}</span>
+                    <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#1e293b' }}>{p.name}</span>
+                    <span style={{ fontSize: '11px', color: '#94a3b8', marginLeft: 8 }}>{p.code}</span>
                   </div>
                 ))}
               </div>
@@ -816,11 +828,11 @@ export default function MappingPage() {
               if (!prod || prod.options.length === 0) return null
               return (
                 <div>
-                  <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#334155', marginBottom: 6 }}>옵션 선택</p>
+                  <p style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: 6 }}>옵션 선택</p>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {prod.options.map((o, i) => (
                       <button key={i} onClick={() => setManualSelOption(o.name)} style={{
-                        padding: '5px 10px', borderRadius: 6, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, cursor: 'pointer', border: '1.5px solid',
+                        padding: '5px 10px', borderRadius: 6, fontSize: '12px', fontWeight: 700, cursor: 'pointer', border: '1.5px solid',
                         borderColor: manualSelOption === o.name ? '#2563eb' : '#e2e8f0',
                         background: manualSelOption === o.name ? '#eff6ff' : 'white',
                         color: manualSelOption === o.name ? '#2563eb' : '#64748b',
@@ -833,26 +845,26 @@ export default function MappingPage() {
 
             {/* 판매가 입력 */}
             <div>
-              <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#334155', marginBottom: 6 }}>쇼핑몰 판매가 <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight:600, color:'#94a3b8' }}>(선택)</span></p>
+              <p style={{ fontSize: '12px', fontWeight: 800, color: '#334155', marginBottom: 6 }}>쇼핑몰 판매가 <span style={{ fontSize: '11px', fontWeight:600, color:'#94a3b8' }}>(선택)</span></p>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, background: '#f8fafc', border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '7px 12px' }}>
-                <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#64748b' }}>₩</span>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#64748b' }}>₩</span>
                 <input
                   type="number"
                   placeholder="0"
                   value={manualPrice}
                   onChange={e => setManualPrice(e.target.value)}
-                  style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#1e293b', flex: 1 }}
+                  style={{ border: 'none', outline: 'none', background: 'transparent', fontSize: '13px', fontWeight: 700, color: '#1e293b', flex: 1 }}
                 />
               </div>
-              <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', marginTop: 4, fontWeight: 600 }}>입력 시 상품관리 탭의 쇼핑몰판매가에도 자동 적용됩니다</p>
+              <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: 4, fontWeight: 600 }}>입력 시 상품관리 탭의 쇼핑몰판매가에도 자동 적용됩니다</p>
             </div>
 
             <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', paddingTop: 4 }}>
-              <button onClick={() => setManualTarget(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: 'white', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, cursor: 'pointer', color: '#64748b' }}>취소</button>
+              <button onClick={() => setManualTarget(null)} style={{ padding: '8px 16px', borderRadius: 8, border: '1.5px solid #e2e8f0', background: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer', color: '#64748b' }}>취소</button>
               <button onClick={handleManualSave} disabled={!manualSelProduct} style={{
                 padding: '8px 18px', borderRadius: 8, border: 'none',
                 background: manualSelProduct ? 'linear-gradient(135deg,#2563eb,#1d4ed8)' : '#e2e8f0',
-                color: manualSelProduct ? 'white' : '#94a3b8', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800,
+                color: manualSelProduct ? 'white' : '#94a3b8', fontSize: '13px', fontWeight: 800,
                 cursor: manualSelProduct ? 'pointer' : 'not-allowed',
               }}>매핑 저장</button>
             </div>

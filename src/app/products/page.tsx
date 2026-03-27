@@ -2279,7 +2279,7 @@ export default function ProductsPage() {
 
                     {/* 상품코드 */}
                     <td style={{ paddingTop:14 }}>
-                      <span style={{ fontFamily:'monospace', fontSize:11.5, fontWeight:800, color:'#2563eb', background:'#eff6ff', padding:'3px 7px', borderRadius:6 }}>
+                      <span data-pm-barcode="1" style={{ fontFamily:'monospace', fontSize:11.5, fontWeight:800, background:'#eff6ff', padding:'3px 7px', borderRadius:6 }}>
                         {p.code}
                       </span>
                     </td>
@@ -2354,7 +2354,7 @@ export default function ProductsPage() {
                               </span>
                               {opt.chinese_name && <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{opt.chinese_name}</span>}
                             </span>
-                            <span style={{ fontFamily:'monospace', fontSize:10.5, color:'#1e293b', fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{opt.barcode || '-'}</span>
+                            <span data-pm-barcode="1" style={{ fontFamily:'monospace', fontSize:10.5, fontWeight:600, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{opt.barcode || '-'}</span>
                             <span style={{ textAlign:'right', fontSize:12, fontWeight:800, color:'#6366f1' }}>{opt.ordered}</span>
                             <span style={{ textAlign:'right', fontSize:12, fontWeight:800, color:'#0ea5e9' }}>{opt.received}</span>
                             <span style={{ textAlign:'right', fontSize:12, fontWeight:800, color: undelivered > 0 ? '#f59e0b' : '#94a3b8' }}>{undelivered}</span>
@@ -2762,6 +2762,7 @@ export default function ProductsPage() {
                   <div>
                     <Label>바코드 (자동생성, 직접 수정 가능)</Label>
                     <Input
+                      data-pm-barcode="1"
                       value={opt.barcode || genBarcode(form.code, opt.name)}
                       placeholder={genBarcode(form.code, opt.name)}
                       style={{ fontFamily:'monospace', fontSize:12 }}
@@ -2860,7 +2861,7 @@ export default function ProductsPage() {
                     {opt.image ? <img src={opt.image} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}><ImageIcon size={11} color="#cbd5e1"/></div>}
                   </div>
                   <span style={{ fontWeight:800, color:'#334155', fontSize:13 }}>{opt.name}</span>
-                  <span style={{ fontFamily:'monospace', fontSize:11, color:'#64748b' }}>{opt.barcode||'-'}</span>
+                  <span data-pm-barcode="1" style={{ fontFamily:'monospace', fontSize:11 }}>{opt.barcode||'-'}</span>
                   <span style={{ fontSize:13, fontWeight:800, color:'#6366f1', textAlign:'right' }}>{opt.ordered}</span>
                   <span style={{ fontSize:13, fontWeight:800, color:'#0ea5e9', textAlign:'right' }}>{opt.received}</span>
                   <span style={{ fontSize:13, fontWeight:800, color: optUndelivered(opt)>0?'#f59e0b':'#94a3b8', textAlign:'right' }}>{optUndelivered(opt)}</span>
@@ -3068,6 +3069,7 @@ export default function ProductsPage() {
                     <div>
                       <Label>바코드 (자동생성, 직접 수정 가능)</Label>
                       <Input
+                        data-pm-barcode="1"
                         value={opt.barcode || genBarcode(editForm.code, opt.name)}
                         placeholder={genBarcode(editForm.code, opt.name)}
                         style={{ fontFamily:'monospace', fontSize:12 }}

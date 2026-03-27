@@ -61,7 +61,7 @@ function mkItem(prod: PmProduct, opt: PmOption): TxItem {
 }
 
 function Label({ children }: { children: React.ReactNode }) {
-  return <label style={{ display:'block', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#475569', marginBottom:5 }}>{children}</label>
+  return <label style={{ display:'block', fontSize: '12px', fontWeight:800, color:'#475569', marginBottom:5 }}>{children}</label>
 }
 
 function getStock(o: PmOption) {
@@ -413,7 +413,7 @@ export default function InventoryPage() {
               value={itemSearch}
               onChange={e => setItemSearch(e.target.value)}
               placeholder="상품명, 상품코드, 옵션명, 바코드로 검색..."
-              style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'8px 10px 8px 30px', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', outline:'none', boxSizing:'border-box' }}
+              style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'8px 10px 8px 30px', fontSize: '13px', outline:'none', boxSizing:'border-box' }}
             />
           </div>
           {/* 검색 결과 드롭다운 */}
@@ -422,7 +422,7 @@ export default function InventoryPage() {
               {searchRes.map(({ prod, opt }) => (
                 <button key={`${prod.id}_${opt.name}`}
                   onClick={() => addItem(prod, opt)}
-                  style={{ width:'100%', textAlign:'left', padding:'7px 12px', border:'none', borderBottom:'1px solid #f1f5f9', background:'none', cursor:'pointer', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', display:'flex', alignItems:'center', gap:8 }}
+                  style={{ width:'100%', textAlign:'left', padding:'7px 12px', border:'none', borderBottom:'1px solid #f1f5f9', background:'none', cursor:'pointer', fontSize: '12px', display:'flex', alignItems:'center', gap:8 }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
                   <div style={{ width:28, height:28, borderRadius:5, overflow:'hidden', background:'#f1f5f9', flexShrink:0 }}>
@@ -433,8 +433,8 @@ export default function InventoryPage() {
                   <div style={{ flex:1, minWidth:0 }}>
                     <span style={{ fontWeight:800, color:'#1e293b' }}>{prod.name}</span>
                     <span style={{ color:'#64748b', marginLeft:6 }}>— {opt.name}</span>
-                    {opt.barcode && <span style={{ fontFamily:'monospace', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', marginLeft:6 }}>{opt.barcode}</span>}
-                    <span style={{ float:'right', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#059669', fontWeight:700 }}>현재고 {getStock(opt)}</span>
+                    {opt.barcode && <span data-pm-barcode="1" style={{ fontFamily:'monospace', fontSize: '11px', marginLeft:6 }}>{opt.barcode}</span>}
+                    <span style={{ float:'right', fontSize: '11px', color:'#059669', fontWeight:700 }}>현재고 {getStock(opt)}</span>
                   </div>
                 </button>
               ))}
@@ -448,11 +448,11 @@ export default function InventoryPage() {
             const names: Record<TxType,string> = { in:'입고등록양식.xlsx', out:'출고등록양식.xlsx', defective:'불량등록양식.xlsx', adjust:'재고수정양식.xlsx' }
             downloadTemplate(names[type])
           }}
-            style={{ display:'flex', alignItems:'center', gap:5, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#15803d', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            style={{ display:'flex', alignItems:'center', gap:5, fontSize: '12px', fontWeight:700, color:'#15803d', background:'#f0fdf4', border:'1px solid #bbf7d0', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
             <Download size={12}/>엑셀 양식 다운
           </button>
           <button onClick={() => xlsxLocalRef.current?.click()}
-            style={{ display:'flex', alignItems:'center', gap:5, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#1d4ed8', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
+            style={{ display:'flex', alignItems:'center', gap:5, fontSize: '12px', fontWeight:700, color:'#1d4ed8', background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:8, padding:'6px 12px', cursor:'pointer' }}>
             <Upload size={12}/>엑셀 파일 등록
           </button>
           <input ref={xlsxLocalRef} type="file" accept=".xlsx,.xls" style={{ display:'none' }}
@@ -461,15 +461,15 @@ export default function InventoryPage() {
 
         {/* 선택된 상품 목록 */}
         {txItems.length === 0 ? (
-          <div style={{ border:'2px dashed #e2e8f0', borderRadius:10, padding:'20px', textAlign:'center', color:'#94a3b8', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))' }}>
+          <div style={{ border:'2px dashed #e2e8f0', borderRadius:10, padding:'20px', textAlign:'center', color:'#94a3b8', fontSize: '12.5px' }}>
             상품을 검색하여 선택하거나 엑셀 파일을 등록하세요
           </div>
         ) : (
           <div>
             <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:6 }}>
-              <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#475569' }}>선택된 상품 <span style={{ color:'#2563eb' }}>{txItems.length}개</span></p>
+              <p style={{ fontSize: '12px', fontWeight:800, color:'#475569' }}>선택된 상품 <span style={{ color:'#2563eb' }}>{txItems.length}개</span></p>
               <button onClick={() => setTxItems([])}
-                style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#94a3b8', background:'none', border:'none', cursor:'pointer' }}>
+                style={{ fontSize: '11px', fontWeight:700, color:'#94a3b8', background:'none', border:'none', cursor:'pointer' }}>
                 전체 초기화
               </button>
             </div>
@@ -483,13 +483,13 @@ export default function InventoryPage() {
                         : <div style={{ width:'100%', height:'100%' }}/>}
                     </div>
                     <div style={{ minWidth:0 }}>
-                      <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#1e293b', marginBottom:1 }}>
+                      <p style={{ fontSize: '12.5px', fontWeight:800, color:'#1e293b', marginBottom:1 }}>
                         {item.prodName}
-                        <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', fontWeight:500, marginLeft:4 }}>{item.optName}</span>
+                        <span style={{ fontSize: '11px', color:'#94a3b8', fontWeight:500, marginLeft:4 }}>{item.optName}</span>
                       </p>
                       <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                        {item.barcode && <span style={{ fontFamily:'monospace', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8' }}>{item.barcode}</span>}
-                        <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#059669' }}>현재고 {item.curStock}</span>
+                        {item.barcode && <span data-pm-barcode="1" style={{ fontFamily:'monospace', fontSize: '10.5px' }}>{item.barcode}</span>}
+                        <span style={{ fontSize: '10.5px', fontWeight:700, color:'#059669' }}>현재고 {item.curStock}</span>
                       </div>
                     </div>
                   </div>
@@ -499,9 +499,9 @@ export default function InventoryPage() {
                         <input type="number" min="0" placeholder="수정재고"
                           value={item.adjStock}
                           onChange={e => updateItem(idx, 'adjStock', e.target.value)}
-                          style={{ width:'100%', border:'1.5px solid #c7d2fe', borderRadius:6, padding:'5px 6px', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, textAlign:'center', outline:'none', color:'#1d4ed8' }}/>
+                          style={{ width:'100%', border:'1.5px solid #c7d2fe', borderRadius:6, padding:'5px 6px', fontSize: '12px', fontWeight:800, textAlign:'center', outline:'none', color:'#1d4ed8' }}/>
                         {item.adjStock !== '' && (
-                          <p style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', color: Number(item.adjStock) >= item.curStock ? '#059669' : '#dc2626', textAlign:'center', marginTop:1 }}>
+                          <p style={{ fontSize: '9.5px', color: Number(item.adjStock) >= item.curStock ? '#059669' : '#dc2626', textAlign:'center', marginTop:1 }}>
                             {Number(item.adjStock) >= item.curStock ? '+' : ''}{Number(item.adjStock) - item.curStock}
                           </p>
                         )}
@@ -510,12 +510,12 @@ export default function InventoryPage() {
                       <input type="number" min="1" placeholder="수량"
                         value={item.qty}
                         onChange={e => updateItem(idx, 'qty', e.target.value)}
-                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'5px 6px', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, textAlign:'center', outline:'none' }}/>
+                        style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'5px 6px', fontSize: '12px', fontWeight:800, textAlign:'center', outline:'none' }}/>
                     )}
                   </div>
                   <input placeholder="비고" value={item.note}
                     onChange={e => updateItem(idx, 'note', e.target.value)}
-                    style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'5px 6px', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', outline:'none' }}/>
+                    style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'5px 6px', fontSize: '11.5px', outline:'none' }}/>
                   <button onClick={() => removeItem(idx)}
                     style={{ display:'flex', alignItems:'center', justifyContent:'center', width:28, height:28, background:'#fee2e2', color:'#dc2626', border:'none', borderRadius:6, cursor:'pointer' }}>
                     <X size={12}/>
@@ -550,11 +550,11 @@ export default function InventoryPage() {
                   onClick={() => { setActiveKpi(isActive ? null : c.key); setKpiSearch('') }}
                   className="pm-card p-4 text-left"
                   style={{ background: isActive ? c.color : c.bg, border: isActive ? `2px solid ${c.color}` : '1.5px solid rgba(15,23,42,0.07)', cursor:'pointer', transition:'all 150ms' }}>
-                  <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color: isActive ? 'rgba(255,255,255,0.75)' : '#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
-                  <p style={{ fontSize: 'calc(22px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color: isActive ? 'white' : c.color, marginTop:2, lineHeight:1 }}>
-                    {c.v}<span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:600, marginLeft:2 }}>{c.sub}</span>
+                  <p style={{ fontSize: '10.5px', fontWeight:800, color: isActive ? 'rgba(255,255,255,0.75)' : '#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em' }}>{c.label}</p>
+                  <p style={{ fontSize: '22px', fontWeight:900, color: isActive ? 'white' : c.color, marginTop:2, lineHeight:1 }}>
+                    {c.v}<span style={{ fontSize: '12px', fontWeight:600, marginLeft:2 }}>{c.sub}</span>
                   </p>
-                  {isActive && <p style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color:'rgba(255,255,255,0.8)', marginTop:3 }}>클릭하여 닫기</p>}
+                  {isActive && <p style={{ fontSize: '10px', color:'rgba(255,255,255,0.8)', marginTop:3 }}>클릭하여 닫기</p>}
                 </button>
               )
             })}
@@ -582,26 +582,26 @@ export default function InventoryPage() {
         return (
           <div className="pm-card overflow-hidden">
             <div style={{ padding:'12px 16px', borderBottom:'1px solid rgba(15,23,42,0.07)', display:'flex', gap:10, alignItems:'center', flexWrap:'wrap' }}>
-              <p style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color:'#1e293b' }}>{label} 상품 목록</p>
+              <p style={{ fontSize: '13.5px', fontWeight:900, color:'#1e293b' }}>{label} 상품 목록</p>
               <div style={{ position:'relative', flex:'1 1 200px' }}>
                 <Search size={12} style={{ position:'absolute', left:9, top:'50%', transform:'translateY(-50%)', color:'#94a3b8', pointerEvents:'none' }}/>
                 <input value={kpiSearch} onChange={e => setKpiSearch(e.target.value)}
                   placeholder="상품명, 코드, 옵션, 바코드 검색..."
-                  style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'6px 10px 6px 28px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', outline:'none', boxSizing:'border-box' }}/>
+                  style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'6px 10px 6px 28px', fontSize: '12.5px', outline:'none', boxSizing:'border-box' }}/>
               </div>
-              <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8' }}>{filtered2.length}건</span>
+              <span style={{ fontSize: '12px', color:'#94a3b8' }}>{filtered2.length}건</span>
               <button onClick={() => setActiveKpi(null)}
-                style={{ marginLeft:'auto', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#64748b', background:'#f1f5f9', border:'none', borderRadius:7, padding:'4px 10px', cursor:'pointer' }}>닫기</button>
+                style={{ marginLeft:'auto', fontSize: '11.5px', fontWeight:700, color:'#64748b', background:'#f1f5f9', border:'none', borderRadius:7, padding:'4px 10px', cursor:'pointer' }}>닫기</button>
             </div>
             <div style={{ maxHeight:340, overflowY:'auto' }}>
               {filtered2.length === 0 ? (
-                <div style={{ padding:'2rem', textAlign:'center', color:'#94a3b8', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))' }}>해당 항목이 없습니다</div>
+                <div style={{ padding:'2rem', textAlign:'center', color:'#94a3b8', fontSize: '13px' }}>해당 항목이 없습니다</div>
               ) : (
-                <table style={{ width:'100%', borderCollapse:'collapse', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize: '12.5px' }}>
                   <thead>
                     <tr style={{ background:'#f8fafc', position:'sticky', top:0 }}>
                       {['','상품명','코드','옵션','바코드','현재고','불량','발주','입고'].map(h => (
-                        <th key={h} style={{ padding:'7px 10px', fontWeight:800, color:'#64748b', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', textAlign: h==='현재고'||h==='불량'||h==='발주'||h==='입고' ? 'center' : 'left', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
+                        <th key={h} style={{ padding:'7px 10px', fontWeight:800, color:'#64748b', fontSize: '11px', textAlign: h==='현재고'||h==='불량'||h==='발주'||h==='입고' ? 'center' : 'left', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -616,9 +616,9 @@ export default function InventoryPage() {
                           </div>
                         </td>
                         <td style={{ padding:'7px 10px', fontWeight:700, color:'#1e293b', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{prod.name}</td>
-                        <td style={{ padding:'7px 10px', fontFamily:'monospace', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color:'#475569' }}>{prod.code}</td>
+                        <td style={{ padding:'7px 10px', fontFamily:'monospace', fontSize: '11.5px', color:'#475569' }}>{prod.code}</td>
                         <td style={{ padding:'7px 10px', color:'#64748b' }}>{opt.name}</td>
-                        <td style={{ padding:'7px 10px', fontFamily:'monospace', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8' }}>{opt.barcode || '-'}</td>
+                        <td data-pm-barcode="1" style={{ padding:'7px 10px', fontFamily:'monospace', fontSize: '11px' }}>{opt.barcode || '-'}</td>
                         <td style={{ padding:'7px 10px', textAlign:'center', fontWeight:900, color: stock === 0 ? '#dc2626' : stock <= 2 ? '#d97706' : '#15803d' }}>{stock}</td>
                         <td style={{ padding:'7px 10px', textAlign:'center', color:'#c2410c', fontWeight:800 }}>{opt.defective ?? 0}</td>
                         <td style={{ padding:'7px 10px', textAlign:'center', color:'#2563eb', fontWeight:700 }}>{opt.ordered ?? 0}</td>
@@ -656,14 +656,14 @@ export default function InventoryPage() {
       <div className="pm-card overflow-hidden">
         {/* 헤더 + 필터 */}
         <div style={{ padding:'12px 16px', borderBottom:'1px solid rgba(15,23,42,0.07)', display:'flex', flexWrap:'wrap', gap:10, alignItems:'center' }}>
-          <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color:'#1e293b', display:'flex', alignItems:'center', gap:6 }}>
+          <p style={{ fontSize: '14px', fontWeight:900, color:'#1e293b', display:'flex', alignItems:'center', gap:6 }}>
             <CalendarDays size={15} style={{ color:'#2563eb' }}/>입출고 내역
           </p>
 
           {/* 월별 선택 */}
           <div style={{ display:'flex', alignItems:'center', gap:6 }}>
             <select value={monthFilter} onChange={e => setMonthFilter(e.target.value)}
-              style={{ border:'1.5px solid #e2e8f0', borderRadius:8, padding:'5px 10px', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight:700, outline:'none', color:'#334155' }}>
+              style={{ border:'1.5px solid #e2e8f0', borderRadius:8, padding:'5px 10px', fontSize: '12.5px', fontWeight:700, outline:'none', color:'#334155' }}>
               <option value="">전체 월</option>
               {availableMonths.map(m => (
                 <option key={m} value={m}>
@@ -677,7 +677,7 @@ export default function InventoryPage() {
           <div style={{ display:'flex', gap:4 }}>
             {([['all','전체','#64748b','#f1f5f9'],['in','입고','#15803d','#f0fdf4'],['out','출고','#be123c','#fff1f2'],['defective','불량','#c2410c','#fff7ed'],['adjust','재고수정','#1d4ed8','#eff6ff']] as const).map(([v, l, c, bg]) => (
               <button key={v} onClick={() => setTypeFilter(v as TxType|'all')}
-                style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, padding:'4px 10px', borderRadius:6, border:'none', cursor:'pointer',
+                style={{ fontSize: '11.5px', fontWeight:800, padding:'4px 10px', borderRadius:6, border:'none', cursor:'pointer',
                   background: typeFilter === v ? c : bg,
                   color: typeFilter === v ? 'white' : c }}>
                 {l}
@@ -685,7 +685,7 @@ export default function InventoryPage() {
             ))}
           </div>
 
-          <p style={{ marginLeft:'auto', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', fontWeight:700 }}>
+          <p style={{ marginLeft:'auto', fontSize: '11.5px', color:'#94a3b8', fontWeight:700 }}>
             총 {filteredTx.length}건
           </p>
         </div>
@@ -698,8 +698,8 @@ export default function InventoryPage() {
           {!loading && filteredTx.length === 0 && (
             <div style={{ textAlign:'center', padding:'3rem 1rem', color:'#94a3b8' }}>
               <Package size={36} style={{ opacity:0.2, margin:'0 auto 10px' }}/>
-              <p style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight:700 }}>입출고 내역이 없습니다</p>
-              <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color:'#cbd5e1' }}>상단의 입고/출고/불량/재고수정 버튼으로 내역을 추가하세요</p>
+              <p style={{ fontSize: '13.5px', fontWeight:700 }}>입출고 내역이 없습니다</p>
+              <p style={{ fontSize: '12px', color:'#cbd5e1' }}>상단의 입고/출고/불량/재고수정 버튼으로 내역을 추가하세요</p>
             </div>
           )}
 
@@ -724,15 +724,15 @@ export default function InventoryPage() {
                   onClick={() => toggleMonth(monthKey)}
                   style={{ display:'flex', alignItems:'center', gap:10, padding:'12px 16px', background:'linear-gradient(135deg,#f8fafc,#f1f5f9)', cursor:'pointer' }}>
                   {monthExpanded ? <ChevronDown size={15} color="#64748b"/> : <ChevronRight size={15} color="#64748b"/>}
-                  <span style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color:'#1e293b' }}>
+                  <span style={{ fontSize: '14px', fontWeight:900, color:'#1e293b' }}>
                     {y}년 {m}월
                   </span>
-                  <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', fontWeight:700 }}>{monthTx.length}건</span>
+                  <span style={{ fontSize: '11.5px', color:'#94a3b8', fontWeight:700 }}>{monthTx.length}건</span>
                   <div style={{ display:'flex', gap:5, flexWrap:'wrap' }}>
-                    {mIn  > 0 && <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, background:'#f0fdf4', color:'#15803d', padding:'2px 8px', borderRadius:5 }}>⬇️ 입고 +{mIn}</span>}
-                    {mOut > 0 && <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, background:'#fff1f2', color:'#be123c', padding:'2px 8px', borderRadius:5 }}>⬆️ 출고 -{mOut}</span>}
-                    {mDef > 0 && <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'2px 8px', borderRadius:5 }}>⚠️ 불량 {mDef}건</span>}
-                    {mAdj > 0 && <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, background:'#eff6ff', color:'#1d4ed8', padding:'2px 8px', borderRadius:5 }}>✏️ 재고수정 {mAdj}건</span>}
+                    {mIn  > 0 && <span style={{ fontSize: '10.5px', fontWeight:800, background:'#f0fdf4', color:'#15803d', padding:'2px 8px', borderRadius:5 }}>⬇️ 입고 +{mIn}</span>}
+                    {mOut > 0 && <span style={{ fontSize: '10.5px', fontWeight:800, background:'#fff1f2', color:'#be123c', padding:'2px 8px', borderRadius:5 }}>⬆️ 출고 -{mOut}</span>}
+                    {mDef > 0 && <span style={{ fontSize: '10.5px', fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'2px 8px', borderRadius:5 }}>⚠️ 불량 {mDef}건</span>}
+                    {mAdj > 0 && <span style={{ fontSize: '10.5px', fontWeight:800, background:'#eff6ff', color:'#1d4ed8', padding:'2px 8px', borderRadius:5 }}>✏️ 재고수정 {mAdj}건</span>}
                   </div>
                 </div>
 
@@ -753,18 +753,18 @@ export default function InventoryPage() {
                         onClick={() => toggleDate(dateKey)}
                         style={{ display:'flex', alignItems:'center', gap:10, padding:'9px 16px 9px 32px', background:'#fafafa', cursor:'pointer' }}>
                         {expanded ? <ChevronDown size={13} color="#94a3b8"/> : <ChevronRight size={13} color="#94a3b8"/>}
-                        <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color:'#334155' }}>{y}.{m}.{dd}</span>
-                        <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#94a3b8' }}>총 {dayTx.length}건</span>
+                        <span style={{ fontSize: '12.5px', fontWeight:900, color:'#334155' }}>{y}.{m}.{dd}</span>
+                        <span style={{ fontSize: '11px', fontWeight:700, color:'#94a3b8' }}>총 {dayTx.length}건</span>
                         <div style={{ display:'flex', gap:4 }}>
-                          {inCount  > 0 && <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, background:'#f0fdf4', color:'#15803d', padding:'2px 6px', borderRadius:5 }}>입고 {inCount}</span>}
-                          {outCount > 0 && <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, background:'#fff1f2', color:'#be123c', padding:'2px 6px', borderRadius:5 }}>출고 {outCount}</span>}
-                          {defCount > 0 && <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'2px 6px', borderRadius:5 }}>불량 {defCount}</span>}
-                          {adjCount > 0 && <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, background:'#eff6ff', color:'#1d4ed8', padding:'2px 6px', borderRadius:5 }}>재고수정 {adjCount}</span>}
+                          {inCount  > 0 && <span style={{ fontSize: '10.5px', fontWeight:800, background:'#f0fdf4', color:'#15803d', padding:'2px 6px', borderRadius:5 }}>입고 {inCount}</span>}
+                          {outCount > 0 && <span style={{ fontSize: '10.5px', fontWeight:800, background:'#fff1f2', color:'#be123c', padding:'2px 6px', borderRadius:5 }}>출고 {outCount}</span>}
+                          {defCount > 0 && <span style={{ fontSize: '10.5px', fontWeight:800, background:'#fff7ed', color:'#c2410c', padding:'2px 6px', borderRadius:5 }}>불량 {defCount}</span>}
+                          {adjCount > 0 && <span style={{ fontSize: '10.5px', fontWeight:800, background:'#eff6ff', color:'#1d4ed8', padding:'2px 6px', borderRadius:5 }}>재고수정 {adjCount}</span>}
                         </div>
                         <div style={{ marginLeft:'auto' }}>
                           <button
                             onClick={e => { e.stopPropagation(); openDateEdit(dateKey) }}
-                            style={{ display:'flex', alignItems:'center', gap:4, background:'#eff6ff', color:'#2563eb', border:'none', borderRadius:7, padding:'3px 9px', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight:800, cursor:'pointer' }}>
+                            style={{ display:'flex', alignItems:'center', gap:4, background:'#eff6ff', color:'#2563eb', border:'none', borderRadius:7, padding:'3px 9px', fontSize: '11px', fontWeight:800, cursor:'pointer' }}>
                             <Edit2 size={10}/>수정
                           </button>
                         </div>
@@ -782,23 +782,23 @@ export default function InventoryPage() {
                                 const ts = TX_STYLE[tx.type]
                                 return (
                                   <tr key={tx.id}>
-                                    <td style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', whiteSpace:'nowrap' }}>
+                                    <td style={{ fontSize: '11px', color:'#94a3b8', whiteSpace:'nowrap' }}>
                                       {new Date(tx.date).toLocaleTimeString('ko-KR', { hour:'2-digit', minute:'2-digit' })}
                                     </td>
                                     <td>
-                                      <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight:800, background:ts.bg, color:ts.color, padding:'2px 8px', borderRadius:99 }}>
+                                      <span style={{ display:'inline-flex', alignItems:'center', gap:4, fontSize: '11px', fontWeight:800, background:ts.bg, color:ts.color, padding:'2px 8px', borderRadius:99 }}>
                                         <span style={{ width:5,height:5,borderRadius:'50%',background:ts.dot,display:'inline-block' }}/>{ts.label}
                                       </span>
                                     </td>
-                                    <td style={{ fontWeight:800, color:'#1e293b', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))' }}>{tx.product_name}</td>
-                                    <td style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color:'#64748b' }}>{tx.option_name}</td>
-                                    <td><span style={{ fontFamily:'monospace', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', background:'#f1f5f9', color:'#475569', padding:'2px 6px', borderRadius:4 }}>{tx.barcode||'-'}</span></td>
+                                    <td style={{ fontWeight:800, color:'#1e293b', fontSize: '12.5px' }}>{tx.product_name}</td>
+                                    <td style={{ fontSize: '12px', color:'#64748b' }}>{tx.option_name}</td>
+                                    <td><span data-pm-barcode="1" style={{ fontFamily:'monospace', fontSize: '11px', background:'#f1f5f9', padding:'2px 6px', borderRadius:4 }}>{tx.barcode||'-'}</span></td>
                                     <td>
-                                      <span style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color: tx.qty > 0 ? '#059669' : '#dc2626' }}>
+                                      <span style={{ fontSize: '14px', fontWeight:900, color: tx.qty > 0 ? '#059669' : '#dc2626' }}>
                                         {tx.qty > 0 ? `+${tx.qty}` : tx.qty}
                                       </span>
                                     </td>
-                                    <td style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color:'#64748b' }}>{tx.note}</td>
+                                    <td style={{ fontSize: '12px', color:'#64748b' }}>{tx.note}</td>
                                   </tr>
                                 )
                               })}
@@ -817,7 +817,7 @@ export default function InventoryPage() {
 
       {/* ── 출고 등록 모달 ── */}
       <Modal isOpen={outModal} onClose={() => { setOutModal(false); resetForm() }} title="출고 등록" size="lg">
-        <div style={{ background:'#fff1f2', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#be123c' }}>
+        <div style={{ background:'#fff1f2', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize: '12px', fontWeight:700, color:'#be123c' }}>
           ⬆️ 출고 처리 시 선택한 상품의 <b>현재고가 수량만큼 감소</b>합니다.
         </div>
         {renderModalForm('out')}
@@ -832,7 +832,7 @@ export default function InventoryPage() {
 
       {/* ── 불량 등록 모달 ── */}
       <Modal isOpen={defectModal} onClose={() => { setDefectModal(false); resetForm() }} title="불량 등록" size="lg">
-        <div style={{ background:'#fff7ed', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#c2410c' }}>
+        <div style={{ background:'#fff7ed', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize: '12px', fontWeight:700, color:'#c2410c' }}>
           ⚠️ 불량 처리 시 <b>현재고가 감소</b>하고, 상품관리에 <b>불량 수량이 누적</b>됩니다.
         </div>
         {renderModalForm('defective')}
@@ -847,7 +847,7 @@ export default function InventoryPage() {
 
       {/* ── 재고 수정 모달 ── */}
       <Modal isOpen={adjustModal} onClose={() => { setAdjustModal(false); resetForm() }} title="재고 수정" size="lg">
-        <div style={{ background:'#eff6ff', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#1d4ed8' }}>
+        <div style={{ background:'#eff6ff', borderRadius:10, padding:'9px 14px', marginBottom:14, fontSize: '12px', fontWeight:700, color:'#1d4ed8' }}>
           ✏️ 실사 후 <b>실제 재고 수량을 직접 입력</b>하여 현재고를 수정합니다.
         </div>
         {renderModalForm('adjust')}
@@ -862,7 +862,7 @@ export default function InventoryPage() {
 
       {/* ── 날짜별 내역 수정 모달 ── */}
       <Modal isOpen={editDateModal} onClose={() => setEditDateModal(false)} title={`내역 수정 — ${editDateKey}`} size="xl">
-        <div style={{ marginBottom:12, padding:'8px 12px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#b45309' }}>
+        <div style={{ marginBottom:12, padding:'8px 12px', background:'#fffbeb', border:'1px solid #fde68a', borderRadius:8, fontSize: '12px', fontWeight:700, color:'#b45309' }}>
           ⚠️ 수량 수정 시 해당 변동분이 상품의 현재고에 반영됩니다.
         </div>
         <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
@@ -870,19 +870,19 @@ export default function InventoryPage() {
             const ts = TX_STYLE[row.type]
             return (
               <div key={row.id} style={{ display:'grid', gridTemplateColumns:'70px 90px 1fr 1fr 60px 1fr', gap:8, alignItems:'center', padding:'8px 10px', background:'#f8fafc', borderRadius:8, border:'1px solid #f1f5f9' }}>
-                <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8' }}>{new Date(row.date).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>
+                <span style={{ fontSize: '11px', color:'#94a3b8' }}>{new Date(row.date).toLocaleTimeString('ko-KR',{hour:'2-digit',minute:'2-digit'})}</span>
                 <select value={row.type} onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, type: e.target.value as TxType} : r))}
-                  style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'3px 5px', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight:700, background:ts.bg, color:ts.color, width:'100%' }}>
+                  style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'3px 5px', fontSize: '11px', fontWeight:700, background:ts.bg, color:ts.color, width:'100%' }}>
                   {Object.entries(TX_STYLE).map(([k,v]) => <option key={k} value={k}>{v.label}</option>)}
                 </select>
-                <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#1e293b' }}>{row.product_name}</span>
-                <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color:'#64748b' }}>{row.option_name}</span>
+                <span style={{ fontSize: '12px', fontWeight:800, color:'#1e293b' }}>{row.product_name}</span>
+                <span style={{ fontSize: '11.5px', color:'#64748b' }}>{row.option_name}</span>
                 <input type="number" value={row.qty}
                   onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, qty:Number(e.target.value)} : r))}
-                  style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 6px', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight:800, textAlign:'center', outline:'none' }}/>
+                  style={{ width:'100%', border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 6px', fontSize: '13px', fontWeight:800, textAlign:'center', outline:'none' }}/>
                 <input value={row.note} placeholder="비고"
                   onChange={e => setEditDateRows(prev => prev.map((r,i) => i===idx ? {...r, note:e.target.value} : r))}
-                  style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 8px', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', outline:'none', width:'100%' }}/>
+                  style={{ border:'1.5px solid #e2e8f0', borderRadius:6, padding:'4px 8px', fontSize: '12px', outline:'none', width:'100%' }}/>
               </div>
             )
           })}

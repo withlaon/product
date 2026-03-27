@@ -56,7 +56,7 @@ function DayNav({ day, setDay }: { day: string; setDay: (d: string) => void }) {
         style={{ width:26, height:26, borderRadius:6, border:'1.5px solid #e2e8f0', background:'white', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
         <ChevronLeft size={12}/>
       </button>
-      <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#0f172a', minWidth:120, textAlign:'center', whiteSpace:'nowrap' }}>
+      <span style={{ fontSize: '11.5px', fontWeight:800, color:'#0f172a', minWidth:120, textAlign:'center', whiteSpace:'nowrap' }}>
         {fmtDayLabel(day)}
       </span>
       <button onClick={() => setDay(shiftDay(day, 1))} disabled={isFuture}
@@ -64,7 +64,7 @@ function DayNav({ day, setDay }: { day: string; setDay: (d: string) => void }) {
         <ChevronRight size={12}/>
       </button>
       <button onClick={() => setDay(today)}
-        style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:6, padding:'4px 9px', cursor:'pointer' }}>
+        style={{ fontSize: '10.5px', fontWeight:700, color:'#2563eb', background:'#eff6ff', border:'none', borderRadius:6, padding:'4px 9px', cursor:'pointer' }}>
         오늘
       </button>
     </div>
@@ -599,7 +599,7 @@ export default function ReceiveManagePage() {
   )
 
   const L = ({ children }: { children: React.ReactNode }) => (
-    <label style={{ display:'block', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#475569', marginBottom:5 }}>{children}</label>
+    <label style={{ display:'block', fontSize: '11.5px', fontWeight:800, color:'#475569', marginBottom:5 }}>{children}</label>
   )
 
   /* 전체 체크박스 */
@@ -619,13 +619,13 @@ export default function ReceiveManagePage() {
             { label:'전체 미입고 종류', value:unreceivedList.length, color:unreceivedList.length>0?'#d97706':'#94a3b8', bg:unreceivedList.length>0?'#fffbeb':'#f8fafc' },
           ].map(c => (
             <div key={c.label} className="pm-card" style={{ padding:'8px 16px', background:c.bg, minWidth:130 }}>
-              <p style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#94a3b8', marginBottom:2 }}>{c.label}</p>
-              <p style={{ fontSize: 'calc(20px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color:c.color, lineHeight:1 }}>{c.value.toLocaleString()}</p>
+              <p style={{ fontSize: '10px', fontWeight:800, color:'#94a3b8', marginBottom:2 }}>{c.label}</p>
+              <p style={{ fontSize: '20px', fontWeight:900, color:c.color, lineHeight:1 }}>{c.value.toLocaleString()}</p>
             </div>
           ))}
         </div>
         <button onClick={() => setIsAdd(true)}
-          style={{ display:'flex', alignItems:'center', gap:5, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'white', background:'#059669', border:'none', borderRadius:8, padding:'8px 16px', cursor:'pointer' }}>
+          style={{ display:'flex', alignItems:'center', gap:5, fontSize: '12.5px', fontWeight:800, color:'white', background:'#059669', border:'none', borderRadius:8, padding:'8px 16px', cursor:'pointer' }}>
           <Plus size={13}/>입고 등록
         </button>
       </div>
@@ -637,17 +637,17 @@ export default function ReceiveManagePage() {
         <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
           <div style={{ padding:'10px 14px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', justifyContent:'space-between', flexShrink:0 }}>
             <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#0f172a' }}>미입고 내역</span>
-              <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8' }}>{unreceivedList.length}종</span>
+              <span style={{ fontSize: '13px', fontWeight:800, color:'#0f172a' }}>미입고 내역</span>
+              <span style={{ fontSize: '11px', color:'#94a3b8' }}>{unreceivedList.length}종</span>
               {miSelected.size > 0 && (
-                <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', background:'#ecfdf5', color:'#059669', fontWeight:700, padding:'2px 8px', borderRadius:99 }}>
+                <span style={{ fontSize: '11px', background:'#ecfdf5', color:'#059669', fontWeight:700, padding:'2px 8px', borderRadius:99 }}>
                   {miSelected.size}개 선택
                 </span>
               )}
             </div>
             {miSelected.size > 0 && (
               <button onClick={() => { setMiSelected(new Set()); setMiQtys({}) }}
-                style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', background:'none', border:'none', cursor:'pointer', fontWeight:700 }}>
+                style={{ fontSize: '11px', color:'#94a3b8', background:'none', border:'none', cursor:'pointer', fontWeight:700 }}>
                 선택 해제
               </button>
             )}
@@ -657,11 +657,11 @@ export default function ReceiveManagePage() {
               ? (
                 <div style={{ textAlign:'center', padding:'40px 0', color:'#94a3b8' }}>
                   <CheckCircle2 size={32} style={{ opacity:0.2, margin:'0 auto 10px' }}/>
-                  <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight:700 }}>미입고 상품이 없습니다</p>
+                  <p style={{ fontSize: '13px', fontWeight:700 }}>미입고 상품이 없습니다</p>
                 </div>
               )
               : (
-                <table style={{ width:'100%', borderCollapse:'collapse', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize: '12px' }}>
                   <thead>
                     <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
                       <th style={{ padding:'6px 8px', borderBottom:'1px solid #f1f5f9', width:32, textAlign:'center' }}>
@@ -676,7 +676,7 @@ export default function ReceiveManagePage() {
                           }} style={{ cursor:'pointer' }}/>
                       </th>
                       {['이미지','상품약어 / 옵션','바코드','미입고 / 입고수량'].map(h => (
-                        <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
+                        <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize: '10.5px', textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -711,18 +711,18 @@ export default function ReceiveManagePage() {
                                 </div>}
                           </td>
                           <td style={{ padding:'5px 8px', minWidth:0 }}>
-                            <div style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.abbr}</div>
-                            <div style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color:'#64748b', marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.optName}</div>
+                            <div style={{ fontSize: '11.5px', fontWeight:800, color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.abbr}</div>
+                            <div style={{ fontSize: '10.5px', color:'#64748b', marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.optName}</div>
                           </td>
-                          <td style={{ padding:'5px 8px', color:'#94a3b8', fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontFamily:'monospace', whiteSpace:'nowrap' }}>{u.barcode || '-'}</td>
+                          <td data-pm-barcode="1" style={{ padding:'5px 8px', fontSize: '10px', fontFamily:'monospace', whiteSpace:'nowrap' }}>{u.barcode || '-'}</td>
                           <td style={{ padding:'5px 6px', width:76, textAlign:'center' }} onClick={e => e.stopPropagation()}>
                             {sel ? (
                               <input type="number" min="1"
                                 value={miQtys[k] ?? ''}
                                 onChange={e => setMiQtys(prev => ({ ...prev, [k]: e.target.value }))}
-                                style={{ width:'100%', border:'1.5px solid #059669', borderRadius:6, padding:'3px 5px', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, textAlign:'center', outline:'none', color:'#059669' }}/>
+                                style={{ width:'100%', border:'1.5px solid #059669', borderRadius:6, padding:'3px 5px', fontSize: '11.5px', fontWeight:800, textAlign:'center', outline:'none', color:'#059669' }}/>
                             ) : (
-                              <span style={{ fontWeight:900, color:'#dc2626', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))' }}>{u.qty}</span>
+                              <span style={{ fontWeight:900, color:'#dc2626', fontSize: '13px' }}>{u.qty}</span>
                             )}
                           </td>
                         </tr>
@@ -737,7 +737,7 @@ export default function ReceiveManagePage() {
           {miSelected.size > 0 && (
             <div style={{ padding:'10px 14px', borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
               <button onClick={handleConfirmFromUnreceived} disabled={saving}
-                style={{ width:'100%', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:8, padding:'9px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
+                style={{ width:'100%', fontSize: '12.5px', fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:8, padding:'9px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
                 <CheckCircle2 size={13}/>{saving ? '처리 중...' : `입고확정 (${miSelected.size}종)`}
               </button>
             </div>
@@ -749,29 +749,29 @@ export default function ReceiveManagePage() {
           {/* 헤더 */}
           <div style={{ padding:'10px 14px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:8, flexShrink:0, flexWrap:'wrap' }}>
             <CheckCircle2 size={14} style={{ color:'#059669' }}/>
-            <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#0f172a' }}>일별 입고 목록</span>
+            <span style={{ fontSize: '13px', fontWeight:800, color:'#0f172a' }}>일별 입고 목록</span>
             <DayNav day={day} setDay={setDay}/>
-            <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', marginLeft:'auto' }}>{rcItems.length}건</span>
+            <span style={{ fontSize: '11px', color:'#94a3b8', marginLeft:'auto' }}>{rcItems.length}건</span>
           </div>
 
           {/* 컨텐츠 */}
           {rcItems.length === 0 ? (
             <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'#94a3b8', gap:8, padding:'2rem' }}>
               <PackagePlus size={32} style={{ opacity:0.2 }}/>
-              <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight:700 }}>{fmtDayLabel(day)} 입고 내역 없음</p>
-              <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#cbd5e1' }}>상단 입고 등록 버튼으로 내역을 추가하세요</p>
+              <p style={{ fontSize: '13px', fontWeight:700 }}>{fmtDayLabel(day)} 입고 내역 없음</p>
+              <p style={{ fontSize: '11px', color:'#cbd5e1' }}>상단 입고 등록 버튼으로 내역을 추가하세요</p>
             </div>
           ) : (
             <>
               <div style={{ flex:1, overflowY:'auto' }}>
-                <table style={{ width:'100%', borderCollapse:'collapse', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))' }}>
+                <table style={{ width:'100%', borderCollapse:'collapse', fontSize: '11px' }}>
                   <thead>
                     <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>
                       <th style={{ padding:'5px 8px', borderBottom:'1px solid #f1f5f9', width:28 }}>
                         <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ cursor:'pointer' }}/>
                       </th>
                       {['이미지','약어','옵션','바코드','수량','확정'].map(h => (
-                        <th key={h} style={{ padding:'5px 6px', fontWeight:800, color:'#64748b', fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
+                        <th key={h} style={{ padding:'5px 6px', fontWeight:800, color:'#64748b', fontSize: '10px', textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
@@ -796,18 +796,18 @@ export default function ReceiveManagePage() {
                                   <Package size={12} style={{ color:'#cbd5e1' }}/>
                                 </div>}
                           </td>
-                          <td style={{ padding:'4px 6px', fontWeight:700, color:'#0f172a', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          <td style={{ padding:'4px 6px', fontWeight:700, color:'#0f172a', fontSize: '10.5px', maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                             {item.prodAbbr || item.product_code}
                           </td>
-                          <td style={{ padding:'4px 6px', color:'#475569', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.option_name}</td>
-                          <td style={{ padding:'4px 6px', fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontFamily:'monospace', color: item.barcode ? '#64748b' : '#f59e0b', fontWeight: item.barcode ? 400 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          <td style={{ padding:'4px 6px', color:'#475569', fontSize: '10.5px', maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.option_name}</td>
+                          <td data-pm-barcode="1" style={{ padding:'4px 6px', fontSize: '9.5px', fontFamily:'monospace', color: item.barcode ? undefined : '#f59e0b', fontWeight: item.barcode ? 400 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                             {item.barcode || '미매핑'}
                           </td>
-                          <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))' }}>{item.received}</td>
+                          <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize: '12px' }}>{item.received}</td>
                           <td style={{ textAlign:'center' }}>
                             {item.confirmed
-                              ? <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
-                              : <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
+                              ? <span style={{ fontSize: '9px', fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
+                              : <span style={{ fontSize: '9px', fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
                           </td>
                         </tr>
                       )
@@ -818,7 +818,7 @@ export default function ReceiveManagePage() {
               {selectedKeys.size > 0 && (
                 <div style={{ padding:'10px 14px', borderTop:'1px solid #f1f5f9', flexShrink:0 }}>
                   <button onClick={handleConfirm} disabled={saving}
-                    style={{ width:'100%', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:8, padding:'9px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
+                    style={{ width:'100%', fontSize: '12.5px', fontWeight:800, color:'white', background:saving?'#a3a3a3':'#059669', border:'none', borderRadius:8, padding:'9px 0', cursor:saving?'not-allowed':'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:5 }}>
                     <CheckCircle2 size={13}/>{saving ? '처리 중...' : `입고확정 (${selectedKeys.size}건)`}
                   </button>
                 </div>
@@ -833,12 +833,12 @@ export default function ReceiveManagePage() {
         <div style={{ marginBottom:14, padding:'10px 14px', background:'#f8fafc', borderRadius:8, border:'1px dashed #cbd5e1', display:'flex', alignItems:'center', gap:10 }}>
           <Upload size={15} style={{ color:'#64748b', flexShrink:0 }}/>
           <div style={{ flex:1 }}>
-            <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#334155', marginBottom:2 }}>입고 파일 업로드 (선택)</p>
-            <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8' }}>패킹리스트(B=품번·D=컬러·E=수량) — W 상품코드만 표시, 영어 옵션명·바코드 자동완성</p>
+            <p style={{ fontSize: '12px', fontWeight:800, color:'#334155', marginBottom:2 }}>입고 파일 업로드 (선택)</p>
+            <p style={{ fontSize: '10.5px', color:'#94a3b8' }}>패킹리스트(B=품번·D=컬러·E=수량) — W 상품코드만 표시, 영어 옵션명·바코드 자동완성</p>
           </div>
           <input ref={fileInputRef} type="file" accept=".xlsx,.xls,.csv" style={{ display:'none' }} onChange={handleFileUpload}/>
           <button onClick={() => fileInputRef.current?.click()}
-            style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#0ea5e9', background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:7, padding:'6px 14px', cursor:'pointer', whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:5 }}>
+            style={{ fontSize: '12px', fontWeight:800, color:'#0ea5e9', background:'#f0f9ff', border:'1px solid #bae6fd', borderRadius:7, padding:'6px 14px', cursor:'pointer', whiteSpace:'nowrap', display:'flex', alignItems:'center', gap:5 }}>
             <Upload size={12}/>파일 선택
           </button>
         </div>
@@ -846,7 +846,7 @@ export default function ReceiveManagePage() {
           <div><L>입고일 *</L><Input type="date" value={form.order_date} onChange={e => setForm(f => ({ ...f, order_date: e.target.value }))}/></div>
           <div><L>구매처</L><Input placeholder="구매처" value={form.supplier} onChange={e => setForm(f => ({ ...f, supplier: e.target.value }))}/></div>
           <div style={{ gridColumn:'1/-1', marginTop:8 }}>
-            <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#059669', paddingBottom:6, borderBottom:'1px solid #f0fdf4', marginBottom:10 }}>✅ 입고 상품</p>
+            <p style={{ fontSize: '12px', fontWeight:800, color:'#059669', paddingBottom:6, borderBottom:'1px solid #f0fdf4', marginBottom:10 }}>✅ 입고 상품</p>
             {form.items.map((item, i) => (
               <div key={i} style={{ display:'grid', gridTemplateColumns:'1.5fr 1fr 1.5fr 1fr auto', gap:8, marginBottom:8 }}>
                 <Input placeholder="상품코드(품번)" value={item.product_code} onChange={e => { const it=[...form.items]; it[i]={...it[i],product_code:e.target.value}; setForm(f=>({...f,items:it})) }}/>
@@ -862,13 +862,13 @@ export default function ReceiveManagePage() {
               </div>
             ))}
             <button onClick={() => setForm(f => ({ ...f, items: [...f.items, { product_code:'', option_name:'', barcode:'', qty:'' }] }))}
-              style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#059669', background:'#f0fdf4', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
+              style={{ fontSize: '12px', fontWeight:800, color:'#059669', background:'#f0fdf4', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:4 }}>
               <Plus size={12}/>상품 추가
             </button>
           </div>
         </div>
         <div style={{ marginTop:12, padding:'8px 12px', background:'#fef3c7', borderRadius:8 }}>
-          <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color:'#92400e' }}>
+          <p style={{ fontSize: '11px', color:'#92400e' }}>
             ⚠️ 입고 등록 후 <strong>입고확정</strong> 버튼을 눌러야 재고에 반영됩니다.
           </p>
         </div>
@@ -901,7 +901,7 @@ export default function ReceiveManagePage() {
             </div>
           ))}
           <button onClick={() => setEditFormData(f => f ? { ...f, items: [...f.items, { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }] } : f)}
-            style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#059669', background:'#f0fdf4', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:4, marginBottom:16 }}>
+            style={{ fontSize: '12px', fontWeight:800, color:'#059669', background:'#f0fdf4', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:4, marginBottom:16 }}>
             <Plus size={12}/>상품 추가
           </button>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
@@ -916,8 +916,8 @@ export default function ReceiveManagePage() {
         <Modal isOpen onClose={() => setDeleteTarget(null)} title="입고 삭제 확인" size="sm">
           <div style={{ textAlign:'center', padding:'16px 0' }}>
             <Trash2 size={36} style={{ color:'#dc2626', margin:'0 auto 12px' }}/>
-            <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#1e293b', marginBottom:8 }}>{deleteTarget.order_date} 입고를 삭제하시겠습니까?</p>
-            <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color:'#64748b' }}>삭제 시 확정된 입고 수량이 상품관리에서 차감됩니다.</p>
+            <p style={{ fontSize: '14px', fontWeight:800, color:'#1e293b', marginBottom:8 }}>{deleteTarget.order_date} 입고를 삭제하시겠습니까?</p>
+            <p style={{ fontSize: '12px', color:'#64748b' }}>삭제 시 확정된 입고 수량이 상품관리에서 차감됩니다.</p>
           </div>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>취소</Button>

@@ -161,7 +161,7 @@ export function DateNav({
       <div style={{ display:'flex', borderRadius:7, overflow:'hidden', border:'1.5px solid #e2e8f0' }}>
         {(['month','day'] as DateMode[]).map(m => (
           <button key={m} onClick={() => setMode(m)}
-            style={{ padding:'4px 10px', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight:700, border:'none', cursor:'pointer',
+            style={{ padding:'4px 10px', fontSize: '11px', fontWeight:700, border:'none', cursor:'pointer',
               background: mode===m ? '#2563eb' : 'white', color: mode===m ? 'white' : '#64748b' }}>
             {m==='month' ? '월별' : '일별'}
           </button>
@@ -171,7 +171,7 @@ export function DateNav({
         style={{ width:26,height:26,borderRadius:6,border:'1.5px solid #e2e8f0',background:'white',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
         <ChevronLeft size={12} />
       </button>
-      <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))',fontWeight:800,color:'#0f172a',minWidth:isMonth?80:130,textAlign:'center',whiteSpace:'nowrap' }}>
+      <span style={{ fontSize: '12px',fontWeight:800,color:'#0f172a',minWidth:isMonth?80:130,textAlign:'center',whiteSpace:'nowrap' }}>
         {isMonth ? fmtMonthLabel(month) : fmtDayLabel(day)}
       </span>
       <button onClick={() => isMonth ? setMonth(shiftMonth(month,1)) : setDay(shiftDay(day,1))}
@@ -180,7 +180,7 @@ export function DateNav({
         <ChevronRight size={12} />
       </button>
       <button onClick={() => isMonth ? setMonth(thisMonth) : setDay(today)}
-        style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))',fontWeight:700,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:6,padding:'4px 9px',cursor:'pointer' }}>
+        style={{ fontSize: '10.5px',fontWeight:700,color:'#2563eb',background:'#eff6ff',border:'none',borderRadius:6,padding:'4px 9px',cursor:'pointer' }}>
         {isMonth ? '이번달' : '오늘'}
       </button>
     </div>

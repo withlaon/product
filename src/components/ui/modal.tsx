@@ -77,7 +77,7 @@ export function Modal({ isOpen, onClose, title, children, className, size = 'md'
           top: 0,
           zIndex: 1,
         }}>
-          <h2 style={{ fontSize: 'calc(14.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#1e293b', letterSpacing: '-0.01em' }}>{title}</h2>
+          <h2 style={{ fontSize: '14.5px', fontWeight: 900, color: '#1e293b', letterSpacing: '-0.01em' }}>{title}</h2>
           <button
             onClick={onClose}
             style={{

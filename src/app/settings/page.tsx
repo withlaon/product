@@ -56,18 +56,18 @@ export default function SettingsPage() {
             <KeyRound size={18} color="white"/>
           </div>
           <div>
-            <h1 style={{ fontSize: 'calc(16px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color:'#0f172a' }}>아이디 / 비밀번호</h1>
-            <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', marginTop:1 }}>사이트별 계정 정보를 저장하세요</p>
+            <h1 style={{ fontSize: '16px', fontWeight:900, color:'#0f172a' }}>아이디 / 비밀번호</h1>
+            <p style={{ fontSize: '11.5px', color:'#94a3b8', marginTop:1 }}>사이트별 계정 정보를 저장하세요</p>
           </div>
         </div>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           {saved && (
-            <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#059669' }}>
+            <span style={{ display:'inline-flex', alignItems:'center', gap:5, fontSize: '12.5px', fontWeight:700, color:'#059669' }}>
               <CheckCircle2 size={14}/>저장되었습니다
             </span>
           )}
           <button onClick={handleSave}
-            style={{ display:'flex', alignItems:'center', gap:6, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'white', background:'#2563eb', border:'none', borderRadius:9, padding:'8px 18px', cursor:'pointer' }}>
+            style={{ display:'flex', alignItems:'center', gap:6, fontSize: '13px', fontWeight:800, color:'white', background:'#2563eb', border:'none', borderRadius:9, padding:'8px 18px', cursor:'pointer' }}>
             <Save size={14}/>저장
           </button>
         </div>
@@ -83,7 +83,7 @@ export default function SettingsPage() {
         ].map(({ icon: Icon, label }) => (
           <div key={label} style={{ display:'flex', alignItems:'center', gap:5 }}>
             <Icon size={11} color="#94a3b8"/>
-            <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#94a3b8' }}>{label}</span>
+            <span style={{ fontSize: '11px', fontWeight:800, color:'#94a3b8' }}>{label}</span>
           </div>
         ))}
         <div/>
@@ -100,7 +100,7 @@ export default function SettingsPage() {
               placeholder="예: 11번가"
               value={acc.siteName}
               onChange={e => handleChange(acc.id, 'siteName', e.target.value)}
-              style={{ width:'100%', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight:700, border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', outline:'none', color:'#1e293b', background:'white' }}
+              style={{ width:'100%', fontSize: '13px', fontWeight:700, border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', outline:'none', color:'#1e293b', background:'white' }}
               onFocus={e => e.currentTarget.style.borderColor='#2563eb'}
               onBlur={e => e.currentTarget.style.borderColor='#e2e8f0'}
             />
@@ -110,7 +110,7 @@ export default function SettingsPage() {
               placeholder="아이디"
               value={acc.username}
               onChange={e => handleChange(acc.id, 'username', e.target.value)}
-              style={{ width:'100%', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', outline:'none', color:'#334155', background:'white' }}
+              style={{ width:'100%', fontSize: '13px', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', outline:'none', color:'#334155', background:'white' }}
               onFocus={e => e.currentTarget.style.borderColor='#2563eb'}
               onBlur={e => e.currentTarget.style.borderColor='#e2e8f0'}
             />
@@ -121,7 +121,7 @@ export default function SettingsPage() {
               placeholder="비밀번호"
               value={acc.password}
               onChange={e => handleChange(acc.id, 'password', e.target.value)}
-              style={{ width:'100%', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', outline:'none', color:'#334155', background:'white' }}
+              style={{ width:'100%', fontSize: '13px', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', outline:'none', color:'#334155', background:'white' }}
               onFocus={e => e.currentTarget.style.borderColor='#2563eb'}
               onBlur={e => e.currentTarget.style.borderColor='#e2e8f0'}
             />
@@ -131,7 +131,7 @@ export default function SettingsPage() {
               placeholder="https://"
               value={acc.siteUrl}
               onChange={e => handleChange(acc.id, 'siteUrl', e.target.value)}
-              style={{ width:'100%', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', outline:'none', color:'#64748b', background:'white' }}
+              style={{ width:'100%', fontSize: '12px', border:'1.5px solid #e2e8f0', borderRadius:8, padding:'7px 10px', outline:'none', color:'#64748b', background:'white' }}
               onFocus={e => e.currentTarget.style.borderColor='#2563eb'}
               onBlur={e => e.currentTarget.style.borderColor='#e2e8f0'}
             />
@@ -149,7 +149,7 @@ export default function SettingsPage() {
 
       {/* 추가 버튼 */}
       <button onClick={handleAdd}
-        style={{ marginTop:12, width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:7, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#2563eb', background:'#eff6ff', border:'1.5px dashed #bfdbfe', borderRadius:10, padding:'11px 0', cursor:'pointer' }}>
+        style={{ marginTop:12, width:'100%', display:'flex', alignItems:'center', justifyContent:'center', gap:7, fontSize: '13px', fontWeight:800, color:'#2563eb', background:'#eff6ff', border:'1.5px dashed #bfdbfe', borderRadius:10, padding:'11px 0', cursor:'pointer' }}>
         <Plus size={14}/>사이트 추가
       </button>
 

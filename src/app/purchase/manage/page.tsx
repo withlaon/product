@@ -554,7 +554,7 @@ export default function PurchaseManagePage() {
   }, [filtered, unresolvedOld])
 
   const L = ({ children }: { children: React.ReactNode }) => (
-    <label style={{ display: 'block', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#475569', marginBottom: 5 }}>{children}</label>
+    <label style={{ display: 'block', fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: 5 }}>{children}</label>
   )
 
   /* ── 재고 색상 ── */
@@ -566,8 +566,8 @@ export default function PurchaseManagePage() {
 
       {/* ── 헤더 ── */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <h2 style={{ fontSize: 'calc(16px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a', margin: 0 }}>📦 발주관리</h2>
-        <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>
+        <h2 style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a', margin: 0 }}>📦 발주관리</h2>
+        <span style={{ fontSize: '11px', color: '#94a3b8' }}>
           추천 {qualOpts.length}건 · 선택 {selectedOpts.length}건
         </span>
       </div>
@@ -580,16 +580,16 @@ export default function PurchaseManagePage() {
           {/* 패널 헤더 */}
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <AlertTriangle size={14} style={{ color: '#d97706' }} />
-            <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>발주 추천 목록</span>
-            <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>판매중 · 현재고 3개 이하</span>
+            <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>발주 추천 목록</span>
+            <span style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 600 }}>판매중 · 현재고 3개 이하</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center' }}>
               {qualOpts.filter(o => o.currentStock === 0).length > 0 && (
-                <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', background: '#fff1f2', color: '#dc2626', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+                <span style={{ fontSize: '11px', background: '#fff1f2', color: '#dc2626', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                   재고 0개: {qualOpts.filter(o => o.currentStock === 0).length}
                 </span>
               )}
               {qualOpts.filter(o => o.currentStock > 0 && o.currentStock <= 3).length > 0 && (
-                <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', background: '#fffbeb', color: '#d97706', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+                <span style={{ fontSize: '11px', background: '#fffbeb', color: '#d97706', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                   1~3개: {qualOpts.filter(o => o.currentStock > 0 && o.currentStock <= 3).length}
                 </span>
               )}
@@ -598,23 +598,23 @@ export default function PurchaseManagePage() {
 
           {/* 목록 */}
           {loadError && (
-            <div style={{ margin: '12px 14px', padding: '8px 12px', background: '#fff1f2', borderRadius: 6, fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#dc2626' }}>
+            <div style={{ margin: '12px 14px', padding: '8px 12px', background: '#fff1f2', borderRadius: 6, fontSize: '11px', color: '#dc2626' }}>
               상품 로딩 오류: {loadError}
             </div>
           )}
           {qualOpts.length === 0 ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 8 }}>
               <Package size={36} style={{ opacity: 0.2 }} />
-              <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700 }}>{products.length === 0 ? '상품 데이터 로딩 중...' : '발주가 필요한 상품이 없습니다'}</p>
-              <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1' }}>{products.length === 0 ? '잠시 후 자동으로 표시됩니다' : '판매중 상품 중 현재고 3개 이하인 상품이 없습니다'}</p>
+              <p style={{ fontSize: '13px', fontWeight: 700 }}>{products.length === 0 ? '상품 데이터 로딩 중...' : '발주가 필요한 상품이 없습니다'}</p>
+              <p style={{ fontSize: '11px', color: '#cbd5e1' }}>{products.length === 0 ? '잠시 후 자동으로 표시됩니다' : '판매중 상품 중 현재고 3개 이하인 상품이 없습니다'}</p>
             </div>
           ) : (
             <div style={{ flex: 1, overflowY: 'auto' }}>
-              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                   <tr>
                     {['', '이미지', '약어 / 옵션 / 바코드', '판매', '미입고', '현재고', ''].map(h => (
-                      <th key={h} style={{ padding: '7px 6px', fontWeight: 800, color: '#64748b', fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
+                      <th key={h} style={{ padding: '7px 6px', fontWeight: 800, color: '#64748b', fontSize: '10px', textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -628,8 +628,8 @@ export default function PurchaseManagePage() {
                         {/* 재고 수준 배지 */}
                         <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 44, flexShrink: 0 }}>
                           {opt.currentStock === 0
-                            ? <span style={{ fontSize: 'calc(8.5px + var(--pm-list-fs-add, 0pt))', background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>품절</span>
-                            : <span style={{ fontSize: 'calc(8.5px + var(--pm-list-fs-add, 0pt))', background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>부족</span>
+                            ? <span style={{ fontSize: '8.5px', background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>품절</span>
+                            : <span style={{ fontSize: '8.5px', background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>부족</span>
                           }
                         </td>
                         {/* 이미지 (약어 앞으로 이동) */}
@@ -644,24 +644,24 @@ export default function PurchaseManagePage() {
                         {/* 약어 · 옵션 · 바코드 */}
                         <td style={{ padding: '5px 6px', minWidth: 0 }}>
                           <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
-                            <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.prodAbbr}</span>
-                            <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                            <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{opt.optName}</span>
-                            <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                            <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.barcode || '-'}</span>
+                            <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.prodAbbr}</span>
+                            <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                            <span style={{ fontSize: '10.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{opt.optName}</span>
+                            <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                            <span data-pm-barcode="1" style={{ fontSize: '9.5px', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.barcode || '-'}</span>
                           </div>
                         </td>
                         {/* 판매수량 */}
                         <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
-                          <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: opt.sold > 0 ? '#6366f1' : '#94a3b8' }}>{opt.sold > 0 ? opt.sold : '-'}</span>
+                          <span style={{ fontSize: '12px', fontWeight: 900, color: opt.sold > 0 ? '#6366f1' : '#94a3b8' }}>{opt.sold > 0 ? opt.sold : '-'}</span>
                         </td>
                         {/* 미입고 */}
                         <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
-                          <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: opt.unreceived > 0 ? '#d97706' : '#94a3b8' }}>{opt.unreceived > 0 ? opt.unreceived : '-'}</span>
+                          <span style={{ fontSize: '12px', fontWeight: 900, color: opt.unreceived > 0 ? '#d97706' : '#94a3b8' }}>{opt.unreceived > 0 ? opt.unreceived : '-'}</span>
                         </td>
                         {/* 현재고 */}
                         <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
-                          <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: stockColor(opt.currentStock), background: stockBg(opt.currentStock), padding: '2px 6px', borderRadius: 99 }}>
+                          <span style={{ fontSize: '12px', fontWeight: 900, color: stockColor(opt.currentStock), background: stockBg(opt.currentStock), padding: '2px 6px', borderRadius: 99 }}>
                             {opt.currentStock}
                           </span>
                         </td>
@@ -688,20 +688,20 @@ export default function PurchaseManagePage() {
           {/* 패널 헤더 */}
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <PackagePlus size={14} style={{ color: '#2563eb' }} />
-            <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>발주 확정</span>
+            <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>발주 확정</span>
             {selectedOpts.length > 0 && (
-              <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', background: '#eff6ff', color: '#2563eb', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+              <span style={{ fontSize: '11px', background: '#eff6ff', color: '#2563eb', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                 {selectedOpts.length}종
               </span>
             )}
             <button
               onClick={() => setShowAddModal(true)}
-              style={{ marginLeft: 'auto', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#059669', background: '#ecfdf5', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              style={{ marginLeft: 'auto', fontSize: '11.5px', fontWeight: 800, color: '#059669', background: '#ecfdf5', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
               <Plus size={12} />발주등록
             </button>
             <button
               onClick={() => { loadPurchases(); loadProducts(true); setShippedOrders(loadShippedOrders()); setMappings(loadMappings()) }}
-              style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
+              style={{ fontSize: '11.5px', fontWeight: 700, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 10px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4 }}>
               <RefreshCw size={12} />새로고침
             </button>
           </div>
@@ -709,8 +709,8 @@ export default function PurchaseManagePage() {
           {selectedOpts.length === 0 ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 8 }}>
               <PackagePlus size={36} style={{ opacity: 0.2 }} />
-              <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700 }}>왼쪽에서 상품을 선택하세요</p>
-              <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1' }}>선택한 상품이 여기 표시됩니다</p>
+              <p style={{ fontSize: '13px', fontWeight: 700 }}>왼쪽에서 상품을 선택하세요</p>
+              <p style={{ fontSize: '11px', color: '#cbd5e1' }}>선택한 상품이 여기 표시됩니다</p>
             </div>
           ) : (
             <>
@@ -744,8 +744,8 @@ export default function PurchaseManagePage() {
                   }, 0)
                   return (
                     <div style={{ background: '#f8fafc', borderRadius: 8, padding: '8px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                      <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#64748b' }}>합계금액</span>
-                      <span style={{ fontSize: 'calc(15px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: total > 0 ? '#0f172a' : '#cbd5e1' }}>
+                      <span style={{ fontSize: '11.5px', fontWeight: 700, color: '#64748b' }}>합계금액</span>
+                      <span style={{ fontSize: '15px', fontWeight: 900, color: total > 0 ? '#0f172a' : '#cbd5e1' }}>
                         {total > 0 ? `₩ ${Math.round(total).toLocaleString()}` : '-'}
                       </span>
                     </div>
@@ -775,25 +775,25 @@ export default function PurchaseManagePage() {
                       {/* 상품 정보 */}
                       <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
-                          <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.prodAbbr}</span>
-                          <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                          <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{s.optName}</span>
-                          <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                          <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.barcode || '-'}</span>
+                          <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.prodAbbr}</span>
+                          <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                          <span style={{ fontSize: '10.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{s.optName}</span>
+                          <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                          <span data-pm-barcode="1" style={{ fontSize: '9.5px', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.barcode || '-'}</span>
                         </div>
                         {/* 원가 + KRW 환산 */}
                         {unitCost != null && (
                           <div style={{ display: 'flex', gap: 6, marginTop: 3, alignItems: 'center', flexWrap: 'wrap' }}>
-                            <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#475569', fontWeight: 700 }}>
+                            <span style={{ fontSize: '10px', color: '#475569', fontWeight: 700 }}>
                               단가: {currency !== '원' ? `${unitCost.toLocaleString()} ${currency}` : `₩${unitCost.toLocaleString()}`}
                             </span>
                             {currency !== '원' && (
-                              <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>
+                              <span style={{ fontSize: '10px', color: '#94a3b8' }}>
                                 (₩{Math.round(unitKrw!).toLocaleString()})
                               </span>
                             )}
                             {lineKrw != null && (
-                              <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#2563eb', marginLeft: 2 }}>
+                              <span style={{ fontSize: '10px', fontWeight: 900, color: '#2563eb', marginLeft: 2 }}>
                                 소계 ₩{Math.round(lineKrw).toLocaleString()}
                               </span>
                             )}
@@ -817,11 +817,11 @@ export default function PurchaseManagePage() {
               {/* 발주 확정 버튼 */}
               <div style={{ padding: '10px 14px', borderTop: '1px solid #f1f5f9', flexShrink: 0 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                  <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', fontWeight: 700 }}>
+                  <span style={{ fontSize: '11.5px', color: '#64748b', fontWeight: 700 }}>
                     총 {selectedOpts.reduce((s, o) => s + (Number(o.qty) || 0), 0).toLocaleString()}개
                   </span>
                   <button onClick={() => { localStorage.removeItem(DRAFT_KEY); setSelectedOpts([]) }}
-                    style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
+                    style={{ fontSize: '11px', color: '#94a3b8', background: 'none', border: 'none', cursor: 'pointer', fontWeight: 700 }}>
                     전체 선택 해제
                   </button>
                 </div>
@@ -838,14 +838,14 @@ export default function PurchaseManagePage() {
                   if (grandTotal <= 0) return null
                   return (
                     <div style={{ background: '#eff6ff', borderRadius: 8, padding: '7px 12px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-                      <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#2563eb' }}>발주 종합계</span>
-                      <span style={{ fontSize: 'calc(15px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#1d4ed8' }}>₩ {Math.round(grandTotal).toLocaleString()}</span>
+                      <span style={{ fontSize: '11px', fontWeight: 700, color: '#2563eb' }}>발주 종합계</span>
+                      <span style={{ fontSize: '15px', fontWeight: 900, color: '#1d4ed8' }}>₩ {Math.round(grandTotal).toLocaleString()}</span>
                     </div>
                   )
                 })()}
                 {/* 발주서 다운 → 발주 확정 순서 */}
                 <button onClick={handleDownloadOrderSheet}
-                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 800, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', cursor: 'pointer', marginBottom: 8 }}>
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, padding: '9px 0', borderRadius: 8, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#475569', fontWeight: 800, fontSize: '13px', cursor: 'pointer', marginBottom: 8 }}>
                   <FileDown size={14} />발주서 다운
                 </button>
                 <Button onClick={handleSubmitOrder} disabled={saving || !orderDate}
@@ -855,7 +855,7 @@ export default function PurchaseManagePage() {
                 </Button>
                 {/* 상태 메시지 */}
                 {saveMsg && (
-                  <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, textAlign: 'center',
+                  <div style={{ marginTop: 8, padding: '8px 12px', borderRadius: 8, fontSize: '12px', fontWeight: 700, textAlign: 'center',
                     background: saveMsg.type === 'ok' ? '#ecfdf5' : '#fff1f2',
                     color:      saveMsg.type === 'ok' ? '#059669'  : '#dc2626',
                     border:    `1px solid ${saveMsg.type === 'ok' ? '#a7f3d0' : '#fecaca'}` }}>
@@ -871,11 +871,11 @@ export default function PurchaseManagePage() {
       {/* ── 발주 이력 (토글) ── */}
       <div className="pm-card" style={{ flexShrink: 0, padding: 0, overflow: 'hidden' }}>
         <button onClick={() => setShowHistory(v => !v)}
-          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>
+          style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'none', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>
           <span>📋 발주 이력</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             {!showHistory && purchases.filter(isUnresolved).length > 0 && (
-              <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', background: '#fffbeb', color: '#d97706', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
+              <span style={{ fontSize: '11px', background: '#fffbeb', color: '#d97706', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                 미입고 {purchases.filter(isUnresolved).length}건
               </span>
             )}
@@ -888,7 +888,7 @@ export default function PurchaseManagePage() {
             {/* DateNav */}
             <div style={{ padding: '8px 14px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #f8fafc' }}>
               <DateNav mode={mode} setMode={setMode} month={month} setMonth={setMonth} day={day} setDay={setDay} />
-              <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>
+              <span style={{ fontSize: '11px', color: '#94a3b8' }}>
                 {allList.length}건
                 {unresolvedOld.length > 0 && <span style={{ marginLeft: 8, color: '#d97706', fontWeight: 700 }}>⚠ 이전 미입고 {unresolvedOld.length}건 포함</span>}
               </span>
@@ -897,13 +897,13 @@ export default function PurchaseManagePage() {
             <div style={{ maxHeight: 320, overflowY: 'auto' }}>
               {allList.length === 0
                 ? <div style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8' }}>
-                    <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700 }}>발주 내역이 없습니다</p>
+                    <p style={{ fontSize: '13px', fontWeight: 700 }}>발주 내역이 없습니다</p>
                   </div>
-                : <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))' }}>
+                : <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
                     <thead>
                       <tr style={{ background: '#f8fafc' }}>
                         {['발주일', '구매처', '품목', '발주', '입고', '미입고', '상태', '관리'].map(h => (
-                          <th key={h} style={{ padding: '6px 10px', fontWeight: 800, color: '#64748b', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', textAlign: h === '구매처' || h === '발주일' ? 'left' : 'center', borderBottom: '1px solid #f1f5f9' }}>{h}</th>
+                          <th key={h} style={{ padding: '6px 10px', fontWeight: 800, color: '#64748b', fontSize: '10.5px', textAlign: h === '구매처' || h === '발주일' ? 'left' : 'center', borderBottom: '1px solid #f1f5f9' }}>{h}</th>
                         ))}
                       </tr>
                     </thead>
@@ -918,7 +918,7 @@ export default function PurchaseManagePage() {
                           <tr key={p.id} style={{ borderBottom: '1px solid #f8fafc', background: old ? '#fffbeb' : undefined }}>
                             <td style={{ padding: '7px 10px', fontWeight: 700, color: '#334155' }}>
                               {p.order_date}
-                              {old && <span style={{ marginLeft: 5, fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#d97706', background: '#fef3c7', padding: '1px 5px', borderRadius: 99 }}>이전↑</span>}
+                              {old && <span style={{ marginLeft: 5, fontSize: '9.5px', fontWeight: 800, color: '#d97706', background: '#fef3c7', padding: '1px 5px', borderRadius: 99 }}>이전↑</span>}
                             </td>
                             <td style={{ padding: '7px 10px', color: '#475569' }}>{p.supplier || '-'}</td>
                             <td style={{ textAlign: 'center', color: '#64748b' }}>{p.items.length}건</td>
@@ -926,22 +926,22 @@ export default function PurchaseManagePage() {
                             <td style={{ textAlign: 'center', fontWeight: 800, color: '#0ea5e9' }}>{tRcv}</td>
                             <td style={{ textAlign: 'center', fontWeight: 900, color: tMis > 0 ? '#d97706' : '#94a3b8' }}>{tMis}</td>
                             <td style={{ textAlign: 'center' }}>
-                              <span style={{ display: 'inline-flex', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: st.bg, color: st.color, padding: '3px 8px', borderRadius: 99 }}>{st.label}</span>
+                              <span style={{ display: 'inline-flex', fontSize: '10.5px', fontWeight: 800, background: st.bg, color: st.color, padding: '3px 8px', borderRadius: 99 }}>{st.label}</span>
                             </td>
                             <td style={{ textAlign: 'center' }}>
                               <div style={{ display: 'flex', gap: 3, justifyContent: 'center' }}>
                                 {p.status !== 'completed' && p.status !== 'cancelled' && (
                                   <button onClick={() => setReceiveTarget(p)}
-                                    style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#059669', background: '#ecfdf5', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                    style={{ fontSize: '11px', fontWeight: 800, color: '#059669', background: '#ecfdf5', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
                                     <Truck size={10} />입고
                                   </button>
                                 )}
                                 <button onClick={() => { setEditTarget(p); setEditFormData(JSON.parse(JSON.stringify(p))) }}
-                                  style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#7e22ce', background: '#fdf4ff', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                  style={{ fontSize: '11px', fontWeight: 800, color: '#7e22ce', background: '#fdf4ff', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
                                   <Edit2 size={10} />수정
                                 </button>
                                 <button onClick={() => setDeleteTarget(p)}
-                                  style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#dc2626', background: '#fff1f2', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
+                                  style={{ fontSize: '11px', fontWeight: 800, color: '#dc2626', background: '#fff1f2', border: 'none', borderRadius: 6, padding: '3px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 2 }}>
                                   <Trash2 size={10} />삭제
                                 </button>
                               </div>
@@ -996,7 +996,7 @@ export default function PurchaseManagePage() {
             </div>
           ))}
           <button onClick={() => setEditFormData(f => f ? { ...f, items: [...f.items, { product_code: '', option_name: '', barcode: '', ordered: 0, received: 0 }] } : f)}
-            style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16 }}>
+            style={{ fontSize: '12px', fontWeight: 800, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 8, padding: '6px 14px', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 4, marginBottom: 16 }}>
             <Plus size={12} />상품 추가
           </button>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
@@ -1011,8 +1011,8 @@ export default function PurchaseManagePage() {
         <Modal isOpen onClose={() => setDeleteTarget(null)} title="발주 삭제 확인" size="sm">
           <div style={{ textAlign: 'center', padding: '16px 0' }}>
             <Trash2 size={36} style={{ color: '#dc2626', margin: '0 auto 12px' }} />
-            <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#1e293b', marginBottom: 8 }}>{deleteTarget.order_date} 발주를 삭제하시겠습니까?</p>
-            <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#64748b' }}>삭제 시 발주/입고 수량이 상품관리에서 차감됩니다.</p>
+            <p style={{ fontSize: '14px', fontWeight: 800, color: '#1e293b', marginBottom: 8 }}>{deleteTarget.order_date} 발주를 삭제하시겠습니까?</p>
+            <p style={{ fontSize: '12px', color: '#64748b' }}>삭제 시 발주/입고 수량이 상품관리에서 차감됩니다.</p>
           </div>
           <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8, marginTop: 20 }}>
             <Button variant="outline" onClick={() => setDeleteTarget(null)}>취소</Button>
@@ -1092,21 +1092,21 @@ function AddProductModal({
       {!search.trim() ? (
         <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8' }}>
           <Package size={36} style={{ opacity: 0.2, margin: '0 auto 10px' }} />
-          <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700 }}>검색어를 입력하세요</p>
-          <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', marginTop: 4 }}>약어, 품번, 옵션명, 바코드 모두 검색 가능합니다</p>
+          <p style={{ fontSize: '13px', fontWeight: 700 }}>검색어를 입력하세요</p>
+          <p style={{ fontSize: '11px', color: '#cbd5e1', marginTop: 4 }}>약어, 품번, 옵션명, 바코드 모두 검색 가능합니다</p>
         </div>
       ) : filtered.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '32px 0', color: '#94a3b8' }}>
-          <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700 }}>검색 결과가 없습니다</p>
-          <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', marginTop: 4 }}>다른 검색어를 입력해 보세요</p>
+          <p style={{ fontSize: '13px', fontWeight: 700 }}>검색 결과가 없습니다</p>
+          <p style={{ fontSize: '11px', color: '#cbd5e1', marginTop: 4 }}>다른 검색어를 입력해 보세요</p>
         </div>
       ) : (
         <div style={{ maxHeight: 420, overflowY: 'auto', border: '1px solid #f1f5f9', borderRadius: 10, overflow: 'hidden' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
             <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
               <tr>
                 {['이미지', '약어 / 옵션 / 바코드', '현재고', ''].map(h => (
-                  <th key={h} style={{ padding: '7px 8px', fontWeight: 800, color: '#64748b', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
+                  <th key={h} style={{ padding: '7px 8px', fontWeight: 800, color: '#64748b', fontSize: '10.5px', textAlign: 'center', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1128,27 +1128,27 @@ function AddProductModal({
                     {/* 약어·옵션·바코드 */}
                     <td style={{ padding: '5px 8px' }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
-                        <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.prodAbbr}</span>
-                        <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                        <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{item.optName}</span>
-                        <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                        <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.barcode || '-'}</span>
+                        <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.prodAbbr}</span>
+                        <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                        <span style={{ fontSize: '10.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{item.optName}</span>
+                        <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                        <span data-pm-barcode="1" style={{ fontSize: '9.5px', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.barcode || '-'}</span>
                       </div>
                     </td>
                     {/* 현재고 */}
                     <td style={{ padding: '5px 8px', textAlign: 'center', width: 64 }}>
-                      <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: stockColor(item.currentStock), background: stockBg(item.currentStock), padding: '2px 8px', borderRadius: 99 }}>
+                      <span style={{ fontSize: '12px', fontWeight: 900, color: stockColor(item.currentStock), background: stockBg(item.currentStock), padding: '2px 8px', borderRadius: 99 }}>
                         {item.currentStock}
                       </span>
                     </td>
                     {/* 추가 버튼 */}
                     <td style={{ padding: '5px 10px', textAlign: 'center', width: 76 }}>
                       {alreadySel ? (
-                        <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#059669', background: '#ecfdf5', padding: '3px 9px', borderRadius: 6 }}>추가됨</span>
+                        <span style={{ fontSize: '11px', fontWeight: 700, color: '#059669', background: '#ecfdf5', padding: '3px 9px', borderRadius: 6 }}>추가됨</span>
                       ) : (
                         <button
                           onClick={() => onAdd(item)}
-                          style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 11px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          style={{ fontSize: '11.5px', fontWeight: 800, color: '#2563eb', background: '#eff6ff', border: 'none', borderRadius: 7, padding: '5px 11px', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                           <Plus size={11} />추가
                         </button>
                       )}
@@ -1159,7 +1159,7 @@ function AddProductModal({
             </tbody>
           </table>
           {filtered.length >= 80 && (
-            <p style={{ textAlign: 'center', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', padding: '8px 0', background: '#f8fafc' }}>
+            <p style={{ textAlign: 'center', fontSize: '11px', color: '#94a3b8', padding: '8px 0', background: '#f8fafc' }}>
               최대 80개까지 표시됩니다. 검색어를 더 구체적으로 입력하세요.
             </p>
           )}
@@ -1168,7 +1168,7 @@ function AddProductModal({
 
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 14 }}>
         <button onClick={onClose}
-          style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#64748b', background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '8px 20px', cursor: 'pointer' }}>
+          style={{ fontSize: '13px', fontWeight: 700, color: '#64748b', background: '#f1f5f9', border: 'none', borderRadius: 8, padding: '8px 20px', cursor: 'pointer' }}>
           닫기
         </button>
       </div>
@@ -1183,7 +1183,7 @@ function ReceiveModal({ purchase, onClose, onSave }: { purchase: Purchase; onClo
   )
   return (
     <Modal isOpen onClose={onClose} title={`입고 처리 — ${purchase.order_date}`} size="md">
-      <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#64748b', marginBottom: 14 }}>실제 입고된 수량을 입력하세요.</p>
+      <p style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', marginBottom: 14 }}>실제 입고된 수량을 입력하세요.</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {purchase.items.map((item, i) => {
           const remain = item.ordered - item.received
@@ -1191,19 +1191,19 @@ function ReceiveModal({ purchase, onClose, onSave }: { purchase: Purchase; onClo
             <div key={i} style={{ background: '#f8fafc', borderRadius: 12, padding: '12px 14px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div>
-                  <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#1e293b', fontFamily: 'monospace' }}>{item.product_code}</p>
-                  {item.option_name && <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', marginTop: 2 }}>{item.option_name}</p>}
+                  <p style={{ fontSize: '13px', fontWeight: 800, color: '#1e293b', fontFamily: 'monospace' }}>{item.product_code}</p>
+                  {item.option_name && <p style={{ fontSize: '11.5px', color: '#94a3b8', marginTop: 2 }}>{item.option_name}</p>}
                 </div>
                 <div style={{ textAlign: 'right' }}>
-                  <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>발주 {item.ordered} / 기입고 {item.received}</p>
-                  <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#f59e0b' }}>미입고 {remain}</p>
+                  <p style={{ fontSize: '11px', color: '#94a3b8' }}>발주 {item.ordered} / 기입고 {item.received}</p>
+                  <p style={{ fontSize: '11.5px', fontWeight: 800, color: '#f59e0b' }}>미입고 {remain}</p>
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <label style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>입고 수량</label>
+                <label style={{ fontSize: '12px', fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>입고 수량</label>
                 <Input type="number" value={qty[i]} min={0} max={remain}
                   onChange={e => setQty(prev => ({ ...prev, [i]: e.target.value }))}
-                  style={{ fontWeight: 800, fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))' }} />
+                  style={{ fontWeight: 800, fontSize: '14px' }} />
               </div>
             </div>
           )

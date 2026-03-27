@@ -707,7 +707,7 @@ export default function OrderRegistrationPage() {
       <div className="pm-card" style={{ width: 172, flexShrink: 0, padding: '16px 10px', display: 'flex', flexDirection: 'column', gap: 4 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, paddingLeft: 4 }}>
           <Store size={13} style={{ color: '#94a3b8' }} />
-          <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+          <span style={{ fontSize: '10.5px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
             쇼핑몰 선택
           </span>
         </div>
@@ -721,7 +721,7 @@ export default function OrderRegistrationPage() {
                 width: '100%', padding: '10px 12px', borderRadius: 10,
                 border: isSel ? `1.5px solid ${mall.color}50` : '1.5px solid transparent',
                 cursor: 'pointer', textAlign: 'left',
-                fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: isSel ? 800 : 600,
+                fontSize: '13.5px', fontWeight: isSel ? 800 : 600,
                 color: isSel ? mall.color : '#64748b',
                 background: isSel ? mall.activeBg : 'transparent',
                 transition: 'all 150ms ease',
@@ -733,15 +733,15 @@ export default function OrderRegistrationPage() {
               {isSel && <span style={{ width: 6, height: 6, borderRadius: '50%', background: mall.color, flexShrink: 0 }} />}
               {mall.label}
               {mall.id === 'marketplus' && (
-                <span style={{ marginLeft: 'auto', fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: mall.color, background: `${mall.color}15`, padding: '1px 5px', borderRadius: 4 }}>멀티</span>
+                <span style={{ marginLeft: 'auto', fontSize: '9px', fontWeight: 900, color: mall.color, background: `${mall.color}15`, padding: '1px 5px', borderRadius: 4 }}>멀티</span>
               )}
             </button>
           )
         })}
         {/* 마켓플러스 안내 */}
         <div style={{ marginTop: 8, padding: '8px 10px', background: '#fff7ed', borderRadius: 8, border: '1px solid #fed7aa' }}>
-          <p style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#c2410c', marginBottom: 2 }}>💡 마켓플러스</p>
-          <p style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', color: '#9a3412', lineHeight: 1.5 }}>
+          <p style={{ fontSize: '10px', fontWeight: 700, color: '#c2410c', marginBottom: 2 }}>💡 마켓플러스</p>
+          <p style={{ fontSize: '9.5px', color: '#9a3412', lineHeight: 1.5 }}>
             여러 채널 주문 통합<br />
             상품명(관리용) 자동 매핑
           </p>
@@ -757,7 +757,7 @@ export default function OrderRegistrationPage() {
             width: '100%', padding: '10px 12px', borderRadius: 10,
             border: directMode ? '1.5px solid #7c3aed50' : '1.5px solid transparent',
             cursor: 'pointer', textAlign: 'left',
-            fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: directMode ? 800 : 600,
+            fontSize: '13.5px', fontWeight: directMode ? 800 : 600,
             color: directMode ? '#7c3aed' : '#64748b',
             background: directMode ? '#f5f3ff' : 'transparent',
             transition: 'all 150ms ease',
@@ -782,8 +782,8 @@ export default function OrderRegistrationPage() {
                 <PenLine size={18} style={{ color: '#7c3aed' }} />
               </div>
               <div>
-                <h2 style={{ fontSize: 'calc(16px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a', margin: 0 }}>직접 주문 등록</h2>
-                <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600, margin: '2px 0 0' }}>
+                <h2 style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a', margin: 0 }}>직접 주문 등록</h2>
+                <p style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600, margin: '2px 0 0' }}>
                   상품코드 · 옵션 · 상품명 중 2개 이상 입력 필요 · 저장 후 주문관리로 이동
                 </p>
               </div>
@@ -792,108 +792,108 @@ export default function OrderRegistrationPage() {
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 20px' }}>
               {/* 쇼핑몰 */}
               <div>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>쇼핑몰</p>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>쇼핑몰</p>
                 <input value={directForm.mall} onChange={e => setDirectForm(p => ({ ...p, mall: e.target.value }))}
                   placeholder="예: 네이버스마트스토어"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
               {/* 주문번호 */}
               <div>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>주문번호</p>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>주문번호</p>
                 <input value={directForm.orderNumber} onChange={e => setDirectForm(p => ({ ...p, orderNumber: e.target.value }))}
                   placeholder="미입력 시 자동 생성"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
               {/* 상품코드 */}
               <div>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
-                  상품코드 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', textTransform: 'none' }}>3개 중 2개</span>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  상품코드 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: '10px', textTransform: 'none' }}>3개 중 2개</span>
                 </p>
                 <input value={directForm.productCode} onChange={e => setDirectForm(p => ({ ...p, productCode: e.target.value }))}
                   placeholder="상품 코드"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
               {/* 옵션 */}
               <div>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
-                  옵션 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', textTransform: 'none' }}>3개 중 2개</span>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  옵션 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: '10px', textTransform: 'none' }}>3개 중 2개</span>
                 </p>
                 <input value={directForm.option} onChange={e => setDirectForm(p => ({ ...p, option: e.target.value }))}
                   placeholder="예: 블랙 / L"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
               {/* 상품명 */}
               <div style={{ gridColumn: '1 / -1' }}>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
-                  상품명 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', textTransform: 'none' }}>3개 중 2개 · 상품코드 입력 시 자동조회</span>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  상품명 <span style={{ color: '#a78bfa', fontWeight: 700, fontSize: '10px', textTransform: 'none' }}>3개 중 2개 · 상품코드 입력 시 자동조회</span>
                 </p>
                 <input value={directForm.productName} onChange={e => setDirectForm(p => ({ ...p, productName: e.target.value }))}
                   placeholder="상품코드 입력 시 자동 조회되거나 직접 입력"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
               {/* 상품약어 auto */}
               <div>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
-                  상품약어 <span style={{ fontWeight: 600, fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#a78bfa' }}>자동생성</span>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  상품약어 <span style={{ fontWeight: 600, fontSize: '10px', color: '#a78bfa' }}>자동생성</span>
                 </p>
-                <div style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid #ede9fe', background: '#f5f3ff', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: directForm.abbreviation ? '#7c3aed' : '#c4b5fd', minHeight: 38, display: 'flex', alignItems: 'center' }}>
+                <div style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid #ede9fe', background: '#f5f3ff', fontSize: '13px', fontWeight: 700, color: directForm.abbreviation ? '#7c3aed' : '#c4b5fd', minHeight: 38, display: 'flex', alignItems: 'center' }}>
                   {directForm.abbreviation || '상품코드 입력 후 자동 조회'}
                 </div>
               </div>
 
               {/* 바코드 auto */}
               <div>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
-                  바코드 <span style={{ fontWeight: 600, fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#a78bfa' }}>자동생성</span>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#7c3aed', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>
+                  바코드 <span style={{ fontWeight: 600, fontSize: '10px', color: '#a78bfa' }}>자동생성</span>
                 </p>
-                <div style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid #ede9fe', background: '#f5f3ff', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: directForm.barcode ? '#7c3aed' : '#c4b5fd', minHeight: 38, display: 'flex', alignItems: 'center' }}>
+                <div data-pm-barcode="1" style={{ padding: '9px 12px', borderRadius: 9, border: '1.5px solid #ede9fe', background: '#f5f3ff', fontSize: '13px', fontWeight: 700, color: directForm.barcode ? undefined : '#c4b5fd', minHeight: 38, display: 'flex', alignItems: 'center' }}>
                   {directForm.barcode || '상품코드+옵션 입력 후 자동 조회'}
                 </div>
               </div>
 
               {/* 수량 */}
               <div>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>수량 <span style={{ color: '#ef4444' }}>*</span></p>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>수량 <span style={{ color: '#ef4444' }}>*</span></p>
                 <input type="number" min={1} value={directForm.quantity}
                   onChange={e => setDirectForm(p => ({ ...p, quantity: Math.max(1, parseInt(e.target.value) || 1) }))}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
               {/* 전화번호 */}
               <div>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>전화번호</p>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>전화번호</p>
                 <input value={directForm.phone} onChange={e => setDirectForm(p => ({ ...p, phone: e.target.value }))}
                   placeholder="010-0000-0000"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
               {/* 수령인 */}
               <div style={{ gridColumn: '1 / -1' }}>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>수령인 <span style={{ color: '#ef4444' }}>*</span></p>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>수령인 <span style={{ color: '#ef4444' }}>*</span></p>
                 <input value={directForm.recipientName} onChange={e => setDirectForm(p => ({ ...p, recipientName: e.target.value }))}
                   placeholder="수령인 이름"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
               {/* 수령인 주소 */}
               <div style={{ gridColumn: '1 / -1' }}>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>수령인 주소 <span style={{ color: '#ef4444' }}>*</span></p>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>수령인 주소 <span style={{ color: '#ef4444' }}>*</span></p>
                 <input value={directForm.recipientAddress} onChange={e => setDirectForm(p => ({ ...p, recipientAddress: e.target.value }))}
                   placeholder="배송 주소 입력"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
 
               {/* 배송메세지 */}
               <div style={{ gridColumn: '1 / -1' }}>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>배송메세지</p>
+                <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>배송메세지</p>
                 <input value={directForm.deliveryMessage} onChange={e => setDirectForm(p => ({ ...p, deliveryMessage: e.target.value }))}
                   placeholder="배송 요청사항"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
               </div>
             </div>
 
@@ -902,18 +902,18 @@ export default function OrderRegistrationPage() {
                 {directMsg.ok
                   ? <CheckCircle2 size={14} style={{ color: '#059669', flexShrink: 0 }} />
                   : <AlertCircle size={14} style={{ color: '#dc2626', flexShrink: 0 }} />}
-                <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: directMsg.ok ? '#059669' : '#dc2626' }}>{directMsg.text}</span>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: directMsg.ok ? '#059669' : '#dc2626' }}>{directMsg.text}</span>
               </div>
             )}
 
             <div style={{ marginTop: 20, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
               <button onClick={handleDirectSave} disabled={directSaving}
-                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 24px', background: '#7c3aed', color: 'white', borderRadius: 10, fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: directSaving ? 'not-allowed' : 'pointer', opacity: directSaving ? 0.6 : 1 }}>
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 24px', background: '#7c3aed', color: 'white', borderRadius: 10, fontSize: '13.5px', fontWeight: 800, border: 'none', cursor: directSaving ? 'not-allowed' : 'pointer', opacity: directSaving ? 0.6 : 1 }}>
                 <PackageCheck size={15} />
                 {directSaving ? '저장 중...' : '저장 후 주문관리로 이동'}
               </button>
               <button onClick={() => { setDirectForm(emptyDirectForm()); setDirectMsg(null) }}
-                style={{ padding: '10px 18px', background: '#f1f5f9', color: '#64748b', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, border: '1px solid #e2e8f0', cursor: 'pointer' }}>
+                style={{ padding: '10px 18px', background: '#f1f5f9', color: '#64748b', borderRadius: 10, fontSize: '13px', fontWeight: 700, border: '1px solid #e2e8f0', cursor: 'pointer' }}>
                 초기화
               </button>
             </div>
@@ -924,15 +924,15 @@ export default function OrderRegistrationPage() {
               <Store size={32} style={{ color: '#cbd5e1' }} />
             </div>
             <div style={{ textAlign: 'center' }}>
-              <p style={{ fontSize: 'calc(16px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', marginBottom: 6 }}>쇼핑몰을 선택해주세요</p>
-              <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', fontWeight: 600 }}>왼쪽에서 주문서를 등록할 쇼핑몰을 선택하세요</p>
+              <p style={{ fontSize: '16px', fontWeight: 800, color: '#94a3b8', marginBottom: 6 }}>쇼핑몰을 선택해주세요</p>
+              <p style={{ fontSize: '13px', color: '#cbd5e1', fontWeight: 600 }}>왼쪽에서 주문서를 등록할 쇼핑몰을 선택하세요</p>
             </div>
           </div>
         ) : (
           <>
             {/* 날짜 네비게이션 + 업로드 바 */}
             <div className="pm-card" style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
-              <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: activeMall?.color, background: activeMall?.bg, padding: '4px 12px', borderRadius: 20, border: `1px solid ${activeMall?.color}30` }}>
+              <span style={{ fontSize: '12px', fontWeight: 800, color: activeMall?.color, background: activeMall?.bg, padding: '4px 12px', borderRadius: 20, border: `1px solid ${activeMall?.color}30` }}>
                 {activeMall?.label}
               </span>
 
@@ -942,9 +942,9 @@ export default function OrderRegistrationPage() {
                   <ChevronLeft size={15} style={{ color: '#64748b' }} />
                 </button>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '5px 14px', borderRadius: 10, background: isToday ? '#eff6ff' : '#f8fafc', border: isToday ? '1px solid #bfdbfe' : '1px solid #e2e8f0', minWidth: 190 }}>
-                  <span style={{ fontSize: 'calc(14.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>{formatDateKo(currentDate)}</span>
-                  <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#64748b', fontWeight: 600 }}>{getDayOfWeek(currentDate)}</span>
-                  {isToday && <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#2563eb', background: '#dbeafe', padding: '2px 7px', borderRadius: 20 }}>TODAY</span>}
+                  <span style={{ fontSize: '14.5px', fontWeight: 800, color: '#0f172a' }}>{formatDateKo(currentDate)}</span>
+                  <span style={{ fontSize: '12px', color: '#64748b', fontWeight: 600 }}>{getDayOfWeek(currentDate)}</span>
+                  {isToday && <span style={{ fontSize: '10px', fontWeight: 900, color: '#2563eb', background: '#dbeafe', padding: '2px 7px', borderRadius: 20 }}>TODAY</span>}
                 </div>
                 <button onClick={() => { if (canGoNext) setCurrentDate(prev => addDays(prev, 1)) }}
                   disabled={!canGoNext}
@@ -956,14 +956,14 @@ export default function OrderRegistrationPage() {
               {isToday && (
                 <>
                   <button onClick={() => fileRef.current?.click()} disabled={importing}
-                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: activeMall?.color ?? '#2563eb', color: 'white', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.6 : 1 }}>
+                    style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: activeMall?.color ?? '#2563eb', color: 'white', borderRadius: 10, fontSize: '13px', fontWeight: 800, border: 'none', cursor: importing ? 'not-allowed' : 'pointer', opacity: importing ? 0.6 : 1 }}>
                     <Upload size={14} />
                     {importing ? '처리 중...' : '주문서 업로드'}
                   </button>
                   <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFile} />
                   {checkedIds.size > 0 && (
                     <button onClick={handleOrderConfirm}
-                      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: '#059669', color: 'white', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '8px 18px', background: '#059669', color: 'white', borderRadius: 10, fontSize: '13px', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
                       <PackageCheck size={14} />주문확인 ({checkedIds.size})
                     </button>
                   )}
@@ -973,15 +973,15 @@ export default function OrderRegistrationPage() {
               {importMsg && (
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '5px 12px', borderRadius: 8, background: importMsg.ok ? '#ecfdf5' : '#fef2f2' }}>
                   {importMsg.ok ? <CheckCircle2 size={13} style={{ color: '#059669' }} /> : <AlertCircle size={13} style={{ color: '#dc2626' }} />}
-                  <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: importMsg.ok ? '#059669' : '#dc2626' }}>{importMsg.text}</span>
+                  <span style={{ fontSize: '12.5px', fontWeight: 700, color: importMsg.ok ? '#059669' : '#dc2626' }}>{importMsg.text}</span>
                 </div>
               )}
               {dayData && dayData.orders.length > 0 && (
                 <>
-                  <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 700, marginLeft: 'auto' }}>총 {dayData.orders.length}건</span>
+                  <span style={{ fontSize: '12.5px', color: '#94a3b8', fontWeight: 700, marginLeft: 'auto' }}>총 {dayData.orders.length}건</span>
                   {checkedIds.size > 0 && (
                     <button onClick={handleDeleteChecked}
-                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: '#fef2f2', color: '#dc2626', borderRadius: 8, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: '1.5px solid #fecaca', cursor: 'pointer' }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 12px', background: '#fef2f2', color: '#dc2626', borderRadius: 8, fontSize: '12px', fontWeight: 800, border: '1.5px solid #fecaca', cursor: 'pointer' }}>
                       <Trash2 size={12} />선택 삭제 ({checkedIds.size})
                     </button>
                   )}
@@ -997,16 +997,16 @@ export default function OrderRegistrationPage() {
                     <FileSpreadsheet size={28} style={{ color: '#cbd5e1' }} />
                   </div>
                   <div style={{ textAlign: 'center' }}>
-                    <p style={{ fontSize: 'calc(15px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', marginBottom: 6 }}>
+                    <p style={{ fontSize: '15px', fontWeight: 800, color: '#94a3b8', marginBottom: 6 }}>
                       {isToday ? '주문서를 업로드해주세요' : '해당 날짜의 주문 내역이 없습니다'}
                     </p>
-                    <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', color: '#cbd5e1', fontWeight: 600 }}>
+                    <p style={{ fontSize: '12.5px', color: '#cbd5e1', fontWeight: 600 }}>
                       {isToday ? `${activeMall?.label} 주문서 파일을 업로드하세요` : '이 날짜에 업로드된 주문서가 없습니다'}
                     </p>
                   </div>
                   {isToday && (
                     <button onClick={() => fileRef.current?.click()} disabled={importing}
-                      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 22px', background: activeMall?.color ?? '#2563eb', color: 'white', borderRadius: 12, fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: 'pointer', marginTop: 4 }}>
+                      style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '10px 22px', background: activeMall?.color ?? '#2563eb', color: 'white', borderRadius: 12, fontSize: '13.5px', fontWeight: 800, border: 'none', cursor: 'pointer', marginTop: 4 }}>
                       <Upload size={15} />주문서 업로드
                     </button>
                   )}
@@ -1021,7 +1021,7 @@ export default function OrderRegistrationPage() {
                         : <Square size={20} style={{ color: '#cbd5e1' }} />}
                     </span>
                     {['주문번호', '상품명', '수취인', '수량', '상태'].map(h => (
-                      <span key={h} style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
+                      <span key={h} style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>{h}</span>
                     ))}
                   </div>
                   {/* 주문 행 */}
@@ -1042,23 +1042,23 @@ export default function OrderRegistrationPage() {
                             : <Square size={20} style={{ color: '#cbd5e1' }} />}
                         </span>
                         <div onClick={() => setSelectedOrder(order)} style={{ cursor: 'pointer', overflow: 'hidden' }}>
-                          <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: activeMall?.color ?? '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                          <span style={{ fontSize: '11.5px', fontWeight: 800, color: activeMall?.color ?? '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                             {order.order_number}
                           </span>
                           {displayChannel && (
-                            <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>{displayChannel}</span>
+                            <span style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 600 }}>{displayChannel}</span>
                           )}
                         </div>
                         <div onClick={() => setSelectedOrder(order)} style={{ cursor: 'pointer', overflow: 'hidden' }}>
-                          <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                          <p style={{ fontSize: '13px', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
                             {order.items[0]?.product_name}
-                            {order.items.length > 1 && <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', marginLeft: 4 }}>외 {order.items.length - 1}건</span>}
+                            {order.items.length > 1 && <span style={{ fontSize: '11.5px', color: '#94a3b8', marginLeft: 4 }}>외 {order.items.length - 1}건</span>}
                           </p>
-                          {order.items[0]?.option && <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', marginTop: 1, margin: '1px 0 0' }}>{order.items[0].option}</p>}
+                          {order.items[0]?.option && <p style={{ fontSize: '11px', color: '#94a3b8', marginTop: 1, margin: '1px 0 0' }}>{order.items[0].option}</p>}
                         </div>
-                        <span onClick={() => setSelectedOrder(order)} style={{ cursor: 'pointer', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
-                        <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#475569', textAlign: 'center' }}>{totalQty}</span>
-                        <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: st.color, background: st.bg, padding: '3px 8px', borderRadius: 6, textAlign: 'center', display: 'block' }}>{st.label}</span>
+                        <span onClick={() => setSelectedOrder(order)} style={{ cursor: 'pointer', fontSize: '13px', fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
+                        <span style={{ fontSize: '13px', fontWeight: 800, color: '#475569', textAlign: 'center' }}>{totalQty}</span>
+                        <span style={{ fontSize: '11.5px', fontWeight: 800, color: st.color, background: st.bg, padding: '3px 8px', borderRadius: 6, textAlign: 'center', display: 'block' }}>{st.label}</span>
                       </div>
                     )
                   })}
@@ -1077,8 +1077,8 @@ export default function OrderRegistrationPage() {
             onClick={e => e.stopPropagation()}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
               <div>
-                <p style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: activeMall?.color, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 2 }}>{activeMall?.label}</p>
-                <h2 style={{ fontSize: 'calc(16px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a' }}>주문 상세</h2>
+                <p style={{ fontSize: '10px', fontWeight: 900, color: activeMall?.color, letterSpacing: '0.1em', textTransform: 'uppercase', marginBottom: 2 }}>{activeMall?.label}</p>
+                <h2 style={{ fontSize: '16px', fontWeight: 900, color: '#0f172a' }}>주문 상세</h2>
               </div>
               <button onClick={() => setSelectedOrder(null)} style={{ width: 32, height: 32, borderRadius: 8, border: '1px solid #e2e8f0', background: 'white', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <Package size={14} style={{ color: '#94a3b8' }} />
@@ -1092,36 +1092,36 @@ export default function OrderRegistrationPage() {
                 ['상태',     STATUS_MAP[selectedOrder.status]?.label ?? '-'],
               ] as [string, string][]).map(([label, value]) => (
                 <div key={label}>
-                  <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</p>
-                  <p style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#0f172a' }}>{value}</p>
+                  <p style={{ fontSize: '10.5px', fontWeight: 800, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</p>
+                  <p style={{ fontSize: '13.5px', fontWeight: 700, color: '#0f172a' }}>{value}</p>
                 </div>
               ))}
             </div>
             {selectedOrder.shipping_address && (
               <div style={{ marginBottom: 16 }}>
-                <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>배송주소</p>
-                <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#334155' }}>{selectedOrder.shipping_address}</p>
+                <p style={{ fontSize: '10.5px', fontWeight: 800, color: '#94a3b8', marginBottom: 3, textTransform: 'uppercase', letterSpacing: '0.06em' }}>배송주소</p>
+                <p style={{ fontSize: '13px', fontWeight: 600, color: '#334155' }}>{selectedOrder.shipping_address}</p>
               </div>
             )}
             <div style={{ borderTop: '1px solid #f1f5f9', paddingTop: 14, marginBottom: 14 }}>
-              <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#94a3b8', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>주문 상품</p>
+              <p style={{ fontSize: '10.5px', fontWeight: 800, color: '#94a3b8', marginBottom: 10, textTransform: 'uppercase', letterSpacing: '0.06em' }}>주문 상품</p>
               {selectedOrder.items.map((item, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: i < selectedOrder.items.length - 1 ? '1px solid #f8fafc' : 'none' }}>
                   <div>
-                    <p style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#0f172a' }}>{item.product_name}</p>
-                    {item.option && <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', marginTop: 2 }}>옵션: {item.option}</p>}
-                    {item.sku    && <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',   color: '#94a3b8', marginTop: 2 }}>SKU: {item.sku}</p>}
+                    <p style={{ fontSize: '13.5px', fontWeight: 700, color: '#0f172a' }}>{item.product_name}</p>
+                    {item.option && <p style={{ fontSize: '11.5px', color: '#64748b', marginTop: 2 }}>옵션: {item.option}</p>}
+                    {item.sku    && <p style={{ fontSize: '11px',   color: '#94a3b8', marginTop: 2 }}>SKU: {item.sku}</p>}
                   </div>
                   <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 16 }}>
-                    <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a' }}>×{item.quantity}</p>
-                    {item.unit_price ? <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', marginTop: 2 }}>{item.unit_price.toLocaleString()}원</p> : null}
+                    <p style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>×{item.quantity}</p>
+                    {item.unit_price ? <p style={{ fontSize: '11.5px', color: '#64748b', marginTop: 2 }}>{item.unit_price.toLocaleString()}원</p> : null}
                   </div>
                 </div>
               ))}
             </div>
             {selectedOrder.memo && (
               <div style={{ padding: '10px 14px', background: '#f8fafc', borderRadius: 10 }}>
-                <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#64748b' }}>메모: {selectedOrder.memo}</p>
+                <p style={{ fontSize: '12px', color: '#64748b' }}>메모: {selectedOrder.memo}</p>
               </div>
             )}
           </div>

@@ -469,8 +469,8 @@ export default function InvoicePrintPage() {
               <Truck size={18} style={{ color: k.color }} />
             </div>
             <div>
-              <p style={{ fontSize: 'calc(24px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
-              <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: k.color, fontWeight: 800, marginTop: 3 }}>{k.label}</p>
+              <p style={{ fontSize: '24px', fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
+              <p style={{ fontSize: '11.5px', color: k.color, fontWeight: 800, marginTop: 3 }}>{k.label}</p>
             </div>
           </div>
         ))}
@@ -483,7 +483,7 @@ export default function InvoicePrintPage() {
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="주문번호 · 수취인 · 상품명 검색..."
-          style={{ flex: 1, height: 34, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', border: 'none', outline: 'none', background: 'transparent', minWidth: 160 }}
+          style={{ flex: 1, height: 34, fontSize: '13px', border: 'none', outline: 'none', background: 'transparent', minWidth: 160 }}
         />
 
         {/* 날짜 좌우 네비게이션 */}
@@ -494,7 +494,7 @@ export default function InvoicePrintPage() {
               <ChevronLeft size={14} />
             </button>
             <input type="date" value={dateFilter} onChange={e => setDateFilter(e.target.value)}
-              style={{ height: 32, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: '#0f172a', cursor: 'pointer', outline: 'none' }}
+              style={{ height: 32, fontSize: '12.5px', fontWeight: 700, border: '1.5px solid #e2e8f0', borderRadius: 8, padding: '0 8px', color: '#0f172a', cursor: 'pointer', outline: 'none' }}
             />
             <button onClick={() => setDateFilter(d => shiftDate(d, 1))}
               disabled={dateFilter >= getToday()}
@@ -504,47 +504,47 @@ export default function InvoicePrintPage() {
           </div>
         )}
         <button onClick={() => setShowAllDates(v => !v)}
-          style={{ padding: '4px 10px', borderRadius: 7, background: showAllDates ? '#1e293b' : '#f1f5f9', color: showAllDates ? '#fff' : '#64748b', border: 'none', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+          style={{ padding: '4px 10px', borderRadius: 7, background: showAllDates ? '#1e293b' : '#f1f5f9', color: showAllDates ? '#fff' : '#64748b', border: 'none', fontSize: '12px', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
           {showAllDates ? '날짜별' : '전체'}
         </button>
 
         {/* 선택 삭제 */}
         {checkedCount > 0 && (
           <button onClick={handleDelete}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#fef2f2', color: '#dc2626', borderRadius: 9, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: '1.5px solid #fecaca', cursor: 'pointer' }}>
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#fef2f2', color: '#dc2626', borderRadius: 9, fontSize: '12px', fontWeight: 800, border: '1.5px solid #fecaca', cursor: 'pointer' }}>
             <Trash2 size={13} />삭제 ({checkedCount})
           </button>
         )}
 
         {/* 전체 다운로드 */}
         <button onClick={downloadPrintFile}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#ecfdf5', color: '#059669', borderRadius: 9, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: '1.5px solid #bbf7d0', cursor: 'pointer' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#ecfdf5', color: '#059669', borderRadius: 9, fontSize: '12px', fontWeight: 800, border: '1.5px solid #bbf7d0', cursor: 'pointer' }}>
           <FileDown size={13} />
           {checkedCount > 0 ? `선택 ${checkedCount}건 다운로드` : '전체 다운로드'}
         </button>
 
         {/* 피킹리스트 출력 */}
         <button onClick={handlePickingList}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#059669', color: 'white', borderRadius: 9, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#059669', color: 'white', borderRadius: 9, fontSize: '12px', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
           <Printer size={13} />피킹리스트 출력
         </button>
 
         {/* 송장출력용 파일 */}
         <button onClick={printInvoices}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#7c3aed', color: 'white', borderRadius: 9, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#7c3aed', color: 'white', borderRadius: 9, fontSize: '12px', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
           <Printer size={13} />송장출력용 파일
         </button>
 
         {/* 송장파일 업로드 */}
         <button onClick={() => bulkFileRef.current?.click()}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#2563eb', color: 'white', borderRadius: 9, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#2563eb', color: 'white', borderRadius: 9, fontSize: '12px', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
           <Upload size={13} />송장파일 업로드
         </button>
         <input ref={bulkFileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleBulkInvoiceUpload} />
 
         {/* 일괄 저장 */}
         <button onClick={handleSaveAll}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#059669', color: 'white', borderRadius: 9, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#059669', color: 'white', borderRadius: 9, fontSize: '12px', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
           <Save size={13} />일괄 저장
         </button>
       </div>
@@ -553,17 +553,17 @@ export default function InvoicePrintPage() {
       <div className="pm-card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '12px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Truck size={15} style={{ color: '#64748b' }} />
-          <span style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>송장출력/등록 대기 주문</span>
-          <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>({filtered.length}건)</span>
+          <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>송장출력/등록 대기 주문</span>
+          <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>({filtered.length}건)</span>
           {checkedCount > 0 && (
-            <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#2563eb', fontWeight: 700 }}>{checkedCount}건 선택됨</span>
+            <span style={{ fontSize: '12px', color: '#2563eb', fontWeight: 700 }}>{checkedCount}건 선택됨</span>
           )}
         </div>
 
         {filtered.length === 0 ? (
           <div style={{ padding: '60px 20px', textAlign: 'center' }}>
             <Package size={40} style={{ margin: '0 auto 14px', opacity: 0.15, display: 'block' }} />
-            <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#94a3b8' }}>
+            <p style={{ fontSize: '14px', fontWeight: 700, color: '#94a3b8' }}>
               {orders.length === 0 ? '주문관리에서 CJ송장출력 파일을 통해 주문을 이동해주세요' : '검색 결과가 없습니다'}
             </p>
           </div>
@@ -577,7 +577,7 @@ export default function InvoicePrintPage() {
                   : <Square size={14} style={{ color: '#cbd5e1' }} />}
               </span>
               {['주문번호', '날짜', '상품명', '수취인', '택배사', '운송장번호', ''].map(h => (
-                <span key={h} style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+                <span key={h} style={{ fontSize: '10.5px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
               ))}
             </div>
 
@@ -602,24 +602,24 @@ export default function InvoicePrintPage() {
                       : <Square size={14} style={{ color: '#cbd5e1' }} />}
                   </span>
 
-                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {order.order_number}
                   </span>
-                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#64748b' }}>{order.order_date}</span>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>{order.order_date}</span>
                   <div style={{ overflow: 'hidden' }}>
-                    <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                    <p style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
                       {order.items[0]?.product_name}{order.items.length > 1 ? ` 외 ${order.items.length - 1}건` : ''}
                     </p>
                     {order.items[0]?.option && (
-                      <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      <p style={{ fontSize: '10.5px', color: '#94a3b8', margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                         {order.items[0].option}
                       </p>
                     )}
                   </div>
-                  <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
+                  <span style={{ fontSize: '12.5px', fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
 
                   <select value={edit.carrier} onChange={e => setEdit(order.id, 'carrier', e.target.value)}
-                    style={{ height: 32, borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#334155', padding: '0 6px', background: 'white', width: '100%' }}>
+                    style={{ height: 32, borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: '11.5px', fontWeight: 600, color: '#334155', padding: '0 6px', background: 'white', width: '100%' }}>
                     {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
 
@@ -627,7 +627,7 @@ export default function InvoicePrintPage() {
                     onChange={e => setEdit(order.id, 'tracking', e.target.value)}
                     onKeyDown={e => { if (e.key === 'Enter') handleSave(order) }}
                     placeholder="운송장번호 입력"
-                    style={{ height: 32, borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#334155', padding: '0 10px', width: '100%', outline: 'none' }}
+                    style={{ height: 32, borderRadius: 8, border: '1.5px solid #e2e8f0', fontSize: '12px', fontWeight: 600, color: '#334155', padding: '0 10px', width: '100%', outline: 'none' }}
                     onFocus={e => (e.currentTarget.style.borderColor = '#2563eb')}
                     onBlur={e => (e.currentTarget.style.borderColor = '#e2e8f0')}
                   />
@@ -640,7 +640,7 @@ export default function InvoicePrintPage() {
                       background: isSaved ? '#059669' : edit.tracking.trim() ? '#2563eb' : '#e2e8f0',
                       color: isSaved || edit.tracking.trim() ? 'white' : '#94a3b8',
                       borderRadius: 8, border: 'none', cursor: edit.tracking.trim() ? 'pointer' : 'default',
-                      fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, transition: 'background 200ms',
+                      fontSize: '11.5px', fontWeight: 800, transition: 'background 200ms',
                       width: '100%', justifyContent: 'center',
                     }}>
                     {isSaved ? <><CheckCircle2 size={11} />완료</> : <><Save size={11} />등록</>}

@@ -45,17 +45,9 @@
 
 html { -webkit-text-size-adjust: 100%; }
 
-/* 상품관리 제외 탭: pm-tab-lists-font-boost 가 main 에 붙을 때 리스트 인라인 fontSize +2pt */
-main.pm-tab-lists-font-boost {
-  --pm-list-fs-add: 2pt;
-}
-
-/* 인라인 fontSize 없이 .pm-table 만 쓰는 셀(재고관리 등)도 동일 보정 */
-main.pm-tab-lists-font-boost .pm-table {
-  font-size: calc(13px + var(--pm-list-fs-add));
-}
-main.pm-tab-lists-font-boost .pm-table th {
-  font-size: calc(10.5px + var(--pm-list-fs-add));
+/* 바코드(·SKU) 표시 기본 색 — 빈 값 등은 인라인 color 로 덮어씀 */
+[data-pm-barcode="1"] {
+  color: #0f172a;
 }
 
 body {

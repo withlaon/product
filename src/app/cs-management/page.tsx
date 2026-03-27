@@ -504,18 +504,18 @@ export default function CsManagementPage() {
               <div style={{ width: 32, height: 32, borderRadius: 10, background: '#eff6ff', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <HeadphonesIcon size={16} style={{ color: '#2563eb' }} />
               </div>
-              <span style={{ fontSize: 'calc(15px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a' }}>CS접수</span>
-              <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 6 }}>
+              <span style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>CS접수</span>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 6 }}>
                 {pending.length}건
               </span>
             </div>
             <div style={{ flex: 1 }} />
             <button onClick={() => openModal('return')}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 13px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 13px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}>
               <RotateCcw size={13} /> 반품등록
             </button>
             <button onClick={() => openModal('exchange')}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 13px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 13px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}>
               <RefreshCw size={13} /> 교환등록
             </button>
           </div>
@@ -548,7 +548,7 @@ export default function CsManagementPage() {
                   <ImageCell src={item.option_image} />
                   <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
                   {/* 송장번호 */}
-                  <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                  <span style={{ fontSize: '9.5px', fontFamily: 'monospace', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                     {item.tracking_number || '-'}
                   </span>
                   {/* 반송장번호 인라인 입력 */}
@@ -557,21 +557,21 @@ export default function CsManagementPage() {
                     onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
                     placeholder="반송장"
                     onClick={e => e.stopPropagation()}
-                    style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box' }}
+                    style={{ fontSize: '9.5px', fontFamily: 'monospace', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box' }}
                   />
                   <BarcodeCell barcode={item.barcode} />
                   {/* 수량 */}
-                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a', textAlign: 'center' }}>{qty}</span>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center' }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
                   {/* 처리완료 */}
                   <button onClick={e => { e.stopPropagation(); handleProcess(item) }} disabled={!!processing}
-                    style={{ padding: '4px 6px', background: isProc ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: isProc ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                    style={{ padding: '4px 6px', background: isProc ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: '10px', fontWeight: 800, cursor: isProc ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
                     {isProc ? '처리중' : '처리완료'}
                   </button>
                   {/* 삭제 */}
                   <button onClick={e => { e.stopPropagation(); handleDelete(item.id, `${item.customer_name} / ${item.barcode}`) }}
                     title="삭제"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: '10.5px', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
                     onMouseLeave={e => (e.currentTarget.style.background = '#fff1f2')}>
                     <Trash2 size={11} /> 삭제
@@ -592,8 +592,8 @@ export default function CsManagementPage() {
             <div style={{ width: 32, height: 32, borderRadius: 10, background: '#f0fdf4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <CheckCircle2 size={16} style={{ color: '#059669' }} />
             </div>
-            <span style={{ fontSize: 'calc(15px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a' }}>CS처리현황</span>
-            <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 6 }}>{processed.length}건</span>
+            <span style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>CS처리현황</span>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 6 }}>{processed.length}건</span>
           </div>
           <MonthNav ym={rightYM} curYM={curYM} onChange={setRightYM} accentColor="#059669" accentBg="#f0fdf4">
             <SearchBox value={rightSearch} onChange={setRightSearch} />
@@ -622,7 +622,7 @@ export default function CsManagementPage() {
                   <ImageCell src={item.option_image} />
                   <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
                   {/* 송장번호 */}
-                  <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                  <span style={{ fontSize: '9.5px', fontFamily: 'monospace', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                     {item.tracking_number || '-'}
                   </span>
                   {/* 반송장번호 인라인 입력 */}
@@ -631,28 +631,28 @@ export default function CsManagementPage() {
                     onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
                     placeholder="반송장"
                     onClick={e => e.stopPropagation()}
-                    style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box' }}
+                    style={{ fontSize: '9.5px', fontFamily: 'monospace', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box' }}
                   />
                   <BarcodeCell barcode={item.barcode} />
                   {/* 수량 */}
-                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a', textAlign: 'center' }}>{qty}</span>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center' }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
                   {/* 처리일시 + 재고/불량 표기 */}
                   <div>
-                    <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#059669' }}>
+                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#059669' }}>
                       ✓ {fmtDateTime(item.processed_at ?? '')}
                     </span>
                     {item.reason === 'simple_change' && (
-                      <p style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', color: '#0284c7', marginTop: 1 }}>재고+{qty}</p>
+                      <p style={{ fontSize: '9px', color: '#0284c7', marginTop: 1 }}>재고+{qty}</p>
                     )}
                     {item.reason === 'defective' && (
-                      <p style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', color: '#c2410c', marginTop: 1 }}>불량+{qty}</p>
+                      <p style={{ fontSize: '9px', color: '#c2410c', marginTop: 1 }}>불량+{qty}</p>
                     )}
                   </div>
                   {/* 삭제 */}
                   <button onClick={e => { e.stopPropagation(); handleDelete(item.id, `${item.customer_name} / ${item.barcode}`) }}
                     title="삭제"
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: '10.5px', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
                     onMouseLeave={e => (e.currentTarget.style.background = '#fff1f2')}>
                     <Trash2 size={11} /> 삭제
@@ -676,8 +676,8 @@ export default function CsManagementPage() {
                 {modal.type === 'return' ? <RotateCcw size={15} style={{ color: '#dc2626' }} /> : <RefreshCw size={15} style={{ color: '#7c3aed' }} />}
               </div>
               <div>
-                <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a' }}>{modal.type === 'return' ? '반품' : '교환'} 등록</p>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>등록 방식을 선택하세요</p>
+                <p style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>{modal.type === 'return' ? '반품' : '교환'} 등록</p>
+                <p style={{ fontSize: '11px', color: '#94a3b8' }}>등록 방식을 선택하세요</p>
               </div>
               <div style={{ flex: 1 }} />
               <button onClick={() => setModal(null)}
@@ -690,7 +690,7 @@ export default function CsManagementPage() {
             <div style={{ display: 'flex', borderBottom: '1px solid #f1f5f9' }}>
               {(['direct', 'file'] as const).map(t => (
                 <button key={t} onClick={() => setModal(m => m ? { ...m, tab: t } : m)}
-                  style={{ flex: 1, padding: '10px 16px', border: 'none', cursor: 'pointer', fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, background: modal.tab === t ? '#fff' : '#f8fafc', color: modal.tab === t ? '#0f172a' : '#94a3b8', borderBottom: modal.tab === t ? '2px solid #2563eb' : '2px solid transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                  style={{ flex: 1, padding: '10px 16px', border: 'none', cursor: 'pointer', fontSize: '13px', fontWeight: 800, background: modal.tab === t ? '#fff' : '#f8fafc', color: modal.tab === t ? '#0f172a' : '#94a3b8', borderBottom: modal.tab === t ? '2px solid #2563eb' : '2px solid transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                   {t === 'direct' ? <><Plus size={13} />직접등록</> : <><FileUp size={13} />파일등록</>}
                 </button>
               ))}
@@ -704,7 +704,7 @@ export default function CsManagementPage() {
                   {/* 쇼핑몰 */}
                   <div>
                     <label style={labelStyle}>쇼핑몰 <Req /></label>
-                    <select value={form.mall} onChange={e => setF('mall', e.target.value)} className="pm-input pm-select" style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))' }}>
+                    <select value={form.mall} onChange={e => setF('mall', e.target.value)} className="pm-input pm-select" style={{ fontSize: '13px' }}>
                       <option value="">쇼핑몰 선택</option>
                       {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데온', 'SSG', '기타'].map(m => (
                         <option key={m} value={m}>{m}</option>
@@ -722,12 +722,12 @@ export default function CsManagementPage() {
                   <div>
                     <label style={labelStyle}>
                       바코드 <Req />
-                      <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>입력 시 약어/옵션명/이미지 자동입력</span>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>입력 시 약어/옵션명/이미지 자동입력</span>
                     </label>
                     <div style={{ display: 'flex', gap: 8 }}>
                       <input value={form.barcode} onChange={e => handleBarcodeChange(e.target.value)} placeholder="바코드 번호" className="pm-input" style={{ flex: 1 }} />
                       <button onClick={autoLookupTracking} type="button" title="출고내역에서 송장번호 자동 조회"
-                        style={{ padding: '0 12px', height: 36, background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                        style={{ padding: '0 12px', height: 36, background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: '11.5px', fontWeight: 800, color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
                         <Search size={12} /> 송장조회
                       </button>
                     </div>
@@ -736,7 +736,7 @@ export default function CsManagementPage() {
                   {/* 상품약어 + 옵션명 */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                     <div style={{ position: 'relative' }} ref={abbrDropRef}>
-                      <label style={labelStyle}>상품약어 <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#94a3b8', marginLeft: 4 }}>→ 바코드 자동</span></label>
+                      <label style={labelStyle}>상품약어 <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 4 }}>→ 바코드 자동</span></label>
                       <input value={form.product_abbr} onChange={e => handleAbbrChange(e.target.value)}
                         onBlur={() => setTimeout(() => setShowAbbrDrop(false), 150)}
                         onFocus={() => { if (abbrSuggestions.length > 0) setShowAbbrDrop(true) }}
@@ -753,8 +753,8 @@ export default function CsManagementPage() {
                                 : <div style={{ width: 28, height: 28, borderRadius: 5, background: '#f1f5f9', flexShrink: 0 }} />
                               }
                               <div style={{ overflow: 'hidden', flex: 1 }}>
-                                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.option_name || '(옵션명 없음)'}</p>
-                                <p style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontFamily: 'monospace' }}>{s.barcode}</p>
+                                <p style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{s.option_name || '(옵션명 없음)'}</p>
+                                <p data-pm-barcode="1" style={{ fontSize: '10px', fontFamily: 'monospace' }}>{s.barcode}</p>
                               </div>
                             </div>
                           ))}
@@ -762,14 +762,14 @@ export default function CsManagementPage() {
                       )}
                     </div>
                     <div>
-                      <label style={labelStyle}>옵션명 <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#94a3b8', marginLeft: 4 }}>→ 바코드 자동</span></label>
+                      <label style={labelStyle}>옵션명 <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 4 }}>→ 바코드 자동</span></label>
                       <input value={form.option_name} onChange={e => handleOptionNameChange(e.target.value)} placeholder="예: 블랙/FREE" className="pm-input" />
                     </div>
                   </div>
 
                   {/* 옵션이미지 */}
                   <div>
-                    <label style={labelStyle}>옵션이미지 URL <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#94a3b8', marginLeft: 4 }}>(바코드 입력 시 자동입력)</span></label>
+                    <label style={labelStyle}>옵션이미지 URL <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 4 }}>(바코드 입력 시 자동입력)</span></label>
                     <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                       <input value={form.option_image} onChange={e => setF('option_image', e.target.value)} placeholder="https://..." className="pm-input" style={{ flex: 1 }} />
                       {form.option_image && (
@@ -788,8 +788,8 @@ export default function CsManagementPage() {
                           style={{ flex: 1, padding: '10px 14px', borderRadius: 10, cursor: 'pointer', border: `2px solid ${form.reason === r ? (r === 'defective' ? '#f97316' : '#2563eb') : '#e2e8f0'}`, background: form.reason === r ? (r === 'defective' ? '#fff7ed' : '#eff6ff') : '#fff', display: 'flex', alignItems: 'center', gap: 8, transition: 'all 120ms' }}>
                           {r === 'defective' ? <AlertTriangle size={14} style={{ color: '#f97316', flexShrink: 0 }} /> : <Clock size={14} style={{ color: '#2563eb', flexShrink: 0 }} />}
                           <div>
-                            <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>{r === 'defective' ? '불량' : '단순변심'}</p>
-                            <p style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>{r === 'defective' ? '불량수량 +N 처리' : '재고수량 +N 복원'}</p>
+                            <p style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{r === 'defective' ? '불량' : '단순변심'}</p>
+                            <p style={{ fontSize: '10px', color: '#94a3b8' }}>{r === 'defective' ? '불량수량 +N 처리' : '재고수량 +N 복원'}</p>
                           </div>
                         </div>
                       ))}
@@ -800,19 +800,19 @@ export default function CsManagementPage() {
                   <div>
                     <label style={labelStyle}>
                       {modal.type === 'return' ? '반품' : '교환'}수량 <Req />
-                      <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>처리완료 시 해당 수량만큼 재고/불량 반영</span>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>처리완료 시 해당 수량만큼 재고/불량 반영</span>
                     </label>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                       <button onClick={() => setFormQty(q => Math.max(1, q - 1))}
-                        style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: 'calc(18px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                        style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
                       <input
                         type="number" min={1} value={formQty}
                         onChange={e => setFormQty(Math.max(1, parseInt(e.target.value) || 1))}
-                        style={{ width: 72, height: 36, textAlign: 'center', fontSize: 'calc(16px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, border: '1.5px solid #e2e8f0', borderRadius: 9, outline: 'none', color: '#0f172a' }}
+                        style={{ width: 72, height: 36, textAlign: 'center', fontSize: '16px', fontWeight: 900, border: '1.5px solid #e2e8f0', borderRadius: 9, outline: 'none', color: '#0f172a' }}
                       />
                       <button onClick={() => setFormQty(q => q + 1)}
-                        style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: 'calc(18px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                      <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>개</span>
+                        style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                      <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>개</span>
                     </div>
                   </div>
 
@@ -820,7 +820,7 @@ export default function CsManagementPage() {
                   <div>
                     <label style={labelStyle}>
                       송장번호
-                      <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>(출고내역에서 자동조회 가능)</span>
+                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>(출고내역에서 자동조회 가능)</span>
                     </label>
                     <input value={form.tracking_number} onChange={e => setF('tracking_number', e.target.value)} placeholder="운송장번호" className="pm-input" />
                   </div>
@@ -835,11 +835,11 @@ export default function CsManagementPage() {
                 {/* 저장 버튼 */}
                 <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
                   <button onClick={() => setModal(null)}
-                    style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                    style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}>
                     취소
                   </button>
                   <button onClick={handleDirectSave} disabled={saving}
-                    style={{ flex: 2, padding: '10px 0', border: 'none', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: saving ? 'not-allowed' : 'pointer', background: modal.type === 'return' ? '#dc2626' : '#7c3aed', color: '#fff' }}>
+                    style={{ flex: 2, padding: '10px 0', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 800, cursor: saving ? 'not-allowed' : 'pointer', background: modal.type === 'return' ? '#dc2626' : '#7c3aed', color: '#fff' }}>
                     {saving ? '저장중...' : `${modal.type === 'return' ? '반품' : '교환'} ${formQty}개 접수 등록`}
                   </button>
                 </div>
@@ -851,22 +851,22 @@ export default function CsManagementPage() {
               <div style={{ padding: '24px 20px' }}>
                 <div style={{ background: '#f8fafc', border: '2px dashed #e2e8f0', borderRadius: 14, padding: '32px 24px', textAlign: 'center', marginBottom: 20 }}>
                   <FileUp size={32} style={{ margin: '0 auto 12px', color: '#94a3b8', display: 'block' }} />
-                  <p style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#334155', marginBottom: 6 }}>엑셀 파일을 업로드하세요</p>
-                  <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', marginBottom: 16 }}>쇼핑몰, 수령인, 상품약어, 옵션명, 바코드, 수량, 구분, 송장번호, 반송장번호</p>
+                  <p style={{ fontSize: '13.5px', fontWeight: 800, color: '#334155', marginBottom: 6 }}>엑셀 파일을 업로드하세요</p>
+                  <p style={{ fontSize: '11.5px', color: '#94a3b8', marginBottom: 16 }}>쇼핑몰, 수령인, 상품약어, 옵션명, 바코드, 수량, 구분, 송장번호, 반송장번호</p>
                   <div style={{ display: 'flex', gap: 10, justifyContent: 'center' }}>
                     <button onClick={handleDownloadTemplate}
-                      style={{ padding: '8px 16px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 9, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                      style={{ padding: '8px 16px', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 9, fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}>
                       템플릿 다운로드
                     </button>
                     <button onClick={() => fileRef.current?.click()}
-                      style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 9, fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                      style={{ padding: '8px 16px', background: '#2563eb', color: '#fff', border: 'none', borderRadius: 9, fontSize: '12.5px', fontWeight: 800, cursor: 'pointer' }}>
                       파일 선택
                     </button>
                   </div>
                   <input ref={fileRef} type="file" accept=".xlsx,.xls" style={{ display: 'none' }} onChange={handleFileUpload} />
                 </div>
                 <div className="pm-card" style={{ padding: '14px 16px' }}>
-                  <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#334155', marginBottom: 10 }}>📋 엑셀 컬럼 형식</p>
+                  <p style={{ fontSize: '11.5px', fontWeight: 800, color: '#334155', marginBottom: 10 }}>📋 엑셀 컬럼 형식</p>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
                     {[
                       ['쇼핑몰', '스마트스토어, 쿠팡 등'], ['수령인', '주문자 또는 수령인'],
@@ -876,14 +876,14 @@ export default function CsManagementPage() {
                       ['송장번호', '운송장번호'],            ['반송장번호', '반품 운송장번호 (선택)'],
                     ].map(([col, desc]) => (
                       <div key={col} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
-                        <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: 5, flexShrink: 0 }}>{col}</span>
-                        <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>{desc}</span>
+                        <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: 5, flexShrink: 0 }}>{col}</span>
+                        <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>{desc}</span>
                       </div>
                     ))}
                   </div>
                 </div>
                 <button onClick={() => setModal(null)}
-                  style={{ width: '100%', marginTop: 16, padding: '10px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                  style={{ width: '100%', marginTop: 16, padding: '10px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}>
                   닫기
                 </button>
               </div>
@@ -906,8 +906,8 @@ export default function CsManagementPage() {
                 {editDraft.type === 'return' ? <RotateCcw size={15} style={{ color: '#dc2626' }} /> : <RefreshCw size={15} style={{ color: '#7c3aed' }} />}
               </div>
               <div>
-                <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a' }}>CS 항목 수정</p>
-                <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>{editDraft.customer_name} / {editDraft.barcode}</p>
+                <p style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>CS 항목 수정</p>
+                <p style={{ fontSize: '11px', color: '#94a3b8' }}>{editDraft.customer_name} / {editDraft.barcode}</p>
               </div>
               <div style={{ flex: 1 }} />
               <button onClick={() => setEditDraft(null)}
@@ -927,7 +927,7 @@ export default function CsManagementPage() {
                       <div key={t} onClick={() => setEditDraft(d => d ? { ...d, type: t } : d)}
                         style={{ flex: 1, padding: '8px 12px', borderRadius: 9, cursor: 'pointer', border: `2px solid ${editDraft.type === t ? (t === 'return' ? '#dc2626' : '#7c3aed') : '#e2e8f0'}`, background: editDraft.type === t ? (t === 'return' ? '#fff1f2' : '#f5f3ff') : '#fff', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 120ms' }}>
                         {t === 'return' ? <RotateCcw size={13} style={{ color: '#dc2626', flexShrink: 0 }} /> : <RefreshCw size={13} style={{ color: '#7c3aed', flexShrink: 0 }} />}
-                        <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>{t === 'return' ? '반품' : '교환'}</span>
+                        <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{t === 'return' ? '반품' : '교환'}</span>
                       </div>
                     ))}
                   </div>
@@ -936,7 +936,7 @@ export default function CsManagementPage() {
                 {/* 쇼핑몰 */}
                 <div>
                   <label style={labelStyle}>쇼핑몰</label>
-                  <select value={editDraft.mall} onChange={e => setEditDraft(d => d ? { ...d, mall: e.target.value } : d)} className="pm-input pm-select" style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))' }}>
+                  <select value={editDraft.mall} onChange={e => setEditDraft(d => d ? { ...d, mall: e.target.value } : d)} className="pm-input pm-select" style={{ fontSize: '13px' }}>
                     <option value="">쇼핑몰 선택</option>
                     {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데온', 'SSG', '기타'].map(m => (
                       <option key={m} value={m}>{m}</option>
@@ -1000,7 +1000,7 @@ export default function CsManagementPage() {
                       <div key={r} onClick={() => setEditDraft(d => d ? { ...d, reason: r } : d)}
                         style={{ flex: 1, padding: '8px 12px', borderRadius: 9, cursor: 'pointer', border: `2px solid ${editDraft.reason === r ? (r === 'defective' ? '#f97316' : '#2563eb') : '#e2e8f0'}`, background: editDraft.reason === r ? (r === 'defective' ? '#fff7ed' : '#eff6ff') : '#fff', display: 'flex', alignItems: 'center', gap: 7, transition: 'all 120ms' }}>
                         {r === 'defective' ? <AlertTriangle size={13} style={{ color: '#f97316', flexShrink: 0 }} /> : <Clock size={13} style={{ color: '#2563eb', flexShrink: 0 }} />}
-                        <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>{r === 'defective' ? '불량' : '단순변심'}</span>
+                        <span style={{ fontSize: '12.5px', fontWeight: 800, color: '#0f172a' }}>{r === 'defective' ? '불량' : '단순변심'}</span>
                       </div>
                     ))}
                   </div>
@@ -1011,13 +1011,13 @@ export default function CsManagementPage() {
                   <label style={labelStyle}>수량</label>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                     <button onClick={() => setEditDraft(d => d ? { ...d, quantity: Math.max(1, (d.quantity ?? 1) - 1) } : d)}
-                      style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: 'calc(18px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
+                      style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>−</button>
                     <input type="number" min={1} value={editDraft.quantity ?? 1}
                       onChange={e => setEditDraft(d => d ? { ...d, quantity: Math.max(1, parseInt(e.target.value) || 1) } : d)}
-                      style={{ width: 72, height: 36, textAlign: 'center', fontSize: 'calc(16px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, border: '1.5px solid #e2e8f0', borderRadius: 9, outline: 'none', color: '#0f172a' }} />
+                      style={{ width: 72, height: 36, textAlign: 'center', fontSize: '16px', fontWeight: 900, border: '1.5px solid #e2e8f0', borderRadius: 9, outline: 'none', color: '#0f172a' }} />
                     <button onClick={() => setEditDraft(d => d ? { ...d, quantity: (d.quantity ?? 1) + 1 } : d)}
-                      style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: 'calc(18px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
-                    <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>개</span>
+                      style={{ width: 36, height: 36, border: '1.5px solid #e2e8f0', borderRadius: 9, background: '#f8fafc', cursor: 'pointer', fontSize: '18px', fontWeight: 700, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>+</button>
+                    <span style={{ fontSize: '12px', color: '#94a3b8', fontWeight: 600 }}>개</span>
                   </div>
                 </div>
               </div>
@@ -1025,11 +1025,11 @@ export default function CsManagementPage() {
               {/* 저장 버튼 */}
               <div style={{ display: 'flex', gap: 8, marginTop: 20 }}>
                 <button onClick={() => setEditDraft(null)}
-                  style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+                  style={{ flex: 1, padding: '10px 0', background: '#f1f5f9', color: '#475569', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 800, cursor: 'pointer' }}>
                   취소
                 </button>
                 <button onClick={handleEditSave}
-                  style={{ flex: 2, padding: '10px 0', border: 'none', borderRadius: 10, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', background: editDraft.type === 'return' ? '#dc2626' : '#7c3aed', color: '#fff' }}>
+                  style={{ flex: 2, padding: '10px 0', border: 'none', borderRadius: 10, fontSize: '13px', fontWeight: 800, cursor: 'pointer', background: editDraft.type === 'return' ? '#dc2626' : '#7c3aed', color: '#fff' }}>
                   수정 저장
                 </button>
               </div>
@@ -1043,7 +1043,7 @@ export default function CsManagementPage() {
 
 /* ─── 서브 컴포넌트 ──────────────────────────────────────────────── */
 
-const labelStyle: React.CSSProperties = { fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#475569', marginBottom: 5, display: 'block' }
+const labelStyle: React.CSSProperties = { fontSize: '11.5px', fontWeight: 800, color: '#475569', marginBottom: 5, display: 'block' }
 const Req = () => <span style={{ color: '#dc2626' }}>*</span>
 
 function MonthNav({ ym, curYM, onChange, accentColor, accentBg, children }: {
@@ -1056,7 +1056,7 @@ function MonthNav({ ym, curYM, onChange, accentColor, accentBg, children }: {
         style={{ width: 26, height: 26, borderRadius: 7, border: '1.5px solid #e2e8f0', background: '#fff', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <ChevronLeft size={13} />
       </button>
-      <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a', minWidth: 78, textAlign: 'center' }}>
+      <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a', minWidth: 78, textAlign: 'center' }}>
         {ym.replace('-', '년 ')}월
       </span>
       <button onClick={() => onChange(shiftMonth(ym, 1))}
@@ -1065,7 +1065,7 @@ function MonthNav({ ym, curYM, onChange, accentColor, accentBg, children }: {
       </button>
       {ym !== curYM && (
         <button onClick={() => onChange(curYM)}
-          style={{ padding: '3px 9px', borderRadius: 6, border: `1.5px solid ${accentColor}`, background: accentBg, color: accentColor, fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
+          style={{ padding: '3px 9px', borderRadius: 6, border: `1.5px solid ${accentColor}`, background: accentBg, color: accentColor, fontSize: '11px', fontWeight: 800, cursor: 'pointer' }}>
           이번달
         </button>
       )}
@@ -1080,7 +1080,7 @@ function SearchBox({ value, onChange }: { value: string; onChange: (v: string) =
     <div style={{ position: 'relative' }}>
       <Search size={12} style={{ position: 'absolute', left: 8, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8' }} />
       <input value={value} onChange={e => onChange(e.target.value)} placeholder="검색..."
-        style={{ paddingLeft: 26, height: 28, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, border: '1.5px solid #e2e8f0', borderRadius: 7, outline: 'none', width: 130 }} />
+        style={{ paddingLeft: 26, height: 28, fontSize: '12px', fontWeight: 600, border: '1.5px solid #e2e8f0', borderRadius: 7, outline: 'none', width: 130 }} />
     </div>
   )
 }
@@ -1089,7 +1089,7 @@ function GridHeader({ cols, headers }: { cols: string; headers: string[] }) {
   return (
     <div style={{ display: 'grid', gridTemplateColumns: cols, gap: 5, padding: '7px 10px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9', flexShrink: 0 }}>
       {headers.map((h, i) => (
-        <span key={i} style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.04em' }}>{h}</span>
+        <span key={i} style={{ fontSize: '9.5px', fontWeight: 900, color: '#94a3b8', letterSpacing: '0.04em' }}>{h}</span>
       ))}
     </div>
   )
@@ -1099,14 +1099,14 @@ function EmptyState({ icon, text }: { icon: React.ReactNode; text: string }) {
   return (
     <div style={{ padding: '48px 20px', textAlign: 'center' }}>
       <div style={{ margin: '0 auto 12px', opacity: 0.15, display: 'flex', justifyContent: 'center' }}>{icon}</div>
-      <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#94a3b8' }}>{text}</p>
+      <p style={{ fontSize: '13px', fontWeight: 700, color: '#94a3b8' }}>{text}</p>
     </div>
   )
 }
 
 function TypeBadge({ type }: { type: CsType }) {
   return (
-    <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, padding: '2px 4px', borderRadius: 4, color: type === 'return' ? '#dc2626' : '#7c3aed', background: type === 'return' ? '#fff1f2' : '#f5f3ff', whiteSpace: 'nowrap' }}>
+    <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 4px', borderRadius: 4, color: type === 'return' ? '#dc2626' : '#7c3aed', background: type === 'return' ? '#fff1f2' : '#f5f3ff', whiteSpace: 'nowrap' }}>
       {type === 'return' ? '반품' : '교환'}
     </span>
   )
@@ -1114,7 +1114,7 @@ function TypeBadge({ type }: { type: CsType }) {
 
 function MallBadge({ mall, style }: { mall: string; style: { color: string; bg: string } }) {
   return (
-    <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, padding: '2px 5px', borderRadius: 5, color: style.color, background: style.bg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+    <span style={{ fontSize: '9.5px', fontWeight: 800, padding: '2px 5px', borderRadius: 5, color: style.color, background: style.bg, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
       {mall || '-'}
     </span>
   )
@@ -1123,8 +1123,8 @@ function MallBadge({ mall, style }: { mall: string; style: { color: string; bg: 
 function CustomerCell({ name, date }: { name: string; date: string }) {
   return (
     <div style={{ overflow: 'hidden' }}>
-      <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
-      <p style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', marginTop: 1 }}>{fmtDateTime(date)}</p>
+      <p style={{ fontSize: '11px', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</p>
+      <p style={{ fontSize: '9.5px', color: '#94a3b8', marginTop: 1 }}>{fmtDateTime(date)}</p>
     </div>
   )
 }
@@ -1146,15 +1146,15 @@ function ImageCell({ src }: { src: string }) {
 function AbbrOptionCell({ abbr, option }: { abbr: string; option: string }) {
   return (
     <div style={{ overflow: 'hidden' }}>
-      <p style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{abbr || '-'}</p>
-      <p style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', color: '#64748b', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option || '-'}</p>
+      <p style={{ fontSize: '10px', fontWeight: 800, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{abbr || '-'}</p>
+      <p style={{ fontSize: '9.5px', color: '#64748b', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{option || '-'}</p>
     </div>
   )
 }
 
 function BarcodeCell({ barcode }: { barcode: string }) {
   return (
-    <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#475569', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+    <span data-pm-barcode="1" style={{ fontSize: '9.5px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
       {barcode || '-'}
     </span>
   )
@@ -1162,7 +1162,7 @@ function BarcodeCell({ barcode }: { barcode: string }) {
 
 function ReasonBadge({ reason }: { reason: CsReason }) {
   return (
-    <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, padding: '2px 4px', borderRadius: 4, whiteSpace: 'nowrap', color: reason === 'defective' ? '#c2410c' : '#0369a1', background: reason === 'defective' ? '#fff7ed' : '#f0f9ff' }}>
+    <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 4px', borderRadius: 4, whiteSpace: 'nowrap', color: reason === 'defective' ? '#c2410c' : '#0369a1', background: reason === 'defective' ? '#fff7ed' : '#f0f9ff' }}>
       {reason === 'defective' ? '불량' : '단순변심'}
     </span>
   )

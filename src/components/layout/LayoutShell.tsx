@@ -4,7 +4,6 @@ import { useState, useEffect } from 'react'
 import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { usePathname } from 'next/navigation'
-import { cn } from '@/lib/utils'
 
 const NO_LAYOUT_PATHS = ['/login', '/signup', '/oauth']
 
@@ -31,8 +30,6 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   if (noLayout) return <>{children}</>
 
   const sidebarW = isDesktop ? (collapsed ? 64 : 220) : 0
-  /** 상품관리(/products) 제외: 리스트 등 인라인 fontSize에 +2pt (--pm-list-fs-add) */
-  const listFontBoost = pathname !== '/products'
 
   return (
     <>
@@ -67,7 +64,7 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
       >
         <Header onMenuClick={() => setMobileOpen(true)} />
         <main
-          className={cn('flex-1 p-4 md:p-5', listFontBoost && 'pm-tab-lists-font-boost')}
+          className="flex-1 p-4 md:p-5"
           style={{ background: 'var(--color-bg)', width: '100%', minWidth: 0, overflow: 'auto', height: 0 }}
         >
           {children}
