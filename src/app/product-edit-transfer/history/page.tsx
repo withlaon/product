@@ -479,38 +479,53 @@ export default function ShippingHistoryPage() {
   /* ── 출고확정 실제 처리 ── */
   const [isConfirming, setIsConfirming] = useState(false)
 
+  /* ── 재고 차감 공통 로직 ── */
+  const runStockDeduction = (orders: ShippedOrder[]) => {
+    const currentMappings = loadMappings()
+    const products        = loadCachedProducts()
+    const stockChanges: Record<string, Record<number, number>> = {}
+    const notFound: string[] = []
+    const stockAppliedIds = new Set<string>()
+
+    orders.forEach(order => {
+      const item = order.items[0]
+      if (!item) return
+      const mapping = lookupMapping(currentMappings, item.product_name ?? '', item.option)
+      // mapping.barcode 우선, 없으면 item.sku(출고내역에 표시된 바코드) 사용
+      const barcode = mapping.barcode ?? item.sku
+      if (!barcode) { notFound.push(item.product_name ?? '?'); return }
+      let found = false
+      products.forEach(product => {
+        product.options.forEach((opt, i) => {
+          if (opt.barcode === barcode && !found) {
+            found = true
+            const cur = opt.current_stock !== undefined
+              ? opt.current_stock
+              : Math.max(0, (opt.received ?? 0) - (opt.sold ?? 0))
+            const qty = item.quantity ?? 1
+            if (!stockChanges[product.id]) stockChanges[product.id] = {}
+            stockChanges[product.id][i] = (stockChanges[product.id][i] ?? cur) - qty
+          }
+        })
+      })
+      if (found) stockAppliedIds.add(order.id)
+      else notFound.push(item.product_name ?? '?')
+    })
+
+    const updatedProducts = products.map(p => {
+      const changes = stockChanges[p.id]
+      if (!changes) return p
+      return { ...p, options: p.options.map((o, i) => i in changes ? { ...o, current_stock: Math.max(0, changes[i]) } : o) }
+    })
+
+    return { stockChanges, updatedProducts, notFound, stockAppliedIds }
+  }
+
   const doConfirmShipping = async (toConfirm: ShippedOrder[]) => {
     setIsConfirming(true)
     try {
-      const currentMappings = loadMappings()
-      const products        = loadCachedProducts()
-      const stockChanges: Record<string, Record<number, number>> = {}
-      const notFound: string[] = []
-      toConfirm.forEach(order => {
-        const item = order.items[0]
-        if (!item) return
-        const mapping = lookupMapping(currentMappings, item.product_name ?? '', item.option)
-        const barcode = mapping.barcode
-        if (!barcode) { notFound.push(item.product_name ?? '?'); return }
-        let found = false
-        products.forEach(product => {
-          product.options.forEach((opt, i) => {
-            if (opt.barcode === barcode && !found) {
-              found = true
-              const cur = opt.current_stock !== undefined ? opt.current_stock : Math.max(0, (opt.received ?? 0) - (opt.sold ?? 0))
-              const qty = item.quantity ?? 1
-              if (!stockChanges[product.id]) stockChanges[product.id] = {}
-              stockChanges[product.id][i] = (stockChanges[product.id][i] ?? cur) - qty
-            }
-          })
-        })
-        if (!found) notFound.push(item.product_name ?? '?')
-      })
-      const updatedProducts = products.map(p => {
-        const changes = stockChanges[p.id]
-        if (!changes) return p
-        return { ...p, options: p.options.map((o, i) => i in changes ? { ...o, current_stock: Math.max(0, changes[i]) } : o) }
-      })
+      const { stockChanges, updatedProducts, notFound, stockAppliedIds } = runStockDeduction(toConfirm)
+
       saveCachedProducts(updatedProducts)
       await Promise.all(Object.keys(stockChanges).map(async pid => {
         const p = updatedProducts.find(pp => pp.id === pid)
@@ -518,7 +533,11 @@ export default function ShippingHistoryPage() {
         await fetch('/api/pm-products', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid, options: p.options }) })
       }))
       const confirmedIds   = new Set(toConfirm.map(o => o.id))
-      const updatedShipped = shipped.map(o => confirmedIds.has(o.id) ? { ...o, status: 'delivered' as const } : o)
+      const updatedShipped = shipped.map(o =>
+        confirmedIds.has(o.id)
+          ? { ...o, status: 'delivered' as const, stock_applied: stockAppliedIds.has(o.id) }
+          : o
+      )
       saveShippedOrders(updatedShipped)
       setShipped(updatedShipped)
       setChecked(new Set())
@@ -554,6 +573,77 @@ export default function ShippingHistoryPage() {
     }
   }
 
+  /* ── 재고 재반영 (이미 출고확정된 주문에 재고 차감 적용) ── */
+  const handleReapplyStock = async () => {
+    if (checked.size === 0) return
+    const targets = displayOrders.filter(o => checked.has(o.id) && o.status === 'delivered')
+    if (targets.length === 0) {
+      alert('출고확정(초록 표시)된 항목만 재고 재반영이 가능합니다.')
+      return
+    }
+    const alreadyApplied = targets.filter(o => o.stock_applied === true)
+    const msg = alreadyApplied.length > 0
+      ? `선택한 ${targets.length}건 중 ${alreadyApplied.length}건은 이미 재고가 반영됐습니다.\n중복 차감 주의! 계속 진행하시겠습니까?`
+      : `선택한 ${targets.length}건의 재고를 차감합니다.\n(출고내역 바코드 → 상품관리 재고 차감)`
+    if (!confirm(msg)) return
+
+    setIsConfirming(true)
+    try {
+      const { stockChanges, updatedProducts, notFound, stockAppliedIds } = runStockDeduction(targets)
+
+      saveCachedProducts(updatedProducts)
+      await Promise.all(Object.keys(stockChanges).map(async pid => {
+        const p = updatedProducts.find(pp => pp.id === pid)
+        if (!p) return
+        await fetch('/api/pm-products', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: pid, options: p.options }),
+        })
+      }))
+
+      // stock_applied 플래그 업데이트 (상태변경 없이 재고 반영 표시만 갱신)
+      const targetIds      = new Set(targets.map(o => o.id))
+      const updatedShipped = shipped.map(o =>
+        targetIds.has(o.id)
+          ? { ...o, stock_applied: stockAppliedIds.has(o.id) }
+          : o
+      )
+      saveShippedOrders(updatedShipped)
+      setShipped(updatedShipped)
+      setChecked(new Set())
+
+      /* 재고현황 결과 팝업 */
+      const zeroItems: StockResultItem[] = []
+      const lowItems:  StockResultItem[] = []
+      updatedProducts.forEach(p => {
+        const changes = stockChanges[p.id]
+        if (!changes) return
+        p.options.forEach((opt, i) => {
+          if (!(i in changes)) return
+          const stock = opt.current_stock ?? 0
+          const row: StockResultItem = {
+            productName: p.name ?? p.abbr ?? p.id,
+            optionName : opt.korean_name ?? opt.name ?? '',
+            barcode    : opt.barcode ?? '',
+            stock,
+          }
+          if (stock === 0)                                      zeroItems.push(row)
+          else if (stock > 0 && stock <= LOW_STOCK_THRESHOLD)  lowItems.push(row)
+        })
+      })
+      setStockResultData({
+        confirmedCount: targets.length,
+        zeroItems,
+        lowItems,
+        notFoundNames: [...new Set(notFound)],
+      })
+      setStockResultModal(true)
+    } finally {
+      setIsConfirming(false)
+    }
+  }
+
   /* ── 출고확정 버튼: 바코드 미설정 사전 점검 ── */
   const handleConfirmShipping = () => {
     if (checked.size === 0) return
@@ -561,12 +651,13 @@ export default function ShippingHistoryPage() {
     const currentMappings = loadMappings()
 
     // 바코드 없는 (product_name, option) 쌍 수집
+    // mapping.barcode 또는 item.sku 중 하나라도 있으면 바코드 있음으로 처리
     const seen = new Map<string, UnmappedItem>()
     toConfirm.forEach(order => {
       const item = order.items[0]
       if (!item) return
       const mapping = lookupMapping(currentMappings, item.product_name ?? '', item.option)
-      if (!mapping.barcode) {
+      if (!mapping.barcode && !item.sku) {
         const key = makeMappingKey(item.product_name, item.option)
         if (!seen.has(key)) {
           seen.set(key, {
@@ -842,6 +933,11 @@ export default function ShippingHistoryPage() {
             <button onClick={handleConfirmShipping} disabled={isConfirming}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: isConfirming ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer' }}>
               <PackageCheck size={13} /> {isConfirming ? '처리중...' : '출고확정'}
+            </button>
+            {/* 재고 재반영 버튼 — 이미 출고확정(delivered)된 항목에 재고를 수동 차감 */}
+            <button onClick={handleReapplyStock} disabled={isConfirming}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 14px', background: isConfirming ? '#94a3b8' : '#0369a1', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12.5, fontWeight: 800, cursor: isConfirming ? 'not-allowed' : 'pointer' }}>
+              <RefreshCw size={13} /> 재고 재반영
             </button>
             {!changeDateMode ? (
               <button onClick={() => { setChangeDateMode(true); setNewDate(selDate) }}
