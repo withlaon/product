@@ -69,10 +69,10 @@ export default function LoginPage() {
           }}>
             <Boxes size={36} color="white" />
           </div>
-          <h1 style={{ fontSize: 32, fontWeight: 900, color: 'white', letterSpacing: '-0.03em', marginBottom: 8 }}>
+          <h1 style={{ fontSize: 'calc(32px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: 'white', letterSpacing: '-0.03em', marginBottom: 8 }}>
             ProductPRO
           </h1>
-          <p style={{ fontSize: 13, color: 'rgba(148,163,184,0.9)', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700 }}>
+          <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: 'rgba(148,163,184,0.9)', letterSpacing: '0.15em', textTransform: 'uppercase', fontWeight: 700 }}>
             상품 통합 관리 시스템
           </p>
         </div>
@@ -90,13 +90,13 @@ export default function LoginPage() {
               background: 'rgba(255,255,255,0.04)',
               border: '1px solid rgba(255,255,255,0.07)',
             }}>
-              <span style={{ fontSize: 20 }}>{f.icon}</span>
-              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'rgba(255,255,255,0.75)' }}>{f.text}</span>
+              <span style={{ fontSize: 'calc(20px + var(--pm-list-fs-add, 0pt))' }}>{f.icon}</span>
+              <span style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: 'rgba(255,255,255,0.75)' }}>{f.text}</span>
             </div>
           ))}
         </div>
 
-        <p style={{ fontSize: 11.5, color: 'rgba(100,116,139,0.7)', textAlign: 'center' }}>
+        <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: 'rgba(100,116,139,0.7)', textAlign: 'center' }}>
           © 2026 ProductPRO. All rights reserved.
         </p>
       </div>
@@ -133,14 +133,14 @@ export default function LoginPage() {
             }}>
               <Boxes size={28} color="white" />
             </div>
-            <p style={{ fontSize: 13, fontWeight: 800, color: 'rgba(255,255,255,0.9)' }}>ProductPRO</p>
+            <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: 'rgba(255,255,255,0.9)' }}>ProductPRO</p>
           </div>
 
           <div style={{ marginBottom: '1.75rem' }}>
-            <h2 style={{ fontSize: 22, fontWeight: 900, color: 'white', letterSpacing: '-0.02em', marginBottom: 6 }}>
+            <h2 style={{ fontSize: 'calc(22px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: 'white', letterSpacing: '-0.02em', marginBottom: 6 }}>
               로그인
             </h2>
-            <p style={{ fontSize: 13, color: 'rgba(148,163,184,0.75)', fontWeight: 500 }}>
+            <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: 'rgba(148,163,184,0.75)', fontWeight: 500 }}>
               관리자 계정으로 로그인하세요
             </p>
           </div>
@@ -148,7 +148,7 @@ export default function LoginPage() {
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {/* ID */}
             <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6, letterSpacing: '0.05em' }}>
+              <label style={{ display: 'block', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6, letterSpacing: '0.05em' }}>
                 아이디
               </label>
               <input
@@ -162,7 +162,7 @@ export default function LoginPage() {
                   width: '100%', height: 44, padding: '0 14px',
                   background: 'rgba(255,255,255,0.07)',
                   border: '1px solid rgba(255,255,255,0.12)',
-                  borderRadius: 12, fontSize: 14, fontWeight: 600,
+                  borderRadius: 12, fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 600,
                   color: 'white', outline: 'none',
                   transition: 'border-color 150ms ease, box-shadow 150ms ease',
                   fontFamily: 'inherit',
@@ -180,7 +180,7 @@ export default function LoginPage() {
 
             {/* PW */}
             <div>
-              <label style={{ display: 'block', fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6, letterSpacing: '0.05em' }}>
+              <label style={{ display: 'block', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6, letterSpacing: '0.05em' }}>
                 비밀번호
               </label>
               <div style={{ position: 'relative' }}>
@@ -194,7 +194,7 @@ export default function LoginPage() {
                     width: '100%', height: 44, padding: '0 44px 0 14px',
                     background: 'rgba(255,255,255,0.07)',
                     border: '1px solid rgba(255,255,255,0.12)',
-                    borderRadius: 12, fontSize: 14, fontWeight: 600,
+                    borderRadius: 12, fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 600,
                     color: 'white', outline: 'none',
                     transition: 'border-color 150ms ease, box-shadow 150ms ease',
                     fontFamily: 'inherit',
@@ -228,7 +228,7 @@ export default function LoginPage() {
                 padding: '10px 14px', borderRadius: 10,
                 background: 'rgba(239,68,68,0.12)',
                 border: '1px solid rgba(239,68,68,0.25)',
-                fontSize: 12.5, fontWeight: 600, color: '#fca5a5',
+                fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: '#fca5a5',
                 display: 'flex', alignItems: 'center', gap: 8,
               }}>
                 <span>⚠️</span> {error}
@@ -242,7 +242,7 @@ export default function LoginPage() {
               style={{
                 height: 46, borderRadius: 12, border: 'none', cursor: 'pointer',
                 background: loading ? 'rgba(59,130,246,0.5)' : 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                color: 'white', fontSize: 14, fontWeight: 800,
+                color: 'white', fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 800,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 boxShadow: loading ? 'none' : '0 4px 16px rgba(59,130,246,0.35)',
                 transition: 'all 200ms ease',
@@ -272,7 +272,7 @@ export default function LoginPage() {
           {/* 회원가입 링크 */}
           <div style={{ marginTop: '1.25rem', display: 'flex', alignItems: 'center', gap: 8 }}>
             <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.07)' }} />
-            <span style={{ fontSize: 11.5, fontWeight: 600, color: 'rgba(100,116,139,0.7)', whiteSpace: 'nowrap' }}>계정이 없으신가요?</span>
+            <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 600, color: 'rgba(100,116,139,0.7)', whiteSpace: 'nowrap' }}>계정이 없으신가요?</span>
             <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.07)' }} />
           </div>
 
@@ -283,7 +283,7 @@ export default function LoginPage() {
                 width: '100%', height: 44, borderRadius: 12, cursor: 'pointer',
                 background: 'rgba(255,255,255,0.06)',
                 border: '1px solid rgba(255,255,255,0.12)',
-                color: 'rgba(255,255,255,0.85)', fontSize: 13.5, fontWeight: 700,
+                color: 'rgba(255,255,255,0.85)', fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 transition: 'all 200ms ease',
                 fontFamily: 'inherit',
@@ -311,8 +311,8 @@ export default function LoginPage() {
           }}>
             <ShieldCheck size={14} style={{ color: '#3b82f6', flexShrink: 0, marginTop: 1 }} />
             <div>
-              <p style={{ fontSize: 11, fontWeight: 700, color: 'rgba(148,163,184,0.7)', marginBottom: 2 }}>관리자 전용 시스템</p>
-              <p style={{ fontSize: 10.5, color: 'rgba(100,116,139,0.65)', lineHeight: 1.5 }}>
+              <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: 'rgba(148,163,184,0.7)', marginBottom: 2 }}>관리자 전용 시스템</p>
+              <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', color: 'rgba(100,116,139,0.65)', lineHeight: 1.5 }}>
                 인가된 계정만 접근할 수 있습니다.
               </p>
             </div>

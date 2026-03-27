@@ -193,9 +193,9 @@ function LineChart({ data }: { data: ChartPoint[] }) {
           background:'rgba(15,23,42,0.92)', borderRadius:8, padding:'6px 11px',
           boxShadow:'0 4px 16px rgba(0,0,0,0.28)', backdropFilter:'blur(4px)',
         }}>
-          <p style={{ fontSize:9.5, color:'#94a3b8', fontWeight:700, marginBottom:3 }}>{selMonthLabel(tip.day)}</p>
-          <p style={{ fontSize:11.5, color:'#93c5fd', fontWeight:800, marginBottom:1 }}>📦 {tip.count}건</p>
-          <p style={{ fontSize:11.5, color:'#c4b5fd', fontWeight:800 }}>₩{Math.round(tip.amount).toLocaleString()}</p>
+          <p style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', fontWeight:700, marginBottom:3 }}>{selMonthLabel(tip.day)}</p>
+          <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color:'#93c5fd', fontWeight:800, marginBottom:1 }}>📦 {tip.count}건</p>
+          <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color:'#c4b5fd', fontWeight:800 }}>₩{Math.round(tip.amount).toLocaleString()}</p>
         </div>
       )}
     </div>
@@ -283,8 +283,8 @@ function SingleLineChart({ data, color, gradId, formatTip }: {
           background:'rgba(15,23,42,0.92)', borderRadius:7, padding:'5px 9px',
           boxShadow:'0 2px 12px rgba(0,0,0,0.22)',
         }}>
-          <p style={{ fontSize:9, color:'#94a3b8', fontWeight:700, marginBottom:2 }}>{selMonthLabel(tip.day)}</p>
-          <p style={{ fontSize:12, color:'#fff', fontWeight:800 }}>{formatTip(tip.value)}</p>
+          <p style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8', fontWeight:700, marginBottom:2 }}>{selMonthLabel(tip.day)}</p>
+          <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color:'#fff', fontWeight:800 }}>{formatTip(tip.value)}</p>
         </div>
       )}
     </div>
@@ -544,9 +544,9 @@ export default function DashboardPage() {
                 <s.icon size={16} color={s.ic} strokeWidth={2} />
               </div>
               <div style={{ minWidth:0 }}>
-                <p style={{ fontSize:9.5,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em' }}>{s.title}</p>
+                <p style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))',fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em' }}>{s.title}</p>
                 <p style={{ fontSize:s.fs,fontWeight:900,color:'#0f172a',lineHeight:1.2,wordBreak:'break-all' }}>{s.value}</p>
-                <p style={{ fontSize:9.5,color:'#94a3b8',fontWeight:600 }}>{s.sub}</p>
+                <p style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))',color:'#94a3b8',fontWeight:600 }}>{s.sub}</p>
               </div>
             </div>
           </Link>
@@ -558,12 +558,12 @@ export default function DashboardPage() {
               <ClipboardList size={16} color="#0369a1" strokeWidth={2} />
             </div>
             <div style={{ minWidth:0 }}>
-              <p style={{ fontSize:9.5,fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em' }}>발주 현황</p>
-              <p style={{ fontSize:18,fontWeight:900,color:'#0f172a',lineHeight:1.1 }}>{purchaseStats.ordered}<span style={{ fontSize:11,fontWeight:700,marginLeft:1 }}>개</span></p>
+              <p style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))',fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em' }}>발주 현황</p>
+              <p style={{ fontSize: 'calc(18px + var(--pm-list-fs-add, 0pt))',fontWeight:900,color:'#0f172a',lineHeight:1.1 }}>{purchaseStats.ordered}<span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:700,marginLeft:1 }}>개</span></p>
               <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:1 }}>
-                <span style={{ fontSize:9,color:'#0369a1',fontWeight:700 }}>입고 {purchaseStats.received}</span>
-                <span style={{ color:'#e2e8f0',fontSize:10 }}>|</span>
-                <span style={{ fontSize:9,color:purchaseStats.unresolved>0?'#dc2626':'#94a3b8',fontWeight:700 }}>
+                <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))',color:'#0369a1',fontWeight:700 }}>입고 {purchaseStats.received}</span>
+                <span style={{ color:'#e2e8f0',fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))' }}>|</span>
+                <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))',color:purchaseStats.unresolved>0?'#dc2626':'#94a3b8',fontWeight:700 }}>
                   미입고 {purchaseStats.unresolved}
                 </span>
               </div>
@@ -582,9 +582,9 @@ export default function DashboardPage() {
             <div style={{ width:20,height:20,borderRadius:7,background:'#eff6ff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
               <ShoppingCart size={10} color="#2563eb" />
             </div>
-            <span style={{ fontSize:12,fontWeight:800,color:'#0f172a',flexShrink:0 }}>월별 주문 현황</span>
+            <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))',fontWeight:800,color:'#0f172a',flexShrink:0 }}>월별 주문 현황</span>
             {lastUpdate && (
-              <span style={{ fontSize:9, color:'#cbd5e1', fontWeight:600, flexShrink:0 }}>
+              <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', color:'#cbd5e1', fontWeight:600, flexShrink:0 }}>
                 {lastUpdate.getHours().toString().padStart(2,'0')}:{lastUpdate.getMinutes().toString().padStart(2,'0')} 기준
               </span>
             )}
@@ -598,7 +598,7 @@ export default function DashboardPage() {
                   style={{ width:20,height:20,borderRadius:5,border:'1px solid #e2e8f0',background:'#fff',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'center' }}>
                   <ChevronLeft size={10} />
                 </button>
-                <span style={{ fontSize:11,fontWeight:800,color:'#0f172a',minWidth:56,textAlign:'center' }}>
+                <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:800,color:'#0f172a',minWidth:56,textAlign:'center' }}>
                   {selMonth.replace('-','년 ')}월
                 </span>
                 <button onClick={() => setSelMonth(m => shiftMonth(m,1))} disabled={selMonth >= curYM}
@@ -612,15 +612,15 @@ export default function DashboardPage() {
           {/* ─ 1줄: 판매금액 선그래프 ─ */}
           <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
             <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-              <span style={{ fontSize:9.5, fontWeight:800, color:'#7c3aed' }}>● 판매금액</span>
-              <span style={{ fontSize:9, color:'#94a3b8' }}>
+              <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#7c3aed' }}>● 판매금액</span>
+              <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8' }}>
                 {selMonth.replace('-','년 ')}월 합계 ₩{Math.round(monthRevSel).toLocaleString()}
               </span>
             </div>
             <div style={{ flex:1, minHeight:0 }}>
               {monthTotal === 0
                 ? <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <span style={{ fontSize:10, color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
+                    <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
                   </div>
                 : <SingleLineChart
                     data={chartData.map(d => ({ day:d.day, value:d.amount }))}
@@ -634,15 +634,15 @@ export default function DashboardPage() {
           {/* ─ 2줄: 판매수량 선그래프 ─ */}
           <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
             <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-              <span style={{ fontSize:9.5, fontWeight:800, color:'#2563eb' }}>● 판매수량</span>
-              <span style={{ fontSize:9, color:'#94a3b8' }}>
+              <span style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#2563eb' }}>● 판매수량</span>
+              <span style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', color:'#94a3b8' }}>
                 {selMonth.replace('-','년 ')}월 합계 {monthTotal}건
               </span>
             </div>
             <div style={{ flex:1, minHeight:0 }}>
               {monthTotal === 0
                 ? <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <span style={{ fontSize:10, color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
+                    <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
                   </div>
                 : <SingleLineChart
                     data={chartData.map(d => ({ day:d.day, value:d.count }))}
@@ -663,8 +663,8 @@ export default function DashboardPage() {
                 { label:'순이익',   value:monthProfit,       color: monthProfit >= 0 ? '#059669' : '#dc2626', bg: monthProfit >= 0 ? '#f0fdf4' : '#fff1f2', prefix:'₩' },
               ].map(b => (
                 <div key={b.label} style={{ background:b.bg, borderRadius:8, padding:'5px 8px' }}>
-                  <p style={{ fontSize:9, fontWeight:800, color:'#94a3b8', marginBottom:1 }}>{b.label}</p>
-                  <p style={{ fontSize:12, fontWeight:900, color:b.color, lineHeight:1, wordBreak:'break-all' }}>
+                  <p style={{ fontSize: 'calc(9px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#94a3b8', marginBottom:1 }}>{b.label}</p>
+                  <p style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color:b.color, lineHeight:1, wordBreak:'break-all' }}>
                     {b.prefix}{Math.round(b.value).toLocaleString()}
                   </p>
                 </div>
@@ -674,17 +674,17 @@ export default function DashboardPage() {
 
           {/* ─ 4줄: 쇼핑몰별 판매수량 ─ */}
           <div style={{ flexShrink:0, padding:'5px 14px 6px' }}>
-            <p style={{ fontSize:9.5, fontWeight:800, color:'#94a3b8', marginBottom:5 }}>쇼핑몰별 판매수량</p>
+            <p style={{ fontSize: 'calc(9.5px + var(--pm-list-fs-add, 0pt))', fontWeight:800, color:'#94a3b8', marginBottom:5 }}>쇼핑몰별 판매수량</p>
             {mallSales.length === 0
-              ? <span style={{ fontSize:10, color:'#e2e8f0' }}>-</span>
+              ? <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', color:'#e2e8f0' }}>-</span>
               : <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
                   {mallSales.map(([ch, cnt], i) => (
                     <div key={ch} style={{ display:'flex', alignItems:'center', gap:3, borderRadius:6, padding:'3px 8px',
                       background: i === 0 ? '#fef9c3' : i === 1 ? '#f1f5f9' : '#f8fafc',
                       border: `1px solid ${i===0?'#fde047':i===1?'#e2e8f0':'#f1f5f9'}` }}>
-                      <span style={{ fontSize:8.5 }}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':''}</span>
-                      <span style={{ fontSize:10, fontWeight:700, color:'#475569' }}>{ch}</span>
-                      <span style={{ fontSize:11, fontWeight:900, color: i<3?'#0f172a':'#64748b' }}>{cnt}건</span>
+                      <span style={{ fontSize: 'calc(8.5px + var(--pm-list-fs-add, 0pt))' }}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':''}</span>
+                      <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight:700, color:'#475569' }}>{ch}</span>
+                      <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight:900, color: i<3?'#0f172a':'#64748b' }}>{cnt}건</span>
                     </div>
                   ))}
                 </div>
@@ -700,21 +700,21 @@ export default function DashboardPage() {
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <AlertTriangle size={14} color="#d97706" />
-                <span style={{ fontSize:13.5,fontWeight:900,color:'#0f172a' }}>재고 부족</span>
-                <span style={{ background:lowStock.length>0?'#fef3c7':'#f1f5f9', color:lowStock.length>0?'#d97706':'#94a3b8', fontSize:11,fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{lowStock.length}</span>
+                <span style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))',fontWeight:900,color:'#0f172a' }}>재고 부족</span>
+                <span style={{ background:lowStock.length>0?'#fef3c7':'#f1f5f9', color:lowStock.length>0?'#d97706':'#94a3b8', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{lowStock.length}</span>
               </div>
-              <Link href="/inventory" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
+              <Link href="/inventory" style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
             </div>
             <div style={{ overflow:'hidden' }}>
               {lowStock.length === 0
-                ? <p style={{ padding:'8px 16px',fontSize:12,color:'#94a3b8',fontWeight:600 }}>재고 부족 없음</p>
+                ? <p style={{ padding:'8px 16px',fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))',color:'#94a3b8',fontWeight:600 }}>재고 부족 없음</p>
                 : lowStock.slice(0,4).map((item,i) => (
                   <div key={i} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 16px',borderBottom:'1px solid #f8fafc' }}>
                     <div style={{ overflow:'hidden',minWidth:0 }}>
-                      <p style={{ fontSize:12.5,fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
-                      <p style={{ fontSize:11,color:'#94a3b8' }}>{item.oName}</p>
+                      <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))',fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
+                      <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',color:'#94a3b8' }}>{item.oName}</p>
                     </div>
-                    <span style={{ fontSize:20,fontWeight:900,color:item.stock<=1?'#dc2626':'#d97706',flexShrink:0,marginLeft:10 }}>{item.stock}</span>
+                    <span style={{ fontSize: 'calc(20px + var(--pm-list-fs-add, 0pt))',fontWeight:900,color:item.stock<=1?'#dc2626':'#d97706',flexShrink:0,marginLeft:10 }}>{item.stock}</span>
                   </div>
                 ))}
             </div>
@@ -725,18 +725,18 @@ export default function DashboardPage() {
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <Package size={14} color="#dc2626" />
-                <span style={{ fontSize:13.5,fontWeight:900,color:'#0f172a' }}>품절</span>
-                <span style={{ background:soldOut.length>0?'#fee2e2':'#f1f5f9', color:soldOut.length>0?'#dc2626':'#94a3b8', fontSize:11,fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{soldOut.length}</span>
+                <span style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))',fontWeight:900,color:'#0f172a' }}>품절</span>
+                <span style={{ background:soldOut.length>0?'#fee2e2':'#f1f5f9', color:soldOut.length>0?'#dc2626':'#94a3b8', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{soldOut.length}</span>
               </div>
-              <Link href="/inventory" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
+              <Link href="/inventory" style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
             </div>
             <div style={{ overflow:'hidden' }}>
               {soldOut.length === 0
-                ? <p style={{ padding:'8px 16px',fontSize:12,color:'#94a3b8',fontWeight:600 }}>품절 없음</p>
+                ? <p style={{ padding:'8px 16px',fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))',color:'#94a3b8',fontWeight:600 }}>품절 없음</p>
                 : soldOut.slice(0,4).map((item,i) => (
                   <div key={i} style={{ padding:'7px 16px',borderBottom:'1px solid #f8fafc' }}>
-                    <p style={{ fontSize:12.5,fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
-                    <p style={{ fontSize:11,color:'#94a3b8' }}>{item.oName}</p>
+                    <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))',fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
+                    <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',color:'#94a3b8' }}>{item.oName}</p>
                   </div>
                 ))}
             </div>
@@ -747,18 +747,18 @@ export default function DashboardPage() {
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <MessageSquare size={14} color="#be123c" />
-                <span style={{ fontSize:13.5,fontWeight:900,color:'#0f172a' }}>미처리 CS</span>
-                <span style={{ background:openCs.length>0?'#fee2e2':'#f1f5f9', color:openCs.length>0?'#dc2626':'#94a3b8', fontSize:11,fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{openCs.length}</span>
+                <span style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))',fontWeight:900,color:'#0f172a' }}>미처리 CS</span>
+                <span style={{ background:openCs.length>0?'#fee2e2':'#f1f5f9', color:openCs.length>0?'#dc2626':'#94a3b8', fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{openCs.length}</span>
               </div>
-              <Link href="/cs-management" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
+              <Link href="/cs-management" style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
             </div>
             <div style={{ overflow:'hidden' }}>
               {openCs.length === 0
-                ? <p style={{ padding:'8px 16px',fontSize:12,color:'#94a3b8',fontWeight:600 }}>처리할 CS 없음</p>
+                ? <p style={{ padding:'8px 16px',fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))',color:'#94a3b8',fontWeight:600 }}>처리할 CS 없음</p>
                 : openCs.slice(0,4).map((c,i) => (
                   <div key={i} style={{ padding:'7px 16px',borderBottom:'1px solid #f8fafc' }}>
-                    <p style={{ fontSize:12.5,fontWeight:700,color:'#0f172a' }}>{String(c['customer_name']??c['title']??`CS #${i+1}`)}</p>
-                    <p style={{ fontSize:10.5,color:'#94a3b8' }}>{c.created_at?.slice(0,10)??''}</p>
+                    <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))',fontWeight:700,color:'#0f172a' }}>{String(c['customer_name']??c['title']??`CS #${i+1}`)}</p>
+                    <p style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))',color:'#94a3b8' }}>{c.created_at?.slice(0,10)??''}</p>
                   </div>
                 ))}
             </div>
@@ -771,15 +771,15 @@ export default function DashboardPage() {
         <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 16px', borderBottom:'1px solid #f1f5f9' }}>
           <div style={{ display:'flex', alignItems:'center', gap:8 }}>
             <Truck size={13} color="#7c3aed" />
-            <span style={{ fontSize:13,fontWeight:800,color:'#0f172a' }}>배송 현황</span>
+            <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))',fontWeight:800,color:'#0f172a' }}>배송 현황</span>
           </div>
-          <Link href="/product-edit-transfer/print" style={{ fontSize:11,fontWeight:700,color:'#2563eb',textDecoration:'none' }}>송장등록관리→</Link>
+          <Link href="/product-edit-transfer/print" style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:700,color:'#2563eb',textDecoration:'none' }}>송장등록관리→</Link>
         </div>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, padding:'10px 14px' }}>
           {shippingStats.map(s => (
             <div key={s.label} style={{ borderRadius:12,padding:'10px 14px',background:s.bg }}>
-              <p style={{ fontSize:11,fontWeight:700,color:'#475569' }}>{s.label}</p>
-              <p style={{ fontSize:26,fontWeight:900,color:s.color,lineHeight:1.2 }}>{s.value}</p>
+              <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))',fontWeight:700,color:'#475569' }}>{s.label}</p>
+              <p style={{ fontSize: 'calc(26px + var(--pm-list-fs-add, 0pt))',fontWeight:900,color:s.color,lineHeight:1.2 }}>{s.value}</p>
               <div style={{ width:'100%',height:3,background:'rgba(0,0,0,0.06)',borderRadius:99,marginTop:6 }}>
                 <div style={{ width:`${Math.round((s.value/maxShip)*100)}%`,height:'100%',background:s.bar,borderRadius:99,transition:'width 600ms ease' }} />
               </div>

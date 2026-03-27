@@ -22,6 +22,11 @@ export function saveShippedOrders(orders: ShippedOrder[]) {
   broadcastDashboardRefresh()
 }
 
+/** 출고내역 탭 표시 조건: 송장 탭에서 '이동'한 건 + history_moved 도입 이전 출고확정(delivered) 건 */
+export function isVisibleInShippingHistory(o: ShippedOrder): boolean {
+  return o.history_moved === true || o.status === 'delivered'
+}
+
 /* ─── 주문 타입 ─────────────────────────────────────────── */
 export interface OrderItem {
   product_name: string

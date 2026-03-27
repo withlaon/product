@@ -284,8 +284,8 @@ export default function InvoiceSendPage() {
               <Send size={18} style={{ color: k.color }} />
             </div>
             <div>
-              <p style={{ fontSize: 24, fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
-              <p style={{ fontSize: 11.5, color: k.color, fontWeight: 800, marginTop: 3 }}>{k.label}</p>
+              <p style={{ fontSize: 'calc(24px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
+              <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: k.color, fontWeight: 800, marginTop: 3 }}>{k.label}</p>
             </div>
           </div>
         ))}
@@ -295,8 +295,8 @@ export default function InvoiceSendPage() {
       <div className="pm-card" style={{ padding: '16px 20px', marginBottom: 14 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
           <FileDown size={15} style={{ color: '#475569' }} />
-          <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>쇼핑몰별 송장 파일 다운로드</span>
-          <span style={{ fontSize: 11.5, color: '#94a3b8' }}>· 배송처리된 주문 기준</span>
+          <span style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>쇼핑몰별 송장 파일 다운로드</span>
+          <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8' }}>· 배송처리된 주문 기준</span>
         </div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
           {DOWNLOAD_MALLS.map(mall => {
@@ -312,8 +312,8 @@ export default function InvoiceSendPage() {
                   <Download size={14} style={{ color: mall.color }} />
                 </div>
                 <div style={{ textAlign: 'left' }}>
-                  <p style={{ fontSize: 13, fontWeight: 800, color: mall.color, margin: 0 }}>{mall.label}</p>
-                  <p style={{ fontSize: 11, color: '#94a3b8', marginTop: 2 }}>{count > 0 ? `${count}건 대기` : '주문 없음'}</p>
+                  <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: mall.color, margin: 0 }}>{mall.label}</p>
+                  <p style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', marginTop: 2 }}>{count > 0 ? `${count}건 대기` : '주문 없음'}</p>
                 </div>
               </button>
             )
@@ -326,7 +326,7 @@ export default function InvoiceSendPage() {
         <Search size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
         <input value={search} onChange={e => setSearch(e.target.value)}
           placeholder="주문번호 · 수취인 · 운송장번호 검색..."
-          style={{ flex: 1, height: 34, fontSize: 13, border: 'none', outline: 'none', background: 'transparent', minWidth: 140 }}
+          style={{ flex: 1, height: 34, fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', border: 'none', outline: 'none', background: 'transparent', minWidth: 140 }}
         />
 
         {/* 날짜 네비게이션 */}
@@ -337,8 +337,8 @@ export default function InvoiceSendPage() {
               <ChevronLeft size={14} />
             </button>
             <div style={{ padding: '4px 12px', borderRadius: 8, background: dateFilter === today ? '#eff6ff' : '#f8fafc', border: `1px solid ${dateFilter === today ? '#bfdbfe' : '#e2e8f0'}`, minWidth: 170, textAlign: 'center' }}>
-              <span style={{ fontSize: 13, fontWeight: 800, color: '#0f172a' }}>{fmtDateKo(dateFilter)}</span>
-              {dateFilter === today && <span style={{ fontSize: 10, fontWeight: 900, color: '#2563eb', background: '#dbeafe', padding: '1px 6px', borderRadius: 20, marginLeft: 6 }}>TODAY</span>}
+              <span style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>{fmtDateKo(dateFilter)}</span>
+              {dateFilter === today && <span style={{ fontSize: 'calc(10px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#2563eb', background: '#dbeafe', padding: '1px 6px', borderRadius: 20, marginLeft: 6 }}>TODAY</span>}
             </div>
             <button onClick={() => setDateFilter(d => shiftDate(d, 1))}
               disabled={dateFilter >= today}
@@ -348,18 +348,18 @@ export default function InvoiceSendPage() {
           </div>
         )}
         <button onClick={() => setShowAllDates(v => !v)}
-          style={{ padding: '4px 10px', borderRadius: 7, background: showAllDates ? '#1e293b' : '#f1f5f9', color: showAllDates ? '#fff' : '#64748b', border: 'none', fontSize: 12, fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
+          style={{ padding: '4px 10px', borderRadius: 7, background: showAllDates ? '#1e293b' : '#f1f5f9', color: showAllDates ? '#fff' : '#64748b', border: 'none', fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, cursor: 'pointer', flexShrink: 0 }}>
           {showAllDates ? '날짜별' : '전체'}
         </button>
 
         {checked.size > 0 && (
           <>
-            <span style={{ fontSize: 12, fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>
+            <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '5px 10px', borderRadius: 8 }}>
               {checked.size}건 선택
             </span>
             <button
               onClick={handleMoveCheckedToHistory}
-              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 12, fontWeight: 800, cursor: 'pointer' }}>
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer' }}>
               <ArrowRight size={13} /> 선택 항목 출고내역으로 이동
             </button>
           </>
@@ -370,14 +370,14 @@ export default function InvoiceSendPage() {
       <div className="pm-card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '12px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Truck size={15} style={{ color: '#64748b' }} />
-          <span style={{ fontSize: 13.5, fontWeight: 800, color: '#0f172a' }}>송장 등록 완료 주문</span>
-          <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>({filtered.length}건)</span>
+          <span style={{ fontSize: 'calc(13.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#0f172a' }}>송장 등록 완료 주문</span>
+          <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', color: '#94a3b8', fontWeight: 600 }}>({filtered.length}건)</span>
         </div>
 
         {filtered.length === 0 ? (
           <div style={{ padding: '64px 20px', textAlign: 'center' }}>
             <Package size={40} style={{ margin: '0 auto 14px', opacity: 0.15, display: 'block' }} />
-            <p style={{ fontSize: 14, fontWeight: 700, color: '#94a3b8' }}>
+            <p style={{ fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#94a3b8' }}>
               {allShipped.length === 0 ? '송장이 등록된 주문이 없습니다' : '검색 결과가 없습니다'}
             </p>
           </div>
@@ -388,7 +388,7 @@ export default function InvoiceSendPage() {
                 {allChecked ? <CheckSquare size={14} style={{ color: '#2563eb' }} /> : <Square size={14} style={{ color: '#cbd5e1' }} />}
               </span>
               {['주문번호', '날짜', '채널', '상품명', '운송장번호', '수취인', '출고내역이동'].map(h => (
-                <span key={h} style={{ fontSize: 10.5, fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
+                <span key={h} style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</span>
               ))}
             </div>
 
@@ -404,19 +404,19 @@ export default function InvoiceSendPage() {
                   <span style={{ display: 'flex', alignItems: 'center' }}>
                     {isChk ? <CheckSquare size={14} style={{ color: '#2563eb' }} /> : <Square size={14} style={{ color: '#cbd5e1' }} />}
                   </span>
-                  <span style={{ fontSize: 11, fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.order_number}</span>
-                  <span style={{ fontSize: 11, color: '#64748b' }}>{(order.shipped_at ?? order.order_date).slice(0, 10)}</span>
-                  <span style={{ fontSize: 11.5, fontWeight: 700, color: mallDef?.color ?? '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.order_number}</span>
+                  <span style={{ fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', color: '#64748b' }}>{(order.shipped_at ?? order.order_date).slice(0, 10)}</span>
+                  <span style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: mallDef?.color ?? '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {mallDef?.label ?? order.channel}
                   </span>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {order.items[0]?.product_name}
                   </span>
-                  <span style={{ fontSize: 12, fontFamily: 'monospace', color: '#334155', fontWeight: 700 }}>{order.tracking_number}</span>
-                  <span style={{ fontSize: 12.5, fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
+                  <span style={{ fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontFamily: 'monospace', color: '#334155', fontWeight: 700 }}>{order.tracking_number}</span>
+                  <span style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: '#334155' }}>{order.customer_name}</span>
                   <button
                     onClick={e => { e.stopPropagation(); handleMoveToHistory(order.id) }}
-                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 8px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, fontSize: 11, fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4, padding: '5px 8px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 7, fontSize: 'calc(11px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, cursor: 'pointer', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => { e.currentTarget.style.background = '#6d28d9' }}
                     onMouseLeave={e => { e.currentTarget.style.background = '#7c3aed' }}
                   >

@@ -45,6 +45,11 @@
 
 html { -webkit-text-size-adjust: 100%; }
 
+/* 상품관리 제외 탭: pm-tab-lists-font-boost 가 main 에 붙을 때 리스트 인라인 fontSize +2pt */
+main.pm-tab-lists-font-boost {
+  --pm-list-fs-add: 2pt;
+}
+
 body {
   font-family: var(--font-sans);
   font-size: 14px;

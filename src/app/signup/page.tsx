@@ -63,7 +63,7 @@ export default function SignupPage() {
     width: '100%', height: 44, padding: '0 14px',
     background: 'rgba(255,255,255,0.07)',
     border: `1px solid ${hasErr ? 'rgba(239,68,68,0.5)' : 'rgba(255,255,255,0.12)'}`,
-    borderRadius: 12, fontSize: 14, fontWeight: 600,
+    borderRadius: 12, fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 600,
     color: 'white', outline: 'none',
     transition: 'border-color 150ms ease, box-shadow 150ms ease',
     fontFamily: 'inherit',
@@ -102,7 +102,7 @@ export default function SignupPage() {
         {/* 뒤로가기 */}
         <Link href="/login" style={{
           textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: 6,
-          marginBottom: '1.5rem', color: 'rgba(148,163,184,0.7)', fontSize: 12.5, fontWeight: 700,
+          marginBottom: '1.5rem', color: 'rgba(148,163,184,0.7)', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 700,
           transition: 'color 150ms ease',
         }}
           onMouseEnter={e => (e.currentTarget.style.color = 'rgba(255,255,255,0.85)')}
@@ -123,10 +123,10 @@ export default function SignupPage() {
             <Boxes size={22} color="white" />
           </div>
           <div>
-            <h2 style={{ fontSize: 20, fontWeight: 900, color: 'white', letterSpacing: '-0.02em', marginBottom: 3 }}>
+            <h2 style={{ fontSize: 'calc(20px + var(--pm-list-fs-add, 0pt))', fontWeight: 900, color: 'white', letterSpacing: '-0.02em', marginBottom: 3 }}>
               회원가입
             </h2>
-            <p style={{ fontSize: 12.5, color: 'rgba(148,163,184,0.7)', fontWeight: 500 }}>
+            <p style={{ fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', color: 'rgba(148,163,184,0.7)', fontWeight: 500 }}>
               ProductPRO 계정을 만드세요
             </p>
           </div>
@@ -144,8 +144,8 @@ export default function SignupPage() {
             }}>
               <CheckCircle2 size={30} color="#34d399" />
             </div>
-            <h3 style={{ fontSize: 17, fontWeight: 800, color: 'white', marginBottom: 8 }}>가입 완료!</h3>
-            <p style={{ fontSize: 13, color: 'rgba(148,163,184,0.75)', lineHeight: 1.7, marginBottom: '1.75rem' }}>
+            <h3 style={{ fontSize: 'calc(17px + var(--pm-list-fs-add, 0pt))', fontWeight: 800, color: 'white', marginBottom: 8 }}>가입 완료!</h3>
+            <p style={{ fontSize: 'calc(13px + var(--pm-list-fs-add, 0pt))', color: 'rgba(148,163,184,0.75)', lineHeight: 1.7, marginBottom: '1.75rem' }}>
               <strong style={{ color: 'rgba(255,255,255,0.85)' }}>{doneUser}</strong>님, 환영합니다!<br />
               지금 바로 로그인하실 수 있습니다.
             </p>
@@ -153,7 +153,7 @@ export default function SignupPage() {
               <button style={{
                 width: '100%', height: 44, borderRadius: 12, border: 'none', cursor: 'pointer',
                 background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)',
-                color: 'white', fontSize: 14, fontWeight: 800,
+                color: 'white', fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 800,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 boxShadow: '0 4px 16px rgba(59,130,246,0.35)',
                 fontFamily: 'inherit',
@@ -168,7 +168,7 @@ export default function SignupPage() {
 
             {/* 이름 */}
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
                 <User size={11} /> 이름
               </label>
               <input
@@ -177,12 +177,12 @@ export default function SignupPage() {
                 style={inputStyle(!!errors.name)}
                 onFocus={onFocus} onBlur={e => onBlur(e, !!errors.name)}
               />
-              {errors.name && <p style={{ fontSize: 11.5, color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.name}</p>}
+              {errors.name && <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.name}</p>}
             </div>
 
             {/* 아이디 */}
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
                 <User size={11} /> 아이디
               </label>
               <input
@@ -191,13 +191,13 @@ export default function SignupPage() {
                 style={inputStyle(!!errors.id)}
                 onFocus={onFocus} onBlur={e => onBlur(e, !!errors.id)}
               />
-              {errors.id && <p style={{ fontSize: 11.5, color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.id}</p>}
+              {errors.id && <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.id}</p>}
             </div>
 
             {/* 이메일 (선택) */}
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
-                <Mail size={11} /> 이메일 <span style={{ fontSize: 10.5, fontWeight: 500, color: 'rgba(100,116,139,0.65)' }}>(선택)</span>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
+                <Mail size={11} /> 이메일 <span style={{ fontSize: 'calc(10.5px + var(--pm-list-fs-add, 0pt))', fontWeight: 500, color: 'rgba(100,116,139,0.65)' }}>(선택)</span>
               </label>
               <input
                 type="email" value={form.email} onChange={set('email')}
@@ -205,12 +205,12 @@ export default function SignupPage() {
                 style={inputStyle(!!errors.email)}
                 onFocus={onFocus} onBlur={e => onBlur(e, !!errors.email)}
               />
-              {errors.email && <p style={{ fontSize: 11.5, color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.email}</p>}
+              {errors.email && <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.email}</p>}
             </div>
 
             {/* 비밀번호 */}
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
                 <Lock size={11} /> 비밀번호
               </label>
               <div style={{ position: 'relative' }}>
@@ -225,12 +225,12 @@ export default function SignupPage() {
                   {showPw ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-              {errors.pw && <p style={{ fontSize: 11.5, color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.pw}</p>}
+              {errors.pw && <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.pw}</p>}
             </div>
 
             {/* 비밀번호 확인 */}
             <div>
-              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 12, fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 'calc(12px + var(--pm-list-fs-add, 0pt))', fontWeight: 700, color: 'rgba(148,163,184,0.8)', marginBottom: 6 }}>
                 <Lock size={11} /> 비밀번호 확인
               </label>
               <div style={{ position: 'relative' }}>
@@ -245,9 +245,9 @@ export default function SignupPage() {
                   {showPwC ? <EyeOff size={15} /> : <Eye size={15} />}
                 </button>
               </div>
-              {errors.pwConfirm && <p style={{ fontSize: 11.5, color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.pwConfirm}</p>}
+              {errors.pwConfirm && <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#f87171', marginTop: 5, fontWeight: 600 }}>⚠ {errors.pwConfirm}</p>}
               {form.pw && form.pwConfirm && !errors.pwConfirm && form.pw === form.pwConfirm && (
-                <p style={{ fontSize: 11.5, color: '#34d399', marginTop: 5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
+                <p style={{ fontSize: 'calc(11.5px + var(--pm-list-fs-add, 0pt))', color: '#34d399', marginTop: 5, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}>
                   <CheckCircle2 size={12} /> 비밀번호가 일치합니다
                 </p>
               )}
@@ -259,7 +259,7 @@ export default function SignupPage() {
               style={{
                 height: 46, borderRadius: 12, border: 'none', cursor: 'pointer',
                 background: loading ? 'rgba(99,102,241,0.5)' : 'linear-gradient(135deg, #6366f1 0%, #4f46e5 100%)',
-                color: 'white', fontSize: 14, fontWeight: 800,
+                color: 'white', fontSize: 'calc(14px + var(--pm-list-fs-add, 0pt))', fontWeight: 800,
                 display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8,
                 boxShadow: loading ? 'none' : '0 4px 16px rgba(99,102,241,0.35)',
                 transition: 'all 200ms ease', marginTop: 4,
@@ -279,7 +279,7 @@ export default function SignupPage() {
               )}
             </button>
 
-            <p style={{ textAlign: 'center', fontSize: 12.5, color: 'rgba(100,116,139,0.75)', marginTop: 2 }}>
+            <p style={{ textAlign: 'center', fontSize: 'calc(12.5px + var(--pm-list-fs-add, 0pt))', color: 'rgba(100,116,139,0.75)', marginTop: 2 }}>
               이미 계정이 있으신가요?{' '}
               <Link href="/login" style={{ color: '#818cf8', fontWeight: 700, textDecoration: 'none' }}
                 onMouseEnter={e => (e.currentTarget.style.color = '#a5b4fc')}
