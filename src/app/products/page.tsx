@@ -1169,7 +1169,7 @@ export default function ProductsPage() {
       name: o.name, size: o.size ?? 'FREE',
       korean_name: o.korean_name || getKoreanColor(o.name),
       chinese_name: o.chinese_name || '',
-      barcode: o.barcode, image: imgOverride?.[i] || o.image ?? '',
+      barcode: o.barcode, image: imgOverride?.[i] || (o.image ?? ''),
       ordered: o.ordered, received: o.received, sold: o.sold,
       current_stock: o.current_stock, defective: o.defective,
     }))
