@@ -2258,26 +2258,14 @@ export default function ProductsPage() {
 
                     {/* 상품명 */}
                     <td style={{ paddingTop:13 }}>
-                      <button onClick={async () => {
-                          let bi = p.basic_info
-                          if (!bi) {
-                            bi = await pmGetBasicInfo(p.id)
-                            if (bi) setProducts(prev => prev.map(pp => pp.id === p.id ? { ...pp, basic_info: bi } : pp))
-                          }
-                          setBasicInfoTarget({ ...p, basic_info: bi })
-                          setBasicInfoForm({ ...DEF_BASIC_INFO, ...(bi ?? {}), title: bi?.title || p.name })
-                          setBasicInfoTab('basic')
-                        }}
-                        style={{ background:'none', border:'none', cursor:'pointer', padding:0, textAlign:'left' }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
-                          <p style={{ fontSize:13, fontWeight:800, color:'#2563eb', lineHeight:1.4, textDecoration:'underline', textDecorationStyle:'dotted', textUnderlineOffset:3 }}>{p.name}</p>
-                          {p.abbr && (
-                            <span style={{ fontSize:11, fontWeight:900, color:'#7e22ce', background:'#f3e8ff', padding:'1px 7px', borderRadius:5, letterSpacing:'0.02em', flexShrink:0 }}>
-                              {p.abbr}
-                            </span>
-                          )}
-                        </div>
-                      </button>
+                      <div style={{ display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                        <p style={{ fontSize:13, fontWeight:800, color:'#1e293b', lineHeight:1.4 }}>{p.name}</p>
+                        {p.abbr && (
+                          <span style={{ fontSize:11, fontWeight:900, color:'#7e22ce', background:'#f3e8ff', padding:'1px 7px', borderRadius:5, letterSpacing:'0.02em', flexShrink:0 }}>
+                            {p.abbr}
+                          </span>
+                        )}
+                      </div>
                       <p style={{ fontSize:11, fontWeight:700, color:'#94a3b8', marginTop:3 }}>{p.category}</p>
                       <p style={{ fontSize:11, fontWeight:800, color: low ? '#dc2626' : '#64748b', marginTop:4 }}>
                         현재고 <span style={{ fontSize:13, fontWeight:900 }}>{tot}</span>개
