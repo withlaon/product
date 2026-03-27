@@ -253,6 +253,17 @@ export default function PurchaseMainPage() {
     }
   }
 
+  /* ── 옵션 이미지 맵: 바코드 → 이미지 ── */
+  const optImages = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const p of products) {
+      for (const o of p.options) {
+        if (o.barcode && o.image) map[o.barcode] = o.image
+      }
+    }
+    return map
+  }, [products])
+
   /* ── 미입고 리스트: 미입고 수량이 있는 품목을 바코드 오름차순으로 flatten ── */
   const miItems = useMemo(() => {
     const rows: {
@@ -430,8 +441,8 @@ export default function PurchaseMainPage() {
                                 <table style={{ width:'100%', borderCollapse:'collapse', fontSize:11 }}>
                                   <thead>
                                     <tr style={{ background:'#dbeafe' }}>
-                                      {['상품코드','옵션명','바코드','발주수량',''].map((h, hi) => (
-                                        <th key={hi} style={{ padding:'4px 8px', fontWeight:800, color:'#1d4ed8', textAlign: hi === 3 ? 'center' : 'left', fontSize:10 }}>{h}</th>
+                                      {['','상품코드','옵션명','바코드','발주수량',''].map((h, hi) => (
+                                        <th key={hi} style={{ padding:'4px 8px', fontWeight:800, color:'#1d4ed8', textAlign: hi === 4 ? 'center' : 'left', fontSize:10 }}>{h}</th>
                                       ))}
                                     </tr>
                                   </thead>
@@ -440,8 +451,16 @@ export default function PurchaseMainPage() {
                                       const key      = `${p.id}-${i}`
                                       const isEditing = editingKey === key
                                       const isSaving  = savingKeys.has(key)
+                                      const itemImg   = (item.barcode && optImages[item.barcode]) || ''
                                       return (
                                         <tr key={i} style={{ borderBottom:'1px solid #e0f2fe', background: isEditing ? '#fafffe' : undefined }}>
+                                          <td style={{ padding:'4px 8px', width:36 }}>
+                                            <div style={{ width:28, height:28, borderRadius:5, overflow:'hidden', background:'#dbeafe', flexShrink:0 }}>
+                                              {itemImg
+                                                ? <img src={itemImg} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                                                : <div style={{ width:'100%', height:'100%' }}/>}
+                                            </div>
+                                          </td>
                                           <td style={{ padding:'4px 8px', color:'#334155', fontFamily:'monospace', fontSize:10.5 }}>{item.product_code}</td>
                                           <td style={{ padding:'4px 8px', color:'#475569', fontSize:10.5 }}>{item.option_name||'-'}</td>
                                           <td style={{ padding:'4px 8px', color:'#64748b', fontFamily:'monospace', fontSize:10 }}>{item.barcode||'-'}</td>
@@ -540,6 +559,7 @@ export default function PurchaseMainPage() {
               : <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12 }}>
                   <thead style={{ position:'sticky', top:0, zIndex:1 }}>
                     <tr style={{ background:'#f8fafc' }}>
+                      <th style={thStyle()}></th>
                       <th style={thStyle()}>바코드</th>
                       <th style={thStyle('left')}>상품코드</th>
                       <th style={thStyle('left')}>옵션명</th>
@@ -550,12 +570,21 @@ export default function PurchaseMainPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {miItems.map((row, idx) => (
+                    {miItems.map((row, idx) => {
+                      const rowImg = (row.barcode && optImages[row.barcode]) || ''
+                      return (
                       <tr key={idx}
                         style={{ borderBottom:'1px solid #f8fafc' }}
                         onMouseEnter={e => { e.currentTarget.style.background='#fffbeb' }}
                         onMouseLeave={e => { e.currentTarget.style.background='' }}
                       >
+                        <td style={{ ...tdStyle(), width:36 }}>
+                          <div style={{ width:28, height:28, borderRadius:6, overflow:'hidden', background:'#f1f5f9', flexShrink:0, margin:'0 auto' }}>
+                            {rowImg
+                              ? <img src={rowImg} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                              : <div style={{ width:'100%', height:'100%' }}/>}
+                          </div>
+                        </td>
                         <td style={{ ...tdStyle(), fontFamily:'monospace', fontSize:10.5, color:'#475569', whiteSpace:'nowrap' }}>
                           {row.barcode || '-'}
                         </td>
@@ -580,7 +609,8 @@ export default function PurchaseMainPage() {
                           </span>
                         </td>
                       </tr>
-                    ))}
+                      )
+                    })}
                   </tbody>
                 </table>
             }

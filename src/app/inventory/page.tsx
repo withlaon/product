@@ -41,6 +41,7 @@ interface TxItem {
   prodCode : string
   optName  : string
   barcode  : string
+  optImage : string
   curStock : number
   defQty   : number
   received : number
@@ -53,6 +54,7 @@ function mkItem(prod: PmProduct, opt: PmOption): TxItem {
   return {
     prodId: prod.id, prodName: prod.name, prodCode: prod.code,
     optName: opt.name, barcode: opt.barcode,
+    optImage: opt.image || '',
     curStock: getStock(opt), defQty: opt.defective || 0, received: opt.received || 0,
     qty: '', adjStock: '', note: '',
   }
@@ -420,13 +422,20 @@ export default function InventoryPage() {
               {searchRes.map(({ prod, opt }) => (
                 <button key={`${prod.id}_${opt.name}`}
                   onClick={() => addItem(prod, opt)}
-                  style={{ width:'100%', textAlign:'left', padding:'8px 12px', border:'none', borderBottom:'1px solid #f1f5f9', background:'none', cursor:'pointer', fontSize:12 }}
+                  style={{ width:'100%', textAlign:'left', padding:'7px 12px', border:'none', borderBottom:'1px solid #f1f5f9', background:'none', cursor:'pointer', fontSize:12, display:'flex', alignItems:'center', gap:8 }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'none')}>
-                  <span style={{ fontWeight:800, color:'#1e293b' }}>{prod.name}</span>
-                  <span style={{ color:'#64748b', marginLeft:6 }}>— {opt.name}</span>
-                  {opt.barcode && <span style={{ fontFamily:'monospace', fontSize:11, color:'#94a3b8', marginLeft:6 }}>{opt.barcode}</span>}
-                  <span style={{ float:'right', fontSize:11, color:'#059669', fontWeight:700 }}>현재고 {getStock(opt)}</span>
+                  <div style={{ width:28, height:28, borderRadius:5, overflow:'hidden', background:'#f1f5f9', flexShrink:0 }}>
+                    {opt.image
+                      ? <img src={opt.image} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                      : <div style={{ width:'100%', height:'100%' }}/>}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <span style={{ fontWeight:800, color:'#1e293b' }}>{prod.name}</span>
+                    <span style={{ color:'#64748b', marginLeft:6 }}>— {opt.name}</span>
+                    {opt.barcode && <span style={{ fontFamily:'monospace', fontSize:11, color:'#94a3b8', marginLeft:6 }}>{opt.barcode}</span>}
+                    <span style={{ float:'right', fontSize:11, color:'#059669', fontWeight:700 }}>현재고 {getStock(opt)}</span>
+                  </div>
                 </button>
               ))}
             </div>
@@ -467,14 +476,21 @@ export default function InventoryPage() {
             <div style={{ display:'flex', flexDirection:'column', gap:6, maxHeight:280, overflowY:'auto' }}>
               {txItems.map((item, idx) => (
                 <div key={idx} style={{ display:'grid', gridTemplateColumns:'1fr 90px 90px 32px', gap:6, alignItems:'center', background:'#f8fafc', borderRadius:8, padding:'8px 10px', border:'1px solid #f1f5f9' }}>
-                  <div>
-                    <p style={{ fontSize:12.5, fontWeight:800, color:'#1e293b', marginBottom:1 }}>
-                      {item.prodName}
-                      <span style={{ fontSize:11, color:'#94a3b8', fontWeight:500, marginLeft:4 }}>{item.optName}</span>
-                    </p>
-                    <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-                      {item.barcode && <span style={{ fontFamily:'monospace', fontSize:10.5, color:'#94a3b8' }}>{item.barcode}</span>}
-                      <span style={{ fontSize:10.5, fontWeight:700, color:'#059669' }}>현재고 {item.curStock}</span>
+                  <div style={{ display:'flex', alignItems:'center', gap:8, minWidth:0 }}>
+                    <div style={{ width:34, height:34, borderRadius:7, overflow:'hidden', background:'#e2e8f0', flexShrink:0 }}>
+                      {item.optImage
+                        ? <img src={item.optImage} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                        : <div style={{ width:'100%', height:'100%' }}/>}
+                    </div>
+                    <div style={{ minWidth:0 }}>
+                      <p style={{ fontSize:12.5, fontWeight:800, color:'#1e293b', marginBottom:1 }}>
+                        {item.prodName}
+                        <span style={{ fontSize:11, color:'#94a3b8', fontWeight:500, marginLeft:4 }}>{item.optName}</span>
+                      </p>
+                      <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                        {item.barcode && <span style={{ fontFamily:'monospace', fontSize:10.5, color:'#94a3b8' }}>{item.barcode}</span>}
+                        <span style={{ fontSize:10.5, fontWeight:700, color:'#059669' }}>현재고 {item.curStock}</span>
+                      </div>
                     </div>
                   </div>
                   <div>
@@ -584,7 +600,7 @@ export default function InventoryPage() {
                 <table style={{ width:'100%', borderCollapse:'collapse', fontSize:12.5 }}>
                   <thead>
                     <tr style={{ background:'#f8fafc', position:'sticky', top:0 }}>
-                      {['상품명','코드','옵션','바코드','현재고','불량','발주','입고'].map(h => (
+                      {['','상품명','코드','옵션','바코드','현재고','불량','발주','입고'].map(h => (
                         <th key={h} style={{ padding:'7px 10px', fontWeight:800, color:'#64748b', fontSize:11, textAlign: h==='현재고'||h==='불량'||h==='발주'||h==='입고' ? 'center' : 'left', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -592,6 +608,13 @@ export default function InventoryPage() {
                   <tbody>
                     {filtered2.map(({ prod, opt, stock }, i) => (
                       <tr key={i} style={{ borderBottom:'1px solid #f8fafc' }}>
+                        <td style={{ padding:'6px 10px', width:40 }}>
+                          <div style={{ width:30, height:30, borderRadius:6, overflow:'hidden', background:'#f1f5f9', flexShrink:0 }}>
+                            {opt.image
+                              ? <img src={opt.image} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                              : <div style={{ width:'100%', height:'100%' }}/>}
+                          </div>
+                        </td>
                         <td style={{ padding:'7px 10px', fontWeight:700, color:'#1e293b', maxWidth:160, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{prod.name}</td>
                         <td style={{ padding:'7px 10px', fontFamily:'monospace', fontSize:11.5, color:'#475569' }}>{prod.code}</td>
                         <td style={{ padding:'7px 10px', color:'#64748b' }}>{opt.name}</td>

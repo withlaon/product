@@ -1164,11 +1164,12 @@ export default function ProductsPage() {
 
   /* ── 수정 모달 열기 (이미지 포함 전체 데이터 로드) ── */
   const openEdit = async (p: Product) => {
-    const initOptions = (prod: Product) => prod.options.map(o => ({
+    const cachedImgs = pageImages[p.id] ?? []
+    const initOptions = (prod: Product, imgOverride?: string[]) => prod.options.map((o, i) => ({
       name: o.name, size: o.size ?? 'FREE',
       korean_name: o.korean_name || getKoreanColor(o.name),
       chinese_name: o.chinese_name || '',
-      barcode: o.barcode, image: o.image ?? '',
+      barcode: o.barcode, image: imgOverride?.[i] || o.image ?? '',
       ordered: o.ordered, received: o.received, sold: o.sold,
       current_stock: o.current_stock, defective: o.defective,
     }))
@@ -1177,7 +1178,7 @@ export default function ProductsPage() {
       supplier: p.supplier, loca: p.loca,
       cost_price: String(p.cost_price), cost_currency: p.cost_currency,
       status: p.status,
-      options: initOptions(p),
+      options: initOptions(p, cachedImgs),
       promo_text: p.promo_text ?? '',
       special_notes: loadSpecialNotes()[p.id]?.note ?? '',
     })
