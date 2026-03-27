@@ -50,6 +50,14 @@ main.pm-tab-lists-font-boost {
   --pm-list-fs-add: 2pt;
 }
 
+/* 인라인 fontSize 없이 .pm-table 만 쓰는 셀(재고관리 등)도 동일 보정 */
+main.pm-tab-lists-font-boost .pm-table {
+  font-size: calc(13px + var(--pm-list-fs-add));
+}
+main.pm-tab-lists-font-boost .pm-table th {
+  font-size: calc(10.5px + var(--pm-list-fs-add));
+}
+
 body {
   font-family: var(--font-sans);
   font-size: 14px;
