@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import {
-  Purchase, PurchaseItem, PmProduct,
+  Purchase, PurchaseItem, PmProduct, PmOption,
   getToday, shiftDay, fmtDayLabel,
   syncProductQty,
   apiFetchPurchases, apiInsertPurchase, apiUpdatePurchase, apiDeletePurchase,
@@ -17,6 +17,33 @@ import {
 
 const CACHE_KEY = 'pm_products_cache_v1'
 const CACHE_TTL = 30 * 60 * 1000
+
+/* ──
+  syncProductQty 성공 후 API 재조회 없이 로컬 products 상태를 직접 패치.
+  /api/pm-sync-qty 서버 로직과 동일한 계산을 클라이언트에서도 수행.
+── */
+type SyncDelta = { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }
+function applyProductDeltas(prods: PmProduct[], deltas: SyncDelta[]): PmProduct[] {
+  return prods.map(prod => {
+    const related = deltas.filter(d => d.prodId === prod.id)
+    if (!related.length) return prod
+    return {
+      ...prod,
+      options: prod.options.map((opt: PmOption) => {
+        const delta = related.find(d =>
+          (d.barcode && d.barcode === opt.barcode) ||
+          (!d.barcode && d.optName && (d.optName === opt.name || d.optName === opt.korean_name))
+        )
+        if (!delta) return opt
+        const newOrdered  = Math.max(0, (opt.ordered  || 0) + delta.orderedDelta)
+        const newReceived = Math.max(0, (opt.received || 0) + delta.receivedDelta)
+        const prevStock   = opt.current_stock ?? Math.max(0, (opt.received || 0) - (opt.sold || 0))
+        const newStock    = Math.max(0, prevStock + delta.receivedDelta)
+        return { ...opt, ordered: newOrdered, received: newReceived, current_stock: newStock }
+      }),
+    }
+  })
+}
 
 /* ── 일별 날짜 네비 ── */
 function DayNav({ day, setDay }: { day: string; setDay: (d: string) => void }) {
@@ -284,11 +311,17 @@ export default function ReceiveManagePage() {
     for (const item of toConfirm) newKeys.add(`${item.purchaseId}|${item.itemIndex}`)
     setConfirmedKeys(newKeys)
     localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newKeys]))
-    // 상품관리탭 캐시 클리어 + 새로고침 signal
-    localStorage.removeItem('pm_products_cache_v1')
+
+    /* ── 옵티미스틱 업데이트 ── */
+    if (deltas.length) {
+      const updatedProducts = applyProductDeltas(products, deltas)
+      setProducts(updatedProducts)
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: updatedProducts })) } catch { /* ignore */ }
+    } else {
+      localStorage.removeItem(CACHE_KEY)
+    }
     localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
 
-    await loadProducts()
     setSaving(false)
     setSelectedKeys(new Set())
     if (!deltas.length) {
@@ -301,26 +334,40 @@ export default function ReceiveManagePage() {
     const confirmed = unreceivedList.filter(u => miSelected.has(uKey(u)) && (Number(miQtys[uKey(u)]) || 0) > 0)
     if (!confirmed.length) { alert('입고 수량을 1개 이상 입력하세요.'); return }
     setSaving(true)
-    const items: PurchaseItem[] = confirmed.map(u => ({
-      product_code: u.prodCode, option_name: u.optName, barcode: u.barcode,
-      ordered:  Number(miQtys[uKey(u)]) || 0,
-      received: Number(miQtys[uKey(u)]) || 0,
-    }))
-    const { error } = await apiInsertPurchase({
-      order_date: getToday(), supplier: '미입고확정',
-      status: 'completed', ordered_at: new Date().toISOString(), received_at: new Date().toISOString(), items,
-    })
-    if (error) { alert(`입고 확정 실패: ${error}`); setSaving(false); return }
-    const deltas = confirmed.map((u, i) => ({
-      prodId: u.prodId, optName: items[i].option_name, barcode: u.barcode || undefined,
-      orderedDelta: 0, receivedDelta: items[i].received,
-    })).filter(d => d.prodId && d.receivedDelta > 0)
-    if (deltas.length) await syncProductQty(products, deltas)
-    localStorage.removeItem(CACHE_KEY)
-    localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
-    await loadPurchases(); await loadProducts(true)
-    setMiSelected(new Set()); setMiQtys({})
-    setSaving(false)
+    try {
+      const items: PurchaseItem[] = confirmed.map(u => ({
+        product_code: u.prodCode, option_name: u.optName, barcode: u.barcode,
+        ordered:  Number(miQtys[uKey(u)]) || 0,
+        received: Number(miQtys[uKey(u)]) || 0,
+      }))
+      const { error } = await apiInsertPurchase({
+        order_date: getToday(), supplier: '미입고확정',
+        status: 'completed', ordered_at: new Date().toISOString(), received_at: new Date().toISOString(), items,
+      })
+      if (error) throw new Error(error)
+
+      const deltas: SyncDelta[] = confirmed.map((u, i) => ({
+        prodId: u.prodId, optName: items[i].option_name, barcode: u.barcode || undefined,
+        orderedDelta: 0, receivedDelta: items[i].received,
+      })).filter(d => d.prodId && d.receivedDelta > 0)
+
+      if (deltas.length) await syncProductQty(products, deltas)
+
+      /* ── 옵티미스틱 업데이트: API 캐시 우회, 즉시 상태 반영 ── */
+      const updatedProducts = applyProductDeltas(products, deltas)
+      setProducts(updatedProducts)
+      /* 캐시도 최신 데이터로 교체 → 상품관리탭이 다음 로드 시 즉시 반영 */
+      try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: updatedProducts })) } catch { /* ignore */ }
+      /* storage 이벤트 → 상품관리탭 실시간 갱신 트리거 */
+      localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
+
+      await loadPurchases()
+      setMiSelected(new Set()); setMiQtys({})
+    } catch (e) {
+      alert(`입고 확정 실패: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setSaving(false)
+    }
   }
 
   /* ── 수정 ── */
