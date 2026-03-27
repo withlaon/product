@@ -131,38 +131,6 @@ export default function ReceiveManagePage() {
   }, [])
   useEffect(() => { loadPurchases(); loadProducts() }, [loadPurchases, loadProducts])
 
-  /* ── 이미지 배치 로딩 ── */
-  const imageProdIdsKey = useMemo(
-    () => [...new Set([
-      ...unreceivedList.map(u => u.prodId),
-      ...rcItems.map(i => i.prodId),
-    ])].filter(Boolean).sort().join(','),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [products, purchases]
-  )
-  useEffect(() => {
-    if (!imageProdIdsKey) return
-    const prodIds = imageProdIdsKey.split(',').filter(Boolean)
-    let cancelled = false
-    const chunks: string[][] = []
-    for (let i = 0; i < prodIds.length; i += 20) chunks.push(prodIds.slice(i, i + 20))
-    ;(async () => {
-      for (const chunk of chunks) {
-        if (cancelled) break
-        try {
-          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
-          if (!res.ok || cancelled) continue
-          const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
-          if (!Array.isArray(data)) continue
-          const imgs: Record<string, string> = {}
-          data.forEach(prod => (prod.options ?? []).forEach(o => { if (o.barcode && o.image) imgs[o.barcode] = o.image }))
-          if (!cancelled && Object.keys(imgs).length > 0) setLoadedImages(prev => ({ ...prev, ...imgs }))
-        } catch { /* ignore */ }
-      }
-    })()
-    return () => { cancelled = true }
-  }, [imageProdIdsKey])
-
   /* ── uKey: 미입고 항목 고유키 ── */
   const uKey = (u: { prodId: string; barcode: string; optName: string }) =>
     `${u.prodId}||${u.barcode || u.optName}`
@@ -244,6 +212,37 @@ export default function ReceiveManagePage() {
     }
     return items.sort((a, b) => b.product_code.localeCompare(a.product_code))
   }, [rcPurchases, products, confirmedKeys])
+
+  /* ── 이미지 배치 로딩 ── */
+  const imageProdIdsKey = useMemo(
+    () => [...new Set([
+      ...unreceivedList.map(u => u.prodId),
+      ...rcItems.map(i => i.prodId),
+    ])].filter(Boolean).sort().join(','),
+    [unreceivedList, rcItems]
+  )
+  useEffect(() => {
+    if (!imageProdIdsKey) return
+    const prodIds = imageProdIdsKey.split(',').filter(Boolean)
+    let cancelled = false
+    const chunks: string[][] = []
+    for (let i = 0; i < prodIds.length; i += 20) chunks.push(prodIds.slice(i, i + 20))
+    ;(async () => {
+      for (const chunk of chunks) {
+        if (cancelled) break
+        try {
+          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
+          if (!res.ok || cancelled) continue
+          const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
+          if (!Array.isArray(data)) continue
+          const imgs: Record<string, string> = {}
+          data.forEach(prod => (prod.options ?? []).forEach(o => { if (o.barcode && o.image) imgs[o.barcode] = o.image }))
+          if (!cancelled && Object.keys(imgs).length > 0) setLoadedImages(prev => ({ ...prev, ...imgs }))
+        } catch { /* ignore */ }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [imageProdIdsKey])
 
   /* ── 입고확정 ── */
   const handleConfirm = async () => {
