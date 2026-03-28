@@ -291,6 +291,172 @@ function SingleLineChart({ data, color, gradId, formatTip }: {
   )
 }
 
+/** 최근 3년(36개월) 월별 판매금액 — X축 월, 호버 시 금액 */
+interface MonthlyAmtPoint { ym: string; amount: number }
+
+function MonthlySales3YChart({ data }: { data: MonthlyAmtPoint[] }) {
+  const [tipIdx, setTipIdx] = useState<number | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ w: 560, h: 120 })
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      if (width > 10 && height > 10) setSize({ w: Math.round(width), h: Math.round(height) })
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+
+  const W = size.w
+  const H = size.h
+  const padL = 36
+  const padR = 10
+  const padT = 10
+  const padB = 20
+  const cW = W - padL - padR
+  const cH = H - padT - padB
+  const maxV = Math.max(...data.map(d => d.amount), 1)
+  const cols = data.length
+  const xPos = (i: number) => (cols <= 1 ? padL + cW / 2 : padL + (i / Math.max(cols - 1, 1)) * cW)
+  const yVal = (v: number) => padT + cH - (v / maxV) * cH
+  const linePath = data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xPos(i).toFixed(1)},${yVal(d.amount).toFixed(1)}`).join(' ')
+  const fillPath =
+    cols > 0
+      ? `${linePath} L${xPos(cols - 1).toFixed(1)},${(padT + cH).toFixed(1)} L${padL},${(padT + cH).toFixed(1)} Z`
+      : ''
+
+  const handleMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (W / rect.width)
+    let nearest = 0
+    let minD = Infinity
+    data.forEach((_, i) => {
+      const d = Math.abs(xPos(i) - mx)
+      if (d < minD) {
+        minD = d
+        nearest = i
+      }
+    })
+    setTipIdx(nearest)
+  }
+
+  const tip = tipIdx !== null ? data[tipIdx] : null
+  const tipX = tipIdx !== null ? xPos(tipIdx) : 0
+  const tipXPct = W > 0 ? (tipX / W) * 100 : 0
+  const color = '#7c3aed'
+
+  const ymTitle = (ym: string) => {
+    const [y, m] = ym.split('-')
+    return `${y}년 ${Number(m)}월`
+  }
+
+  const xTickLabel = (ym: string) => {
+    const [, m] = ym.split('-')
+    return `${Number(m)}월`
+  }
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%', minHeight: 96 }}>
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        width="100%"
+        height="100%"
+        style={{ display: 'block', overflow: 'visible', cursor: 'crosshair' }}
+        onMouseMove={handleMove}
+        onMouseLeave={() => setTipIdx(null)}
+      >
+        <defs>
+          <linearGradient id="dash-3y-amt" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor={color} stopOpacity={0.2} />
+            <stop offset="100%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
+        <line x1={padL} y1={padT + cH} x2={W - padR} y2={padT + cH} stroke="#e2e8f0" strokeWidth={0.9} />
+        {fillPath ? <path d={fillPath} fill="url(#dash-3y-amt)" /> : null}
+        {linePath ? (
+          <path
+            d={linePath}
+            fill="none"
+            stroke={color}
+            strokeWidth={1.4}
+            strokeLinejoin="round"
+            strokeLinecap="round"
+          />
+        ) : null}
+        {tipIdx !== null && data[tipIdx] ? (
+          <>
+            <line
+              x1={xPos(tipIdx)}
+              y1={padT}
+              x2={xPos(tipIdx)}
+              y2={padT + cH}
+              stroke="#94a3b8"
+              strokeWidth={0.8}
+              strokeDasharray="3 2"
+              opacity={0.65}
+            />
+            <circle
+              cx={xPos(tipIdx)}
+              cy={yVal(data[tipIdx].amount)}
+              r={3.2}
+              fill={color}
+              stroke="#fff"
+              strokeWidth={1.6}
+            />
+          </>
+        ) : null}
+        {/* 1월만 연도 표시, 그 외는 격월 숫자만 (겹침 완화) */}
+        {data.map((d, i) => {
+          const m = Number(d.ym.split('-')[1])
+          const show = m === 1 || i === 0 || i === data.length - 1 || i % 3 === 0
+          if (!show) return null
+          return (
+            <text
+              key={d.ym}
+              x={xPos(i)}
+              y={H - 4}
+              textAnchor="middle"
+              fontSize={7.2}
+              fill="#94a3b8"
+              fontWeight={600}
+            >
+              {m === 1 ? `${d.ym.slice(2, 4)}년` : xTickLabel(d.ym)}
+            </text>
+          )
+        })}
+        <text x={padL - 4} y={padT + 5} textAnchor="end" fontSize={8} fill={color} fontWeight={700}>
+          {fmtMoney(maxV)}
+        </text>
+        <text x={padL - 4} y={padT + cH} textAnchor="end" fontSize={7.5} fill="#cbd5e1" fontWeight={600}>
+          0
+        </text>
+      </svg>
+      {tip && tipIdx !== null && (
+        <div
+          style={{
+            position: 'absolute',
+            top: '6%',
+            pointerEvents: 'none',
+            zIndex: 20,
+            left: `${tipXPct > 72 ? tipXPct - 18 : tipXPct + 1}%`,
+            transform: tipXPct > 72 ? 'translateX(-100%)' : 'none',
+            background: 'rgba(15,23,42,0.92)',
+            borderRadius: 8,
+            padding: '7px 12px',
+            boxShadow: '0 4px 16px rgba(0,0,0,0.28)',
+          }}
+        >
+          <p style={{ fontSize: '10px', color: '#94a3b8', fontWeight: 700, marginBottom: 4 }}>{ymTitle(tip.ym)}</p>
+          <p style={{ fontSize: '13px', color: '#c4b5fd', fontWeight: 800 }}>₩{Math.round(tip.amount).toLocaleString()}</p>
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* ── 대시보드 ─────────────────────────────────────────────── */
 export default function DashboardPage() {
   const today    = getToday()
@@ -459,6 +625,20 @@ export default function DashboardPage() {
   const monthTotal  = useMemo(() => chartData.reduce((s,d) => s+d.count, 0), [chartData])
   const monthRevSel = useMemo(() => chartData.reduce((s,d) => s+d.amount, 0), [chartData])
 
+  /** 최근 36개월(3년) 월별 판매금액 — 당월(curYM)까지 */
+  const monthlySales3y = useMemo((): MonthlyAmtPoint[] => {
+    const keys: string[] = []
+    for (let i = 35; i >= 0; i--) keys.push(shiftMonth(curYM, -i))
+    const byMonth: Record<string, number> = {}
+    for (const o of allOrdersMerged) {
+      if (o.status === 'cancelled') continue
+      const ym = o.order_date?.slice(0, 7)
+      if (!ym) continue
+      byMonth[ym] = (byMonth[ym] ?? 0) + (o.total_amount ?? 0)
+    }
+    return keys.map(ym => ({ ym, amount: byMonth[ym] ?? 0 }))
+  }, [allOrdersMerged, curYM])
+
   /* ── 당월 매입액 (발주금액: KRW 그대로, CNY는 환율 × 1.475) ── */
   const monthPurchaseCost = useMemo(() => {
     const EX = 210
@@ -592,6 +772,16 @@ export default function DashboardPage() {
                   <ChevronRight size={10} />
                 </button>
               </div>
+            </div>
+          </div>
+
+          {/* 최근 3년 월별 판매금액 (선 그래프) — 선택 월 일별 그래프 위 */}
+          <div style={{ flexShrink: 0, borderBottom: '1px solid #f8fafc', padding: '8px 14px 10px' }}>
+            <p style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', letterSpacing: '0.02em', marginBottom: 6 }}>
+              최근 3년간 월별 판매금액
+            </p>
+            <div style={{ height: 132, width: '100%' }}>
+              <MonthlySales3YChart data={monthlySales3y} />
             </div>
           </div>
 
