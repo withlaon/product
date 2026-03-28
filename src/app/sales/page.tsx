@@ -425,9 +425,22 @@ export default function SalesManagementPage() {
     return byCh
   }, [salesRows])
 
+  /** 누적 판매수량 많은 쇼핑몰 순 (동일 시 가나다) */
+  const connectedMallsBySales = useMemo(() => {
+    const totals: Record<string, number> = {}
+    for (const r of salesRows) {
+      totals[r.channel] = (totals[r.channel] ?? 0) + r.qty
+    }
+    return [...connectedMalls].sort((a, b) => {
+      const d = (totals[b] ?? 0) - (totals[a] ?? 0)
+      if (d !== 0) return d
+      return a.localeCompare(b, 'ko')
+    })
+  }, [connectedMalls, salesRows])
+
   const mallCumulativeRanked = useMemo(() => {
     const out: Record<string, { barcode: string; qty: number; productName: string; optionLabel: string }[]> = {}
-    for (const mallName of connectedMalls) {
+    for (const mallName of connectedMallsBySales) {
       const sub = cumulativeByMall[mallName] ?? {}
       out[mallName] = Object.entries(sub)
         .map(([barcode, qty]) => ({
@@ -439,7 +452,7 @@ export default function SalesManagementPage() {
         .sort((a, b) => b.qty - a.qty)
     }
     return out
-  }, [connectedMalls, cumulativeByMall, barcodeMeta])
+  }, [connectedMallsBySales, cumulativeByMall, barcodeMeta])
 
   const trendMonths = useMemo(() => {
     if (periodMode === 'year') return yearMonthKeys(selYear)
@@ -670,7 +683,7 @@ export default function SalesManagementPage() {
             style={{ height: 32, fontSize: 12, fontWeight: 700, minWidth: 200, maxWidth: 280 }}
           >
             <option value="">전체 쇼핑몰</option>
-            {connectedMalls.map(ch => (
+            {connectedMallsBySales.map(ch => (
               <option key={ch} value={ch}>{ch}</option>
             ))}
           </select>
@@ -740,11 +753,11 @@ export default function SalesManagementPage() {
           <p style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, marginBottom: 10, lineHeight: 1.4 }}>
             누적 판매량 기준 TOP 5 · 블록을 누르면 TOP 30까지 펼칩니다.
           </p>
-          {connectedMalls.length === 0 ? (
+          {connectedMallsBySales.length === 0 ? (
             <p style={{ fontSize: 11, color: '#94a3b8' }}>매핑관리에서 연동 쇼핑몰을 등록하세요.</p>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {connectedMalls.map(mall => {
+              {connectedMallsBySales.map(mall => {
                 const ranked = mallCumulativeRanked[mall] ?? []
                 const expanded = expandedMallPanel[mall] === true
                 const show = expanded ? ranked.slice(0, 30) : ranked.slice(0, 5)

@@ -485,8 +485,8 @@ export default function CsManagementPage() {
   }
 
   /* ════ 그리드 컬럼 ════ */
-  const GRID_LEFT  = '30px 56px 0.8fr 34px 1fr 72px 80px 80px 26px 52px 56px 48px'
-  const GRID_RIGHT = '30px 56px 0.8fr 34px 1fr 72px 80px 80px 26px 52px 68px 48px'
+  const GRID_LEFT  = '30px 56px minmax(72px,0.65fr) 34px minmax(72px,0.8fr) minmax(132px,1.4fr) minmax(132px,1.4fr) minmax(120px,1.3fr) 26px 52px 56px 48px'
+  const GRID_RIGHT = '30px 56px minmax(72px,0.65fr) 34px minmax(72px,0.8fr) minmax(132px,1.4fr) minmax(132px,1.4fr) minmax(120px,1.3fr) 26px 52px 68px 48px'
   const HDRS_LEFT  = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '송장번호', '반송장번호', '바코드', '수량', '사유', '', '']
   const HDRS_RIGHT = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '송장번호', '반송장번호', '바코드', '수량', '사유', '처리일시', '']
 
@@ -538,7 +538,7 @@ export default function CsManagementPage() {
               return (
                 <div key={item.id}
                   onClick={() => setEditDraft({ ...item })}
-                  style={{ display: 'grid', gridTemplateColumns: GRID_LEFT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'center', cursor: 'pointer', transition: 'background 120ms' }}
+                  style={{ display: 'grid', gridTemplateColumns: GRID_LEFT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'start', cursor: 'pointer', transition: 'background 120ms' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
@@ -548,7 +548,7 @@ export default function CsManagementPage() {
                   <ImageCell src={item.option_image} />
                   <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
                   {/* 송장번호 */}
-                  <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                  <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
                     {item.tracking_number || '-'}
                   </span>
                   {/* 반송장번호 인라인 입력 */}
@@ -557,11 +557,11 @@ export default function CsManagementPage() {
                     onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
                     placeholder="반송장"
                     onClick={e => e.stopPropagation()}
-                    style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                    style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', minWidth: 0, border: '1px solid #e2e8f0', borderRadius: 4, padding: '4px 6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: 1 }}
                   />
                   <BarcodeCell barcode={item.barcode} />
                   {/* 수량 */}
-                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center' }}>{qty}</span>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center', paddingTop: 4 }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
                   {/* 처리완료 */}
                   <button onClick={e => { e.stopPropagation(); handleProcess(item) }} disabled={!!processing}
@@ -612,7 +612,7 @@ export default function CsManagementPage() {
               return (
                 <div key={item.id}
                   onClick={() => setEditDraft({ ...item })}
-                  style={{ display: 'grid', gridTemplateColumns: GRID_RIGHT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'center', background: '#fafffe', cursor: 'pointer', transition: 'background 120ms' }}
+                  style={{ display: 'grid', gridTemplateColumns: GRID_RIGHT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'start', background: '#fafffe', cursor: 'pointer', transition: 'background 120ms' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#ecfdf5')}
                   onMouseLeave={e => (e.currentTarget.style.background = '#fafffe')}
                 >
@@ -622,7 +622,7 @@ export default function CsManagementPage() {
                   <ImageCell src={item.option_image} />
                   <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
                   {/* 송장번호 */}
-                  <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                  <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
                     {item.tracking_number || '-'}
                   </span>
                   {/* 반송장번호 인라인 입력 */}
@@ -631,11 +631,11 @@ export default function CsManagementPage() {
                     onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
                     placeholder="반송장"
                     onClick={e => e.stopPropagation()}
-                    style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
+                    style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', minWidth: 0, border: '1px solid #e2e8f0', borderRadius: 4, padding: '4px 6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: 1 }}
                   />
                   <BarcodeCell barcode={item.barcode} />
                   {/* 수량 */}
-                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center' }}>{qty}</span>
+                  <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center', paddingTop: 4 }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
                   {/* 처리일시 + 재고/불량 표기 */}
                   <div>
@@ -1154,7 +1154,7 @@ function AbbrOptionCell({ abbr, option }: { abbr: string; option: string }) {
 
 function BarcodeCell({ barcode }: { barcode: string }) {
   return (
-    <span data-pm-barcode="1" style={{ fontSize: '10.5px', fontWeight: 900, letterSpacing: '0.02em', color: '#000000', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+    <span data-pm-barcode="1" style={{ fontSize: '10.5px', fontWeight: 900, letterSpacing: '0.02em', color: '#000000', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
       {barcode || '-'}
     </span>
   )
