@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
   Package, ShoppingCart, AlertTriangle, TrendingUp,
-  Truck, MessageSquare, RefreshCw, ChevronLeft, ChevronRight,
+  MessageSquare, RefreshCw, ChevronLeft, ChevronRight,
   ClipboardList,
 } from 'lucide-react'
 import { loadOrders, loadShippedOrders, loadInvoiceQueue } from '@/lib/orders'
@@ -440,12 +440,6 @@ export default function DashboardPage() {
     return { ordered: monthOrdered, received: monthReceived, unresolved }
   }, [purchases, curYM])
 
-  /* ── 배송 현황 ── */
-  const needInvoice    = useMemo(() => orders.filter(o => !o.tracking_number && o.status !== 'cancelled' && o.status !== 'delivered').length, [orders])
-  const shippingCount  = useMemo(() => orders.filter(o => o.status === 'shipped').length, [orders])
-  const deliveredToday = useMemo(() => shipped.filter(o => (o.shipped_at??'').slice(0,10) === today).length, [shipped, today])
-  const totalShipped   = useMemo(() => shipped.length, [shipped])
-
   /* ── 월별 차트 데이터
        pm_orders_v1 + pm_invoice_queue_v1 + pm_shipped_orders_v1 를 합산
        (주문이 어느 단계에 있든 order_date 기준으로 집계) ── */
@@ -511,14 +505,6 @@ export default function DashboardPage() {
 
   /* ── CS ── */
   const openCs = useMemo(() => csItems.filter(c => c.status !== 'resolved' && c.status !== 'closed'), [csItems])
-
-  const shippingStats = [
-    { label:'송장 미등록', value: needInvoice,   bg:'#fff1f2', color:'#be123c', bar:'#f43f5e' },
-    { label:'배송 중',    value: shippingCount,  bg:'#eff6ff', color:'#1d4ed8', bar:'#3b82f6' },
-    { label:'오늘 출고',  value: deliveredToday, bg:'#faf5ff', color:'#7e22ce', bar:'#a855f7' },
-    { label:'누적 출고',  value: totalShipped,   bg:'#f0fdf4', color:'#15803d', bar:'#22c55e' },
-  ]
-  const maxShip = Math.max(...shippingStats.map(s => s.value), 1)
 
   if (loading) return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%' }}>
@@ -763,28 +749,6 @@ export default function DashboardPage() {
                 ))}
             </div>
           </div>
-        </div>
-      </div>
-
-      {/* ── 하단: 배송 현황 ── */}
-      <div className="pm-card" style={{ flexShrink:0, padding:0, overflow:'hidden' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'8px 16px', borderBottom:'1px solid #f1f5f9' }}>
-          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-            <Truck size={13} color="#7c3aed" />
-            <span style={{ fontSize: '13px',fontWeight:800,color:'#0f172a' }}>배송 현황</span>
-          </div>
-          <Link href="/product-edit-transfer/print" style={{ fontSize: '11px',fontWeight:700,color:'#2563eb',textDecoration:'none' }}>송장등록관리→</Link>
-        </div>
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, padding:'10px 14px' }}>
-          {shippingStats.map(s => (
-            <div key={s.label} style={{ borderRadius:12,padding:'10px 14px',background:s.bg }}>
-              <p style={{ fontSize: '11px',fontWeight:700,color:'#475569' }}>{s.label}</p>
-              <p style={{ fontSize: '26px',fontWeight:900,color:s.color,lineHeight:1.2 }}>{s.value}</p>
-              <div style={{ width:'100%',height:3,background:'rgba(0,0,0,0.06)',borderRadius:99,marginTop:6 }}>
-                <div style={{ width:`${Math.round((s.value/maxShip)*100)}%`,height:'100%',background:s.bar,borderRadius:99,transition:'width 600ms ease' }} />
-              </div>
-            </div>
-          ))}
         </div>
       </div>
 

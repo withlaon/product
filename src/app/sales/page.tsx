@@ -3,7 +3,15 @@
 import { useState, useEffect, useMemo, useCallback, useRef, type CSSProperties } from 'react'
 import { usePathname } from 'next/navigation'
 import {
-  TrendingUp, Package, Store, Calendar, RefreshCw, ChevronLeft, ChevronRight,
+  TrendingUp,
+  Package,
+  Store,
+  Calendar,
+  RefreshCw,
+  ChevronLeft,
+  ChevronRight,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import {
   loadShippedOrders,
@@ -15,6 +23,8 @@ import {
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
+
+const CHANNEL_STORAGE_KEY = 'pm_mall_channels_v5'
 
 interface CachedOption {
   barcode?: string
@@ -40,14 +50,26 @@ function getCurYM() {
   return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}`
 }
 
+function getCurYear() {
+  return String(new Date().getFullYear())
+}
+
 function shiftMonth(ym: string, delta: number) {
   const [y, m] = ym.split('-').map(Number)
   const dt = new Date(y, m - 1 + delta, 1)
   return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`
 }
 
+function shiftYear(y: string, delta: number) {
+  return String(Number(y) + delta)
+}
+
 function monthsRangeEndAt(ym: string, count: number): string[] {
   return Array.from({ length: count }, (_, i) => shiftMonth(ym, -(count - 1 - i)))
+}
+
+function yearMonthKeys(year: string): string[] {
+  return Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, '0')}`)
 }
 
 function loadCachedProducts(): CachedProduct[] {
@@ -57,6 +79,18 @@ function loadCachedProducts(): CachedProduct[] {
     const parsed = JSON.parse(raw)
     const data = Array.isArray(parsed) ? parsed : parsed?.data
     return Array.isArray(data) ? data : []
+  } catch {
+    return []
+  }
+}
+
+function loadConnectedMallNames(): string[] {
+  try {
+    const raw = localStorage.getItem(CHANNEL_STORAGE_KEY)
+    if (!raw) return []
+    const arr = JSON.parse(raw) as { name?: string; active?: boolean }[]
+    if (!Array.isArray(arr)) return []
+    return arr.filter(c => c && c.active && String(c.name ?? '').trim()).map(c => String(c.name).trim())
   } catch {
     return []
   }
@@ -149,6 +183,13 @@ function MonthTrendChart({ data, color, gradId }: {
   const tip = tipIdx !== null ? data[tipIdx] : null
   const tipXPct = tipIdx !== null && W > 0 ? (xPos(tipIdx) / W) * 100 : 0
 
+  const xLabel = (label: string) => {
+    if (label.length >= 7 && label.includes('-')) {
+      return `${label.slice(5).replace(/^0/, '')}월`
+    }
+    return label
+  }
+
   return (
     <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%', minHeight: 72 }}>
       <svg
@@ -188,8 +229,8 @@ function MonthTrendChart({ data, color, gradId }: {
           />
         )}
         {data.map((d, i) => (
-          <text key={d.label} x={xPos(i)} y={H - 2} textAnchor="middle" fontSize={7.5} fill="#94a3b8">
-            {d.label.slice(5).replace(/^0/, '')}월
+          <text key={`${d.label}-${i}`} x={xPos(i)} y={H - 2} textAnchor="middle" fontSize={7.5} fill="#94a3b8">
+            {xLabel(d.label)}
           </text>
         ))}
       </svg>
@@ -216,11 +257,18 @@ function MonthTrendChart({ data, color, gradId }: {
   )
 }
 
+type PeriodMode = 'month' | 'year'
+
 export default function SalesManagementPage() {
   const curYM = getCurYM()
+  const curYear = getCurYear()
   const pathname = usePathname()
+  const [periodMode, setPeriodMode] = useState<PeriodMode>('month')
   const [selMonth, setSelMonth] = useState(curYM)
-  const [mallFilter, setMallFilter] = useState<string | ''>('') // '' = 전체
+  const [selYear, setSelYear] = useState(curYear)
+  const [mallFilter, setMallFilter] = useState<string>('')
+  const [connectedMalls, setConnectedMalls] = useState<string[]>([])
+  const [expandedMallPanel, setExpandedMallPanel] = useState<Record<string, boolean>>({})
   const [shipped, setShipped] = useState<ShippedOrder[]>([])
   const [mappings, setMappings] = useState<ReturnType<typeof loadMappings>>({})
   const [products, setProducts] = useState<CachedProduct[]>([])
@@ -243,6 +291,7 @@ export default function SalesManagementPage() {
   const refresh = useCallback(async () => {
     setMappings(loadMappings())
     setShipped(loadShippedOrders())
+    setConnectedMalls(loadConnectedMallNames().sort((a, b) => a.localeCompare(b, 'ko')))
     const prods = await loadProductsWithFallback()
     setProducts(prods)
   }, [loadProductsWithFallback])
@@ -261,6 +310,7 @@ export default function SalesManagementPage() {
       SHIPPED_ORDERS_KEY,
       'pm_products_cache_v1',
       MAPPING_KEY,
+      CHANNEL_STORAGE_KEY,
       'pm_dashboard_refresh_ts',
       'pm_products_cache_sync',
       'pm_products_mapping_signal',
@@ -273,6 +323,7 @@ export default function SalesManagementPage() {
     window.addEventListener('storage', onStorage)
     window.addEventListener(DASHBOARD_REFRESH_EVENT, onCustom)
     window.addEventListener('pm_products_cache_sync', onCustom)
+    window.addEventListener('pm_mapping_updated', onCustom)
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') void refresh()
     })
@@ -280,6 +331,7 @@ export default function SalesManagementPage() {
       window.removeEventListener('storage', onStorage)
       window.removeEventListener(DASHBOARD_REFRESH_EVENT, onCustom)
       window.removeEventListener('pm_products_cache_sync', onCustom)
+      window.removeEventListener('pm_mapping_updated', onCustom)
     }
   }, [refresh])
 
@@ -288,14 +340,8 @@ export default function SalesManagementPage() {
     [products],
   )
 
-  /** 출고확정(delivered)만, 바코드는 매핑·SKU 기준, 상품관리에 존재하는 바코드만 집계 */
   const salesRows = useMemo(() => {
-    const rows: {
-      ym: string
-      channel: string
-      barcode: string
-      qty: number
-    }[] = []
+    const rows: { ym: string; channel: string; barcode: string; qty: number }[] = []
     for (const o of shipped) {
       if (!isDeliveredConfirmed(o)) continue
       const dateKey = (o.shipped_at ?? o.order_date ?? '').slice(0, 10)
@@ -311,21 +357,22 @@ export default function SalesManagementPage() {
     return rows
   }, [shipped, mappings, validBarcodes])
 
-  const channelsInMonth = useMemo(() => {
-    const set = new Set<string>()
-    for (const r of salesRows) {
-      if (r.ym === selMonth) set.add(r.channel)
-    }
-    return [...set].sort()
-  }, [salesRows, selMonth])
+  const periodLabel = useMemo(() => {
+    if (periodMode === 'year') return `${selYear}년`
+    return `${selMonth.replace('-', '.')}월`
+  }, [periodMode, selYear, selMonth])
 
   const filteredRows = useMemo(() => {
     return salesRows.filter(r => {
-      if (r.ym !== selMonth) return false
+      if (periodMode === 'month') {
+        if (r.ym !== selMonth) return false
+      } else {
+        if (!r.ym.startsWith(`${selYear}-`)) return false
+      }
       if (mallFilter && r.channel !== mallFilter) return false
       return true
     })
-  }, [salesRows, selMonth, mallFilter])
+  }, [salesRows, periodMode, selMonth, selYear, mallFilter])
 
   const aggByBarcode = useMemo(() => {
     const m: Record<string, number> = {}
@@ -335,22 +382,43 @@ export default function SalesManagementPage() {
     return m
   }, [filteredRows])
 
-  const topGlobal = useMemo(() => {
+  const topPeriod = useMemo(() => {
     return Object.entries(aggByBarcode)
       .map(([barcode, qty]) => ({ barcode, qty, ...barcodeMeta[barcode] }))
       .sort((a, b) => b.qty - a.qty)
   }, [aggByBarcode, barcodeMeta])
 
-  const topByMall = useMemo(() => {
+  /** 전체 기간 누적 (바코드 → 수량) */
+  const cumulativeGlobalMap = useMemo(() => {
+    const m: Record<string, number> = {}
+    for (const r of salesRows) {
+      m[r.barcode] = (m[r.barcode] ?? 0) + r.qty
+    }
+    return m
+  }, [salesRows])
+
+  const cumulativeTop20 = useMemo(() => {
+    return Object.entries(cumulativeGlobalMap)
+      .map(([barcode, qty]) => ({ barcode, qty, ...barcodeMeta[barcode] }))
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 20)
+  }, [cumulativeGlobalMap, barcodeMeta])
+
+  /** 쇼핑몰별 누적 TOP (연동 쇼핑몰 이름 기준) */
+  const cumulativeByMall = useMemo(() => {
     const byCh: Record<string, Record<string, number>> = {}
     for (const r of salesRows) {
-      if (r.ym !== selMonth) continue
       if (!byCh[r.channel]) byCh[r.channel] = {}
       byCh[r.channel][r.barcode] = (byCh[r.channel][r.barcode] ?? 0) + r.qty
     }
-    const result: Record<string, { barcode: string; qty: number; productName: string; optionLabel: string }[]> = {}
-    for (const ch of Object.keys(byCh)) {
-      result[ch] = Object.entries(byCh[ch])
+    return byCh
+  }, [salesRows])
+
+  const mallCumulativeRanked = useMemo(() => {
+    const out: Record<string, { barcode: string; qty: number; productName: string; optionLabel: string }[]> = {}
+    for (const mallName of connectedMalls) {
+      const sub = cumulativeByMall[mallName] ?? {}
+      out[mallName] = Object.entries(sub)
         .map(([barcode, qty]) => ({
           barcode,
           qty,
@@ -358,12 +426,14 @@ export default function SalesManagementPage() {
           optionLabel: barcodeMeta[barcode]?.optionLabel ?? '',
         }))
         .sort((a, b) => b.qty - a.qty)
-        .slice(0, 8)
     }
-    return result
-  }, [salesRows, selMonth, barcodeMeta])
+    return out
+  }, [connectedMalls, cumulativeByMall, barcodeMeta])
 
-  const trendMonths = useMemo(() => monthsRangeEndAt(selMonth, 6), [selMonth])
+  const trendMonths = useMemo(() => {
+    if (periodMode === 'year') return yearMonthKeys(selYear)
+    return monthsRangeEndAt(selMonth, 6)
+  }, [periodMode, selYear, selMonth])
 
   const trendAll = useMemo(() => {
     return trendMonths.map(ym => {
@@ -388,10 +458,7 @@ export default function SalesManagementPage() {
     })
   }, [salesRows, trendMonths, mallFilter])
 
-  const monthTotalQty = useMemo(
-    () => filteredRows.reduce((s, r) => s + r.qty, 0),
-    [filteredRows],
-  )
+  const periodTotalQty = useMemo(() => filteredRows.reduce((s, r) => s + r.qty, 0), [filteredRows])
   const skuCount = useMemo(() => Object.keys(aggByBarcode).length, [aggByBarcode])
 
   const handleRefreshClick = async () => {
@@ -401,14 +468,22 @@ export default function SalesManagementPage() {
     setTimeout(() => setRefreshing(false), 400)
   }
 
+  const toggleMallExpand = (mall: string) => {
+    setExpandedMallPanel(prev => ({ ...prev, [mall]: !prev[mall] }))
+  }
+
   const tableStyle: CSSProperties = {
     width: '100%',
     borderCollapse: 'collapse',
     fontSize: 12,
   }
 
+  const centerTitle = mallFilter
+    ? `「${mallFilter}」 통합 인기 상품 TOP 20`
+    : '전체 쇼핑몰 통합 인기 상품 TOP 20'
+
   return (
-    <div style={{ maxWidth: 1320, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ maxWidth: 1480, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
 
       <div className="pm-card" style={{ padding: '12px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
@@ -429,8 +504,7 @@ export default function SalesManagementPage() {
             <div>
               <p style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 2 }}>판매관리</p>
               <p style={{ fontSize: 11, color: '#64748b', fontWeight: 600, lineHeight: 1.35 }}>
-                출고내역에서 <b style={{ color: '#1d4ed8' }}>출고확정</b>된 건만 반영합니다. 집계 바코드는 주문 매핑·SKU와 동일하며,
-                <b style={{ color: '#0f172a' }}> 상품관리에 등록된 바코드</b>만 표시됩니다. 상품 삭제 시 여기서도 즉시 빠집니다.
+                출고내역 <b style={{ color: '#1d4ed8' }}>출고확정</b>·바코드 기준. 쇼핑몰 목록은 <b>매핑관리</b> 연동 쇼핑몰과 동일합니다.
               </p>
             </div>
           </div>
@@ -459,51 +533,121 @@ export default function SalesManagementPage() {
       </div>
 
       <div className="pm-card" style={{ padding: '10px 16px', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <Calendar size={14} color="#64748b" />
-          <span style={{ fontSize: 12, fontWeight: 800, color: '#334155' }}>기준 월</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+        <div style={{ display: 'flex', borderRadius: 8, overflow: 'hidden', border: '1.5px solid #e2e8f0' }}>
+          {(['month', 'year'] as const).map(m => (
             <button
+              key={m}
               type="button"
-              onClick={() => setSelMonth(m => shiftMonth(m, -1))}
+              onClick={() => setPeriodMode(m)}
               style={{
-                width: 28,
-                height: 28,
-                borderRadius: 6,
-                border: '1px solid #e2e8f0',
-                background: '#fff',
+                padding: '6px 12px',
+                fontSize: 12,
+                fontWeight: 800,
+                border: 'none',
                 cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
+                background: periodMode === m ? '#0f172a' : '#fff',
+                color: periodMode === m ? '#fff' : '#64748b',
               }}
             >
-              <ChevronLeft size={14} />
+              {m === 'month' ? '월 단위' : '연도 단위'}
             </button>
-            <span style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', minWidth: 72, textAlign: 'center' }}>
-              {selMonth.replace('-', '.')}월
-            </span>
-            <button
-              type="button"
-              onClick={() => setSelMonth(m => shiftMonth(m, 1))}
-              disabled={selMonth >= curYM}
-              style={{
-                width: 28,
-                height: 28,
-                borderRadius: 6,
-                border: '1px solid #e2e8f0',
-                background: '#fff',
-                cursor: selMonth >= curYM ? 'not-allowed' : 'pointer',
-                opacity: selMonth >= curYM ? 0.45 : 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
+          ))}
         </div>
+
+        {periodMode === 'month' ? (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Calendar size={14} color="#64748b" />
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#334155' }}>기준 월</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button
+                type="button"
+                onClick={() => setSelMonth(x => shiftMonth(x, -1))}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  border: '1px solid #e2e8f0',
+                  background: '#fff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', minWidth: 72, textAlign: 'center' }}>
+                {selMonth.replace('-', '.')}월
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelMonth(x => shiftMonth(x, 1))}
+                disabled={selMonth >= curYM}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  border: '1px solid #e2e8f0',
+                  background: '#fff',
+                  cursor: selMonth >= curYM ? 'not-allowed' : 'pointer',
+                  opacity: selMonth >= curYM ? 0.45 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <Calendar size={14} color="#64748b" />
+            <span style={{ fontSize: 12, fontWeight: 800, color: '#334155' }}>기준 연도</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <button
+                type="button"
+                onClick={() => setSelYear(y => shiftYear(y, -1))}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  border: '1px solid #e2e8f0',
+                  background: '#fff',
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <ChevronLeft size={14} />
+              </button>
+              <span style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', minWidth: 52, textAlign: 'center' }}>
+                {selYear}년
+              </span>
+              <button
+                type="button"
+                onClick={() => setSelYear(y => shiftYear(y, 1))}
+                disabled={selYear >= curYear}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 6,
+                  border: '1px solid #e2e8f0',
+                  background: '#fff',
+                  cursor: selYear >= curYear ? 'not-allowed' : 'pointer',
+                  opacity: selYear >= curYear ? 0.45 : 1,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </div>
+        )}
+
         <div style={{ width: 1, height: 24, background: '#f1f5f9' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <Store size={14} color="#64748b" />
@@ -512,10 +656,10 @@ export default function SalesManagementPage() {
             value={mallFilter}
             onChange={e => setMallFilter(e.target.value)}
             className="pm-input"
-            style={{ height: 32, fontSize: 12, fontWeight: 700, minWidth: 160 }}
+            style={{ height: 32, fontSize: 12, fontWeight: 700, minWidth: 200, maxWidth: 280 }}
           >
             <option value="">전체 쇼핑몰</option>
-            {channelsInMonth.map(ch => (
+            {connectedMalls.map(ch => (
               <option key={ch} value={ch}>{ch}</option>
             ))}
           </select>
@@ -525,8 +669,8 @@ export default function SalesManagementPage() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
         {[
           {
-            label: `${selMonth.replace('-', '.')}월 판매수량(확정)`,
-            value: monthTotalQty.toLocaleString(),
+            label: `${periodLabel} 판매수량(확정)`,
+            value: periodTotalQty.toLocaleString(),
             sub: mallFilter ? `${mallFilter} 한정` : '전체 채널 합산',
             icon: <Package size={16} color="#2563eb" />,
             bg: '#eff6ff',
@@ -534,15 +678,15 @@ export default function SalesManagementPage() {
           {
             label: '판매 SKU 수',
             value: String(skuCount),
-            sub: '해당 월·필터 기준 고유 바코드',
+            sub: `${periodLabel}·필터 기준 고유 바코드`,
             icon: <TrendingUp size={16} color="#7c3aed" />,
             bg: '#f5f3ff',
           },
           {
-            label: '이번 달 1위 SKU',
-            value: topGlobal[0] ? `${topGlobal[0].qty.toLocaleString()}개` : '—',
-            sub: topGlobal[0]
-              ? `${topGlobal[0].abbr || topGlobal[0].productName || topGlobal[0].barcode}`
+            label: `${periodMode === 'year' ? '해당 연도' : '해당 월'} 1위 SKU`,
+            value: topPeriod[0] ? `${topPeriod[0].qty.toLocaleString()}개` : '—',
+            sub: topPeriod[0]
+              ? `${topPeriod[0].abbr || topPeriod[0].productName || topPeriod[0].barcode}`
               : '데이터 없음',
             icon: <Store size={16} color="#059669" />,
             bg: '#ecfdf5',
@@ -575,7 +719,7 @@ export default function SalesManagementPage() {
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
         <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-            월별 판매 추세 (전체 쇼핑몰 · 수량)
+            {periodMode === 'year' ? `${selYear}년` : '최근 6개월'} 월별 판매 추세 (전체 쇼핑몰)
           </div>
           <div style={{ padding: '8px 12px 10px', height: 100 }}>
             <MonthTrendChart data={trendAll} color="#2563eb" gradId="sales-trend-all" />
@@ -583,7 +727,7 @@ export default function SalesManagementPage() {
         </div>
         <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-            월별 판매 추세 {mallFilter ? `(${mallFilter})` : '(쇼핑몰을 선택하면 표시)'}
+            월별 판매 추세 {mallFilter ? `(${mallFilter})` : '(쇼핑몰 선택 시)'}
           </div>
           <div style={{ padding: '8px 12px 10px', height: 100 }}>
             {mallFilter ? (
@@ -597,101 +741,203 @@ export default function SalesManagementPage() {
         </div>
       </div>
 
-      <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-          전체 쇼핑몰 통합 — 인기 상품 TOP {Math.min(20, topGlobal.length) || 20} (바코드 기준)
-        </div>
-        <div style={{ maxHeight: 320, overflowY: 'auto' }}>
-          {topGlobal.length === 0 ? (
-            <p style={{ padding: 16, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>이번 달 출고확정·유효 바코드 데이터가 없습니다.</p>
+      {/* 좌: 쇼핑몰별 누적 TOP5/30 · 중앙: 기간 인기 · 우: 누적 TOP20 */}
+      <div className="pm-sales-three-col">
+        {/* 왼쪽: 연동 쇼핑몰별 누적 인기 SKU */}
+        <div className="pm-card" style={{ padding: '10px 12px', maxHeight: 'min(85vh, 720px)', overflowY: 'auto' }}>
+          <p style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
+            연동 쇼핑몰별 누적 인기 SKU
+          </p>
+          <p style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, marginBottom: 10, lineHeight: 1.4 }}>
+            누적 판매량 기준 TOP 5 · 블록을 누르면 TOP 30까지 펼칩니다.
+          </p>
+          {connectedMalls.length === 0 ? (
+            <p style={{ fontSize: 11, color: '#94a3b8' }}>매핑관리에서 연동 쇼핑몰을 등록하세요.</p>
           ) : (
-            <table style={tableStyle}>
-              <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
-                <tr>
-                  {['#', '바코드', '상품', '옵션', '수량'].map(h => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: '8px 10px',
-                        textAlign: h === '수량' ? 'right' : 'left',
-                        fontSize: 10,
-                        fontWeight: 800,
-                        color: '#64748b',
-                        borderBottom: '1px solid #f1f5f9',
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {topGlobal.slice(0, 20).map((row, i) => (
-                  <tr key={row.barcode} style={{ borderBottom: '1px solid #f8fafc' }}>
-                    <td style={{ padding: '8px 10px', color: '#94a3b8', fontWeight: 800 }}>{i + 1}</td>
-                    <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 11 }}>{row.barcode}</td>
-                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{row.productName || '—'}</td>
-                    <td style={{ padding: '8px 10px', color: '#64748b', fontSize: 11 }}>{row.optionLabel || '—'}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 900, color: '#2563eb' }}>
-                      {row.qty.toLocaleString()}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {connectedMalls.map(mall => {
+                const ranked = mallCumulativeRanked[mall] ?? []
+                const expanded = expandedMallPanel[mall] === true
+                const show = expanded ? ranked.slice(0, 30) : ranked.slice(0, 5)
+                return (
+                  <button
+                    key={mall}
+                    type="button"
+                    onClick={() => toggleMallExpand(mall)}
+                    style={{
+                      textAlign: 'left',
+                      borderRadius: 10,
+                      border: expanded ? '1.5px solid #7c3aed' : '1.5px solid #f1f5f9',
+                      background: expanded ? '#faf5ff' : '#fff',
+                      padding: '10px 10px 8px',
+                      cursor: 'pointer',
+                      transition: 'border-color 120ms, background 120ms',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#334155' }}>{mall}</span>
+                      {expanded
+                        ? <ChevronUp size={14} color="#7c3aed" />
+                        : <ChevronDown size={14} color="#94a3b8" />}
+                    </div>
+                    {ranked.length === 0 ? (
+                      <span style={{ fontSize: 10, color: '#cbd5e1', fontWeight: 600 }}>누적 실적 없음</span>
+                    ) : (
+                      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                        {show.map((row, i) => (
+                          <li
+                            key={row.barcode}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                              padding: '4px 0',
+                              borderTop: i === 0 ? 'none' : '1px solid #f1f5f9',
+                              fontSize: 10,
+                            }}
+                          >
+                            <span style={{ minWidth: 0, flex: 1 }}>
+                              <span style={{ fontWeight: 800, color: '#64748b', marginRight: 4 }}>{i + 1}.</span>
+                              <span style={{ fontWeight: 700, color: '#0f172a' }}>{row.productName || row.barcode}</span>
+                              {row.optionLabel ? (
+                                <span style={{ display: 'block', color: '#94a3b8', fontWeight: 600, marginTop: 1 }}>
+                                  {row.optionLabel}
+                                </span>
+                              ) : null}
+                              <span style={{ fontFamily: 'monospace', color: '#cbd5e1', fontSize: 9 }}>{row.barcode}</span>
+                            </span>
+                            <span style={{ fontWeight: 900, color: '#7c3aed', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                              {row.qty.toLocaleString()}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {ranked.length > 5 ? (
+                      <p style={{ fontSize: 9, color: '#a78bfa', fontWeight: 700, marginTop: 6, marginBottom: 0 }}>
+                        {expanded ? '접기' : `더보기 · TOP 30 (${ranked.length}개 SKU)`}
+                      </p>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
           )}
+        </div>
+
+        {/* 중앙: 기간·필터 인기 상품 */}
+        <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+            {centerTitle} · {periodLabel} · 바코드 기준
+          </div>
+          <div style={{ maxHeight: 560, overflowY: 'auto' }}>
+            {topPeriod.length === 0 ? (
+              <p style={{ padding: 16, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>
+                해당 기간·조건의 출고확정 데이터가 없습니다.
+              </p>
+            ) : (
+              <table style={tableStyle}>
+                <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                  <tr>
+                    {['#', '바코드', '상품', '옵션', '수량'].map(h => (
+                      <th
+                        key={h}
+                        style={{
+                          padding: '8px 10px',
+                          textAlign: h === '수량' ? 'right' : 'left',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          color: '#64748b',
+                          borderBottom: '1px solid #f1f5f9',
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {topPeriod.slice(0, 20).map((row, i) => (
+                    <tr key={row.barcode} style={{ borderBottom: '1px solid #f8fafc' }}>
+                      <td style={{ padding: '8px 10px', color: '#94a3b8', fontWeight: 800 }}>{i + 1}</td>
+                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 11 }}>{row.barcode}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{row.productName || '—'}</td>
+                      <td style={{ padding: '8px 10px', color: '#64748b', fontSize: 11 }}>{row.optionLabel || '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 900, color: '#2563eb' }}>
+                        {row.qty.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* 오른쪽: 전체 누적 TOP 20 */}
+        <div className="pm-card" style={{ padding: 0, overflow: 'hidden', maxHeight: 'min(85vh, 720px)' }}>
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+            누적 판매 TOP 20
+          </div>
+          <p style={{ padding: '6px 14px 0', fontSize: 10, color: '#94a3b8', fontWeight: 600, margin: 0 }}>
+            전체 쇼핑몰·전 기간 합산 (출고확정)
+          </p>
+          <div style={{ maxHeight: 620, overflowY: 'auto' }}>
+            {cumulativeTop20.length === 0 ? (
+              <p style={{ padding: 16, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>누적 데이터 없음</p>
+            ) : (
+              <table style={{ ...tableStyle, fontSize: 11 }}>
+                <thead style={{ position: 'sticky', top: 0, background: '#fef3c7', zIndex: 1 }}>
+                  <tr>
+                    {['#', '상품 / 바코드', '누적'].map(h => (
+                      <th
+                        key={h}
+                        style={{
+                          padding: '7px 10px',
+                          textAlign: h === '누적' ? 'right' : 'left',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          color: '#92400e',
+                          borderBottom: '1px solid #fde68a',
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {cumulativeTop20.map((row, i) => (
+                    <tr key={row.barcode} style={{ borderBottom: '1px solid #fffbeb' }}>
+                      <td style={{ padding: '7px 10px', color: '#b45309', fontWeight: 900 }}>{i + 1}</td>
+                      <td style={{ padding: '7px 10px', minWidth: 0 }}>
+                        <div style={{ fontWeight: 800, color: '#0f172a' }}>{row.productName || row.barcode}</div>
+                        <div style={{ fontSize: 10, color: '#94a3b8' }}>{row.optionLabel}</div>
+                        <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#cbd5e1' }}>{row.barcode}</div>
+                      </td>
+                      <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 900, color: '#b45309', whiteSpace: 'nowrap' }}>
+                        {row.qty.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="pm-card" style={{ padding: '12px 14px' }}>
-        <p style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', marginBottom: 10 }}>
-          쇼핑몰별 인기 SKU ({selMonth.replace('-', '.')}월 · 채널당 상위 8개)
-        </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
-          {channelsInMonth.length === 0 ? (
-            <p style={{ fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>이번 달 데이터가 없습니다.</p>
-          ) : (
-            channelsInMonth.map(ch => {
-              const rows = topByMall[ch] ?? []
-              return (
-                <div
-                  key={ch}
-                  style={{
-                    border: '1px solid #f1f5f9',
-                    borderRadius: 10,
-                    overflow: 'hidden',
-                    background: '#fff',
-                  }}
-                >
-                  <div style={{ padding: '8px 10px', background: '#f8fafc', fontSize: 11, fontWeight: 800, color: '#475569' }}>
-                    {ch}
-                  </div>
-                  {rows.length === 0 ? (
-                    <p style={{ padding: 10, fontSize: 11, color: '#94a3b8' }}>없음</p>
-                  ) : (
-                    <table style={{ ...tableStyle, fontSize: 11 }}>
-                      <tbody>
-                        {rows.map(r => (
-                          <tr key={r.barcode} style={{ borderTop: '1px solid #f8fafc' }}>
-                            <td style={{ padding: '6px 8px', verticalAlign: 'top' }}>
-                              <div style={{ fontWeight: 800, color: '#0f172a' }}>{r.productName || r.barcode}</div>
-                              <div style={{ color: '#94a3b8', fontSize: 10 }}>{r.optionLabel}</div>
-                              <div style={{ fontFamily: 'monospace', fontSize: 10, color: '#64748b' }}>{r.barcode}</div>
-                            </td>
-                            <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 900, color: '#7c3aed', whiteSpace: 'nowrap' }}>
-                              {r.qty.toLocaleString()}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  )}
-                </div>
-              )
-            })
-          )}
-        </div>
-      </div>
+      <style>{`
+        .pm-sales-three-col {
+          display: grid;
+          grid-template-columns: minmax(260px, 300px) 1fr minmax(260px, 300px);
+          gap: 10px;
+          align-items: start;
+        }
+        @media (max-width: 1100px) {
+          .pm-sales-three-col { grid-template-columns: 1fr; }
+        }
+      `}</style>
     </div>
   )
 }
