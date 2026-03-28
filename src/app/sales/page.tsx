@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback, useRef, type CSSProperties } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef, Fragment, type CSSProperties } from 'react'
 import { usePathname } from 'next/navigation'
 import {
   TrendingUp,
@@ -269,6 +269,7 @@ export default function SalesManagementPage() {
   const [mallFilter, setMallFilter] = useState<string>('')
   const [connectedMalls, setConnectedMalls] = useState<string[]>([])
   const [expandedMallPanel, setExpandedMallPanel] = useState<Record<string, boolean>>({})
+  const [expandedCumulativeBarcode, setExpandedCumulativeBarcode] = useState<string | null>(null)
   const [shipped, setShipped] = useState<ShippedOrder[]>([])
   const [mappings, setMappings] = useState<ReturnType<typeof loadMappings>>({})
   const [products, setProducts] = useState<CachedProduct[]>([])
@@ -403,6 +404,16 @@ export default function SalesManagementPage() {
       .sort((a, b) => b.qty - a.qty)
       .slice(0, 20)
   }, [cumulativeGlobalMap, barcodeMeta])
+
+  /** 바코드별 쇼핑몰 누적 수량 (누적 TOP20 상세용) */
+  const qtyByBarcodeByChannel = useMemo(() => {
+    const m: Record<string, Record<string, number>> = {}
+    for (const r of salesRows) {
+      if (!m[r.barcode]) m[r.barcode] = {}
+      m[r.barcode][r.channel] = (m[r.barcode][r.channel] ?? 0) + r.qty
+    }
+    return m
+  }, [salesRows])
 
   /** 쇼핑몰별 누적 TOP (연동 쇼핑몰 이름 기준) */
   const cumulativeByMall = useMemo(() => {
@@ -716,34 +727,12 @@ export default function SalesManagementPage() {
         ))}
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-            {periodMode === 'year' ? `${selYear}년` : '최근 6개월'} 월별 판매 추세 (전체 쇼핑몰)
-          </div>
-          <div style={{ padding: '8px 12px 10px', height: 100 }}>
-            <MonthTrendChart data={trendAll} color="#2563eb" gradId="sales-trend-all" />
-          </div>
-        </div>
-        <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-            월별 판매 추세 {mallFilter ? `(${mallFilter})` : '(쇼핑몰 선택 시)'}
-          </div>
-          <div style={{ padding: '8px 12px 10px', height: 100 }}>
-            {mallFilter ? (
-              <MonthTrendChart data={trendMall} color="#7c3aed" gradId="sales-trend-mall" />
-            ) : (
-              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
-                상단에서 쇼핑몰을 고르면 보라색 그래프가 갱신됩니다.
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* 좌: 쇼핑몰별 누적 TOP5/30 · 중앙: 기간 인기 · 우: 누적 TOP20 */}
-      <div className="pm-sales-three-col">
-        {/* 왼쪽: 연동 쇼핑몰별 누적 인기 SKU */}
+      {/*
+        이미지 레이아웃: ① 연동 쇼핑몰별 누적 인기 SKU(좌) | 월별 추세 차트(중) | ② 누적 판매 TOP 20(우)
+        하단: 기간·필터 인기 상품 표 (전체 폭)
+      */}
+      <div className="pm-sales-charts-band">
+        {/* ① 왼쪽: 연동 쇼핑몰별 누적 인기 SKU */}
         <div className="pm-card" style={{ padding: '10px 12px', maxHeight: 'min(85vh, 720px)', overflowY: 'auto' }}>
           <p style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
             연동 쇼핑몰별 누적 인기 SKU
@@ -800,11 +789,11 @@ export default function SalesManagementPage() {
                               <span style={{ fontWeight: 800, color: '#64748b', marginRight: 4 }}>{i + 1}.</span>
                               <span style={{ fontWeight: 700, color: '#0f172a' }}>{row.productName || row.barcode}</span>
                               {row.optionLabel ? (
-                                <span style={{ display: 'block', color: '#94a3b8', fontWeight: 600, marginTop: 1 }}>
+                                <span style={{ display: 'block', color: '#000000', fontWeight: 600, marginTop: 1, fontSize: 12 }}>
                                   {row.optionLabel}
                                 </span>
                               ) : null}
-                              <span style={{ fontFamily: 'monospace', color: '#cbd5e1', fontSize: 9 }}>{row.barcode}</span>
+                              <span style={{ fontFamily: 'monospace', color: '#000000', fontSize: 11 }}>{row.barcode}</span>
                             </span>
                             <span style={{ fontWeight: 900, color: '#7c3aed', flexShrink: 0, whiteSpace: 'nowrap' }}>
                               {row.qty.toLocaleString()}
@@ -825,64 +814,41 @@ export default function SalesManagementPage() {
           )}
         </div>
 
-        {/* 중앙: 기간·필터 인기 상품 */}
-        <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-            {centerTitle} · {periodLabel} · 바코드 기준
+        {/* 중앙: 월별 추세 차트 (기존 2열 그래프) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+          <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+              {periodMode === 'year' ? `${selYear}년` : '최근 6개월'} 월별 판매 추세 (전체 쇼핑몰)
+            </div>
+            <div style={{ padding: '8px 12px 10px', height: 100 }}>
+              <MonthTrendChart data={trendAll} color="#2563eb" gradId="sales-trend-all" />
+            </div>
           </div>
-          <div style={{ maxHeight: 560, overflowY: 'auto' }}>
-            {topPeriod.length === 0 ? (
-              <p style={{ padding: 16, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>
-                해당 기간·조건의 출고확정 데이터가 없습니다.
-              </p>
-            ) : (
-              <table style={tableStyle}>
-                <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
-                  <tr>
-                    {['#', '바코드', '상품', '옵션', '수량'].map(h => (
-                      <th
-                        key={h}
-                        style={{
-                          padding: '8px 10px',
-                          textAlign: h === '수량' ? 'right' : 'left',
-                          fontSize: 10,
-                          fontWeight: 800,
-                          color: '#64748b',
-                          borderBottom: '1px solid #f1f5f9',
-                        }}
-                      >
-                        {h}
-                      </th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {topPeriod.slice(0, 20).map((row, i) => (
-                    <tr key={row.barcode} style={{ borderBottom: '1px solid #f8fafc' }}>
-                      <td style={{ padding: '8px 10px', color: '#94a3b8', fontWeight: 800 }}>{i + 1}</td>
-                      <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 11 }}>{row.barcode}</td>
-                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{row.productName || '—'}</td>
-                      <td style={{ padding: '8px 10px', color: '#64748b', fontSize: 11 }}>{row.optionLabel || '—'}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 900, color: '#2563eb' }}>
-                        {row.qty.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
+          <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+              월별 판매 추세 {mallFilter ? `(${mallFilter})` : '(쇼핑몰 선택 시)'}
+            </div>
+            <div style={{ padding: '8px 12px 10px', height: 100 }}>
+              {mallFilter ? (
+                <MonthTrendChart data={trendMall} color="#7c3aed" gradId="sales-trend-mall" />
+              ) : (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
+                  상단에서 쇼핑몰을 고르면 보라색 그래프가 갱신됩니다.
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* 오른쪽: 전체 누적 TOP 20 */}
+        {/* ② 오른쪽: 전체 누적 TOP 20 */}
         <div className="pm-card" style={{ padding: 0, overflow: 'hidden', maxHeight: 'min(85vh, 720px)' }}>
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
             누적 판매 TOP 20
           </div>
           <p style={{ padding: '6px 14px 0', fontSize: 10, color: '#94a3b8', fontWeight: 600, margin: 0 }}>
-            전체 쇼핑몰·전 기간 합산 (출고확정)
+            전체 쇼핑몰·전 기간 합산 (출고확정) · 행 클릭 시 쇼핑몰별 수량
           </p>
-          <div style={{ maxHeight: 620, overflowY: 'auto' }}>
+          <div style={{ maxHeight: 520, overflowY: 'auto' }}>
             {cumulativeTop20.length === 0 ? (
               <p style={{ padding: 16, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>누적 데이터 없음</p>
             ) : (
@@ -907,19 +873,63 @@ export default function SalesManagementPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {cumulativeTop20.map((row, i) => (
-                    <tr key={row.barcode} style={{ borderBottom: '1px solid #fffbeb' }}>
-                      <td style={{ padding: '7px 10px', color: '#b45309', fontWeight: 900 }}>{i + 1}</td>
-                      <td style={{ padding: '7px 10px', minWidth: 0 }}>
-                        <div style={{ fontWeight: 800, color: '#0f172a' }}>{row.productName || row.barcode}</div>
-                        <div style={{ fontSize: 10, color: '#94a3b8' }}>{row.optionLabel}</div>
-                        <div style={{ fontFamily: 'monospace', fontSize: 9, color: '#cbd5e1' }}>{row.barcode}</div>
-                      </td>
-                      <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 900, color: '#b45309', whiteSpace: 'nowrap' }}>
-                        {row.qty.toLocaleString()}
-                      </td>
-                    </tr>
-                  ))}
+                  {cumulativeTop20.map((row, i) => {
+                    const open = expandedCumulativeBarcode === row.barcode
+                    const breakdown = Object.entries(qtyByBarcodeByChannel[row.barcode] ?? {}).sort((a, b) => b[1] - a[1])
+                    return (
+                      <Fragment key={row.barcode}>
+                        <tr
+                          onClick={() => setExpandedCumulativeBarcode(open ? null : row.barcode)}
+                          style={{
+                            borderBottom: '1px solid #fffbeb',
+                            cursor: 'pointer',
+                            background: open ? '#fffbeb' : undefined,
+                          }}
+                          onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#fffdf5' }}
+                          onMouseLeave={e => { if (!open) e.currentTarget.style.background = '' }}
+                        >
+                          <td style={{ padding: '7px 10px', color: '#b45309', fontWeight: 900 }}>{i + 1}</td>
+                          <td style={{ padding: '7px 10px', minWidth: 0 }}>
+                            <div style={{ fontWeight: 800, color: '#0f172a' }}>{row.productName || row.barcode}</div>
+                            <div style={{ fontSize: 12, color: '#000000', fontWeight: 600 }}>{row.optionLabel}</div>
+                            <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#000000' }}>{row.barcode}</div>
+                          </td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 900, color: '#b45309', whiteSpace: 'nowrap' }}>
+                            {row.qty.toLocaleString()}
+                          </td>
+                        </tr>
+                        {open ? (
+                          <tr style={{ background: '#fffbeb' }}>
+                            <td colSpan={3} style={{ padding: '8px 12px 12px', borderBottom: '1px solid #fde68a' }}>
+                              <p style={{ fontSize: 10, fontWeight: 800, color: '#92400e', margin: '0 0 6px' }}>쇼핑몰별 판매</p>
+                              {breakdown.length === 0 ? (
+                                <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>쇼핑몰별 내역 없음</p>
+                              ) : (
+                                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                                  {breakdown.map(([ch, q]) => (
+                                    <li
+                                      key={ch}
+                                      style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        color: '#0f172a',
+                                        padding: '3px 0',
+                                      }}
+                                    >
+                                      <span>{ch}</span>
+                                      <span style={{ fontWeight: 900, color: '#b45309' }}>{q.toLocaleString()}개</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    )
+                  })}
                 </tbody>
               </table>
             )}
@@ -927,15 +937,64 @@ export default function SalesManagementPage() {
         </div>
       </div>
 
+      {/* 기간·필터 인기 상품 (전체 폭) */}
+      <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+          {centerTitle} · {periodLabel} · 바코드 기준
+        </div>
+        <div style={{ maxHeight: 560, overflowY: 'auto' }}>
+          {topPeriod.length === 0 ? (
+            <p style={{ padding: 16, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>
+              해당 기간·조건의 출고확정 데이터가 없습니다.
+            </p>
+          ) : (
+            <table style={tableStyle}>
+              <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                <tr>
+                  {['#', '바코드', '상품', '옵션', '수량'].map(h => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: '8px 10px',
+                        textAlign: h === '수량' ? 'right' : 'left',
+                        fontSize: 10,
+                        fontWeight: 800,
+                        color: '#64748b',
+                        borderBottom: '1px solid #f1f5f9',
+                      }}
+                    >
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {topPeriod.slice(0, 20).map((row, i) => (
+                  <tr key={row.barcode} style={{ borderBottom: '1px solid #f8fafc' }}>
+                    <td style={{ padding: '8px 10px', color: '#94a3b8', fontWeight: 800 }}>{i + 1}</td>
+                    <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 13, color: '#000000' }}>{row.barcode}</td>
+                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{row.productName || '—'}</td>
+                    <td style={{ padding: '8px 10px', color: '#000000', fontSize: 13, fontWeight: 600 }}>{row.optionLabel || '—'}</td>
+                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 900, color: '#2563eb' }}>
+                      {row.qty.toLocaleString()}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </div>
+
       <style>{`
-        .pm-sales-three-col {
+        .pm-sales-charts-band {
           display: grid;
           grid-template-columns: minmax(260px, 300px) 1fr minmax(260px, 300px);
           gap: 10px;
-          align-items: start;
+          align-items: stretch;
         }
         @media (max-width: 1100px) {
-          .pm-sales-three-col { grid-template-columns: 1fr; }
+          .pm-sales-charts-band { grid-template-columns: 1fr; }
         }
       `}</style>
     </div>
