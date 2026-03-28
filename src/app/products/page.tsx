@@ -1075,6 +1075,13 @@ export default function ProductsPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshKey])
 
+  /* ── 발주/입고/불량등록 등 수량 동기화 후 목록 재로드 ── */
+  useEffect(() => {
+    const onSync = () => setRefreshKey(k => k + 1)
+    window.addEventListener('pm_products_cache_sync', onSync)
+    return () => window.removeEventListener('pm_products_cache_sync', onSync)
+  }, [])
+
   /* ── 매핑관리탭 변경 감지: storage 이벤트(다른 탭) + visibilitychange(같은 탭 복귀) ── */
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -1490,9 +1497,15 @@ export default function ProductsPage() {
     if (!window.confirm(`"${label}" 상품을 삭제하시겠습니까?\n\n삭제하면 되돌릴 수 없으며,\n매핑관리의 해당 상품 데이터도 함께 제거됩니다.`)) return
     const { error } = await pmDelete(id)
     if (!error) {
+      const barcodes = (target?.options ?? [])
+        .map(o => String((o as { barcode?: string }).barcode ?? '').trim())
+        .filter(Boolean)
       setProducts(prev => prev.filter(p => p.id !== id))
       invalidateProductsCache()
       broadcastPmProductsQtySync()
+      try {
+        window.dispatchEvent(new CustomEvent('pm_product_deleted', { detail: { barcodes } }))
+      } catch { /* ignore */ }
       // pm_channel_mappings_v2 에서 해당 상품 매핑 행 완전 제거
       try {
         const allMaps = loadLocalMappings()

@@ -648,7 +648,7 @@ export default function PurchaseManagePage() {
                             <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
                             <span style={{ fontSize: '10.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{opt.optName}</span>
                             <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                            <span data-pm-barcode="1" style={{ fontSize: '9.5px', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.barcode || '-'}</span>
+                            <span data-pm-barcode="1" style={{ fontSize: 11, fontWeight: 900, color: '#000000', letterSpacing: '0.02em', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.barcode || '-'}</span>
                           </div>
                         </td>
                         {/* 판매수량 */}
@@ -779,7 +779,7 @@ export default function PurchaseManagePage() {
                           <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
                           <span style={{ fontSize: '10.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{s.optName}</span>
                           <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                          <span data-pm-barcode="1" style={{ fontSize: '9.5px', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.barcode || '-'}</span>
+                          <span data-pm-barcode="1" style={{ fontSize: 11, fontWeight: 900, color: '#000000', letterSpacing: '0.02em', whiteSpace: 'nowrap', flexShrink: 0 }}>{s.barcode || '-'}</span>
                         </div>
                         {/* 원가 + KRW 환산 */}
                         {unitCost != null && (
@@ -1132,7 +1132,7 @@ function AddProductModal({
                         <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
                         <span style={{ fontSize: '10.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{item.optName}</span>
                         <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                        <span data-pm-barcode="1" style={{ fontSize: '9.5px', fontFamily: 'monospace', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.barcode || '-'}</span>
+                        <span data-pm-barcode="1" style={{ fontSize: 11, fontWeight: 900, color: '#000000', letterSpacing: '0.02em', whiteSpace: 'nowrap', flexShrink: 0 }}>{item.barcode || '-'}</span>
                       </div>
                     </td>
                     {/* 현재고 */}

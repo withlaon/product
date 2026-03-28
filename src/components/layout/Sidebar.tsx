@@ -46,7 +46,7 @@ const navGroups: NavGroup[] = [
           { label: '입고관리', href: '/purchase/receive', icon: Truck },
         ],
       },
-      { label: '재고관리',     href: '/inventory',             icon: Warehouse },
+      { label: '불량등록',     href: '/inventory',             icon: Warehouse },
     ],
   },
   {

@@ -548,7 +548,7 @@ export default function CsManagementPage() {
                   <ImageCell src={item.option_image} />
                   <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
                   {/* 송장번호 */}
-                  <span style={{ fontSize: '9.5px', fontFamily: 'monospace', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                  <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                     {item.tracking_number || '-'}
                   </span>
                   {/* 반송장번호 인라인 입력 */}
@@ -557,7 +557,7 @@ export default function CsManagementPage() {
                     onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
                     placeholder="반송장"
                     onClick={e => e.stopPropagation()}
-                    style={{ fontSize: '9.5px', fontFamily: 'monospace', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box' }}
+                    style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
                   />
                   <BarcodeCell barcode={item.barcode} />
                   {/* 수량 */}
@@ -622,7 +622,7 @@ export default function CsManagementPage() {
                   <ImageCell src={item.option_image} />
                   <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
                   {/* 송장번호 */}
-                  <span style={{ fontSize: '9.5px', fontFamily: 'monospace', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+                  <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
                     {item.tracking_number || '-'}
                   </span>
                   {/* 반송장번호 인라인 입력 */}
@@ -631,7 +631,7 @@ export default function CsManagementPage() {
                     onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
                     placeholder="반송장"
                     onClick={e => e.stopPropagation()}
-                    style={{ fontSize: '9.5px', fontFamily: 'monospace', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box' }}
+                    style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', border: '1px solid #e2e8f0', borderRadius: 4, padding: '2px 4px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit' }}
                   />
                   <BarcodeCell barcode={item.barcode} />
                   {/* 수량 */}
@@ -1154,7 +1154,7 @@ function AbbrOptionCell({ abbr, option }: { abbr: string; option: string }) {
 
 function BarcodeCell({ barcode }: { barcode: string }) {
   return (
-    <span data-pm-barcode="1" style={{ fontSize: '9.5px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
+    <span data-pm-barcode="1" style={{ fontSize: '10.5px', fontWeight: 900, letterSpacing: '0.02em', color: '#000000', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>
       {barcode || '-'}
     </span>
   )

@@ -714,7 +714,7 @@ export default function ReceiveManagePage() {
                             <div style={{ fontSize: '11.5px', fontWeight:800, color:'#1e293b', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.abbr}</div>
                             <div style={{ fontSize: '10.5px', color:'#64748b', marginTop:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{u.optName}</div>
                           </td>
-                          <td data-pm-barcode="1" style={{ padding:'5px 8px', fontSize: '10px', fontFamily:'monospace', whiteSpace:'nowrap' }}>{u.barcode || '-'}</td>
+                          <td data-pm-barcode="1" style={{ padding:'5px 8px', fontSize: 11, fontWeight: 900, color: '#000000', letterSpacing: '0.02em', whiteSpace:'nowrap' }}>{u.barcode || '-'}</td>
                           <td style={{ padding:'5px 6px', width:76, textAlign:'center' }} onClick={e => e.stopPropagation()}>
                             {sel ? (
                               <input type="number" min="1"
@@ -800,7 +800,7 @@ export default function ReceiveManagePage() {
                             {item.prodAbbr || item.product_code}
                           </td>
                           <td style={{ padding:'4px 6px', color:'#475569', fontSize: '10.5px', maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.option_name}</td>
-                          <td data-pm-barcode="1" style={{ padding:'4px 6px', fontSize: '9.5px', fontFamily:'monospace', color: item.barcode ? undefined : '#f59e0b', fontWeight: item.barcode ? 400 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                          <td data-pm-barcode="1" style={{ padding:'4px 6px', fontSize: 11, letterSpacing: '0.02em', color: item.barcode ? '#000000' : '#f59e0b', fontWeight: item.barcode ? 900 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
                             {item.barcode || '미매핑'}
                           </td>
                           <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize: '12px' }}>{item.received}</td>

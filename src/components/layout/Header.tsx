@@ -9,7 +9,7 @@ const pageTitles: Record<string, { title: string; desc: string }> = {
   '/purchase':              { title: '발주/입고관리', desc: '발주 등록 및 입고 처리 현황' },
   '/product-transfer':      { title: '주문관리',   desc: '주문 업로드 및 이번달 주문 현황' },
   '/product-edit-transfer': { title: '송장등록',   desc: '배송 택배사 및 운송장번호 등록' },
-  '/inventory':             { title: '재고관리',     desc: '입고·출고 및 재고 현황 관리' },
+  '/inventory':             { title: '불량등록',     desc: '불량 접수 및 상품 불량·재고 반영' },
   '/mapping':               { title: '매핑관리',     desc: '쇼핑몰 상품 매핑 관리' },
   '/settings':              { title: '설정',         desc: '시스템 환경설정' },
 }

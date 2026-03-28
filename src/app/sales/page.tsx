@@ -443,7 +443,7 @@ export default function SalesManagementPage() {
 
   const trendMonths = useMemo(() => {
     if (periodMode === 'year') return yearMonthKeys(selYear)
-    return monthsRangeEndAt(selMonth, 6)
+    return monthsRangeEndAt(selMonth, 12)
   }, [periodMode, selYear, selMonth])
 
   const trendAll = useMemo(() => {
@@ -728,12 +728,12 @@ export default function SalesManagementPage() {
       </div>
 
       {/*
-        이미지 레이아웃: ① 연동 쇼핑몰별 누적 인기 SKU(좌) | 월별 추세 차트(중) | ② 누적 판매 TOP 20(우)
-        하단: 기간·필터 인기 상품 표 (전체 폭)
+        ① 연동 쇼핑몰별 누적(좌, 세로 통합) | 월별 추세 2열 | ② 누적 TOP 20(우, 세로 통합)
+        그 아래(차트 2개 아래): 기간·필터 통합 인기 상품 TOP 20
       */}
       <div className="pm-sales-charts-band">
         {/* ① 왼쪽: 연동 쇼핑몰별 누적 인기 SKU */}
-        <div className="pm-card" style={{ padding: '10px 12px', maxHeight: 'min(85vh, 720px)', overflowY: 'auto' }}>
+        <div className="pm-card pm-sales-mall" style={{ padding: '10px 12px', maxHeight: 'min(85vh, 720px)', overflowY: 'auto' }}>
           <p style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
             연동 쇼핑몰별 누적 인기 SKU
           </p>
@@ -814,34 +814,31 @@ export default function SalesManagementPage() {
           )}
         </div>
 
-        {/* 중앙: 월별 추세 차트 (기존 2열 그래프) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
-          <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-              {periodMode === 'year' ? `${selYear}년` : '최근 6개월'} 월별 판매 추세 (전체 쇼핑몰)
-            </div>
-            <div style={{ padding: '8px 12px 10px', height: 100 }}>
-              <MonthTrendChart data={trendAll} color="#2563eb" gradId="sales-trend-all" />
-            </div>
+        <div className="pm-card pm-sales-chart-all" style={{ padding: 0, overflow: 'hidden', minWidth: 0 }}>
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+            {periodMode === 'year' ? `${selYear}년` : '최근 1년'} 월별 판매 추세 (전체 쇼핑몰)
           </div>
-          <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-              월별 판매 추세 {mallFilter ? `(${mallFilter})` : '(쇼핑몰 선택 시)'}
-            </div>
-            <div style={{ padding: '8px 12px 10px', height: 100 }}>
-              {mallFilter ? (
-                <MonthTrendChart data={trendMall} color="#7c3aed" gradId="sales-trend-mall" />
-              ) : (
-                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
-                  상단에서 쇼핑몰을 고르면 보라색 그래프가 갱신됩니다.
-                </div>
-              )}
-            </div>
+          <div style={{ padding: '8px 12px 10px', height: 100 }}>
+            <MonthTrendChart data={trendAll} color="#2563eb" gradId="sales-trend-all" />
+          </div>
+        </div>
+        <div className="pm-card pm-sales-chart-mall" style={{ padding: 0, overflow: 'hidden', minWidth: 0 }}>
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+            월별 판매 추세 {mallFilter ? `(${mallFilter})` : '(쇼핑몰 선택 시)'}
+          </div>
+          <div style={{ padding: '8px 12px 10px', height: 100 }}>
+            {mallFilter ? (
+              <MonthTrendChart data={trendMall} color="#7c3aed" gradId="sales-trend-mall" />
+            ) : (
+              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#94a3b8', fontWeight: 600, textAlign: 'center', padding: '0 8px' }}>
+                상단에서 쇼핑몰을 고르면 보라색 그래프가 갱신됩니다.
+              </div>
+            )}
           </div>
         </div>
 
         {/* ② 오른쪽: 전체 누적 TOP 20 */}
-        <div className="pm-card" style={{ padding: 0, overflow: 'hidden', maxHeight: 'min(85vh, 720px)' }}>
+        <div className="pm-card pm-sales-top20" style={{ padding: 0, overflow: 'hidden', maxHeight: 'min(85vh, 720px)' }}>
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
             누적 판매 TOP 20
           </div>
@@ -935,66 +932,83 @@ export default function SalesManagementPage() {
             )}
           </div>
         </div>
-      </div>
 
-      {/* 기간·필터 인기 상품 (전체 폭) */}
-      <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
-        <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-          {centerTitle} · {periodLabel} · 바코드 기준
-        </div>
-        <div style={{ maxHeight: 560, overflowY: 'auto' }}>
-          {topPeriod.length === 0 ? (
-            <p style={{ padding: 16, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>
-              해당 기간·조건의 출고확정 데이터가 없습니다.
-            </p>
-          ) : (
-            <table style={tableStyle}>
-              <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
-                <tr>
-                  {['#', '바코드', '상품', '옵션', '수량'].map(h => (
-                    <th
-                      key={h}
-                      style={{
-                        padding: '8px 10px',
-                        textAlign: h === '수량' ? 'right' : 'left',
-                        fontSize: 10,
-                        fontWeight: 800,
-                        color: '#64748b',
-                        borderBottom: '1px solid #f1f5f9',
-                      }}
-                    >
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {topPeriod.slice(0, 20).map((row, i) => (
-                  <tr key={row.barcode} style={{ borderBottom: '1px solid #f8fafc' }}>
-                    <td style={{ padding: '8px 10px', color: '#94a3b8', fontWeight: 800 }}>{i + 1}</td>
-                    <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 13, color: '#000000' }}>{row.barcode}</td>
-                    <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{row.productName || '—'}</td>
-                    <td style={{ padding: '8px 10px', color: '#000000', fontSize: 13, fontWeight: 600 }}>{row.optionLabel || '—'}</td>
-                    <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 900, color: '#2563eb' }}>
-                      {row.qty.toLocaleString()}
-                    </td>
+        {/* 기간·필터 통합 인기 상품 (차트 2개 바로 아래) */}
+        <div className="pm-card pm-sales-period-top" style={{ padding: 0, overflow: 'hidden', minHeight: 0 }}>
+          <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+            {centerTitle} · {periodLabel} · 바코드 기준
+          </div>
+          <div style={{ maxHeight: 420, overflowY: 'auto' }}>
+            {topPeriod.length === 0 ? (
+              <p style={{ padding: 16, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>
+                해당 기간·조건의 출고확정 데이터가 없습니다.
+              </p>
+            ) : (
+              <table style={tableStyle}>
+                <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
+                  <tr>
+                    {['#', '바코드', '상품', '옵션', '수량'].map(h => (
+                      <th
+                        key={h}
+                        style={{
+                          padding: '8px 10px',
+                          textAlign: h === '수량' ? 'right' : 'left',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          color: '#64748b',
+                          borderBottom: '1px solid #f1f5f9',
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+                </thead>
+                <tbody>
+                  {topPeriod.slice(0, 20).map((row, i) => (
+                    <tr key={row.barcode} style={{ borderBottom: '1px solid #f8fafc' }}>
+                      <td style={{ padding: '8px 10px', color: '#94a3b8', fontWeight: 800 }}>{i + 1}</td>
+                      <td style={{ padding: '8px 10px', fontSize: 11, fontWeight: 900, color: '#000000', letterSpacing: '0.02em' }}>{row.barcode}</td>
+                      <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{row.productName || '—'}</td>
+                      <td style={{ padding: '8px 10px', color: '#000000', fontSize: 13, fontWeight: 600 }}>{row.optionLabel || '—'}</td>
+                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 900, color: '#2563eb' }}>
+                        {row.qty.toLocaleString()}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
 
       <style>{`
         .pm-sales-charts-band {
           display: grid;
-          grid-template-columns: minmax(260px, 300px) 1fr minmax(260px, 300px);
+          grid-template-columns: minmax(260px, 300px) 1fr 1fr minmax(260px, 300px);
+          grid-template-rows: auto minmax(0, 1fr);
           gap: 10px;
           align-items: stretch;
         }
+        .pm-sales-mall { grid-row: 1 / -1; grid-column: 1; }
+        .pm-sales-chart-all { grid-row: 1; grid-column: 2; }
+        .pm-sales-chart-mall { grid-row: 1; grid-column: 3; }
+        .pm-sales-top20 { grid-row: 1 / -1; grid-column: 4; }
+        .pm-sales-period-top { grid-row: 2; grid-column: 2 / span 2; }
         @media (max-width: 1100px) {
-          .pm-sales-charts-band { grid-template-columns: 1fr; }
+          .pm-sales-charts-band {
+            grid-template-columns: 1fr;
+            grid-template-rows: none;
+          }
+          .pm-sales-mall,
+          .pm-sales-chart-all,
+          .pm-sales-chart-mall,
+          .pm-sales-top20,
+          .pm-sales-period-top {
+            grid-row: auto;
+            grid-column: auto;
+          }
         }
       `}</style>
     </div>
