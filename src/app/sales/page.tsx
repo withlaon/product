@@ -441,24 +441,6 @@ export default function SalesManagementPage() {
     return out
   }, [connectedMalls, cumulativeByMall, barcodeMeta])
 
-  /** 연동 쇼핑몰을 누적 판매량 많은 순으로 정렬 */
-  const mallTotalCumulativeQty = useMemo(() => {
-    const m: Record<string, number> = {}
-    for (const r of salesRows) {
-      m[r.channel] = (m[r.channel] ?? 0) + r.qty
-    }
-    return m
-  }, [salesRows])
-
-  const connectedMallsOrdered = useMemo(() => {
-    return [...connectedMalls].sort((a, b) => {
-      const da = mallTotalCumulativeQty[a] ?? 0
-      const db = mallTotalCumulativeQty[b] ?? 0
-      if (db !== da) return db - da
-      return a.localeCompare(b, 'ko')
-    })
-  }, [connectedMalls, mallTotalCumulativeQty])
-
   const trendMonths = useMemo(() => {
     if (periodMode === 'year') return yearMonthKeys(selYear)
     return monthsRangeEndAt(selMonth, 6)
@@ -513,234 +495,28 @@ export default function SalesManagementPage() {
 
   return (
     <div style={{ maxWidth: 1480, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
-      <style>{`@keyframes pmSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
 
-      {/* 상단: 연동몰 누적 SKU(좌) | 판매관리 타이틀(중) | 누적 TOP20 + 동기화(우) */}
-      <div
-        className="pm-sales-top-row"
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          gap: 12,
-          alignItems: 'flex-start',
-        }}
-      >
-        <div
-          className="pm-card"
-          style={{
-            width: 'min(100%, 300px)',
-            flex: '0 0 auto',
-            maxHeight: 320,
-            overflowY: 'auto',
-            padding: '10px 12px',
-          }}
-        >
-          <p style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', marginBottom: 6 }}>
-            연동 쇼핑몰별 누적 인기 SKU
-          </p>
-          <p style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, marginBottom: 8, lineHeight: 1.4 }}>
-            판매 많은 쇼핑몰 순 · TOP 5 / 펼치면 TOP 30
-          </p>
-          {connectedMallsOrdered.length === 0 ? (
-            <p style={{ fontSize: 11, color: '#94a3b8' }}>매핑관리에서 연동 쇼핑몰을 등록하세요.</p>
-          ) : (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-              {connectedMallsOrdered.map(mall => {
-                const ranked = mallCumulativeRanked[mall] ?? []
-                const expanded = expandedMallPanel[mall] === true
-                const show = expanded ? ranked.slice(0, 30) : ranked.slice(0, 5)
-                return (
-                  <button
-                    key={mall}
-                    type="button"
-                    onClick={() => toggleMallExpand(mall)}
-                    style={{
-                      textAlign: 'left',
-                      borderRadius: 10,
-                      border: expanded ? '1.5px solid #7c3aed' : '1.5px solid #f1f5f9',
-                      background: expanded ? '#faf5ff' : '#fff',
-                      padding: '8px 10px 6px',
-                      cursor: 'pointer',
-                      transition: 'border-color 120ms, background 120ms',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-                      <span style={{ fontSize: 11, fontWeight: 800, color: '#334155' }}>{mall}</span>
-                      {expanded
-                        ? <ChevronUp size={14} color="#7c3aed" />
-                        : <ChevronDown size={14} color="#94a3b8" />}
-                    </div>
-                    {ranked.length === 0 ? (
-                      <span style={{ fontSize: 10, color: '#cbd5e1', fontWeight: 600 }}>누적 실적 없음</span>
-                    ) : (
-                      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                        {show.map((row, i) => (
-                          <li
-                            key={row.barcode}
-                            style={{
-                              display: 'flex',
-                              justifyContent: 'space-between',
-                              gap: 6,
-                              padding: '3px 0',
-                              borderTop: i === 0 ? 'none' : '1px solid #f1f5f9',
-                              fontSize: 10,
-                            }}
-                          >
-                            <span style={{ minWidth: 0, flex: 1 }}>
-                              <span style={{ fontWeight: 800, color: '#64748b', marginRight: 4 }}>{i + 1}.</span>
-                              <span style={{ fontWeight: 700, color: '#0f172a' }}>{row.productName || row.barcode}</span>
-                              {row.optionLabel ? (
-                                <span style={{ display: 'block', color: '#000000', fontWeight: 600, marginTop: 1, fontSize: 11 }}>
-                                  {row.optionLabel}
-                                </span>
-                              ) : null}
-                              <span style={{ fontSize: 11, color: '#000000', fontWeight: 600 }}>{row.barcode}</span>
-                            </span>
-                            <span style={{ fontWeight: 900, color: '#7c3aed', flexShrink: 0, whiteSpace: 'nowrap', fontSize: 10 }}>
-                              {row.qty.toLocaleString()}
-                            </span>
-                          </li>
-                        ))}
-                      </ul>
-                    )}
-                    {ranked.length > 5 ? (
-                      <p style={{ fontSize: 9, color: '#a78bfa', fontWeight: 700, marginTop: 4, marginBottom: 0 }}>
-                        {expanded ? '접기' : `더보기 · TOP 30 (${ranked.length}개 SKU)`}
-                      </p>
-                    ) : null}
-                  </button>
-                )
-              })}
+      <div className="pm-card" style={{ padding: '12px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 200px' }}>
+            <div
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 10,
+                background: '#eff6ff',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              <TrendingUp size={18} color="#2563eb" strokeWidth={2.2} />
             </div>
-          )}
-        </div>
-
-        <div style={{ flex: '1 1 220px', display: 'flex', alignItems: 'center', gap: 10, minWidth: 200 }}>
-          <div
-            style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              background: '#eff6ff',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              flexShrink: 0,
-            }}
-          >
-            <TrendingUp size={18} color="#2563eb" strokeWidth={2.2} />
-          </div>
-          <div>
-            <p style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 2 }}>판매관리</p>
-            <p style={{ fontSize: 11, color: '#64748b', fontWeight: 600, lineHeight: 1.35 }}>
-              출고내역 <b style={{ color: '#1d4ed8' }}>출고확정</b>·바코드 기준. 쇼핑몰 목록은 <b>매핑관리</b> 연동 쇼핑몰과 동일합니다.
-            </p>
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', flex: '0 1 auto' }}>
-          <div
-            className="pm-card"
-            style={{
-              width: 'min(100%, 300px)',
-              maxHeight: 320,
-              overflow: 'hidden',
-              display: 'flex',
-              flexDirection: 'column',
-              padding: 0,
-            }}
-          >
-            <div style={{ padding: '8px 12px', borderBottom: '1px solid #f1f5f9', fontSize: 11, fontWeight: 800, color: '#0f172a' }}>
-              누적 판매 TOP 20
-            </div>
-            <p style={{ padding: '4px 12px 0', fontSize: 9, color: '#94a3b8', fontWeight: 600, margin: 0, lineHeight: 1.3 }}>
-              전 기간 합산 · 클릭 시 쇼핑몰별
-            </p>
-            <div style={{ maxHeight: 248, overflowY: 'auto' }}>
-              {cumulativeTop20.length === 0 ? (
-                <p style={{ padding: 12, fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>누적 데이터 없음</p>
-              ) : (
-                <table style={{ ...tableStyle, fontSize: 10 }}>
-                  <thead style={{ position: 'sticky', top: 0, background: '#fef3c7', zIndex: 1 }}>
-                    <tr>
-                      {['#', '상품·바코드', '누적'].map(h => (
-                        <th
-                          key={h}
-                          style={{
-                            padding: '5px 8px',
-                            textAlign: h === '누적' ? 'right' : 'left',
-                            fontSize: 9,
-                            fontWeight: 800,
-                            color: '#92400e',
-                            borderBottom: '1px solid #fde68a',
-                          }}
-                        >
-                          {h}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {cumulativeTop20.map((row, i) => {
-                      const open = expandedCumulativeBarcode === row.barcode
-                      const breakdown = Object.entries(qtyByBarcodeByChannel[row.barcode] ?? {}).sort((a, b) => b[1] - a[1])
-                      return (
-                        <Fragment key={row.barcode}>
-                          <tr
-                            onClick={() => setExpandedCumulativeBarcode(open ? null : row.barcode)}
-                            style={{
-                              borderBottom: '1px solid #fffbeb',
-                              cursor: 'pointer',
-                              background: open ? '#fffbeb' : undefined,
-                            }}
-                            onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#fffdf5' }}
-                            onMouseLeave={e => { if (!open) e.currentTarget.style.background = '' }}
-                          >
-                            <td style={{ padding: '5px 8px', color: '#b45309', fontWeight: 900 }}>{i + 1}</td>
-                            <td style={{ padding: '5px 8px', minWidth: 0 }}>
-                              <div style={{ fontWeight: 800, color: '#0f172a', fontSize: 10 }}>{row.productName || row.barcode}</div>
-                              <div style={{ fontSize: 10, color: '#000000', fontWeight: 600 }}>{row.optionLabel}</div>
-                              <div style={{ fontSize: 10, color: '#000000', fontWeight: 600 }}>{row.barcode}</div>
-                            </td>
-                            <td style={{ padding: '5px 8px', textAlign: 'right', fontWeight: 900, color: '#b45309', whiteSpace: 'nowrap' }}>
-                              {row.qty.toLocaleString()}
-                            </td>
-                          </tr>
-                          {open ? (
-                            <tr style={{ background: '#fffbeb' }}>
-                              <td colSpan={3} style={{ padding: '6px 10px 8px', borderBottom: '1px solid #fde68a' }}>
-                                <p style={{ fontSize: 9, fontWeight: 800, color: '#92400e', margin: '0 0 4px' }}>쇼핑몰별 판매</p>
-                                {breakdown.length === 0 ? (
-                                  <p style={{ fontSize: 10, color: '#94a3b8', margin: 0 }}>쇼핑몰별 내역 없음</p>
-                                ) : (
-                                  <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-                                    {breakdown.map(([ch, q]) => (
-                                      <li
-                                        key={ch}
-                                        style={{
-                                          display: 'flex',
-                                          justifyContent: 'space-between',
-                                          fontSize: 10,
-                                          fontWeight: 700,
-                                          color: '#0f172a',
-                                          padding: '2px 0',
-                                        }}
-                                      >
-                                        <span>{ch}</span>
-                                        <span style={{ fontWeight: 900, color: '#b45309' }}>{q.toLocaleString()}개</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                )}
-                              </td>
-                            </tr>
-                          ) : null}
-                        </Fragment>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )}
+            <div>
+              <p style={{ fontSize: 13, fontWeight: 800, color: '#0f172a', marginBottom: 2 }}>판매관리</p>
+              <p style={{ fontSize: 11, color: '#64748b', fontWeight: 600, lineHeight: 1.35 }}>
+                출고내역 <b style={{ color: '#1d4ed8' }}>출고확정</b>·바코드 기준. 쇼핑몰 목록은 <b>매핑관리</b> 연동 쇼핑몰과 동일합니다.
+              </p>
             </div>
           </div>
           <button
@@ -758,15 +534,13 @@ export default function SalesManagementPage() {
               fontSize: 12,
               fontWeight: 700,
               color: '#475569',
-              flexShrink: 0,
-              height: 40,
-              marginTop: 2,
             }}
           >
             <RefreshCw size={14} style={{ animation: refreshing ? 'pmSpin 0.6s linear infinite' : 'none' }} />
             동기화
           </button>
         </div>
+        <style>{`@keyframes pmSpin{from{transform:rotate(0)}to{transform:rotate(360deg)}}`}</style>
       </div>
 
       <div className="pm-card" style={{ padding: '10px 16px', display: 'flex', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
@@ -896,7 +670,7 @@ export default function SalesManagementPage() {
             style={{ height: 32, fontSize: 12, fontWeight: 700, minWidth: 200, maxWidth: 280 }}
           >
             <option value="">전체 쇼핑몰</option>
-            {connectedMallsOrdered.map(ch => (
+            {connectedMalls.map(ch => (
               <option key={ch} value={ch}>{ch}</option>
             ))}
           </select>
@@ -953,26 +727,211 @@ export default function SalesManagementPage() {
         ))}
       </div>
 
-      <div className="pm-sales-charts-row" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-        <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
-          <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-            {periodMode === 'year' ? `${selYear}년` : '최근 6개월'} 월별 판매 추세 (전체 쇼핑몰)
+      {/*
+        이미지 레이아웃: ① 연동 쇼핑몰별 누적 인기 SKU(좌) | 월별 추세 차트(중) | ② 누적 판매 TOP 20(우)
+        하단: 기간·필터 인기 상품 표 (전체 폭)
+      */}
+      <div className="pm-sales-charts-band">
+        {/* ① 왼쪽: 연동 쇼핑몰별 누적 인기 SKU */}
+        <div className="pm-card" style={{ padding: '10px 12px', maxHeight: 'min(85vh, 720px)', overflowY: 'auto' }}>
+          <p style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', marginBottom: 8 }}>
+            연동 쇼핑몰별 누적 인기 SKU
+          </p>
+          <p style={{ fontSize: 10, color: '#94a3b8', fontWeight: 600, marginBottom: 10, lineHeight: 1.4 }}>
+            누적 판매량 기준 TOP 5 · 블록을 누르면 TOP 30까지 펼칩니다.
+          </p>
+          {connectedMalls.length === 0 ? (
+            <p style={{ fontSize: 11, color: '#94a3b8' }}>매핑관리에서 연동 쇼핑몰을 등록하세요.</p>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              {connectedMalls.map(mall => {
+                const ranked = mallCumulativeRanked[mall] ?? []
+                const expanded = expandedMallPanel[mall] === true
+                const show = expanded ? ranked.slice(0, 30) : ranked.slice(0, 5)
+                return (
+                  <button
+                    key={mall}
+                    type="button"
+                    onClick={() => toggleMallExpand(mall)}
+                    style={{
+                      textAlign: 'left',
+                      borderRadius: 10,
+                      border: expanded ? '1.5px solid #7c3aed' : '1.5px solid #f1f5f9',
+                      background: expanded ? '#faf5ff' : '#fff',
+                      padding: '10px 10px 8px',
+                      cursor: 'pointer',
+                      transition: 'border-color 120ms, background 120ms',
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <span style={{ fontSize: 12, fontWeight: 800, color: '#334155' }}>{mall}</span>
+                      {expanded
+                        ? <ChevronUp size={14} color="#7c3aed" />
+                        : <ChevronDown size={14} color="#94a3b8" />}
+                    </div>
+                    {ranked.length === 0 ? (
+                      <span style={{ fontSize: 10, color: '#cbd5e1', fontWeight: 600 }}>누적 실적 없음</span>
+                    ) : (
+                      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                        {show.map((row, i) => (
+                          <li
+                            key={row.barcode}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              gap: 8,
+                              padding: '4px 0',
+                              borderTop: i === 0 ? 'none' : '1px solid #f1f5f9',
+                              fontSize: 10,
+                            }}
+                          >
+                            <span style={{ minWidth: 0, flex: 1 }}>
+                              <span style={{ fontWeight: 800, color: '#64748b', marginRight: 4 }}>{i + 1}.</span>
+                              <span style={{ fontWeight: 700, color: '#0f172a' }}>{row.productName || row.barcode}</span>
+                              {row.optionLabel ? (
+                                <span style={{ display: 'block', color: '#000000', fontWeight: 600, marginTop: 1, fontSize: 12 }}>
+                                  {row.optionLabel}
+                                </span>
+                              ) : null}
+                              <span style={{ fontFamily: 'monospace', color: '#000000', fontSize: 11 }}>{row.barcode}</span>
+                            </span>
+                            <span style={{ fontWeight: 900, color: '#7c3aed', flexShrink: 0, whiteSpace: 'nowrap' }}>
+                              {row.qty.toLocaleString()}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {ranked.length > 5 ? (
+                      <p style={{ fontSize: 9, color: '#a78bfa', fontWeight: 700, marginTop: 6, marginBottom: 0 }}>
+                        {expanded ? '접기' : `더보기 · TOP 30 (${ranked.length}개 SKU)`}
+                      </p>
+                    ) : null}
+                  </button>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+        {/* 중앙: 월별 추세 차트 (기존 2열 그래프) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
+          <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+              {periodMode === 'year' ? `${selYear}년` : '최근 6개월'} 월별 판매 추세 (전체 쇼핑몰)
+            </div>
+            <div style={{ padding: '8px 12px 10px', height: 100 }}>
+              <MonthTrendChart data={trendAll} color="#2563eb" gradId="sales-trend-all" />
+            </div>
           </div>
-          <div style={{ padding: '8px 12px 10px', height: 100 }}>
-            <MonthTrendChart data={trendAll} color="#2563eb" gradId="sales-trend-all" />
+          <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
+            <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
+              월별 판매 추세 {mallFilter ? `(${mallFilter})` : '(쇼핑몰 선택 시)'}
+            </div>
+            <div style={{ padding: '8px 12px 10px', height: 100 }}>
+              {mallFilter ? (
+                <MonthTrendChart data={trendMall} color="#7c3aed" gradId="sales-trend-mall" />
+              ) : (
+                <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
+                  상단에서 쇼핑몰을 고르면 보라색 그래프가 갱신됩니다.
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        <div className="pm-card" style={{ padding: 0, overflow: 'hidden' }}>
+
+        {/* ② 오른쪽: 전체 누적 TOP 20 */}
+        <div className="pm-card" style={{ padding: 0, overflow: 'hidden', maxHeight: 'min(85vh, 720px)' }}>
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', fontSize: 12, fontWeight: 800, color: '#0f172a' }}>
-            월별 판매 추세 {mallFilter ? `(${mallFilter})` : '(쇼핑몰 선택 시)'}
+            누적 판매 TOP 20
           </div>
-          <div style={{ padding: '8px 12px 10px', height: 100 }}>
-            {mallFilter ? (
-              <MonthTrendChart data={trendMall} color="#7c3aed" gradId="sales-trend-mall" />
+          <p style={{ padding: '6px 14px 0', fontSize: 10, color: '#94a3b8', fontWeight: 600, margin: 0 }}>
+            전체 쇼핑몰·전 기간 합산 (출고확정) · 행 클릭 시 쇼핑몰별 수량
+          </p>
+          <div style={{ maxHeight: 520, overflowY: 'auto' }}>
+            {cumulativeTop20.length === 0 ? (
+              <p style={{ padding: 16, fontSize: 12, color: '#94a3b8', fontWeight: 600 }}>누적 데이터 없음</p>
             ) : (
-              <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#94a3b8', fontWeight: 600 }}>
-                상단에서 쇼핑몰을 고르면 보라색 그래프가 갱신됩니다.
-              </div>
+              <table style={{ ...tableStyle, fontSize: 11 }}>
+                <thead style={{ position: 'sticky', top: 0, background: '#fef3c7', zIndex: 1 }}>
+                  <tr>
+                    {['#', '상품 / 바코드', '누적'].map(h => (
+                      <th
+                        key={h}
+                        style={{
+                          padding: '7px 10px',
+                          textAlign: h === '누적' ? 'right' : 'left',
+                          fontSize: 10,
+                          fontWeight: 800,
+                          color: '#92400e',
+                          borderBottom: '1px solid #fde68a',
+                        }}
+                      >
+                        {h}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {cumulativeTop20.map((row, i) => {
+                    const open = expandedCumulativeBarcode === row.barcode
+                    const breakdown = Object.entries(qtyByBarcodeByChannel[row.barcode] ?? {}).sort((a, b) => b[1] - a[1])
+                    return (
+                      <Fragment key={row.barcode}>
+                        <tr
+                          onClick={() => setExpandedCumulativeBarcode(open ? null : row.barcode)}
+                          style={{
+                            borderBottom: '1px solid #fffbeb',
+                            cursor: 'pointer',
+                            background: open ? '#fffbeb' : undefined,
+                          }}
+                          onMouseEnter={e => { if (!open) e.currentTarget.style.background = '#fffdf5' }}
+                          onMouseLeave={e => { if (!open) e.currentTarget.style.background = '' }}
+                        >
+                          <td style={{ padding: '7px 10px', color: '#b45309', fontWeight: 900 }}>{i + 1}</td>
+                          <td style={{ padding: '7px 10px', minWidth: 0 }}>
+                            <div style={{ fontWeight: 800, color: '#0f172a' }}>{row.productName || row.barcode}</div>
+                            <div style={{ fontSize: 12, color: '#000000', fontWeight: 600 }}>{row.optionLabel}</div>
+                            <div style={{ fontFamily: 'monospace', fontSize: 11, color: '#000000' }}>{row.barcode}</div>
+                          </td>
+                          <td style={{ padding: '7px 10px', textAlign: 'right', fontWeight: 900, color: '#b45309', whiteSpace: 'nowrap' }}>
+                            {row.qty.toLocaleString()}
+                          </td>
+                        </tr>
+                        {open ? (
+                          <tr style={{ background: '#fffbeb' }}>
+                            <td colSpan={3} style={{ padding: '8px 12px 12px', borderBottom: '1px solid #fde68a' }}>
+                              <p style={{ fontSize: 10, fontWeight: 800, color: '#92400e', margin: '0 0 6px' }}>쇼핑몰별 판매</p>
+                              {breakdown.length === 0 ? (
+                                <p style={{ fontSize: 11, color: '#94a3b8', margin: 0 }}>쇼핑몰별 내역 없음</p>
+                              ) : (
+                                <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                                  {breakdown.map(([ch, q]) => (
+                                    <li
+                                      key={ch}
+                                      style={{
+                                        display: 'flex',
+                                        justifyContent: 'space-between',
+                                        fontSize: 11,
+                                        fontWeight: 700,
+                                        color: '#0f172a',
+                                        padding: '3px 0',
+                                      }}
+                                    >
+                                      <span>{ch}</span>
+                                      <span style={{ fontWeight: 900, color: '#b45309' }}>{q.toLocaleString()}개</span>
+                                    </li>
+                                  ))}
+                                </ul>
+                              )}
+                            </td>
+                          </tr>
+                        ) : null}
+                      </Fragment>
+                    )
+                  })}
+                </tbody>
+              </table>
             )}
           </div>
         </div>
@@ -1013,7 +972,7 @@ export default function SalesManagementPage() {
                 {topPeriod.slice(0, 20).map((row, i) => (
                   <tr key={row.barcode} style={{ borderBottom: '1px solid #f8fafc' }}>
                     <td style={{ padding: '8px 10px', color: '#94a3b8', fontWeight: 800 }}>{i + 1}</td>
-                    <td style={{ padding: '8px 10px', fontSize: 13, color: '#000000', fontWeight: 600 }}>{row.barcode}</td>
+                    <td style={{ padding: '8px 10px', fontFamily: 'monospace', fontSize: 13, color: '#000000' }}>{row.barcode}</td>
                     <td style={{ padding: '8px 10px', fontWeight: 700, color: '#0f172a' }}>{row.productName || '—'}</td>
                     <td style={{ padding: '8px 10px', color: '#000000', fontSize: 13, fontWeight: 600 }}>{row.optionLabel || '—'}</td>
                     <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 900, color: '#2563eb' }}>
@@ -1028,8 +987,14 @@ export default function SalesManagementPage() {
       </div>
 
       <style>{`
+        .pm-sales-charts-band {
+          display: grid;
+          grid-template-columns: minmax(260px, 300px) 1fr minmax(260px, 300px);
+          gap: 10px;
+          align-items: stretch;
+        }
         @media (max-width: 1100px) {
-          .pm-sales-charts-row { grid-template-columns: 1fr !important; }
+          .pm-sales-charts-band { grid-template-columns: 1fr; }
         }
       `}</style>
     </div>
