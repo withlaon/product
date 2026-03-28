@@ -11,10 +11,59 @@ export interface ShippedOrder extends Omit<Order, 'status'> {
 export const SHIPPED_ORDERS_KEY = 'pm_shipped_orders_v1'
 
 export function loadShippedOrders(): ShippedOrder[] {
+  if (typeof window === 'undefined') return []
   try {
     const raw = localStorage.getItem(SHIPPED_ORDERS_KEY)
     return raw ? (JSON.parse(raw) as ShippedOrder[]) : []
   } catch { return [] }
+}
+
+async function persistShippedUpsertsToServer(updates: ShippedOrder[]) {
+  if (typeof window === 'undefined' || updates.length === 0) return
+  try {
+    await fetch('/api/pm-shipped-orders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ upserts: updates }),
+    })
+  } catch { /* ignore */ }
+}
+
+async function persistShippedDeletesToServer(ids: string[]) {
+  if (typeof window === 'undefined' || ids.length === 0) return
+  try {
+    await fetch('/api/pm-shipped-orders', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ids }),
+    })
+  } catch { /* ignore */ }
+}
+
+/** 서버(pm_shipped_orders)와 로컬 캐시 병합. DB가 비어 있고 로컬만 있으면 1회 업로드 */
+export async function hydrateShippedOrdersFromServer(): Promise<void> {
+  if (typeof window === 'undefined') return
+  try {
+    const res = await fetch('/api/pm-shipped-orders')
+    if (!res.ok) return
+    const json = (await res.json()) as { orders?: ShippedOrder[] }
+    const remote = Array.isArray(json.orders) ? json.orders : []
+    const local = loadShippedOrders()
+
+    if (remote.length === 0 && local.length > 0) {
+      await persistShippedUpsertsToServer(local)
+      return
+    }
+
+    const byId = new Map<string, ShippedOrder>()
+    for (const o of local) byId.set(o.id, o)
+    for (const o of remote) byId.set(o.id, o)
+    const merged = Array.from(byId.values())
+    try {
+      localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(merged))
+    } catch { /* ignore */ }
+    broadcastDashboardRefresh()
+  } catch { /* ignore */ }
 }
 
 /** 출고 저장소: id 기준 병합만 (전달하지 않은 id는 삭제하지 않음). 제거는 removeShippedOrdersByIds. */
@@ -30,6 +79,7 @@ export function upsertShippedOrders(updates: ShippedOrder[]) {
     localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(next))
   } catch {}
   broadcastDashboardRefresh()
+  void persistShippedUpsertsToServer(updates)
 }
 
 /** 사용자가 명시적으로 삭제·출고취소한 출고 건만 제거 */
@@ -41,6 +91,7 @@ export function removeShippedOrdersByIds(ids: string[]) {
     localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(prev.filter(o => !idSet.has(o.id))))
   } catch {}
   broadcastDashboardRefresh()
+  void persistShippedDeletesToServer(ids)
 }
 
 /** @deprecated 호환용: 내용은 upsertShippedOrders 와 동일(부분 배열로 기존 데이터를 지우지 않음) */

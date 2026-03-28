@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation'
 const pageTitles: Record<string, { title: string; desc: string }> = {
   '/dashboard':             { title: '대시보드',     desc: '전체 현황을 한눈에 확인하세요' },
   '/products':              { title: '상품관리',     desc: '상품 등록, 수정 및 상태 관리' },
+  '/sales':                 { title: '판매관리',     desc: '출고확정 기준 판매 누적·쇼핑몰·월별 트렌드 분석' },
   '/purchase':              { title: '발주/입고관리', desc: '발주 등록 및 입고 처리 현황' },
   '/product-transfer':      { title: '주문관리',   desc: '주문 업로드 및 이번달 주문 현황' },
   '/product-edit-transfer': { title: '송장등록',   desc: '배송 택배사 및 운송장번호 등록' },

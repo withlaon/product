@@ -1492,6 +1492,7 @@ export default function ProductsPage() {
     if (!error) {
       setProducts(prev => prev.filter(p => p.id !== id))
       invalidateProductsCache()
+      broadcastPmProductsQtySync()
       // pm_channel_mappings_v2 에서 해당 상품 매핑 행 완전 제거
       try {
         const allMaps = loadLocalMappings()

@@ -201,3 +201,14 @@ CREATE INDEX IF NOT EXISTS idx_pm_purchases_order_date ON pm_purchases(order_dat
 CREATE INDEX IF NOT EXISTS idx_pm_purchases_status     ON pm_purchases(status);
 
 ALTER TABLE pm_purchases DISABLE ROW LEVEL SECURITY;
+
+-- 출고내역 (클라이언트 ShippedOrder JSON 전체 보관, 명시 삭제 시에만 제거)
+CREATE TABLE IF NOT EXISTS pm_shipped_orders (
+  id         TEXT        PRIMARY KEY,
+  data       JSONB       NOT NULL,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_pm_shipped_orders_updated ON pm_shipped_orders(updated_at DESC);
+
+ALTER TABLE pm_shipped_orders DISABLE ROW LEVEL SECURITY;
