@@ -595,11 +595,11 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ─ 1줄: 판매금액 선그래프 (매출 강조: 세로 비율 1.5배) ─ */}
-          <div style={{ flex:'1.5 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
+          {/* ─ 1줄: 판매금액 선그래프 ─ */}
+          <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
             <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-              <span style={{ fontSize: '14.25px', fontWeight:800, color:'#7c3aed' }}>● 판매금액</span>
-              <span style={{ fontSize: '13.5px', color:'#94a3b8' }}>
+              <span style={{ fontSize: '12px', fontWeight:800, color:'#7c3aed' }}>● 판매금액</span>
+              <span style={{ fontSize: '11px', color:'#94a3b8' }}>
                 {selMonth.replace('-','년 ')}월 합계 ₩{Math.round(monthRevSel).toLocaleString()}
               </span>
             </div>
@@ -620,8 +620,8 @@ export default function DashboardPage() {
           {/* ─ 2줄: 판매수량 선그래프 ─ */}
           <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
             <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-              <span style={{ fontSize: '9.5px', fontWeight:800, color:'#2563eb' }}>● 판매수량</span>
-              <span style={{ fontSize: '9px', color:'#94a3b8' }}>
+              <span style={{ fontSize: '12px', fontWeight:800, color:'#2563eb' }}>● 판매수량</span>
+              <span style={{ fontSize: '11px', color:'#94a3b8' }}>
                 {selMonth.replace('-','년 ')}월 합계 {monthTotal}건
               </span>
             </div>
@@ -643,14 +643,14 @@ export default function DashboardPage() {
           <div style={{ flexShrink:0, borderBottom:'1px solid #f8fafc', padding:'6px 14px' }}>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6 }}>
               {[
-                { label:'매출액',   value:monthRevSel,       color:'#7c3aed', bg:'#f5f3ff', prefix:'₩', emphasize:true },
-                { label:'매입액',   value:monthPurchaseCost, color:'#2563eb', bg:'#eff6ff', prefix:'₩', emphasize:false },
-                { label:'택배비',   value:monthShippingFee,  color:'#059669', bg:'#f0fdf4', prefix:'₩', emphasize:false },
-                { label:'순이익',   value:monthProfit,       color: monthProfit >= 0 ? '#059669' : '#dc2626', bg: monthProfit >= 0 ? '#f0fdf4' : '#fff1f2', prefix:'₩', emphasize:false },
+                { label:'매출액',   value:monthRevSel,       color:'#7c3aed', bg:'#f5f3ff', prefix:'₩' },
+                { label:'매입액',   value:monthPurchaseCost, color:'#2563eb', bg:'#eff6ff', prefix:'₩' },
+                { label:'택배비',   value:monthShippingFee,  color:'#059669', bg:'#f0fdf4', prefix:'₩' },
+                { label:'순이익',   value:monthProfit,       color: monthProfit >= 0 ? '#059669' : '#dc2626', bg: monthProfit >= 0 ? '#f0fdf4' : '#fff1f2', prefix:'₩' },
               ].map(b => (
-                <div key={b.label} style={{ background:b.bg, borderRadius:8, padding: b.emphasize ? '8px 11px' : '5px 8px' }}>
-                  <p style={{ fontSize: b.emphasize ? '13.5px' : '9px', fontWeight:800, color:'#94a3b8', marginBottom:1 }}>{b.label}</p>
-                  <p style={{ fontSize: b.emphasize ? '18px' : '12px', fontWeight:900, color:b.color, lineHeight:1, wordBreak:'break-all' }}>
+                <div key={b.label} style={{ background:b.bg, borderRadius:8, padding:'8px 11px' }}>
+                  <p style={{ fontSize: '13.5px', fontWeight:800, color:'#94a3b8', marginBottom:1 }}>{b.label}</p>
+                  <p style={{ fontSize: '18px', fontWeight:900, color:b.color, lineHeight:1, wordBreak:'break-all' }}>
                     {b.prefix}{Math.round(b.value).toLocaleString()}
                   </p>
                 </div>
