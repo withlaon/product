@@ -840,20 +840,36 @@ export default function OrdersPage() {
           {order.channel}
         </span>
         <div style={{ overflow: 'hidden' }}>
-          <p data-pm-barcode="1" style={{ fontSize: '11px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
-            {item?.sku || '-'}
-          </p>
           {item && (() => {
             const m = lookupMapping(mappings, item.product_name, item.option)
-            const abbr = m.abbreviation
-            const opt  = item.option
-            if (!abbr && !opt) return null
+            const bc = m.barcode?.trim()
+            const sku = item.sku?.trim()
             return (
-              <p style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {abbr}{opt ? `[${opt}]` : ''}
-              </p>
+              <>
+                <p data-pm-barcode="1" style={{ fontSize: '11px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                  {sku || '-'}
+                </p>
+                {bc && bc !== sku && (
+                  <p style={{ fontSize: '10.5px', fontFamily: 'monospace', color: '#0d9488', fontWeight: 800, margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    바코드 {bc}
+                  </p>
+                )}
+                {(() => {
+                  const abbr = m.abbreviation
+                  const opt = item.option
+                  if (!abbr && !opt) return null
+                  return (
+                    <p style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {abbr}{opt ? `[${opt}]` : ''}
+                    </p>
+                  )
+                })()}
+              </>
             )
           })()}
+          {!item && (
+            <p data-pm-barcode="1" style={{ fontSize: '11px', fontFamily: 'monospace', margin: 0 }}>-</p>
+          )}
         </div>
         <div style={{ overflow: 'hidden' }}>
           <p style={{ fontSize: '12.5px', fontWeight: 700, color: '#0f172a', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
