@@ -676,16 +676,26 @@ export default function OrderRegistrationPage() {
         }))
 
         const existingMain = loadOrders()
-        // 같은 import_source+날짜 이전 업로드 제거
+        // 같은 import_source+날짜 이전 업로드 제거 (당일 재업로드 허용)
         const importSrc = isMarketPlus ? 'marketplus' : mallLabel  // tossshopping='토스쇼핑', always='올웨이즈', gsshop='지에스샵'
-        const toRemove = existingMain
-          .filter(o => o.extra_data?.['import_source'] === importSrc && o.order_date === today)
-          .map(o => o.id)
-        removeOrdersByIds(toRemove)
-        upsertOrders(syncOrders)
+        const toRemoveIds = new Set(
+          existingMain
+            .filter(o => o.extra_data?.['import_source'] === importSrc && o.order_date === today)
+            .map(o => o.id)
+        )
+        removeOrdersByIds([...toRemoveIds])
 
+        // 제거 후 남아 있는 주문의 order_number 집합 → 중복 제거
+        const remainingNums = new Set(
+          existingMain.filter(o => !toRemoveIds.has(o.id)).map(o => o.order_number)
+        )
+        const newOrders  = syncOrders.filter(o => !remainingNums.has(o.order_number))
+        const skipCount  = syncOrders.length - newOrders.length
+        upsertOrders(newOrders)
+
+        const skipNote = skipCount > 0 ? ` (중복 ${skipCount}건 제외)` : ''
         setImportMsg({
-          text: `${orders.length}건 등록 완료${isMarketPlus ? ` (매핑 ${Object.keys(autoMappingUpdates).length}건 자동 업데이트)` : ''} · 주문관리 동기화됨`,
+          text: `${newOrders.length}건 등록 완료${skipNote}${isMarketPlus ? ` (매핑 ${Object.keys(autoMappingUpdates).length}건 자동 업데이트)` : ''} · 주문관리 동기화됨`,
           ok: true,
         })
       } catch (err) {
