@@ -842,29 +842,17 @@ export default function OrdersPage() {
         <div style={{ overflow: 'hidden' }}>
           {item && (() => {
             const m = lookupMapping(mappings, item.product_name, item.option)
-            const bc = m.barcode?.trim()
-            const sku = item.sku?.trim()
+            const barcode = (m.barcode?.trim() || item.sku?.trim()) || '-'
+            const abbr = m.abbreviation?.trim()
             return (
-              <>
-                <p data-pm-barcode="1" style={{ fontSize: '11px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
-                  {sku || '-'}
-                </p>
-                {bc && bc !== sku && (
-                  <p style={{ fontSize: '10.5px', fontFamily: 'monospace', color: '#0d9488', fontWeight: 800, margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    바코드 {bc}
-                  </p>
+              <p data-pm-barcode="1" style={{ fontSize: '11px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', margin: 0 }}>
+                {barcode}
+                {abbr && (
+                  <span style={{ fontFamily: 'sans-serif', fontWeight: 800, color: '#475569', marginLeft: 5 }}>
+                    {abbr}
+                  </span>
                 )}
-                {(() => {
-                  const abbr = m.abbreviation
-                  const opt = item.option
-                  if (!abbr && !opt) return null
-                  return (
-                    <p style={{ fontSize: '10.5px', color: '#475569', fontWeight: 700, margin: '2px 0 0', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {abbr}{opt ? `[${opt}]` : ''}
-                    </p>
-                  )
-                })()}
-              </>
+              </p>
             )
           })()}
           {!item && (
@@ -914,7 +902,7 @@ export default function OrdersPage() {
           ? <CheckSquare size={14} style={{ color: '#2563eb' }} />
           : <Square size={14} style={{ color: '#cbd5e1' }} />}
       </span>
-      {['주문번호', '쇼핑몰', '상품코드', '상품명/옵션', '판매가', '수취인', '상태'].map(h => (
+      {['주문번호', '쇼핑몰', '바코드', '상품명/옵션', '판매가', '수취인', '상태'].map(h => (
         <span key={h} style={{ fontSize: '10.5px', fontWeight: 900, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
           {h}
         </span>
