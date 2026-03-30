@@ -1268,6 +1268,10 @@ export default function ProductsPage() {
         broadcastPmProductsQtySync()
         return next
       })
+      // 저장 후 이미지 캐시 즉시 갱신 → 목록/편집 모달에서 새 이미지 유지
+      const savedImgs = options.map(o => o.image ?? '')
+      mergeImgCache({ [isEdit.id]: savedImgs })
+      setPageImages(prev => ({ ...prev, [isEdit.id]: savedImgs }))
       if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => {
         const updated = [...prev, cat]
         saveCats(updated)
@@ -1494,14 +1498,22 @@ export default function ProductsPage() {
   const handleDelete = async (id: string) => {
     const target = products.find(p => p.id === id)
     const label = target?.abbr || target?.name || '해당 상품'
-    if (!window.confirm(`"${label}" 상품을 삭제하시겠습니까?\n\n삭제하면 되돌릴 수 없으며,\n매핑관리의 해당 상품 데이터도 함께 제거됩니다.`)) return
+    if (!window.confirm(`"${label}" 상품을 삭제하시겠습니까?\n\n삭제하면 되돌릴 수 없으며, 매핑관리의 해당 상품 데이터도 함께 제거됩니다.\n\n※ 출고내역·발주/입고 이력은 삭제되지 않고 유지됩니다.`)) return
     const { error } = await pmDelete(id)
     if (!error) {
       const barcodes = (target?.options ?? [])
         .map(o => String((o as { barcode?: string }).barcode ?? '').trim())
         .filter(Boolean)
       setProducts(prev => prev.filter(p => p.id !== id))
-      invalidateProductsCache()
+      // 캐시에서 해당 상품만 즉시 제거 → 판매관리 탭이 삭제된 상품 데이터를 즉시 제외
+      // (출고내역·발주내역 데이터는 건드리지 않음)
+      try {
+        const raw = localStorage.getItem('pm_products_cache_v1')
+        if (raw) {
+          const parsed = JSON.parse(raw) as { ts: number; data: Product[] }
+          localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts: Date.now(), data: parsed.data.filter((p: Product) => p.id !== id) }))
+        }
+      } catch { invalidateProductsCache() }
       broadcastPmProductsQtySync()
       try {
         window.dispatchEvent(new CustomEvent('pm_product_deleted', { detail: { barcodes } }))

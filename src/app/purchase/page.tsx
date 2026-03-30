@@ -211,7 +211,8 @@ export default function PurchaseMainPage() {
     if (!confirm(
       `발주 ${fmtDateShort(purchase.order_date)}${purchase.supplier ? ` (${purchase.supplier})` : ''} — ` +
       `${purchase.items.length}개 품목 / 총 ${totalQty}개를 삭제하시겠습니까?\n\n` +
-      `상품관리탭의 발주 수량도 함께 차감됩니다.`
+      `상품관리탭의 발주 수량도 함께 차감됩니다.\n\n` +
+      `⚠️ 이 작업은 되돌릴 수 없습니다. 직접 삭제 버튼을 누른 경우에만 삭제됩니다.`
     )) return
 
     setDeletingIds(prev => new Set(prev).add(purchase.id))

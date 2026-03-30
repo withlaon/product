@@ -263,8 +263,8 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     }
   }
 
-  // LOCA 내림차순
-  rows.sort((a, b) => b.loca.localeCompare(a.loca, 'ko'))
+  // LOCA 오름차순
+  rows.sort((a, b) => a.loca.localeCompare(b.loca, 'ko'))
 
   // 합포장 카운트 (같은 수령인+주소)
   const addrCount: Record<string, number> = {}
@@ -290,8 +290,8 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     const isDup   = addrCount[k] > 1
     const isQty2  = r.quantity >= 2
     let bg = ''
-    if (isDup && isQty2) bg = 'background:#bbf7d0'
-    else if (isDup)      bg = 'background:#bfdbfe'
+    if (isDup && isQty2) bg = 'background:#a5f3fc'
+    else if (isDup)      bg = 'background:#bae6fd'
     else if (isQty2)     bg = 'background:#fef9c3'
 
     const nameStyle  = isDup
@@ -300,22 +300,22 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     const qtyStyle   = isQty2
       ? 'text-align:center;font-weight:900;color:#dc2626'
       : 'text-align:center;font-weight:700'
-    const colorCss   = COLOR_CSS_MAP[r.color] ?? '#374151'
 
     return `<tr style="${bg}">
       <td style="text-align:center">${i + 1}</td>
       <td><span style="${nameStyle}">${r.customer_name}</span></td>
-      <td>${r.abbreviation}</td>
-      <td contenteditable="true" style="color:${colorCss};font-weight:700;cursor:text">${r.color}</td>
-      <td style="${qtyStyle}">${r.quantity}</td>
       <td style="text-align:center;font-family:monospace">${r.loca}</td>
+      <td contenteditable="true" style="color:#1e293b;font-weight:700;cursor:text">${r.color}</td>
+      <td>${r.abbreviation}</td>
+      <td style="${qtyStyle}">${r.quantity}</td>
     </tr>`
   }).join('')
 
   const html = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <title>피킹리스트 ${today}</title>
 <style>
-  @page{size:A4 portrait;margin:12mm 10mm;-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  @page{size:A4 portrait;margin:12mm 10mm}
+  *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   body{font-family:'Malgun Gothic',sans-serif;margin:0;padding:10px}
   h2{margin:0 0 10px;font-size:14px}
   table{width:100%;border-collapse:collapse;font-size:11px}
@@ -332,16 +332,16 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
   <thead><tr>
     <th style="width:36px">NO</th>
     <th>수령인</th>
-    <th>상품약어</th>
-    <th style="width:64px">색상</th>
-    <th style="width:46px">수량</th>
     <th style="width:70px">LOCA</th>
+    <th style="width:64px">색상</th>
+    <th>상품약어</th>
+    <th style="width:46px">수량</th>
   </tr></thead>
   <tbody>${trRows}</tbody>
 </table>
 <div style="margin-top:14px;font-size:10.5px;color:#64748b;line-height:1.8">
-  ● 파란배경: 합포장(동일 수령인·주소) — 수령인 이름 색상으로 그룹 구분<br>
-  ● 노란배경: 수량 2개 이상(수량 빨간색) &nbsp; ● 초록배경: 합포장+2개이상<br>
+  ● 하늘배경: 합포장(동일 수령인·주소) — 수령인 이름 색상으로 그룹 구분<br>
+  ● 노란배경: 수량 2개 이상(수량 빨간색) &nbsp; ● 진하늘배경: 합포장+2개이상<br>
   ※ 색상 칸 클릭 → 직접 수정 가능 · 수정 후 인쇄 버튼 클릭
 </div>
 </body></html>`
