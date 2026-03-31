@@ -31,12 +31,16 @@ interface CsItem {
   registered_at         : string
   status                : CsStatus
   processed_at         ?: string
-  /** 교환: 회수(재고+), 교환 발송(재고-) */
-  barcode_in            ?: string
-  barcode_out           ?: string
-  option_image_out      ?: string
-  product_abbr_out      ?: string
-  option_name_out       ?: string
+  /** 교환: 회수(재고+), 교환 발송(재고-) — 다리별 처리(각각 처리완료 시각) */
+  barcode_in                 ?: string
+  barcode_out                ?: string
+  option_image_out           ?: string
+  product_abbr_out           ?: string
+  option_name_out            ?: string
+  /** 교환 발송(출고) 운송장 — 입고 행 `tracking_number`와 별도 */
+  tracking_number_out        ?: string
+  exchange_in_processed_at   ?: string
+  exchange_out_processed_at  ?: string
 }
 
 /** 목록 표시: 교환은 교환입고·교환출고 각각 한 행 */
@@ -44,7 +48,16 @@ type CsListRow =
   | { kind: 'single'; item: CsItem }
   | { kind: 'exchange_leg'; item: CsItem; leg: 'in' | 'out' }
 
-function expandCsListRows(items: CsItem[]): CsListRow[] {
+function exchangeAnyLegPending(item: CsItem): boolean {
+  const bin = (item.barcode_in ?? item.barcode ?? '').trim()
+  const bout = (item.barcode_out ?? '').trim()
+  if (bin && !item.exchange_in_processed_at) return true
+  if (bout && !item.exchange_out_processed_at) return true
+  if (!bin && !bout && !item.exchange_in_processed_at) return true
+  return false
+}
+
+function expandCsListRows(items: CsItem[], mode: 'pending' | 'processed', rightYM: string): CsListRow[] {
   const rows: CsListRow[] = []
   for (const item of items) {
     if (item.type !== 'exchange') {
@@ -53,11 +66,48 @@ function expandCsListRows(items: CsItem[]): CsListRow[] {
     }
     const bin = (item.barcode_in ?? item.barcode ?? '').trim()
     const bout = (item.barcode_out ?? '').trim()
-    if (bin) rows.push({ kind: 'exchange_leg', item, leg: 'in' })
-    if (bout) rows.push({ kind: 'exchange_leg', item, leg: 'out' })
-    if (!bin && !bout) rows.push({ kind: 'exchange_leg', item, leg: 'in' })
+    if (mode === 'pending') {
+      if (bin && !item.exchange_in_processed_at) rows.push({ kind: 'exchange_leg', item, leg: 'in' })
+      if (bout && !item.exchange_out_processed_at) rows.push({ kind: 'exchange_leg', item, leg: 'out' })
+      if (!bin && !bout) rows.push({ kind: 'exchange_leg', item, leg: 'in' })
+    } else {
+      const inM = (item.exchange_in_processed_at ?? '').slice(0, 7) === rightYM
+      const outM = (item.exchange_out_processed_at ?? '').slice(0, 7) === rightYM
+      if (inM) rows.push({ kind: 'exchange_leg', item, leg: 'in' })
+      if (outM) rows.push({ kind: 'exchange_leg', item, leg: 'out' })
+    }
   }
   return rows
+}
+
+function migrateExchangeProcessedFields(i: CsItem): CsItem {
+  if (i.type !== 'exchange') return i
+  if (i.exchange_in_processed_at || i.exchange_out_processed_at) return i
+  if (i.status !== 'processed' || !i.processed_at) return i
+  const bin = (i.barcode_in ?? i.barcode ?? '').trim()
+  const bout = (i.barcode_out ?? '').trim()
+  if (bin && bout) {
+    return { ...i, exchange_in_processed_at: i.processed_at, exchange_out_processed_at: i.processed_at }
+  }
+  if (bin) return { ...i, exchange_in_processed_at: i.processed_at }
+  return i
+}
+
+function finalizeCsItemTimestamps(prev: CsItem, patch: Partial<CsItem>): CsItem {
+  const n: CsItem = { ...prev, ...patch }
+  if (n.type !== 'exchange') return n
+  const bin = (n.barcode_in ?? n.barcode ?? '').trim()
+  const bout = (n.barcode_out ?? '').trim()
+  if (bin && bout && n.exchange_in_processed_at && n.exchange_out_processed_at) {
+    const processed_at = n.exchange_in_processed_at > n.exchange_out_processed_at
+      ? n.exchange_in_processed_at
+      : n.exchange_out_processed_at
+    return { ...n, status: 'processed', processed_at }
+  }
+  if (bin && !bout && n.exchange_in_processed_at) {
+    return { ...n, status: 'processed', processed_at: n.exchange_in_processed_at }
+  }
+  return n
 }
 
 function csListRowKey(row: CsListRow): string {
@@ -260,6 +310,7 @@ const EMPTY_FORM = {
   option_image_out      : '',
   reason                : 'simple_change' as CsReason,
   tracking_number       : '',
+  tracking_number_out   : '',
   return_tracking_number: '',
 }
 const EMPTY_QTY = 1
@@ -290,7 +341,14 @@ export default function CsManagementPage() {
   const [showAbbrDrop,    setShowAbbrDrop]    = useState(false)
   const abbrDropRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => { setItems(loadCs()) }, [])
+  useEffect(() => {
+    const raw = loadCs()
+    const migrated = raw.map(migrateExchangeProcessedFields)
+    setItems(migrated)
+    try {
+      if (JSON.stringify(raw) !== JSON.stringify(migrated)) saveCs(migrated)
+    } catch { /* ignore */ }
+  }, [])
 
   /* ── 옵션이미지/상품약어 누락 시 캐시에서 자동 보완 ── */
   const enrichedItems = useMemo(() => items.map(item => {
@@ -335,7 +393,9 @@ export default function CsManagementPage() {
 
   /* ── 파생 목록 (교환은 입고·출고 행으로 펼침) ── */
   const pendingItems = useMemo(() => {
-    let list = enrichedItems.filter(i => i.status === 'pending')
+    let list = enrichedItems.filter(i =>
+      i.type === 'return' ? i.status === 'pending' : exchangeAnyLegPending(i),
+    )
     if (leftSearch) {
       const q = leftSearch.toLowerCase()
       list = list.filter(i =>
@@ -348,10 +408,17 @@ export default function CsManagementPage() {
     return list.slice().sort((a, b) => b.registered_at.localeCompare(a.registered_at))
   }, [enrichedItems, leftSearch])
 
-  const pendingRows = useMemo(() => expandCsListRows(pendingItems), [pendingItems])
+  const pendingRows = useMemo(() => expandCsListRows(pendingItems, 'pending', rightYM), [pendingItems, rightYM])
 
   const processedItems = useMemo(() => {
-    let list = enrichedItems.filter(i => i.status === 'processed' && (i.processed_at ?? '').slice(0, 7) === rightYM)
+    let list = enrichedItems.filter(i => {
+      if (i.type === 'return') {
+        return i.status === 'processed' && (i.processed_at ?? '').slice(0, 7) === rightYM
+      }
+      const inM = (i.exchange_in_processed_at ?? '').slice(0, 7) === rightYM
+      const outM = (i.exchange_out_processed_at ?? '').slice(0, 7) === rightYM
+      return inM || outM
+    })
     if (rightSearch) {
       const q = rightSearch.toLowerCase()
       list = list.filter(i =>
@@ -364,7 +431,7 @@ export default function CsManagementPage() {
     return list.slice().sort((a, b) => (b.processed_at ?? '').localeCompare(a.processed_at ?? ''))
   }, [enrichedItems, rightYM, rightSearch])
 
-  const processedRows = useMemo(() => expandCsListRows(processedItems), [processedItems])
+  const processedRows = useMemo(() => expandCsListRows(processedItems, 'processed', rightYM), [processedItems, rightYM])
 
   /* ── 모달 열기 ── */
   const openModal = (type: CsType) => {
@@ -499,6 +566,7 @@ export default function CsManagementPage() {
         option_name_out: form.option_name_out || fout?.option_name || '',
         quantity: qty, reason: form.reason,
         tracking_number: form.tracking_number,
+        tracking_number_out: form.tracking_number_out || '',
         return_tracking_number: form.return_tracking_number || '',
         registered_at: nowIso(), status: 'pending',
       }
@@ -549,6 +617,7 @@ export default function CsManagementPage() {
             customer_name: String(r['수령인'] ?? r['주문자'] ?? ''),
             quantity: qty, reason,
             tracking_number: String(r['송장번호'] ?? ''),
+            tracking_number_out: String(r['교환출고송장번호'] ?? r['출고송장번호'] ?? ''),
             return_tracking_number: String(r['반송장번호'] ?? ''),
             registered_at: nowIso(), status: 'pending' as const,
           }
@@ -590,27 +659,34 @@ export default function CsManagementPage() {
     e.target.value = ''
   }
 
-  /* ── 처리완료 ── */
-  const handleProcess = async (item: CsItem) => {
+  /* ── 처리완료 (교환: leg 'in' 입고+ / 'out' 출고− 각각) ── */
+  const handleProcess = async (item: CsItem, leg?: 'in' | 'out') => {
     if (processing) return
     const reasonLabel = item.reason === 'defective' ? '불량' : '단순변심'
     const qty         = item.quantity ?? 1
+    const procKey     = item.type === 'exchange' && leg ? `${item.id}:${leg}` : item.id
 
     if (item.type === 'exchange') {
       const bin  = (item.barcode_in ?? item.barcode ?? '').trim()
       const bout = (item.barcode_out ?? '').trim()
       if (bin && bout) {
-        if (!confirm(
-          `[교환] ${item.customer_name}\n교환입고(재고+) ${bin} / 교환출고(재고−) ${bout}\n수량: ${qty}개\n\n처리완료 하시겠습니까?`,
-        )) return
+        if (leg === 'in') {
+          if (!confirm(
+            `[교환입고] ${item.customer_name}\n바코드: ${bin} → 재고 +${qty}\n\n처리완료 하시겠습니까?`,
+          )) return
+        } else if (leg === 'out') {
+          if (!confirm(
+            `[교환출고] ${item.customer_name}\n바코드: ${bout} → 재고 −${qty}\n\n처리완료 하시겠습니까?`,
+          )) return
+        } else return
       } else {
-        if (!confirm(`[교환·기존형] ${item.customer_name} / ${item.barcode}\n사유: ${reasonLabel} / 수량: ${qty}개\n(교환출고 바코드 없음 → 입고 바코드만 재고 반영)\n\n처리완료 하시겠습니까?`)) return
+        if (!confirm(`[교환·기존형] ${item.customer_name} / ${bin || item.barcode}\n사유: ${reasonLabel} / 수량: ${qty}개\n(교환출고 바코드 없음 → 입고 바코드만 재고 반영)\n\n처리완료 하시겠습니까?`)) return
       }
     } else {
       if (!confirm(`[반품] ${item.customer_name} / ${item.barcode}\n사유: ${reasonLabel} / 수량: ${qty}개\n\n처리완료 하시겠습니까?`)) return
     }
 
-    setProcessing(item.id)
+    setProcessing(procKey)
     try {
       let products = loadCachedProducts()
 
@@ -630,20 +706,25 @@ export default function CsManagementPage() {
         return { products: next, hit }
       }
 
+      const ts = nowIso()
+
       if (item.type === 'exchange') {
         const bin  = (item.barcode_in ?? item.barcode ?? '').trim()
         const bout = (item.barcode_out ?? '').trim()
         if (bin && bout) {
-          let r1 = patchOptionByBarcode(bin, o => ({
-            ...o,
-            current_stock: (typeof o.current_stock === 'number' ? o.current_stock : 0) + qty,
-          }))
-          products = r1.products
-          let r2 = patchOptionByBarcode(bout, o => ({
-            ...o,
-            current_stock: Math.max(0, (typeof o.current_stock === 'number' ? o.current_stock : 0) - qty),
-          }))
-          products = r2.products
+          if (leg === 'in') {
+            const r1 = patchOptionByBarcode(bin, o => ({
+              ...o,
+              current_stock: (typeof o.current_stock === 'number' ? o.current_stock : 0) + qty,
+            }))
+            products = r1.products
+          } else if (leg === 'out') {
+            const r2 = patchOptionByBarcode(bout, o => ({
+              ...o,
+              current_stock: Math.max(0, (typeof o.current_stock === 'number' ? o.current_stock : 0) - qty),
+            }))
+            products = r2.products
+          }
         } else if (bin) {
           const r = patchOptionByBarcode(bin, o => {
             if (item.reason === 'simple_change') {
@@ -668,7 +749,7 @@ export default function CsManagementPage() {
         }))
         if (!found) {
           const updated = items.map(i =>
-            i.id === item.id ? { ...i, status: 'processed' as CsStatus, processed_at: nowIso() } : i
+            i.id === item.id ? { ...i, status: 'processed' as CsStatus, processed_at: ts } : i
           )
           saveCs(updated); setItems(updated)
           return
@@ -694,9 +775,28 @@ export default function CsManagementPage() {
         })
       }))
 
-      const updated = items.map(i =>
-        i.id === item.id ? { ...i, status: 'processed' as CsStatus, processed_at: nowIso() } : i
-      )
+      let patch: Partial<CsItem> = {}
+      if (item.type === 'exchange') {
+        const bin  = (item.barcode_in ?? item.barcode ?? '').trim()
+        const bout = (item.barcode_out ?? '').trim()
+        if (bin && bout) {
+          if (leg === 'in') patch = { exchange_in_processed_at: ts }
+          else if (leg === 'out') patch = { exchange_out_processed_at: ts }
+        } else if (bin) {
+          patch = { exchange_in_processed_at: ts, status: 'processed', processed_at: ts }
+        }
+      } else {
+        patch = { status: 'processed', processed_at: ts }
+      }
+
+      const updated = items.map(i => {
+        if (i.id !== item.id) return i
+        if (item.type === 'exchange' && (item.barcode_in ?? item.barcode ?? '').trim()
+          && (item.barcode_out ?? '').trim()) {
+          return finalizeCsItemTimestamps(i, patch)
+        }
+        return { ...i, ...patch }
+      })
       saveCs(updated); setItems(updated)
     } finally { setProcessing(null) }
   }
@@ -704,6 +804,11 @@ export default function CsManagementPage() {
   /* ── 반송장번호 인라인 저장 ── */
   const handleReturnTrackingChange = (id: string, value: string) => {
     const updated = items.map(i => i.id === id ? { ...i, return_tracking_number: value } : i)
+    saveCs(updated); setItems(updated)
+  }
+
+  const handleTrackingOutChange = (id: string, value: string) => {
+    const updated = items.map(i => i.id === id ? { ...i, tracking_number_out: value } : i)
     saveCs(updated); setItems(updated)
   }
 
@@ -727,6 +832,7 @@ export default function CsManagementPage() {
     const rows = [{
       쇼핑몰: '', 수령인: '',
       교환입고바코드: '', 교환출고바코드: '',
+      교환출고송장번호: '',
       옵션이미지: '', 상품약어: '', 옵션명: '', 바코드: '', 수량: 1, 구분: '단순변심', 송장번호: '', 반송장번호: '',
     }]
     const ws = XLSX.utils.json_to_sheet(rows)
@@ -741,8 +847,8 @@ export default function CsManagementPage() {
   }
 
   /* ════ 그리드 컬럼 ════ */
-  const GRID_LEFT  = '30px 56px minmax(72px,0.65fr) 34px minmax(72px,0.8fr) minmax(132px,1.4fr) minmax(132px,1.4fr) minmax(120px,1.3fr) 26px 52px 56px 48px'
-  const GRID_RIGHT = '30px 56px minmax(72px,0.65fr) 34px minmax(72px,0.8fr) minmax(132px,1.4fr) minmax(132px,1.4fr) minmax(120px,1.3fr) 26px 52px 68px 48px'
+  const GRID_LEFT  = 'minmax(76px,0.55fr) 56px minmax(72px,0.65fr) 34px minmax(72px,0.8fr) minmax(132px,1.4fr) minmax(132px,1.4fr) minmax(120px,1.3fr) 26px minmax(52px,0.45fr) 56px 48px'
+  const GRID_RIGHT = 'minmax(76px,0.55fr) 56px minmax(72px,0.65fr) 34px minmax(72px,0.8fr) minmax(132px,1.4fr) minmax(132px,1.4fr) minmax(120px,1.3fr) 26px minmax(52px,0.45fr) 68px 48px'
   const HDRS_LEFT  = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '송장번호', '반송장번호', '바코드', '수량', '사유', '', '']
   const HDRS_RIGHT = ['구분', '쇼핑몰', '수령인', '이미지', '약어/옵션', '송장번호', '반송장번호', '바코드', '수량', '사유', '처리일시', '']
 
@@ -790,10 +896,11 @@ export default function CsManagementPage() {
             ) : pendingRows.map(row => {
               const item = row.item
               const ms   = mallStyle(item.mall)
-              const isProc = processing === item.id
+              const procKey = row.kind === 'exchange_leg' ? `${item.id}:${row.leg}` : item.id
+              const isProc = processing === procKey
               const qty    = item.quantity ?? 1
-              const exLead = row.kind === 'exchange_leg' && row.leg === 'in'
-              const showProcess = row.kind === 'single' || exLead
+              const exInRow = row.kind === 'exchange_leg' && row.leg === 'in'
+              const showReturnInput = row.kind === 'single' || exInRow
               const delLabel = item.type === 'exchange' && item.barcode_out
                 ? `${item.customer_name} / 입고${item.barcode_in ?? item.barcode} 출고${item.barcode_out}`
                 : `${item.customer_name} / ${item.barcode}`
@@ -826,10 +933,20 @@ export default function CsManagementPage() {
                   ) : (
                     <AbbrOptionCell abbr={item.product_abbr_out ?? ''} option={item.option_name_out ?? ''} />
                   )}
-                  <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
-                    {item.tracking_number || '-'}
-                  </span>
-                  {showProcess ? (
+                  {row.kind === 'exchange_leg' && row.leg === 'out' ? (
+                    <input
+                      value={item.tracking_number_out ?? ''}
+                      onChange={e => handleTrackingOutChange(item.id, e.target.value)}
+                      placeholder="교환 발송 송장"
+                      onClick={e => e.stopPropagation()}
+                      style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', width: '100%', minWidth: 0, border: '1px solid #fecaca', borderRadius: 4, padding: '4px 6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: 1, background: '#fff' }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
+                      {item.tracking_number || '-'}
+                    </span>
+                  )}
+                  {showReturnInput ? (
                     <input
                       value={item.return_tracking_number || ''}
                       onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
@@ -849,14 +966,10 @@ export default function CsManagementPage() {
                   )}
                   <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center', paddingTop: 4 }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
-                  {showProcess ? (
-                    <button onClick={e => { e.stopPropagation(); handleProcess(item) }} disabled={!!processing}
-                      style={{ padding: '4px 6px', background: isProc ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: '10px', fontWeight: 800, cursor: isProc ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
-                      {isProc ? '처리중' : '처리완료'}
-                    </button>
-                  ) : (
-                    <span style={{ fontSize: '9px', fontWeight: 700, color: '#cbd5e1', textAlign: 'center', paddingTop: 6 }}>〃</span>
-                  )}
+                  <button onClick={e => { e.stopPropagation(); handleProcess(item, row.kind === 'exchange_leg' ? row.leg : undefined) }} disabled={!!processing}
+                    style={{ padding: '4px 6px', background: isProc ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: '10px', fontWeight: 800, cursor: isProc ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                    {isProc ? '처리중' : '처리완료'}
+                  </button>
                   <button onClick={e => { e.stopPropagation(); handleDelete(item.id, delLabel) }}
                     title="삭제"
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: '10.5px', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
@@ -933,7 +1046,9 @@ export default function CsManagementPage() {
                     <AbbrOptionCell abbr={item.product_abbr_out ?? ''} option={item.option_name_out ?? ''} />
                   )}
                   <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
-                    {item.tracking_number || '-'}
+                    {row.kind === 'exchange_leg' && row.leg === 'out'
+                      ? (item.tracking_number_out || '−')
+                      : (item.tracking_number || '−')}
                   </span>
                   {showReturnInput ? (
                     <input
@@ -956,13 +1071,20 @@ export default function CsManagementPage() {
                   <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center', paddingTop: 4 }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
                   <div>
-                    {(row.kind === 'single' || (row.kind === 'exchange_leg' && row.leg === 'in')) && (
+                    {row.kind === 'single' && (
                       <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#059669' }}>
                         ✓ {fmtDateTime(item.processed_at ?? '')}
                       </span>
                     )}
-                    {row.kind === 'exchange_leg' && row.leg === 'out' && (
-                      <span style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8' }}>↳ 동일 건</span>
+                    {row.kind === 'exchange_leg' && row.leg === 'in' && item.exchange_in_processed_at && (
+                      <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#059669' }}>
+                        ✓ 입고 {fmtDateTime(item.exchange_in_processed_at)}
+                      </span>
+                    )}
+                    {row.kind === 'exchange_leg' && row.leg === 'out' && item.exchange_out_processed_at && (
+                      <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#dc2626' }}>
+                        ✓ 출고 {fmtDateTime(item.exchange_out_processed_at)}
+                      </span>
                     )}
                     {row.kind === 'single' && item.reason === 'simple_change' && (
                       <p style={{ fontSize: '9px', color: '#0284c7', marginTop: 1 }}>재고+{qty}</p>
@@ -1182,11 +1304,18 @@ export default function CsManagementPage() {
                   {/* 송장번호 */}
                   <div>
                     <label style={labelStyle}>
-                      송장번호
+                      {modal.type === 'exchange' ? '송장번호 (교환입고·기존 출고)' : '송장번호'}
                       <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>(출고내역에서 자동조회 가능)</span>
                     </label>
                     <input value={form.tracking_number} onChange={e => setF('tracking_number', e.target.value)} placeholder="운송장번호" className="pm-input" />
                   </div>
+
+                  {modal.type === 'exchange' && (
+                    <div>
+                      <label style={labelStyle}>송장번호 (교환출고·신규 발송)</label>
+                      <input value={form.tracking_number_out} onChange={e => setF('tracking_number_out', e.target.value)} placeholder="교환 발송 운송장 (접수 후 목록에서도 입력 가능)" className="pm-input" />
+                    </div>
+                  )}
 
                   {/* 반송장번호 */}
                   <div>
@@ -1236,9 +1365,10 @@ export default function CsManagementPage() {
                       ['옵션이미지', '이미지 URL (선택)'],  ['상품약어', '상품 약어코드'],
                       ['옵션명', '예: 블랙/FREE'],          ['바코드', '바코드 번호'],
                       ['수량', '숫자 (기본값 1)'],          ['구분', '단순변심 또는 불량'],
-                      ['송장번호', '운송장번호'],            ['반송장번호', '반품 운송장번호 (선택)'],
+                      ['송장번호', '운송장번호 (교환입고)'],     ['교환출고송장번호', '교환 발송 송장 (선택)'],
+                      ['반송장번호', '반품 운송장번호 (선택)'],  ['교환 바코드', '교환입고바코드·교환출고바코드'],
                     ].map(([col, desc]) => (
-                      <div key={col} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <div key={`${col}-${desc}`} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                         <span style={{ fontSize: '10.5px', fontWeight: 800, color: '#2563eb', background: '#eff6ff', padding: '1px 6px', borderRadius: 5, flexShrink: 0 }}>{col}</span>
                         <span style={{ fontSize: '10.5px', color: '#94a3b8' }}>{desc}</span>
                       </div>
@@ -1389,7 +1519,7 @@ export default function CsManagementPage() {
                 {/* 송장번호 + 반송장번호 */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
                   <div>
-                    <label style={labelStyle}>송장번호</label>
+                    <label style={labelStyle}>{editDraft.type === 'exchange' ? '송장번호 (교환입고)' : '송장번호'}</label>
                     <input value={editDraft.tracking_number} onChange={e => setEditDraft(d => d ? { ...d, tracking_number: e.target.value } : d)} placeholder="운송장번호" className="pm-input" />
                   </div>
                   <div>
@@ -1397,6 +1527,12 @@ export default function CsManagementPage() {
                     <input value={editDraft.return_tracking_number || ''} onChange={e => setEditDraft(d => d ? { ...d, return_tracking_number: e.target.value } : d)} placeholder="반품 운송장번호" className="pm-input" />
                   </div>
                 </div>
+                {editDraft.type === 'exchange' && (
+                  <div>
+                    <label style={labelStyle}>송장번호 (교환출고·신규 발송)</label>
+                    <input value={editDraft.tracking_number_out ?? ''} onChange={e => setEditDraft(d => d ? { ...d, tracking_number_out: e.target.value } : d)} placeholder="교환 발송 운송장" className="pm-input" />
+                  </div>
+                )}
 
                 {/* 사유 */}
                 <div>
@@ -1512,7 +1648,11 @@ function EmptyState({ icon, text }: { icon: React.ReactNode; text: string }) {
 
 function TypeBadge({ type }: { type: CsType }) {
   return (
-    <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 4px', borderRadius: 4, color: type === 'return' ? '#dc2626' : '#7c3aed', background: type === 'return' ? '#fff1f2' : '#f5f3ff', whiteSpace: 'nowrap' }}>
+    <span style={{
+      fontSize: '10px', fontWeight: 800, padding: '3px 6px', borderRadius: 5, lineHeight: 1.25,
+      color: type === 'return' ? '#dc2626' : '#7c3aed', background: type === 'return' ? '#fff1f2' : '#f5f3ff',
+      whiteSpace: 'normal', wordBreak: 'keep-all', display: 'inline-block', maxWidth: '100%',
+    }}>
       {type === 'return' ? '반품' : '교환'}
     </span>
   )
@@ -1523,7 +1663,11 @@ function ExchangeLegTypeBadge({ leg }: { leg: 'in' | 'out' }) {
   const outStyle = { color: '#dc2626', bg: '#fef2f2', label: '교환출고' as const }
   const s = leg === 'in' ? inStyle : outStyle
   return (
-    <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 4px', borderRadius: 4, whiteSpace: 'nowrap', color: s.color, background: s.bg }}>
+    <span style={{
+      fontSize: '10px', fontWeight: 800, padding: '3px 6px', borderRadius: 5, lineHeight: 1.25,
+      whiteSpace: 'normal', wordBreak: 'keep-all', display: 'inline-block', maxWidth: '100%',
+      color: s.color, background: s.bg,
+    }}>
       {s.label}
     </span>
   )
@@ -1579,7 +1723,11 @@ function BarcodeCell({ barcode }: { barcode: string }) {
 
 function ReasonBadge({ reason }: { reason: CsReason }) {
   return (
-    <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 4px', borderRadius: 4, whiteSpace: 'nowrap', color: reason === 'defective' ? '#c2410c' : '#0369a1', background: reason === 'defective' ? '#fff7ed' : '#f0f9ff' }}>
+    <span style={{
+      fontSize: '9.5px', fontWeight: 800, padding: '3px 5px', borderRadius: 4, lineHeight: 1.25,
+      whiteSpace: 'normal', wordBreak: 'keep-all', display: 'inline-block', maxWidth: '100%',
+      color: reason === 'defective' ? '#c2410c' : '#0369a1', background: reason === 'defective' ? '#fff7ed' : '#f0f9ff',
+    }}>
       {reason === 'defective' ? '불량' : '단순변심'}
     </span>
   )
