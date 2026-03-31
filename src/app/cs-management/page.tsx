@@ -39,6 +39,32 @@ interface CsItem {
   option_name_out       ?: string
 }
 
+/** 목록 표시: 교환은 교환입고·교환출고 각각 한 행 */
+type CsListRow =
+  | { kind: 'single'; item: CsItem }
+  | { kind: 'exchange_leg'; item: CsItem; leg: 'in' | 'out' }
+
+function expandCsListRows(items: CsItem[]): CsListRow[] {
+  const rows: CsListRow[] = []
+  for (const item of items) {
+    if (item.type !== 'exchange') {
+      rows.push({ kind: 'single', item })
+      continue
+    }
+    const bin = (item.barcode_in ?? item.barcode ?? '').trim()
+    const bout = (item.barcode_out ?? '').trim()
+    if (bin) rows.push({ kind: 'exchange_leg', item, leg: 'in' })
+    if (bout) rows.push({ kind: 'exchange_leg', item, leg: 'out' })
+    if (!bin && !bout) rows.push({ kind: 'exchange_leg', item, leg: 'in' })
+  }
+  return rows
+}
+
+function csListRowKey(row: CsListRow): string {
+  if (row.kind === 'single') return row.item.id
+  return `${row.item.id}:${row.leg}`
+}
+
 /* ─── 로컬스토리지 헬퍼 ──────────────────────────────────────────── */
 const CS_KEY = 'pm_cs_v1'
 function loadCs(): CsItem[] {
@@ -307,8 +333,8 @@ export default function CsManagementPage() {
     }
   }), [items])
 
-  /* ── 파생 목록 ── */
-  const pending = useMemo(() => {
+  /* ── 파생 목록 (교환은 입고·출고 행으로 펼침) ── */
+  const pendingItems = useMemo(() => {
     let list = enrichedItems.filter(i => i.status === 'pending')
     if (leftSearch) {
       const q = leftSearch.toLowerCase()
@@ -322,7 +348,9 @@ export default function CsManagementPage() {
     return list.slice().sort((a, b) => b.registered_at.localeCompare(a.registered_at))
   }, [enrichedItems, leftSearch])
 
-  const processed = useMemo(() => {
+  const pendingRows = useMemo(() => expandCsListRows(pendingItems), [pendingItems])
+
+  const processedItems = useMemo(() => {
     let list = enrichedItems.filter(i => i.status === 'processed' && (i.processed_at ?? '').slice(0, 7) === rightYM)
     if (rightSearch) {
       const q = rightSearch.toLowerCase()
@@ -335,6 +363,8 @@ export default function CsManagementPage() {
     }
     return list.slice().sort((a, b) => (b.processed_at ?? '').localeCompare(a.processed_at ?? ''))
   }, [enrichedItems, rightYM, rightSearch])
+
+  const processedRows = useMemo(() => expandCsListRows(processedItems), [processedItems])
 
   /* ── 모달 열기 ── */
   const openModal = (type: CsType) => {
@@ -732,7 +762,7 @@ export default function CsManagementPage() {
               </div>
               <span style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>CS접수</span>
               <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 6 }}>
-                {pending.length}건
+                {pendingRows.length}건
               </span>
             </div>
             <div style={{ flex: 1 }} />
@@ -755,47 +785,79 @@ export default function CsManagementPage() {
         <div className="pm-card" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <GridHeader cols={GRID_LEFT} headers={HDRS_LEFT} />
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {pending.length === 0 ? (
+            {pendingRows.length === 0 ? (
               <EmptyState icon={<HeadphonesIcon size={32} />} text="미처리 CS가 없습니다" />
-            ) : pending.map(item => {
-              const ms     = mallStyle(item.mall)
+            ) : pendingRows.map(row => {
+              const item = row.item
+              const ms   = mallStyle(item.mall)
               const isProc = processing === item.id
               const qty    = item.quantity ?? 1
+              const exLead = row.kind === 'exchange_leg' && row.leg === 'in'
+              const showProcess = row.kind === 'single' || exLead
+              const delLabel = item.type === 'exchange' && item.barcode_out
+                ? `${item.customer_name} / 입고${item.barcode_in ?? item.barcode} 출고${item.barcode_out}`
+                : `${item.customer_name} / ${item.barcode}`
+              const pendingIdleBg = row.kind === 'exchange_leg' && row.leg === 'out' ? '#fafafa' : 'transparent'
               return (
-                <div key={item.id}
+                <div key={csListRowKey(row)}
                   onClick={() => setEditDraft({ ...item })}
-                  style={{ display: 'grid', gridTemplateColumns: GRID_LEFT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'start', cursor: 'pointer', transition: 'background 120ms' }}
-                  onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
-                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                  style={{ display: 'grid', gridTemplateColumns: GRID_LEFT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'start', cursor: 'pointer', transition: 'background 120ms', background: pendingIdleBg }}
+                  onMouseEnter={e => { e.currentTarget.style.background = row.kind === 'exchange_leg' && row.leg === 'out' ? '#ecfdf5' : '#f0f9ff' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = pendingIdleBg }}
                 >
-                  <ExchangeTypeBadge item={item} />
+                  {row.kind === 'single' ? (
+                    <TypeBadge type={item.type} />
+                  ) : (
+                    <ExchangeLegTypeBadge leg={row.leg} />
+                  )}
                   <MallBadge mall={item.mall} style={ms} />
                   <CustomerCell name={item.customer_name} date={item.registered_at} />
-                  <ExchangeImageCell item={item} />
-                  <ExchangeAbbrCell item={item} />
-                  {/* 송장번호 */}
+                  {row.kind === 'single' ? (
+                    <ImageCell src={item.option_image} />
+                  ) : row.leg === 'in' ? (
+                    <ImageCell src={item.option_image} />
+                  ) : (
+                    <ImageCell src={item.option_image_out ?? ''} />
+                  )}
+                  {row.kind === 'single' ? (
+                    <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
+                  ) : row.leg === 'in' ? (
+                    <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
+                  ) : (
+                    <AbbrOptionCell abbr={item.product_abbr_out ?? ''} option={item.option_name_out ?? ''} />
+                  )}
                   <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
                     {item.tracking_number || '-'}
                   </span>
-                  {/* 반송장번호 인라인 입력 */}
-                  <input
-                    value={item.return_tracking_number || ''}
-                    onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
-                    placeholder="반송장"
-                    onClick={e => e.stopPropagation()}
-                    style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', minWidth: 0, border: '1px solid #e2e8f0', borderRadius: 4, padding: '4px 6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: 1 }}
-                  />
-                  <ExchangeBarcodeCell item={item} />
-                  {/* 수량 */}
+                  {showProcess ? (
+                    <input
+                      value={item.return_tracking_number || ''}
+                      onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
+                      placeholder="반송장"
+                      onClick={e => e.stopPropagation()}
+                      style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', minWidth: 0, border: '1px solid #e2e8f0', borderRadius: 4, padding: '4px 6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: 1 }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', paddingTop: 6 }} title="동일 접수 반송장">{item.return_tracking_number || '—'}</span>
+                  )}
+                  {row.kind === 'single' ? (
+                    <BarcodeCell barcode={item.barcode} />
+                  ) : row.leg === 'in' ? (
+                    <BarcodeCell barcode={(item.barcode_in ?? item.barcode ?? '').trim() || '-'} />
+                  ) : (
+                    <BarcodeCell barcode={(item.barcode_out ?? '').trim() || '-'} />
+                  )}
                   <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center', paddingTop: 4 }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
-                  {/* 처리완료 */}
-                  <button onClick={e => { e.stopPropagation(); handleProcess(item) }} disabled={!!processing}
-                    style={{ padding: '4px 6px', background: isProc ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: '10px', fontWeight: 800, cursor: isProc ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
-                    {isProc ? '처리중' : '처리완료'}
-                  </button>
-                  {/* 삭제 */}
-                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, item.type === 'exchange' && item.barcode_out ? `${item.customer_name} / 입고${item.barcode_in ?? item.barcode} 출고${item.barcode_out}` : `${item.customer_name} / ${item.barcode}`) }}
+                  {showProcess ? (
+                    <button onClick={e => { e.stopPropagation(); handleProcess(item) }} disabled={!!processing}
+                      style={{ padding: '4px 6px', background: isProc ? '#94a3b8' : '#059669', color: '#fff', border: 'none', borderRadius: 6, fontSize: '10px', fontWeight: 800, cursor: isProc ? 'not-allowed' : 'pointer', whiteSpace: 'nowrap' }}>
+                      {isProc ? '처리중' : '처리완료'}
+                    </button>
+                  ) : (
+                    <span style={{ fontSize: '9px', fontWeight: 700, color: '#cbd5e1', textAlign: 'center', paddingTop: 6 }}>〃</span>
+                  )}
+                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, delLabel) }}
                     title="삭제"
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: '10.5px', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
@@ -819,7 +881,7 @@ export default function CsManagementPage() {
               <CheckCircle2 size={16} style={{ color: '#059669' }} />
             </div>
             <span style={{ fontSize: '15px', fontWeight: 900, color: '#0f172a' }}>CS처리현황</span>
-            <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 6 }}>{processed.length}건</span>
+            <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 6 }}>{processedRows.length}건</span>
           </div>
           <MonthNav ym={rightYM} curYM={curYM} onChange={setRightYM} accentColor="#059669" accentBg="#f0fdf4">
             <SearchBox value={rightSearch} onChange={setRightSearch} />
@@ -830,62 +892,98 @@ export default function CsManagementPage() {
         <div className="pm-card" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <GridHeader cols={GRID_RIGHT} headers={HDRS_RIGHT} />
           <div style={{ flex: 1, overflowY: 'auto' }}>
-            {processed.length === 0 ? (
+            {processedRows.length === 0 ? (
               <EmptyState icon={<CheckCircle2 size={32} />} text={`${rightYM.replace('-', '년 ')}월 처리된 CS가 없습니다`} />
-            ) : processed.map(item => {
-              const ms  = mallStyle(item.mall)
-              const qty = item.quantity ?? 1
+            ) : processedRows.map(row => {
+              const item = row.item
+              const ms   = mallStyle(item.mall)
+              const qty  = item.quantity ?? 1
+              const exLead = row.kind === 'exchange_leg' && row.leg === 'in'
+              const showReturnInput = row.kind === 'single' || exLead
+              const delLabel = item.type === 'exchange' && item.barcode_out
+                ? `${item.customer_name} / 입고${item.barcode_in ?? item.barcode} 출고${item.barcode_out}`
+                : `${item.customer_name} / ${item.barcode}`
+              const baseBg = row.kind === 'exchange_leg' && row.leg === 'out' ? '#f7fef9' : '#fafffe'
               return (
-                <div key={item.id}
+                <div key={csListRowKey(row)}
                   onClick={() => setEditDraft({ ...item })}
-                  style={{ display: 'grid', gridTemplateColumns: GRID_RIGHT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'start', background: '#fafffe', cursor: 'pointer', transition: 'background 120ms' }}
+                  style={{ display: 'grid', gridTemplateColumns: GRID_RIGHT, gap: 5, padding: '8px 10px', borderBottom: '1px solid #f8fafc', alignItems: 'start', background: baseBg, cursor: 'pointer', transition: 'background 120ms' }}
                   onMouseEnter={e => (e.currentTarget.style.background = '#ecfdf5')}
-                  onMouseLeave={e => (e.currentTarget.style.background = '#fafffe')}
+                  onMouseLeave={e => (e.currentTarget.style.background = baseBg)}
                 >
-                  <ExchangeTypeBadge item={item} />
+                  {row.kind === 'single' ? (
+                    <TypeBadge type={item.type} />
+                  ) : (
+                    <ExchangeLegTypeBadge leg={row.leg} />
+                  )}
                   <MallBadge mall={item.mall} style={ms} />
                   <CustomerCell name={item.customer_name} date={item.registered_at} />
-                  <ExchangeImageCell item={item} />
-                  <ExchangeAbbrCell item={item} />
-                  {/* 송장번호 */}
+                  {row.kind === 'single' ? (
+                    <ImageCell src={item.option_image} />
+                  ) : row.leg === 'in' ? (
+                    <ImageCell src={item.option_image} />
+                  ) : (
+                    <ImageCell src={item.option_image_out ?? ''} />
+                  )}
+                  {row.kind === 'single' ? (
+                    <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
+                  ) : row.leg === 'in' ? (
+                    <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
+                  ) : (
+                    <AbbrOptionCell abbr={item.product_abbr_out ?? ''} option={item.option_name_out ?? ''} />
+                  )}
                   <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
                     {item.tracking_number || '-'}
                   </span>
-                  {/* 반송장번호 인라인 입력 */}
-                  <input
-                    value={item.return_tracking_number || ''}
-                    onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
-                    placeholder="반송장"
-                    onClick={e => e.stopPropagation()}
-                    style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', minWidth: 0, border: '1px solid #e2e8f0', borderRadius: 4, padding: '4px 6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: 1 }}
-                  />
-                  <ExchangeBarcodeCell item={item} />
-                  {/* 수량 */}
+                  {showReturnInput ? (
+                    <input
+                      value={item.return_tracking_number || ''}
+                      onChange={e => handleReturnTrackingChange(item.id, e.target.value)}
+                      placeholder="반송장"
+                      onClick={e => e.stopPropagation()}
+                      style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', minWidth: 0, border: '1px solid #e2e8f0', borderRadius: 4, padding: '4px 6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: 1 }}
+                    />
+                  ) : (
+                    <span style={{ fontSize: '10px', fontWeight: 700, color: '#94a3b8', paddingTop: 6 }}>{item.return_tracking_number || '—'}</span>
+                  )}
+                  {row.kind === 'single' ? (
+                    <BarcodeCell barcode={item.barcode} />
+                  ) : row.leg === 'in' ? (
+                    <BarcodeCell barcode={(item.barcode_in ?? item.barcode ?? '').trim() || '-'} />
+                  ) : (
+                    <BarcodeCell barcode={(item.barcode_out ?? '').trim() || '-'} />
+                  )}
                   <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center', paddingTop: 4 }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
-                  {/* 처리일시 + 재고/불량 표기 */}
                   <div>
-                    <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#059669' }}>
-                      ✓ {fmtDateTime(item.processed_at ?? '')}
-                    </span>
-                    {item.type === 'exchange' && (item.barcode_out ?? '').trim() && (
-                      <p style={{ fontSize: '9px', color: '#0369a1', marginTop: 1 }}>입고+{qty} · 출고−{qty}</p>
+                    {(row.kind === 'single' || (row.kind === 'exchange_leg' && row.leg === 'in')) && (
+                      <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#059669' }}>
+                        ✓ {fmtDateTime(item.processed_at ?? '')}
+                      </span>
                     )}
-                    {item.type !== 'exchange' && item.reason === 'simple_change' && (
+                    {row.kind === 'exchange_leg' && row.leg === 'out' && (
+                      <span style={{ fontSize: '9px', fontWeight: 700, color: '#94a3b8' }}>↳ 동일 건</span>
+                    )}
+                    {row.kind === 'single' && item.reason === 'simple_change' && (
                       <p style={{ fontSize: '9px', color: '#0284c7', marginTop: 1 }}>재고+{qty}</p>
                     )}
-                    {item.type !== 'exchange' && item.reason === 'defective' && (
+                    {row.kind === 'single' && item.reason === 'defective' && (
                       <p style={{ fontSize: '9px', color: '#c2410c', marginTop: 1 }}>불량+{qty}</p>
                     )}
-                    {item.type === 'exchange' && !(item.barcode_out ?? '').trim() && item.reason === 'simple_change' && (
+                    {row.kind === 'exchange_leg' && row.leg === 'in' && (item.barcode_out ?? '').trim() && (
+                      <p style={{ fontSize: '9px', color: '#0284c7', marginTop: 1 }}>입고+{qty}</p>
+                    )}
+                    {row.kind === 'exchange_leg' && row.leg === 'out' && (item.barcode_out ?? '').trim() && (
+                      <p style={{ fontSize: '9px', color: '#dc2626', marginTop: 1 }}>출고−{qty}</p>
+                    )}
+                    {row.kind === 'exchange_leg' && row.leg === 'in' && !(item.barcode_out ?? '').trim() && item.reason === 'simple_change' && (
                       <p style={{ fontSize: '9px', color: '#0284c7', marginTop: 1 }}>재고+{qty}</p>
                     )}
-                    {item.type === 'exchange' && !(item.barcode_out ?? '').trim() && item.reason === 'defective' && (
+                    {row.kind === 'exchange_leg' && row.leg === 'in' && !(item.barcode_out ?? '').trim() && item.reason === 'defective' && (
                       <p style={{ fontSize: '9px', color: '#c2410c', marginTop: 1 }}>불량+{qty}</p>
                     )}
                   </div>
-                  {/* 삭제 */}
-                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, item.type === 'exchange' && item.barcode_out ? `${item.customer_name} / 입고${item.barcode_in ?? item.barcode} 출고${item.barcode_out}` : `${item.customer_name} / ${item.barcode}`) }}
+                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, delLabel) }}
                     title="삭제"
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: '10.5px', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
@@ -1420,65 +1518,14 @@ function TypeBadge({ type }: { type: CsType }) {
   )
 }
 
-function ExchangeTypeBadge({ item }: { item: CsItem }) {
-  if (item.type !== 'exchange') return <TypeBadge type={item.type} />
+function ExchangeLegTypeBadge({ leg }: { leg: 'in' | 'out' }) {
+  const inStyle = { color: '#059669', bg: '#ecfdf5', label: '교환입고' as const }
+  const outStyle = { color: '#dc2626', bg: '#fef2f2', label: '교환출고' as const }
+  const s = leg === 'in' ? inStyle : outStyle
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start' }}>
-      <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 4px', borderRadius: 4, color: '#7c3aed', background: '#f5f3ff', whiteSpace: 'nowrap' }}>교환</span>
-      <span style={{ fontSize: '8px', fontWeight: 800, color: '#059669' }}>입고+</span>
-      {(item.barcode_out ?? '').trim() ? (
-        <span style={{ fontSize: '8px', fontWeight: 800, color: '#dc2626' }}>출고−</span>
-      ) : (
-        <span style={{ fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>출고?</span>
-      )}
-    </div>
-  )
-}
-
-function ExchangeImageCell({ item }: { item: CsItem }) {
-  if (item.type !== 'exchange') return <ImageCell src={item.option_image} />
-  const out = (item.option_image_out ?? '').trim()
-  if (!out) return <ImageCell src={item.option_image} />
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
-      <span style={{ fontSize: '7px', fontWeight: 800, color: '#059669' }}>입</span>
-      {item.option_image ? (
-        <img src={item.option_image} alt="" style={{ width: 28, height: 28, borderRadius: 4, objectFit: 'cover', border: '1px solid #e2e8f0' }} />
-      ) : (
-        <div style={{ width: 28, height: 28, borderRadius: 4, background: '#f1f5f9' }} />
-      )}
-      <span style={{ fontSize: '7px', fontWeight: 800, color: '#dc2626' }}>출</span>
-      <img src={out} alt="" style={{ width: 28, height: 28, borderRadius: 4, objectFit: 'cover', border: '1px solid #e2e8f0' }} />
-    </div>
-  )
-}
-
-function ExchangeAbbrCell({ item }: { item: CsItem }) {
-  if (item.type !== 'exchange' || !(item.barcode_out || item.product_abbr_out)) {
-    return <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
-  }
-  return (
-    <div style={{ overflow: 'hidden' }}>
-      <p style={{ fontSize: '8px', fontWeight: 800, color: '#059669', margin: 0 }}>입고</p>
-      <p style={{ fontSize: '10px', fontWeight: 800, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_abbr || '−'}</p>
-      <p style={{ fontSize: '9.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.option_name || '−'}</p>
-      <p style={{ fontSize: '8px', fontWeight: 800, color: '#dc2626', margin: '6px 0 0' }}>출고</p>
-      <p style={{ fontSize: '10px', fontWeight: 800, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_abbr_out || '−'}</p>
-      <p style={{ fontSize: '9.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.option_name_out || '−'}</p>
-    </div>
-  )
-}
-
-function ExchangeBarcodeCell({ item }: { item: CsItem }) {
-  if (item.type !== 'exchange') return <BarcodeCell barcode={item.barcode} />
-  const bin = (item.barcode_in ?? item.barcode ?? '').trim()
-  const bout = (item.barcode_out ?? '').trim()
-  if (!bout) return <BarcodeCell barcode={bin} />
-  return (
-    <div style={{ fontSize: '10px', lineHeight: 1.35, minWidth: 0 }}>
-      <div><span style={{ color: '#059669', fontWeight: 800, marginRight: 4 }}>입고</span><span data-pm-barcode="1" style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{bin || '−'}</span></div>
-      <div style={{ marginTop: 3 }}><span style={{ color: '#dc2626', fontWeight: 800, marginRight: 4 }}>출고</span><span data-pm-barcode="1" style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{bout}</span></div>
-    </div>
+    <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 4px', borderRadius: 4, whiteSpace: 'nowrap', color: s.color, background: s.bg }}>
+      {s.label}
+    </span>
   )
 }
 
