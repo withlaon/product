@@ -31,6 +31,12 @@ interface CsItem {
   registered_at         : string
   status                : CsStatus
   processed_at         ?: string
+  /** 교환: 회수(재고+), 교환 발송(재고-) */
+  barcode_in            ?: string
+  barcode_out           ?: string
+  option_image_out      ?: string
+  product_abbr_out      ?: string
+  option_name_out       ?: string
 }
 
 /* ─── 로컬스토리지 헬퍼 ──────────────────────────────────────────── */
@@ -50,6 +56,21 @@ type CachedOption = {
   [k: string]: unknown
 }
 type CachedProduct = { id: string; abbr?: string; options: CachedOption[] }
+
+const PM_IMG_CACHE_KEY = 'pm_product_images_v1'
+
+function overlayOptionImage(productId: string, optIdx: number, base: string): string {
+  const b = (base ?? '').trim()
+  if (b) return b
+  try {
+    const raw = localStorage.getItem(PM_IMG_CACHE_KEY)
+    if (!raw) return ''
+    const parsed = JSON.parse(raw) as { data?: Record<string, string[]> }
+    const arr = parsed?.data?.[productId]
+    if (Array.isArray(arr) && arr[optIdx] && String(arr[optIdx]).trim()) return String(arr[optIdx])
+  } catch {}
+  return ''
+}
 
 function loadCachedProducts(): CachedProduct[] {
   try {
@@ -86,12 +107,14 @@ function lookupByBarcode(barcode: string): Omit<OptionSuggestion, 'barcode'> | n
   if (!bc) return null
   const products = loadCachedProducts()
   for (const p of products) {
-    for (const o of p.options) {
+    const opts = p.options ?? []
+    for (let i = 0; i < opts.length; i++) {
+      const o = opts[i]
       if ((o.barcode ?? '').trim() === bc) {
         return {
           product_abbr: p.abbr ?? '',
           option_name : String(o.korean_name ?? o.name ?? ''),
-          option_image: String(o.image ?? ''),
+          option_image: overlayOptionImage(String(p.id), i, String(o.image ?? '')),
         }
       }
     }
@@ -107,11 +130,13 @@ function getOptionsByAbbr(abbr: string): OptionSuggestion[] {
   const result: OptionSuggestion[] = []
   for (const p of products) {
     if (!(p.abbr ?? '').toLowerCase().startsWith(abbrLow)) continue
-    for (const o of p.options) {
+    const opts = p.options ?? []
+    for (let i = 0; i < opts.length; i++) {
+      const o = opts[i]
       result.push({
         barcode     : String(o.barcode ?? ''),
         option_name : String(o.korean_name ?? o.name ?? ''),
-        option_image: String(o.image ?? ''),
+        option_image: overlayOptionImage(String(p.id), i, String(o.image ?? '')),
         product_abbr: p.abbr ?? '',
       })
     }
@@ -202,6 +227,11 @@ const EMPTY_FORM = {
   product_abbr          : '',
   option_name           : '',
   barcode               : '',
+  barcode_in            : '',
+  barcode_out           : '',
+  product_abbr_out      : '',
+  option_name_out       : '',
+  option_image_out      : '',
   reason                : 'simple_change' as CsReason,
   tracking_number       : '',
   return_tracking_number: '',
@@ -238,6 +268,34 @@ export default function CsManagementPage() {
 
   /* ── 옵션이미지/상품약어 누락 시 캐시에서 자동 보완 ── */
   const enrichedItems = useMemo(() => items.map(item => {
+    let next = { ...item }
+    if (item.type === 'exchange') {
+      const bin = (item.barcode_in ?? item.barcode ?? '').trim()
+      const bout = (item.barcode_out ?? '').trim()
+      if (bin) {
+        const fin = lookupByBarcode(bin)
+        if (fin) {
+          next = {
+            ...next,
+            option_image: next.option_image || fin.option_image,
+            product_abbr: next.product_abbr || fin.product_abbr,
+            option_name: next.option_name || fin.option_name,
+          }
+        }
+      }
+      if (bout) {
+        const fout = lookupByBarcode(bout)
+        if (fout) {
+          next = {
+            ...next,
+            option_image_out: next.option_image_out || fout.option_image,
+            product_abbr_out: next.product_abbr_out || fout.product_abbr,
+            option_name_out: next.option_name_out || fout.option_name,
+          }
+        }
+      }
+      return next
+    }
     if (item.option_image && item.product_abbr) return item
     const found = lookupByBarcode(item.barcode)
     if (!found) return item
@@ -256,7 +314,9 @@ export default function CsManagementPage() {
       const q = leftSearch.toLowerCase()
       list = list.filter(i =>
         i.customer_name.includes(q) || i.product_abbr.toLowerCase().includes(q) ||
-        i.barcode.includes(q) || i.option_name.toLowerCase().includes(q) || i.mall.includes(q)
+        i.barcode.includes(q) || i.option_name.toLowerCase().includes(q) || i.mall.includes(q) ||
+        (i.barcode_in ?? '').includes(q) || (i.barcode_out ?? '').includes(q) ||
+        (i.product_abbr_out ?? '').toLowerCase().includes(q)
       )
     }
     return list.slice().sort((a, b) => b.registered_at.localeCompare(a.registered_at))
@@ -268,7 +328,9 @@ export default function CsManagementPage() {
       const q = rightSearch.toLowerCase()
       list = list.filter(i =>
         i.customer_name.includes(q) || i.product_abbr.toLowerCase().includes(q) ||
-        i.barcode.includes(q) || i.option_name.toLowerCase().includes(q) || i.mall.includes(q)
+        i.barcode.includes(q) || i.option_name.toLowerCase().includes(q) || i.mall.includes(q) ||
+        (i.barcode_in ?? '').includes(q) || (i.barcode_out ?? '').includes(q) ||
+        (i.product_abbr_out ?? '').toLowerCase().includes(q)
       )
     }
     return list.slice().sort((a, b) => (b.processed_at ?? '').localeCompare(a.processed_at ?? ''))
@@ -298,42 +360,81 @@ export default function CsManagementPage() {
     }))
   }
 
+  const handleExchangeInChange = (v: string) => {
+    const found = lookupByBarcode(v)
+    setForm(f => ({
+      ...f,
+      barcode_in   : v,
+      barcode      : v,
+      product_abbr : found?.product_abbr || f.product_abbr,
+      option_name  : found?.option_name  || f.option_name,
+      option_image : found?.option_image || f.option_image,
+    }))
+  }
+
+  const handleExchangeOutChange = (v: string) => {
+    const found = lookupByBarcode(v)
+    setForm(f => ({
+      ...f,
+      barcode_out       : v,
+      product_abbr_out  : found?.product_abbr ?? f.product_abbr_out,
+      option_name_out   : found?.option_name ?? f.option_name_out,
+      option_image_out  : found?.option_image ?? f.option_image_out,
+    }))
+  }
+
   /* ── 상품약어 변경 → 드롭다운 + 바코드/이미지 자동입력 ── */
   const handleAbbrChange = (v: string) => {
     const suggs = getOptionsByAbbr(v)
     setAbbrSuggestions(suggs)
     setShowAbbrDrop(suggs.length > 0)
     const found = lookupByAbbrAndOption(v, form.option_name)
-    setForm(f => ({
-      ...f,
-      product_abbr: v,
-      barcode      : found?.barcode       || f.barcode,
-      option_image : found?.option_image  || f.option_image,
-    }))
+    setForm(f => {
+      const bc = found?.barcode || f.barcode
+      return {
+        ...f,
+        product_abbr: v,
+        barcode      : bc,
+        option_image : found?.option_image  || f.option_image,
+        ...(modal?.type === 'exchange' && found?.barcode ? { barcode_in: found.barcode } : {}),
+      }
+    })
   }
 
   /* ── 옵션명 변경 → 바코드/이미지 자동입력 ── */
   const handleOptionNameChange = (v: string) => {
     const found = lookupByAbbrAndOption(form.product_abbr, v)
+    const bc = found?.barcode || form.barcode
     setForm(f => ({
       ...f,
       option_name  : v,
-      barcode      : found?.barcode       || f.barcode,
+      barcode      : bc,
       option_image : found?.option_image  || f.option_image,
+      ...(modal?.type === 'exchange' && found?.barcode ? { barcode_in: found.barcode } : {}),
     }))
   }
 
   /* ── 드롭다운 선택 ── */
   const selectAbbrSuggestion = (s: OptionSuggestion) => {
-    setForm(f => ({ ...f, product_abbr: s.product_abbr, option_name: s.option_name, barcode: s.barcode, option_image: s.option_image }))
+    setForm(f => ({
+      ...f,
+      product_abbr: s.product_abbr,
+      option_name: s.option_name,
+      barcode: s.barcode,
+      ...(modal?.type === 'exchange' ? { barcode_in: s.barcode } : {}),
+      option_image: s.option_image,
+    }))
     setShowAbbrDrop(false)
   }
 
   /* ── 자동 송장조회 (바코드 기준, 쇼핑몰/수령인은 선택 필터) ── */
   const autoLookupTracking = () => {
-    if (!form.barcode) { alert('바코드를 먼저 입력해주세요.'); return }
+    const bc = modal?.type === 'exchange'
+      ? (form.barcode_in || form.barcode)
+      : form.barcode
+    if (!bc) { alert('바코드를 먼저 입력해주세요.'); return }
     const tn = lookupTracking(
-      form.barcode,
+      bc,
       form.mall       || undefined,
       form.customer_name || undefined,
     )
@@ -343,12 +444,44 @@ export default function CsManagementPage() {
 
   /* ── 직접 등록 저장 ── */
   const handleDirectSave = () => {
+    const qty = Math.max(1, formQty || 1)
+    if (modal!.type === 'exchange') {
+      const bin  = form.barcode_in.trim()
+      const bout = form.barcode_out.trim()
+      if (!form.mall || !form.customer_name || !bin || !bout) {
+        alert('교환 등록: 쇼핑몰, 수령인, 기존 출고 바코드(교환입고), 교환 발송 바코드(교환출고)를 모두 입력해주세요.')
+        return
+      }
+      setSaving(true)
+      const fin  = lookupByBarcode(bin)
+      const fout = lookupByBarcode(bout)
+      const newItem: CsItem = {
+        id: crypto.randomUUID(), type: 'exchange',
+        mall: form.mall, customer_name: form.customer_name,
+        barcode: bin,
+        barcode_in: bin,
+        barcode_out: bout,
+        option_image: form.option_image || fin?.option_image || '',
+        option_image_out: form.option_image_out || fout?.option_image || '',
+        product_abbr: form.product_abbr || fin?.product_abbr || '',
+        option_name: form.option_name || fin?.option_name || '',
+        product_abbr_out: form.product_abbr_out || fout?.product_abbr || '',
+        option_name_out: form.option_name_out || fout?.option_name || '',
+        quantity: qty, reason: form.reason,
+        tracking_number: form.tracking_number,
+        return_tracking_number: form.return_tracking_number || '',
+        registered_at: nowIso(), status: 'pending',
+      }
+      const updated = [newItem, ...items]
+      saveCs(updated); setItems(updated)
+      setModal(null); setSaving(false)
+      return
+    }
     if (!form.mall || !form.customer_name || !form.barcode) {
       alert('쇼핑몰, 수령인, 바코드는 필수 입력입니다.')
       return
     }
     setSaving(true)
-    const qty = Math.max(1, formQty || 1)
     const newItem: CsItem = {
       id: crypto.randomUUID(), type: modal!.type,
       mall: form.mall, customer_name: form.customer_name,
@@ -374,20 +507,49 @@ export default function CsManagementPage() {
         const wb   = XLSX.read(ev.target?.result, { type: 'array' })
         const ws   = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json<Record<string, string>>(ws)
-        const newItems: CsItem[] = rows.map(r => ({
-          id: crypto.randomUUID(), type: modal!.type,
-          mall: String(r['쇼핑몰'] ?? ''),
-          customer_name: String(r['수령인'] ?? r['주문자'] ?? ''),
-          option_image: String(r['옵션이미지'] ?? ''),
-          product_abbr: String(r['상품약어'] ?? ''),
-          option_name: String(r['옵션명'] ?? ''),
-          barcode: String(r['바코드'] ?? '').trim(),
-          quantity: Number(r['수량']) || 1,
-          reason: (r['구분'] === '불량' ? 'defective' : 'simple_change') as CsReason,
-          tracking_number: String(r['송장번호'] ?? ''),
-          return_tracking_number: String(r['반송장번호'] ?? ''),
-          registered_at: nowIso(), status: 'pending',
-        }))
+        const isEx = modal!.type === 'exchange'
+        const newItems: CsItem[] = rows.map(r => {
+          const bin   = String(r['교환입고바코드'] ?? r['입고바코드'] ?? '').trim()
+          const bout  = String(r['교환출고바코드'] ?? r['출고바코드'] ?? '').trim()
+          const legacyBc = String(r['바코드'] ?? '').trim()
+          const qty   = Number(r['수량']) || 1
+          const reason = (r['구분'] === '불량' ? 'defective' : 'simple_change') as CsReason
+          const base = {
+            mall: String(r['쇼핑몰'] ?? ''),
+            customer_name: String(r['수령인'] ?? r['주문자'] ?? ''),
+            quantity: qty, reason,
+            tracking_number: String(r['송장번호'] ?? ''),
+            return_tracking_number: String(r['반송장번호'] ?? ''),
+            registered_at: nowIso(), status: 'pending' as const,
+          }
+          if (isEx && bin && bout) {
+            const fin = lookupByBarcode(bin)
+            const fout = lookupByBarcode(bout)
+            return {
+              id: crypto.randomUUID(), type: 'exchange' as const, ...base,
+              barcode: bin,
+              barcode_in: bin,
+              barcode_out: bout,
+              option_image: String(r['옵션이미지'] ?? '') || fin?.option_image || '',
+              option_image_out: fout?.option_image || '',
+              product_abbr: String(r['상품약어'] ?? '') || fin?.product_abbr || '',
+              option_name: String(r['옵션명'] ?? '') || fin?.option_name || '',
+              product_abbr_out: fout?.product_abbr || '',
+              option_name_out: fout?.option_name || '',
+            }
+          }
+          const bc = isEx && bin ? bin : legacyBc
+          const fin = lookupByBarcode(bc)
+          return {
+            id: crypto.randomUUID(), type: modal!.type,
+            ...base,
+            option_image: String(r['옵션이미지'] ?? '') || fin?.option_image || '',
+            product_abbr: String(r['상품약어'] ?? '') || fin?.product_abbr || '',
+            option_name: String(r['옵션명'] ?? '') || fin?.option_name || '',
+            barcode: bc,
+            ...(isEx && bin ? { barcode_in: bin, barcode_out: bout } : {}),
+          }
+        })
         const updated = [...newItems, ...items]
         saveCs(updated); setItems(updated)
         alert(`${newItems.length}건이 등록되었습니다.`)
@@ -401,46 +563,106 @@ export default function CsManagementPage() {
   /* ── 처리완료 ── */
   const handleProcess = async (item: CsItem) => {
     if (processing) return
-    const typeLabel   = item.type === 'return' ? '반품' : '교환'
     const reasonLabel = item.reason === 'defective' ? '불량' : '단순변심'
     const qty         = item.quantity ?? 1
-    if (!confirm(`[${typeLabel}] ${item.customer_name} / ${item.barcode}\n사유: ${reasonLabel} / 수량: ${qty}개\n\n처리완료 하시겠습니까?`)) return
+
+    if (item.type === 'exchange') {
+      const bin  = (item.barcode_in ?? item.barcode ?? '').trim()
+      const bout = (item.barcode_out ?? '').trim()
+      if (bin && bout) {
+        if (!confirm(
+          `[교환] ${item.customer_name}\n교환입고(재고+) ${bin} / 교환출고(재고−) ${bout}\n수량: ${qty}개\n\n처리완료 하시겠습니까?`,
+        )) return
+      } else {
+        if (!confirm(`[교환·기존형] ${item.customer_name} / ${item.barcode}\n사유: ${reasonLabel} / 수량: ${qty}개\n(교환출고 바코드 없음 → 입고 바코드만 재고 반영)\n\n처리완료 하시겠습니까?`)) return
+      }
+    } else {
+      if (!confirm(`[반품] ${item.customer_name} / ${item.barcode}\n사유: ${reasonLabel} / 수량: ${qty}개\n\n처리완료 하시겠습니까?`)) return
+    }
+
     setProcessing(item.id)
     try {
-      const products = loadCachedProducts()
-      let found = false
-      const updatedProducts = products.map(p => ({
-        ...p,
-        options: p.options.map(o => {
-          if ((o.barcode ?? '').trim() !== item.barcode.trim()) return o
-          found = true
-          if (item.reason === 'simple_change') {
-            return { ...o, current_stock: (typeof o.current_stock === 'number' ? o.current_stock : 0) + qty }
-          } else {
-            return { ...o, defective: (typeof o.defective === 'number' ? o.defective : 0) + qty }
-          }
-        }),
-      }))
+      let products = loadCachedProducts()
 
-      if (found) {
-        saveCachedProducts(updatedProducts)
-        const changedIds = new Set(
-          updatedProducts
-            .filter(p => p.options.some((o, i) => {
-              const orig = products.find(pp => pp.id === p.id)?.options[i]
-              return orig && (o.current_stock !== orig.current_stock || o.defective !== orig.defective)
-            }))
-            .map(p => p.id)
-        )
-        await Promise.all([...changedIds].map(id => {
-          const p = updatedProducts.find(pp => pp.id === id)!
-          return fetch('/api/pm-products', {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ id: p.id, options: p.options }),
-          })
+      const patchOptionByBarcode = (
+        barcode: string,
+        fn: (o: CachedOption) => CachedOption,
+      ): { products: CachedProduct[]; hit: boolean } => {
+        let hit = false
+        const next = products.map(p => ({
+          ...p,
+          options: p.options.map(o => {
+            if ((o.barcode ?? '').trim() !== barcode.trim()) return o
+            hit = true
+            return fn(o)
+          }),
         }))
+        return { products: next, hit }
       }
+
+      if (item.type === 'exchange') {
+        const bin  = (item.barcode_in ?? item.barcode ?? '').trim()
+        const bout = (item.barcode_out ?? '').trim()
+        if (bin && bout) {
+          let r1 = patchOptionByBarcode(bin, o => ({
+            ...o,
+            current_stock: (typeof o.current_stock === 'number' ? o.current_stock : 0) + qty,
+          }))
+          products = r1.products
+          let r2 = patchOptionByBarcode(bout, o => ({
+            ...o,
+            current_stock: Math.max(0, (typeof o.current_stock === 'number' ? o.current_stock : 0) - qty),
+          }))
+          products = r2.products
+        } else if (bin) {
+          const r = patchOptionByBarcode(bin, o => {
+            if (item.reason === 'simple_change') {
+              return { ...o, current_stock: (typeof o.current_stock === 'number' ? o.current_stock : 0) + qty }
+            }
+            return { ...o, defective: (typeof o.defective === 'number' ? o.defective : 0) + qty }
+          })
+          products = r.products
+        }
+      } else {
+        let found = false
+        products = products.map(p => ({
+          ...p,
+          options: p.options.map(o => {
+            if ((o.barcode ?? '').trim() !== item.barcode.trim()) return o
+            found = true
+            if (item.reason === 'simple_change') {
+              return { ...o, current_stock: (typeof o.current_stock === 'number' ? o.current_stock : 0) + qty }
+            }
+            return { ...o, defective: (typeof o.defective === 'number' ? o.defective : 0) + qty }
+          }),
+        }))
+        if (!found) {
+          const updated = items.map(i =>
+            i.id === item.id ? { ...i, status: 'processed' as CsStatus, processed_at: nowIso() } : i
+          )
+          saveCs(updated); setItems(updated)
+          return
+        }
+      }
+
+      const origSnapshot = loadCachedProducts()
+      saveCachedProducts(products)
+      const changedIds = new Set(
+        products
+          .filter(p => p.options.some((o, i) => {
+            const orig = origSnapshot.find(pp => pp.id === p.id)?.options[i]
+            return orig && (o.current_stock !== orig.current_stock || o.defective !== orig.defective)
+          }))
+          .map(p => p.id)
+      )
+      await Promise.all([...changedIds].map(id => {
+        const p = products.find(pp => pp.id === id)!
+        return fetch('/api/pm-products', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ id: p.id, options: p.options }),
+        })
+      }))
 
       const updated = items.map(i =>
         i.id === item.id ? { ...i, status: 'processed' as CsStatus, processed_at: nowIso() } : i
@@ -472,7 +694,11 @@ export default function CsManagementPage() {
 
   /* ── 엑셀 템플릿 다운로드 ── */
   const handleDownloadTemplate = () => {
-    const rows = [{ 쇼핑몰: '', 수령인: '', 옵션이미지: '', 상품약어: '', 옵션명: '', 바코드: '', 수량: 1, 구분: '단순변심', 송장번호: '', 반송장번호: '' }]
+    const rows = [{
+      쇼핑몰: '', 수령인: '',
+      교환입고바코드: '', 교환출고바코드: '',
+      옵션이미지: '', 상품약어: '', 옵션명: '', 바코드: '', 수량: 1, 구분: '단순변심', 송장번호: '', 반송장번호: '',
+    }]
     const ws = XLSX.utils.json_to_sheet(rows)
     const wb = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(wb, ws, 'CS접수')
@@ -542,11 +768,11 @@ export default function CsManagementPage() {
                   onMouseEnter={e => (e.currentTarget.style.background = '#f0f9ff')}
                   onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
                 >
-                  <TypeBadge type={item.type} />
+                  <ExchangeTypeBadge item={item} />
                   <MallBadge mall={item.mall} style={ms} />
                   <CustomerCell name={item.customer_name} date={item.registered_at} />
-                  <ImageCell src={item.option_image} />
-                  <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
+                  <ExchangeImageCell item={item} />
+                  <ExchangeAbbrCell item={item} />
                   {/* 송장번호 */}
                   <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
                     {item.tracking_number || '-'}
@@ -559,7 +785,7 @@ export default function CsManagementPage() {
                     onClick={e => e.stopPropagation()}
                     style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', minWidth: 0, border: '1px solid #e2e8f0', borderRadius: 4, padding: '4px 6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: 1 }}
                   />
-                  <BarcodeCell barcode={item.barcode} />
+                  <ExchangeBarcodeCell item={item} />
                   {/* 수량 */}
                   <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center', paddingTop: 4 }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
@@ -569,7 +795,7 @@ export default function CsManagementPage() {
                     {isProc ? '처리중' : '처리완료'}
                   </button>
                   {/* 삭제 */}
-                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, `${item.customer_name} / ${item.barcode}`) }}
+                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, item.type === 'exchange' && item.barcode_out ? `${item.customer_name} / 입고${item.barcode_in ?? item.barcode} 출고${item.barcode_out}` : `${item.customer_name} / ${item.barcode}`) }}
                     title="삭제"
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: '10.5px', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
@@ -616,11 +842,11 @@ export default function CsManagementPage() {
                   onMouseEnter={e => (e.currentTarget.style.background = '#ecfdf5')}
                   onMouseLeave={e => (e.currentTarget.style.background = '#fafffe')}
                 >
-                  <TypeBadge type={item.type} />
+                  <ExchangeTypeBadge item={item} />
                   <MallBadge mall={item.mall} style={ms} />
                   <CustomerCell name={item.customer_name} date={item.registered_at} />
-                  <ImageCell src={item.option_image} />
-                  <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
+                  <ExchangeImageCell item={item} />
+                  <ExchangeAbbrCell item={item} />
                   {/* 송장번호 */}
                   <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#2563eb', display: 'block', minWidth: 0, whiteSpace: 'normal', wordBreak: 'break-all', lineHeight: 1.35, paddingTop: 2 }}>
                     {item.tracking_number || '-'}
@@ -633,7 +859,7 @@ export default function CsManagementPage() {
                     onClick={e => e.stopPropagation()}
                     style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.02em', color: '#7c3aed', width: '100%', minWidth: 0, border: '1px solid #e2e8f0', borderRadius: 4, padding: '4px 6px', outline: 'none', boxSizing: 'border-box', fontFamily: 'inherit', marginTop: 1 }}
                   />
-                  <BarcodeCell barcode={item.barcode} />
+                  <ExchangeBarcodeCell item={item} />
                   {/* 수량 */}
                   <span style={{ fontSize: '11px', fontWeight: 800, color: '#0f172a', textAlign: 'center', paddingTop: 4 }}>{qty}</span>
                   <ReasonBadge reason={item.reason} />
@@ -642,15 +868,24 @@ export default function CsManagementPage() {
                     <span style={{ fontSize: '9.5px', fontWeight: 700, color: '#059669' }}>
                       ✓ {fmtDateTime(item.processed_at ?? '')}
                     </span>
-                    {item.reason === 'simple_change' && (
+                    {item.type === 'exchange' && (item.barcode_out ?? '').trim() && (
+                      <p style={{ fontSize: '9px', color: '#0369a1', marginTop: 1 }}>입고+{qty} · 출고−{qty}</p>
+                    )}
+                    {item.type !== 'exchange' && item.reason === 'simple_change' && (
                       <p style={{ fontSize: '9px', color: '#0284c7', marginTop: 1 }}>재고+{qty}</p>
                     )}
-                    {item.reason === 'defective' && (
+                    {item.type !== 'exchange' && item.reason === 'defective' && (
+                      <p style={{ fontSize: '9px', color: '#c2410c', marginTop: 1 }}>불량+{qty}</p>
+                    )}
+                    {item.type === 'exchange' && !(item.barcode_out ?? '').trim() && item.reason === 'simple_change' && (
+                      <p style={{ fontSize: '9px', color: '#0284c7', marginTop: 1 }}>재고+{qty}</p>
+                    )}
+                    {item.type === 'exchange' && !(item.barcode_out ?? '').trim() && item.reason === 'defective' && (
                       <p style={{ fontSize: '9px', color: '#c2410c', marginTop: 1 }}>불량+{qty}</p>
                     )}
                   </div>
                   {/* 삭제 */}
-                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, `${item.customer_name} / ${item.barcode}`) }}
+                  <button onClick={e => { e.stopPropagation(); handleDelete(item.id, item.type === 'exchange' && item.barcode_out ? `${item.customer_name} / 입고${item.barcode_in ?? item.barcode} 출고${item.barcode_out}` : `${item.customer_name} / ${item.barcode}`) }}
                     title="삭제"
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, padding: '4px 7px', border: '1px solid #fecaca', background: '#fff1f2', borderRadius: 6, cursor: 'pointer', fontSize: '10.5px', fontWeight: 800, color: '#dc2626', whiteSpace: 'nowrap' }}
                     onMouseEnter={e => (e.currentTarget.style.background = '#fef2f2')}
@@ -718,20 +953,50 @@ export default function CsManagementPage() {
                     <input value={form.customer_name} onChange={e => setF('customer_name', e.target.value)} placeholder="수령인 이름" className="pm-input" />
                   </div>
 
-                  {/* 바코드 → 자동입력 */}
-                  <div>
-                    <label style={labelStyle}>
-                      바코드 <Req />
-                      <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>입력 시 약어/옵션명/이미지 자동입력</span>
-                    </label>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <input value={form.barcode} onChange={e => handleBarcodeChange(e.target.value)} placeholder="바코드 번호" className="pm-input" style={{ flex: 1 }} />
-                      <button onClick={autoLookupTracking} type="button" title="출고내역에서 송장번호 자동 조회"
-                        style={{ padding: '0 12px', height: 36, background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: '11.5px', fontWeight: 800, color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
-                        <Search size={12} /> 송장조회
-                      </button>
+                  {/* 바코드 → 자동입력 (반품: 단일 / 교환: 입고+출고) */}
+                  {modal.type === 'return' ? (
+                    <div>
+                      <label style={labelStyle}>
+                        바코드 <Req />
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>입력 시 약어/옵션명/이미지 자동입력</span>
+                      </label>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <input value={form.barcode} onChange={e => handleBarcodeChange(e.target.value)} placeholder="바코드 번호" className="pm-input" style={{ flex: 1 }} />
+                        <button onClick={autoLookupTracking} type="button" title="출고내역에서 송장번호 자동 조회"
+                          style={{ padding: '0 12px', height: 36, background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: '11.5px', fontWeight: 800, color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                          <Search size={12} /> 송장조회
+                        </button>
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div style={{ padding: '10px 12px', background: '#ecfdf5', borderRadius: 10, border: '1px solid #bbf7d0', marginBottom: 4 }}>
+                        <p style={{ fontSize: '11px', fontWeight: 900, color: '#047857', margin: 0 }}>교환입고 — 기존에 출고된 상품(회수·재고 +)</p>
+                        <p style={{ fontSize: '10px', color: '#059669', margin: '4px 0 0' }}>고객이 돌려보내는 바코드입니다. 아래 약어/옵션은 이쪽 기준으로 선택하세요.</p>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>
+                          기존 출고 바코드 (교환입고) <Req />
+                        </label>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <input value={form.barcode_in} onChange={e => handleExchangeInChange(e.target.value)} placeholder="출고했던 상품 바코드" className="pm-input" style={{ flex: 1, fontFamily: 'monospace' }} />
+                          <button onClick={autoLookupTracking} type="button" title="출고내역에서 송장번호 자동 조회"
+                            style={{ padding: '0 12px', height: 36, background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: '11.5px', fontWeight: 800, color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
+                            <Search size={12} /> 송장조회
+                          </button>
+                        </div>
+                      </div>
+                      <div style={{ padding: '10px 12px', background: '#fef2f2', borderRadius: 10, border: '1px solid #fecaca', marginTop: 6 }}>
+                        <p style={{ fontSize: '11px', fontWeight: 900, color: '#b91c1c', margin: 0 }}>교환출고 — 보내줄 교환 상품(재고 −)</p>
+                      </div>
+                      <div>
+                        <label style={labelStyle}>
+                          교환 발송 바코드 (교환출고) <Req />
+                        </label>
+                        <input value={form.barcode_out} onChange={e => handleExchangeOutChange(e.target.value)} placeholder="새로 보낼 상품 바코드" className="pm-input" style={{ fontFamily: 'monospace' }} />
+                      </div>
+                    </>
+                  )}
 
                   {/* 상품약어 + 옵션명 */}
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -907,7 +1172,11 @@ export default function CsManagementPage() {
               </div>
               <div>
                 <p style={{ fontSize: '14px', fontWeight: 900, color: '#0f172a' }}>CS 항목 수정</p>
-                <p style={{ fontSize: '11px', color: '#94a3b8' }}>{editDraft.customer_name} / {editDraft.barcode}</p>
+                <p style={{ fontSize: '11px', color: '#94a3b8' }}>
+                  {editDraft.customer_name} / {editDraft.type === 'exchange' && editDraft.barcode_out
+                    ? `입고 ${editDraft.barcode_in ?? editDraft.barcode} · 출고 ${editDraft.barcode_out}`
+                    : editDraft.barcode}
+                </p>
               </div>
               <div style={{ flex: 1 }} />
               <button onClick={() => setEditDraft(null)}
@@ -951,10 +1220,23 @@ export default function CsManagementPage() {
                 </div>
 
                 {/* 바코드 */}
-                <div>
-                  <label style={labelStyle}>바코드</label>
-                  <input value={editDraft.barcode} onChange={e => setEditDraft(d => d ? { ...d, barcode: e.target.value } : d)} placeholder="바코드 번호" className="pm-input" />
-                </div>
+                {editDraft.type === 'exchange' ? (
+                  <>
+                    <div>
+                      <label style={labelStyle}>교환입고 바코드 (기존 출고)</label>
+                      <input value={editDraft.barcode_in ?? editDraft.barcode} onChange={e => setEditDraft(d => d ? { ...d, barcode_in: e.target.value, barcode: e.target.value } : d)} placeholder="회수 바코드" className="pm-input" style={{ fontFamily: 'monospace' }} />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>교환출고 바코드 (발송)</label>
+                      <input value={editDraft.barcode_out ?? ''} onChange={e => setEditDraft(d => d ? { ...d, barcode_out: e.target.value } : d)} placeholder="교환 발송 바코드" className="pm-input" style={{ fontFamily: 'monospace' }} />
+                    </div>
+                  </>
+                ) : (
+                  <div>
+                    <label style={labelStyle}>바코드</label>
+                    <input value={editDraft.barcode} onChange={e => setEditDraft(d => d ? { ...d, barcode: e.target.value } : d)} placeholder="바코드 번호" className="pm-input" />
+                  </div>
+                )}
 
                 {/* 상품약어 + 옵션명 */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -968,9 +1250,22 @@ export default function CsManagementPage() {
                   </div>
                 </div>
 
+                {editDraft.type === 'exchange' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+                    <div>
+                      <label style={labelStyle}>교환출고 상품약어</label>
+                      <input value={editDraft.product_abbr_out ?? ''} onChange={e => setEditDraft(d => d ? { ...d, product_abbr_out: e.target.value } : d)} className="pm-input" />
+                    </div>
+                    <div>
+                      <label style={labelStyle}>교환출고 옵션명</label>
+                      <input value={editDraft.option_name_out ?? ''} onChange={e => setEditDraft(d => d ? { ...d, option_name_out: e.target.value } : d)} className="pm-input" />
+                    </div>
+                  </div>
+                )}
+
                 {/* 옵션이미지 */}
                 <div>
-                  <label style={labelStyle}>옵션이미지 URL</label>
+                  <label style={labelStyle}>{editDraft.type === 'exchange' ? '옵션이미지 URL (교환입고)' : '옵션이미지 URL'}</label>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
                     <input value={editDraft.option_image} onChange={e => setEditDraft(d => d ? { ...d, option_image: e.target.value } : d)} placeholder="https://..." className="pm-input" style={{ flex: 1 }} />
                     {editDraft.option_image && (
@@ -979,6 +1274,19 @@ export default function CsManagementPage() {
                     )}
                   </div>
                 </div>
+
+                {editDraft.type === 'exchange' && (
+                  <div>
+                    <label style={labelStyle}>옵션이미지 URL (교환출고)</label>
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                      <input value={editDraft.option_image_out ?? ''} onChange={e => setEditDraft(d => d ? { ...d, option_image_out: e.target.value } : d)} placeholder="https://..." className="pm-input" style={{ flex: 1 }} />
+                      {(editDraft.option_image_out ?? '').trim() && (
+                        <img src={editDraft.option_image_out} alt="" style={{ width: 40, height: 40, borderRadius: 8, objectFit: 'cover', border: '1px solid #e2e8f0', flexShrink: 0 }}
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* 송장번호 + 반송장번호 */}
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
@@ -1109,6 +1417,68 @@ function TypeBadge({ type }: { type: CsType }) {
     <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 4px', borderRadius: 4, color: type === 'return' ? '#dc2626' : '#7c3aed', background: type === 'return' ? '#fff1f2' : '#f5f3ff', whiteSpace: 'nowrap' }}>
       {type === 'return' ? '반품' : '교환'}
     </span>
+  )
+}
+
+function ExchangeTypeBadge({ item }: { item: CsItem }) {
+  if (item.type !== 'exchange') return <TypeBadge type={item.type} />
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start' }}>
+      <span style={{ fontSize: '9px', fontWeight: 800, padding: '2px 4px', borderRadius: 4, color: '#7c3aed', background: '#f5f3ff', whiteSpace: 'nowrap' }}>교환</span>
+      <span style={{ fontSize: '8px', fontWeight: 800, color: '#059669' }}>입고+</span>
+      {(item.barcode_out ?? '').trim() ? (
+        <span style={{ fontSize: '8px', fontWeight: 800, color: '#dc2626' }}>출고−</span>
+      ) : (
+        <span style={{ fontSize: '8px', fontWeight: 700, color: '#94a3b8' }}>출고?</span>
+      )}
+    </div>
+  )
+}
+
+function ExchangeImageCell({ item }: { item: CsItem }) {
+  if (item.type !== 'exchange') return <ImageCell src={item.option_image} />
+  const out = (item.option_image_out ?? '').trim()
+  if (!out) return <ImageCell src={item.option_image} />
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'center' }}>
+      <span style={{ fontSize: '7px', fontWeight: 800, color: '#059669' }}>입</span>
+      {item.option_image ? (
+        <img src={item.option_image} alt="" style={{ width: 28, height: 28, borderRadius: 4, objectFit: 'cover', border: '1px solid #e2e8f0' }} />
+      ) : (
+        <div style={{ width: 28, height: 28, borderRadius: 4, background: '#f1f5f9' }} />
+      )}
+      <span style={{ fontSize: '7px', fontWeight: 800, color: '#dc2626' }}>출</span>
+      <img src={out} alt="" style={{ width: 28, height: 28, borderRadius: 4, objectFit: 'cover', border: '1px solid #e2e8f0' }} />
+    </div>
+  )
+}
+
+function ExchangeAbbrCell({ item }: { item: CsItem }) {
+  if (item.type !== 'exchange' || !(item.barcode_out || item.product_abbr_out)) {
+    return <AbbrOptionCell abbr={item.product_abbr} option={item.option_name} />
+  }
+  return (
+    <div style={{ overflow: 'hidden' }}>
+      <p style={{ fontSize: '8px', fontWeight: 800, color: '#059669', margin: 0 }}>입고</p>
+      <p style={{ fontSize: '10px', fontWeight: 800, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_abbr || '−'}</p>
+      <p style={{ fontSize: '9.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.option_name || '−'}</p>
+      <p style={{ fontSize: '8px', fontWeight: 800, color: '#dc2626', margin: '6px 0 0' }}>출고</p>
+      <p style={{ fontSize: '10px', fontWeight: 800, color: '#334155', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.product_abbr_out || '−'}</p>
+      <p style={{ fontSize: '9.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.option_name_out || '−'}</p>
+    </div>
+  )
+}
+
+function ExchangeBarcodeCell({ item }: { item: CsItem }) {
+  if (item.type !== 'exchange') return <BarcodeCell barcode={item.barcode} />
+  const bin = (item.barcode_in ?? item.barcode ?? '').trim()
+  const bout = (item.barcode_out ?? '').trim()
+  if (!bout) return <BarcodeCell barcode={bin} />
+  return (
+    <div style={{ fontSize: '10px', lineHeight: 1.35, minWidth: 0 }}>
+      <div><span style={{ color: '#059669', fontWeight: 800, marginRight: 4 }}>입고</span><span data-pm-barcode="1" style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{bin || '−'}</span></div>
+      <div style={{ marginTop: 3 }}><span style={{ color: '#dc2626', fontWeight: 800, marginRight: 4 }}>출고</span><span data-pm-barcode="1" style={{ fontFamily: 'monospace', wordBreak: 'break-all' }}>{bout}</span></div>
+    </div>
   )
 }
 

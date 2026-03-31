@@ -697,6 +697,7 @@ export default function OrdersPage() {
     }))
     saveShippedOrders(updatedShipped)
 
+    try { window.dispatchEvent(new CustomEvent('pm_mapping_updated')) } catch { /* ignore */ }
     setShowMapping(false)
   }
 

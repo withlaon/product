@@ -7,6 +7,7 @@ import {
   loadShippedOrders, saveShippedOrders, removeShippedOrdersByIds,
   loadOrders, saveOrders, isVisibleInShippingHistory,
   loadMappings, saveMappings, lookupMapping, makeMappingKey, extractColor,
+  resolveMappedBarcode, MAPPING_KEY, SHIPPED_ORDERS_KEY,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
@@ -21,6 +22,12 @@ interface CsItem {
   tracking_number: string; return_tracking_number?: string
   registered_at: string
   status: 'pending' | 'processed'; processed_at?: string
+  /** 교환: 회수(재고+), 교환발송(재고-) */
+  barcode_in?: string
+  barcode_out?: string
+  option_image_out?: string
+  product_abbr_out?: string
+  option_name_out?: string
 }
 const CS_KEY = 'pm_cs_v1'
 function loadCs(): CsItem[] {
@@ -32,6 +39,19 @@ function saveCs(items: CsItem[]) {
 }
 
 /** 바코드로 상품 약어·옵션명·이미지 조회 */
+function overlayPmImage(productId: string, optIdx: number, base: string): string {
+  const b = (base ?? '').trim()
+  if (b) return b
+  try {
+    const raw = localStorage.getItem('pm_product_images_v1')
+    if (!raw) return ''
+    const parsed = JSON.parse(raw) as { data?: Record<string, string[]> }
+    const arr = parsed?.data?.[productId]
+    if (Array.isArray(arr) && arr[optIdx] && String(arr[optIdx]).trim()) return String(arr[optIdx])
+  } catch {}
+  return ''
+}
+
 function lookupProductByBarcode(barcode: string) {
   try {
     const raw = localStorage.getItem('pm_products_cache_v1')
@@ -40,12 +60,14 @@ function lookupProductByBarcode(barcode: string) {
     const arr = Array.isArray(parsed) ? parsed : (Array.isArray(parsed?.data) ? parsed.data : [])
     const bc = barcode.trim()
     for (const p of arr) {
-      for (const o of p.options) {
+      const opts = p.options ?? []
+      for (let i = 0; i < opts.length; i++) {
+        const o = opts[i]
         if ((o.barcode ?? '').trim() === bc) {
           return {
             product_abbr: p.abbr ?? '',
             option_name : String(o.korean_name ?? o.name ?? ''),
-            option_image: String(o.image ?? ''),
+            option_image: overlayPmImage(String(p.id), i, String(o.image ?? '')),
           }
         }
       }
@@ -267,9 +289,36 @@ export default function ShippingHistoryPage() {
   const [stockResultModal, setStockResultModal] = useState(false)
   const [stockResultData,  setStockResultData]  = useState<StockResultData | null>(null)
 
+  const applyShippedSkuFromMappings = () => {
+    const maps = loadMappings()
+    setMappings(maps)
+    const all = loadShippedOrders()
+    let dirty = false
+    const next = all.map(o => ({
+      ...o,
+      items: o.items.map(it => {
+        const bc = resolveMappedBarcode(maps, it)
+        if (!bc) return it
+        if ((it.sku ?? '').trim() === bc) return it
+        dirty = true
+        return { ...it, sku: bc }
+      }),
+    }))
+    if (dirty) saveShippedOrders(next)
+    setShipped(next.filter(isVisibleInShippingHistory))
+  }
+
   useEffect(() => {
-    setShipped(loadShippedOrders().filter(isVisibleInShippingHistory))
-    setMappings(loadMappings())
+    applyShippedSkuFromMappings()
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === MAPPING_KEY || e.key === SHIPPED_ORDERS_KEY) applyShippedSkuFromMappings()
+    }
+    window.addEventListener('storage', onStorage)
+    window.addEventListener('pm_mapping_updated', applyShippedSkuFromMappings)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      window.removeEventListener('pm_mapping_updated', applyShippedSkuFromMappings)
+    }
   }, [])
 
   /* 날짜/월별 필터 → 검색 */
@@ -286,8 +335,7 @@ export default function ShippingHistoryPage() {
       const q = searchText.trim().toLowerCase()
       list = list.filter(o => {
         const item    = o.items[0]
-        const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
-        const barcode = (mapping.barcode ?? item?.sku ?? '').toLowerCase()
+        const barcode = resolveMappedBarcode(mappings, item ?? {}).toLowerCase()
         return (
           o.order_number.toLowerCase().includes(q) ||
           o.channel.toLowerCase().includes(q) ||
@@ -396,10 +444,9 @@ export default function ShippingHistoryPage() {
     const existing     = loadCs()
     const newItems: CsItem[] = targets.map(o => {
       const item    = o.items[0]
-      const mapping = lookupMapping(mappingsSnap, item?.product_name ?? '', item?.option)
-      const barcode = (mapping.barcode ?? item?.sku ?? '').trim()
+      const barcode = resolveMappedBarcode(mappingsSnap, item ?? {}).trim()
       const prod    = lookupProductByBarcode(barcode)
-      return {
+      const base: CsItem = {
         id             : crypto.randomUUID(),
         type           : csType,
         mall           : o.channel,
@@ -414,6 +461,10 @@ export default function ShippingHistoryPage() {
         registered_at  : new Date().toISOString(),
         status         : 'pending',
       }
+      if (csType === 'exchange') {
+        return { ...base, barcode_in: barcode, barcode_out: '' }
+      }
+      return base
     })
     saveCs([...newItems, ...existing])
     setCsModal(false)
@@ -428,8 +479,7 @@ export default function ShippingHistoryPage() {
     const dateStr = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,'0')}${String(now.getDate()).padStart(2,'0')}`
     const rows = displayOrders.map(o => {
       const item    = o.items[0]
-      const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
-      const barcode = mapping.barcode ?? item?.sku ?? ''
+      const barcode = resolveMappedBarcode(mappings, item ?? {})
       return {
         '출고일': o.shipped_at ? o.shipped_at.slice(0,10) : o.order_date,
         '주문번호': o.order_number, '쇼핑몰': o.channel, '바코드': barcode,
@@ -466,9 +516,7 @@ export default function ShippingHistoryPage() {
     orders.forEach(order => {
       const item = order.items[0]
       if (!item) return
-      const mapping = lookupMapping(currentMappings, item.product_name ?? '', item.option)
-      // mapping.barcode 우선, 없으면 item.sku(출고내역에 표시된 바코드) 사용
-      const barcode = mapping.barcode ?? item.sku
+      const barcode = resolveMappedBarcode(currentMappings, item)
       if (!barcode) { notFound.push(item.product_name ?? '?'); return }
       let found = false
       products.forEach(product => {
@@ -629,13 +677,11 @@ export default function ShippingHistoryPage() {
     const currentMappings = loadMappings()
 
     // 바코드 없는 (product_name, option) 쌍 수집
-    // mapping.barcode 또는 item.sku 중 하나라도 있으면 바코드 있음으로 처리
     const seen = new Map<string, UnmappedItem>()
     toConfirm.forEach(order => {
       const item = order.items[0]
       if (!item) return
-      const mapping = lookupMapping(currentMappings, item.product_name ?? '', item.option)
-      if (!mapping.barcode && !item.sku) {
+      if (!resolveMappedBarcode(currentMappings, item)) {
         const key = makeMappingKey(item.product_name, item.option)
         if (!seen.has(key)) {
           seen.set(key, {
@@ -919,8 +965,7 @@ export default function ShippingHistoryPage() {
               const isDelivered = (o as ShippedOrder & { status?: string }).status === 'delivered'
               const item        = o.items[0]
               const ms          = mallStyle(o.channel)
-              const mapping     = lookupMapping(mappings, item?.product_name ?? '', item?.option)
-              const barcode     = mapping.barcode ?? item?.sku ?? ''
+              const barcode     = resolveMappedBarcode(mappings, item ?? {})
               const isEditing   = editingId === o.id
 
               if (isEditing && editFields) {
@@ -1332,8 +1377,7 @@ export default function ShippingHistoryPage() {
                 <div style={{ border: '1.5px solid #e2e8f0', borderRadius: 10, overflow: 'hidden', maxHeight: 200, overflowY: 'auto' }}>
                   {displayOrders.filter(o => checked.has(o.id)).map((o, idx) => {
                     const item    = o.items[0]
-                    const mapping = lookupMapping(mappings, item?.product_name ?? '', item?.option)
-                    const barcode = mapping.barcode ?? item?.sku ?? ''
+                    const barcode = resolveMappedBarcode(mappings, item ?? {})
                     const qty     = item?.quantity ?? 1
                     return (
                       <div key={o.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 14px', borderBottom: idx < checked.size - 1 ? '1px solid #f8fafc' : 'none', background: '#fafafe' }}>

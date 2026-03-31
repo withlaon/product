@@ -273,6 +273,17 @@ export function lookupMapping(mappings: MappingStore, product_name: string, opti
   return { abbreviation: '', loca: '' }
 }
 
+/** 출고내역·리스트 표시용: 주문관리에서 매핑한 바코드를 항상 최우선 (그다음 item.sku) */
+export function resolveMappedBarcode(
+  mappings: MappingStore,
+  item: { product_name?: string; sku?: string; option?: string },
+): string {
+  const m = lookupMapping(mappings, item.product_name ?? '', item.option)
+  const fromMap = String(m.barcode ?? '').trim()
+  if (fromMap) return fromMap
+  return String(item.sku ?? '').trim()
+}
+
 /** 매핑 키에서 [상품명, 옵션] 분리 */
 export function splitMappingKey(key: string): [string, string] {
   const idx = key.indexOf('|||')
