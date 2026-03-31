@@ -20,8 +20,8 @@ import {
 } from '../_shared'
 import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, ChevronUp, AlertTriangle, Package, FileDown, RefreshCw } from 'lucide-react'
 
-// 출고내역 기반 판매수량 집계 기준일 (발주 이력이 없을 경우 기본값)
-const SHIP_BASE_DATE = '2026-03-18'
+// 출고내역 기반 판매수량 집계 기준일 (발주 이력이 없을 경우 기본값 — 3/29 발주 기준 재집계)
+const SHIP_BASE_DATE = '2026-03-29'
 
 // Sheet3 컬러 코드 → 영문색상명 맵
 const COLOR_EN_MAP: Record<string, string> = {

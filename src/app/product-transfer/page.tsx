@@ -412,6 +412,13 @@ export default function OrdersPage() {
     return () => window.removeEventListener('storage', onStorage)
   }, [])
 
+  /* 출고내역/타 탭에서 매핑 저장 시 같은 탭 주문관리 화면 동기화 */
+  useEffect(() => {
+    const onMappingSync = () => setMappings(loadMappings())
+    window.addEventListener('pm_mapping_updated', onMappingSync)
+    return () => window.removeEventListener('pm_mapping_updated', onMappingSync)
+  }, [])
+
   /* 날짜별 표시 주문 */
   const dailyOrders = useMemo(() =>
     orders

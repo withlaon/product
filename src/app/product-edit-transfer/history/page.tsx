@@ -308,6 +308,31 @@ export default function ShippingHistoryPage() {
     setShipped(next.filter(isVisibleInShippingHistory))
   }
 
+  /** 리스트/수정에서 바코드 저장 시 주문관리 매핑(pm_product_mapping_v1)과 출고건 sku 동시 반영 */
+  const persistBarcodeForOrderItem = (order: ShippedOrder, barcodeRaw: string, productName?: string, optionVal?: string) => {
+    const bc = barcodeRaw.trim()
+    const item = order.items[0]
+    if (!item) return
+    const pn = (productName ?? item.product_name ?? '').trim()
+    const opt = optionVal !== undefined ? optionVal : (item.option ?? '')
+    const key = makeMappingKey(pn, opt)
+    const maps = loadMappings()
+    const cur = lookupMapping(maps, pn, opt)
+    const nextMaps: typeof maps = { ...maps, [key]: { ...cur, ...(bc ? { barcode: bc } : { barcode: '' }) } }
+    saveMappings(nextMaps)
+    setMappings(nextMaps)
+    const all = loadShippedOrders()
+    const updated = all.map(o =>
+      o.id !== order.id ? o : {
+        ...o,
+        items: o.items.map((it, i) => (i === 0 ? { ...it, sku: bc } : it)),
+      },
+    )
+    saveShippedOrders(updated)
+    setShipped(updated.filter(isVisibleInShippingHistory))
+    try { window.dispatchEvent(new CustomEvent('pm_mapping_updated')) } catch { /* ignore */ }
+  }
+
   useEffect(() => {
     applyShippedSkuFromMappings()
     const onStorage = (e: StorageEvent) => {
@@ -395,7 +420,7 @@ export default function ShippingHistoryPage() {
           ...item,
           product_name: editFields.product_name || item.product_name,
           option      : editFields.option,
-          sku         : editFields.barcode || item.sku,
+          sku         : (editFields.barcode || '').trim(),
           unit_price  : editFields.unit_price !== '' ? Number(editFields.unit_price) : item.unit_price,
         } : item),
       }
@@ -404,6 +429,9 @@ export default function ShippingHistoryPage() {
     setShipped(updated.filter(isVisibleInShippingHistory))
     setEditingId(null)
     setEditFields(null)
+
+    const saved = updated.find(o => o.id === id)
+    if (saved) persistBarcodeForOrderItem(saved, editFields.barcode)
   }
 
   const cancelEdit = () => { setEditingId(null); setEditFields(null) }
@@ -546,6 +574,18 @@ export default function ShippingHistoryPage() {
   }
 
   const doConfirmShipping = async (toConfirm: ShippedOrder[]) => {
+    const mapsGuard = loadMappings()
+    const noBarcode = toConfirm.filter(o => {
+      const it = o.items[0]
+      return !it || !resolveMappedBarcode(mapsGuard, it).trim()
+    })
+    if (noBarcode.length > 0) {
+      alert(
+        `바코드가 없는 출고 건이 ${noBarcode.length}건 있어 출고확정할 수 없습니다.\n`
+        + '출고내역 목록의 바코드 칸에 입력하거나 주문관리 탭에서 매핑을 저장해 주세요.',
+      )
+      return
+    }
     setIsConfirming(true)
     try {
       const { stockChanges, updatedProducts, notFound, stockAppliedIds } = runStockDeduction(toConfirm)
@@ -681,7 +721,7 @@ export default function ShippingHistoryPage() {
     toConfirm.forEach(order => {
       const item = order.items[0]
       if (!item) return
-      if (!resolveMappedBarcode(currentMappings, item)) {
+      if (!resolveMappedBarcode(currentMappings, item).trim()) {
         const key = makeMappingKey(item.product_name, item.option)
         if (!seen.has(key)) {
           seen.set(key, {
@@ -706,7 +746,15 @@ export default function ShippingHistoryPage() {
       return
     }
 
-    // 모두 매핑된 경우 바로 진행
+    // 모두 매핑된 경우 — 바코드 공백 재검증
+    const missTrim = toConfirm.filter(o => {
+      const it = o.items[0]
+      return !it || !resolveMappedBarcode(currentMappings, it).trim()
+    })
+    if (missTrim.length > 0) {
+      alert(`바코드가 비어 있는 출고가 ${missTrim.length}건 있습니다. 입력 후 다시 시도해 주세요.`)
+      return
+    }
     if (!confirm(`선택한 ${toConfirm.length}건을 출고확정하시겠습니까?\n바코드 기준으로 상품 재고가 차감됩니다.`)) return
     doConfirmShipping(toConfirm)
   }
@@ -767,7 +815,7 @@ export default function ShippingHistoryPage() {
 
   /* ─── 그리드 컬럼 ─────────────────────────────────────── */
   // 체크 | 주문번호 | 출고일 | 쇼핑몰 | 수령인 | 바코드 | 상품명/옵션 | 판매가 | 운송장번호 | 수정
-  const GRID = '36px 130px 78px 84px 80px 100px 1fr 70px 110px 60px'
+  const GRID = '36px 130px 78px 84px 80px minmax(108px, 0.45fr) 1fr 70px 110px 60px'
 
   return (
     <div style={{ maxWidth: 1400, margin: '0 auto' }}>
@@ -1055,10 +1103,26 @@ export default function ShippingHistoryPage() {
                     {o.customer_name}
                   </span>
 
-                  {/* 바코드 */}
-                  <span data-pm-barcode="1" style={{ fontSize: '11px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {barcode || '-'}
-                  </span>
+                  {/* 바코드 (인라인 입력 → 매핑·sku·주문관리 연동) */}
+                  <input
+                    key={`barcode-inline-${o.id}-${barcode}`}
+                    data-pm-barcode="1"
+                    title="바코드 입력 후 포커스를 벗어나면 저장됩니다"
+                    defaultValue={barcode}
+                    placeholder="바코드 입력"
+                    onClick={e => e.stopPropagation()}
+                    onMouseDown={e => e.stopPropagation()}
+                    onBlur={e => {
+                      const v = e.target.value.trim()
+                      if (v === (barcode || '').trim()) return
+                      persistBarcodeForOrderItem(o, v, item?.product_name, item?.option)
+                    }}
+                    style={{
+                      width: '100%', maxWidth: 160, height: 28, fontSize: '11px', fontWeight: 700, fontFamily: 'monospace',
+                      border: '1.5px solid #e2e8f0', borderRadius: 6, padding: '0 6px', outline: 'none',
+                      background: barcode ? '#fff' : '#fffbeb', color: '#0f172a',
+                    }}
+                  />
 
                   {/* 상품명/옵션/수량 */}
                   <div style={{ overflow: 'hidden' }}>
