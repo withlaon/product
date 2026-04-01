@@ -115,6 +115,53 @@ export interface OrderItem {
   option?: string
 }
 
+/** 출고일 기준 실매출 배율 적용 시작일 (이 날짜 출고분부터 쇼핑몰별 정산 반영) */
+export const DASHBOARD_NET_REVENUE_SHIP_DATE = '2026-04-01'
+
+function listPriceSumFromItems(items: OrderItem[]): number {
+  return items.reduce((s, it) => s + (Number(it.unit_price) || 0) * (Number(it.quantity) || 0), 0)
+}
+
+function normalizeMallForNetRev(channel: string): string {
+  const s = String(channel ?? '').trim()
+  if (s.includes('스마트스토어') || s === '네이버 스마트스토어') return '스마트스토어'
+  return s
+}
+
+/** 출고 확정 건(기준일 이후 출고)만 판매가×쇼핑몰 배율 / 올웨이즈 N열. 그 외는 total_amount */
+export function dashboardOrderAmount(o: Order | ShippedOrder): number {
+  if (o.status === 'cancelled') return 0
+  const base = Number(o.total_amount) || 0
+  const shippedAt = (o as ShippedOrder).shipped_at
+  if (!shippedAt || typeof shippedAt !== 'string') return base
+  const shipDay = shippedAt.slice(0, 10)
+  if (!shipDay || shipDay < DASHBOARD_NET_REVENUE_SHIP_DATE) return base
+
+  const list = listPriceSumFromItems(o.items ?? [])
+  const importSrc = String((o.extra_data as Record<string, unknown> | undefined)?.['import_source'] ?? '')
+  const isAlways = o.channel === '올웨이즈' || importSrc === '올웨이즈'
+  if (isAlways) {
+    const nRaw = (o.extra_data as Record<string, unknown> | undefined)?.['올웨이즈_N열정산']
+    const n = typeof nRaw === 'number' ? nRaw : parseFloat(String(nRaw ?? '').replace(/,/g, ''))
+    if (Number.isFinite(n)) return n
+    return list
+  }
+
+  const ch = normalizeMallForNetRev(o.channel)
+  if (ch === '에이블리' || ch === '스마트스토어' || ch === '토스쇼핑') return list * 0.9
+  if (ch === '옥션' || ch === 'G마켓') return list * 0.87
+  return base
+}
+
+/** 동일 id가 주문/큐와 출고에 모두 있을 때 출고 스냅샷으로 실매출 계산 */
+export function dashboardAmountForMergedRow(
+  o: Order | ShippedOrder,
+  shippedById: Map<string, ShippedOrder>,
+): number {
+  const src = shippedById.get(o.id) ?? o
+  return dashboardOrderAmount(src)
+}
+
 export interface Order {
   id: string
   order_date: string        // YYYY-MM-DD

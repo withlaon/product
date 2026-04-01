@@ -8,7 +8,10 @@ import {
   MessageSquare, RefreshCw, ChevronLeft, ChevronRight,
   ClipboardList,
 } from 'lucide-react'
-import { loadOrders, loadShippedOrders, loadInvoiceQueue } from '@/lib/orders'
+import {
+  loadOrders, loadShippedOrders, loadInvoiceQueue,
+  dashboardAmountForMergedRow,
+} from '@/lib/orders'
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
 import type { Order, ShippedOrder } from '@/lib/orders'
 import { supabase } from '@/lib/supabase'
@@ -564,13 +567,15 @@ export default function DashboardPage() {
     return result
   }, [orders, invoiceQueue, shipped])
 
+  const shippedById = useMemo(() => new Map(shipped.map(o => [o.id, o])), [shipped])
+
   /* ── KPI ── */
   const todayOrders  = useMemo(() => orders.filter(o => o.order_date === today), [orders, today])
   const monthRevenue = useMemo(() =>
     allOrdersMerged
       .filter(o => o.order_date?.slice(0,7) === curYM && o.status !== 'cancelled')
-      .reduce((s, o) => s + (o.total_amount ?? 0), 0),
-  [allOrdersMerged, curYM])
+      .reduce((s, o) => s + dashboardAmountForMergedRow(o, shippedById), 0),
+  [allOrdersMerged, shippedById, curYM])
 
   const lowStock = useMemo(() => products
     .filter(p => p.status !== 'pending_delete')
@@ -618,9 +623,9 @@ export default function DashboardPage() {
       const day  = i + 1
       const date = `${selMonth}-${String(day).padStart(2,'0')}`
       const dayO = mo.filter(o => o.order_date === date)
-      return { day, count: dayO.length, amount: dayO.reduce((s,o) => s+(o.total_amount??0), 0) }
+      return { day, count: dayO.length, amount: dayO.reduce((s, o) => s + dashboardAmountForMergedRow(o, shippedById), 0) }
     })
-  }, [allOrdersMerged, selMonth])
+  }, [allOrdersMerged, shippedById, selMonth])
 
   const monthTotal  = useMemo(() => chartData.reduce((s,d) => s+d.count, 0), [chartData])
   const monthRevSel = useMemo(() => chartData.reduce((s,d) => s+d.amount, 0), [chartData])
@@ -634,10 +639,10 @@ export default function DashboardPage() {
       if (o.status === 'cancelled') continue
       const ym = o.order_date?.slice(0, 7)
       if (!ym) continue
-      byMonth[ym] = (byMonth[ym] ?? 0) + (o.total_amount ?? 0)
+      byMonth[ym] = (byMonth[ym] ?? 0) + dashboardAmountForMergedRow(o, shippedById)
     }
     return keys.map(ym => ({ ym, amount: byMonth[ym] ?? 0 }))
-  }, [allOrdersMerged, curYM])
+  }, [allOrdersMerged, shippedById, curYM])
 
   /* ── 당월 매입액 (발주금액: KRW 그대로, CNY는 환율 × 1.475) ── */
   const monthPurchaseCost = useMemo(() => {

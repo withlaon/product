@@ -289,8 +289,14 @@ function parseGSShopRow(row: Record<string, unknown>, idx: number): RegOrder {
 }
 
 /* ─── 올웨이즈 전용 파싱 ─────────────────────────────────── */
-function parseAlwaysRow(row: Record<string, unknown>, idx: number): RegOrder {
+/** 엑셀 N열(14번째 열) 실매출/정산 금액 — 대시보드 실매출 집계용 */
+function parseAlwaysRow(row: Record<string, unknown>, idx: number, nColumnCell?: unknown): RegOrder {
   const orderNum = String(row['주문아이디'] ?? `AUTO-ALWAYS-${Date.now()}-${idx}`)
+  let n열정산: number | undefined
+  if (nColumnCell !== undefined && nColumnCell !== '') {
+    const n = typeof nColumnCell === 'number' ? nColumnCell : parseFloat(String(nColumnCell).replace(/,/g, ''))
+    if (Number.isFinite(n)) n열정산 = n
+  }
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
     order_number: orderNum,
@@ -313,6 +319,7 @@ function parseAlwaysRow(row: Record<string, unknown>, idx: number): RegOrder {
       합배송아이디: String(row['합배송아이디'] ?? ''),
       주문시점:     String(row['주문 시점'] ?? ''),
       우편번호:     String(row['우편번호'] ?? ''),
+      ...(n열정산 !== undefined ? { 올웨이즈_N열정산: n열정산 } : {}),
     },
   }
 }
@@ -582,6 +589,14 @@ export default function OrderRegistrationPage() {
         const wb   = XLSX.read(ev.target?.result, { type: 'array', cellDates: true })
         const ws   = wb.Sheets[wb.SheetNames[0]]
         const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
+        const mallLabel      = MALLS.find(m => m.id === selectedMall)!.label
+        const isMarketPlus   = selectedMall === 'marketplus'
+        const isTossShopping = selectedMall === 'tossshopping'
+        const isAlways       = selectedMall === 'always'
+        const isGSShop       = selectedMall === 'gsshop'
+        const alwaysAoa = isAlways
+          ? (XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][])
+          : null
 
         if (rows.length === 0) {
           setImportMsg({ text: '엑셀에 데이터가 없습니다.', ok: false })
@@ -589,11 +604,6 @@ export default function OrderRegistrationPage() {
           return
         }
 
-        const mallLabel      = MALLS.find(m => m.id === selectedMall)!.label
-        const isMarketPlus   = selectedMall === 'marketplus'
-        const isTossShopping = selectedMall === 'tossshopping'
-        const isAlways       = selectedMall === 'always'
-        const isGSShop       = selectedMall === 'gsshop'
         const uploadedAt     = new Date().toISOString()
 
         // 마켓플러스: 자동 매핑 수집
@@ -608,7 +618,10 @@ export default function OrderRegistrationPage() {
             return order
           }
           if (isTossShopping) return parseTossShoppingRow(row, idx)
-          if (isAlways)       return parseAlwaysRow(row, idx)
+          if (isAlways) {
+            const nCell = alwaysAoa?.[idx + 1]?.[13]
+            return parseAlwaysRow(row, idx, nCell)
+          }
           if (isGSShop)       return parseGSShopRow(row, idx)
           return parseGenericRow(row, idx, today, mallLabel)
         })
