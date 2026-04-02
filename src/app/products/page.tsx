@@ -8,6 +8,11 @@ import { Modal } from '@/components/ui/modal'
 import { formatCurrency } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import {
+  loadShippedOrders, loadMappings, lookupMapping,
+  type ShippedOrder, type MappingStore,
+} from '@/lib/orders'
+import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
+import {
   Plus, Search, Download, Upload, Package, TrendingUp, AlertTriangle,
   Edit, Trash2, X, Store, ImageIcon, Link2,
 } from 'lucide-react'
@@ -94,6 +99,8 @@ interface Product {
   basic_info: BasicInfo | null
   status: ProductStatus; supplier: string
   registered_malls: (string | { mall: string; code: string })[]   // 등록된 쇼핑몰 이름 및 상품코드
+  /** 판매중으로 둔 시점(최초 또는 재전환 시 비어 있으면 채움) YYYY-MM-DD */
+  active_since?: string | null
   promo_text?: string
   created_at?: string
 }
@@ -707,9 +714,52 @@ function rowToProduct(row: any): Product {
     mall_categories: (row.mall_categories ?? []) as MallCategory[],
     basic_info: (row.basic_info ?? null) as BasicInfo | null,
     registered_malls: (row.registered_malls ?? []) as (string | { mall: string; code: string })[],
+    active_since: row.active_since ?? null,
     promo_text: row.promo_text ?? '',
     created_at: row.created_at ?? '',
   }
+}
+
+function pmTodayStr(): string {
+  return new Date().toISOString().slice(0, 10)
+}
+
+/** 출고내역 기준, 등록일(포함) 이후 해당 상품 옵션 바코드 매칭 판매 수량 */
+function shippedQtySinceForProduct(
+  p: Product,
+  since: string,
+  shipped: ShippedOrder[],
+  mappings: MappingStore,
+  abbrOptIdx: Record<string, string>,
+  abbrIdx: Record<string, string>,
+): number {
+  if (!since) return 0
+  const myBcs = new Set((p.options ?? []).map(o => o.barcode).filter(Boolean) as string[])
+  if (myBcs.size === 0) return 0
+
+  const extractOptVal = (opt?: string): string => {
+    if (!opt) return ''
+    return opt.split(',').map(s => { const e = s.indexOf('='); return e >= 0 ? s.slice(e + 1).trim() : s.trim() }).join(', ')
+  }
+  const normStr = (s: string) => s.replace(/\s/g, '').toLowerCase()
+
+  let qty = 0
+  for (const order of shipped) {
+    const shippedDate = (order.shipped_at || '').slice(0, 10) || order.order_date || ''
+    if (!shippedDate || shippedDate < since) continue
+    for (const item of order.items ?? []) {
+      let bc = lookupMapping(mappings, item.product_name ?? '', item.option).barcode || ''
+      if (!bc) {
+        const na = normStr(item.product_name ?? '')
+        const ov = normStr(extractOptVal(item.option))
+        const oo = normStr(item.option || '')
+        bc = abbrOptIdx[`${na}|||${ov}`] || abbrOptIdx[`${na}|||${oo}`] || abbrIdx[na] || ''
+      }
+      if (!bc && item.sku) bc = String(item.sku)
+      if (bc && myBcs.has(bc)) qty += item.quantity ?? 0
+    }
+  }
+  return qty
 }
 
 /* ─── API 헬퍼 (service role key 서버 API → RLS 완전 우회) ────── */
@@ -834,6 +884,8 @@ export default function ProductsPage() {
   const [loadError, setLoadError] = useState(false)
   const [loadErrorMsg, setLoadErrorMsg] = useState('')
   const [refreshKey, setRefreshKey] = useState(0)
+  /** 출고내역 변경 시 등록일 대비 판매 수량 재계산 */
+  const [shipAggTick, setShipAggTick] = useState(0)
   const [isRefreshing, setIsRefreshing] = useState(false)
   const [importing, setImporting] = useState(false)
   const [importProgress, setImportProgress] = useState({ current: 0, total: 0 })
@@ -1040,7 +1092,7 @@ export default function ProductsPage() {
         try {
           const dbPromise = supabase
             .from('pm_products')
-            .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,registered_malls,created_at')
+            .select('id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,registered_malls,created_at,active_since')
             .order('code', { ascending: true })
             .then(r => r)
 
@@ -1082,6 +1134,18 @@ export default function ProductsPage() {
     return () => window.removeEventListener('pm_products_cache_sync', onSync)
   }, [])
 
+  /* ── 출고·대시보드 동기화 시 판매 집계 갱신 ── */
+  useEffect(() => {
+    const bump = () => setShipAggTick(t => t + 1)
+    window.addEventListener(DASHBOARD_REFRESH_EVENT, bump)
+    const onVis = () => { if (document.visibilityState === 'visible') bump() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener(DASHBOARD_REFRESH_EVENT, bump)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
+
   /* ── 매핑관리탭 변경 감지: storage 이벤트(다른 탭) + visibilitychange(같은 탭 복귀) ── */
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
@@ -1119,6 +1183,59 @@ export default function ProductsPage() {
     () => ['전체', ...extraCats.filter(c => !deletedCats.includes(c))],
     [extraCats, deletedCats]
   )
+
+  /** 판매중 상품: active_since(포함) 이후 출고내역 판매 수량 */
+  const soldSinceRegByProductId = useMemo(() => {
+    const shipped = loadShippedOrders()
+    const mappings = loadMappings()
+    const normStr = (s: string) => s.replace(/\s/g, '').toLowerCase()
+    const abbrOptIdx: Record<string, string> = {}
+    const abbrIdx: Record<string, string> = {}
+    for (const prod of products) {
+      const abbr = normStr(prod.abbr || prod.name)
+      for (const opt of prod.options ?? []) {
+        if (!opt.barcode) continue
+        abbrOptIdx[`${abbr}|||${normStr(opt.name)}`] = opt.barcode
+        if (!abbrIdx[abbr]) abbrIdx[abbr] = opt.barcode
+      }
+    }
+    const map: Record<string, number> = {}
+    for (const p of products) {
+      if (p.status !== 'active') continue
+      const since = (p.active_since ?? '').trim()
+      if (!since) { map[p.id] = 0; continue }
+      map[p.id] = shippedQtySinceForProduct(p, since, shipped, mappings, abbrOptIdx, abbrIdx)
+    }
+    return map
+  }, [products, shipAggTick])
+
+  /* ── 기존 판매중 상품에 등록일 없으면 오늘로 일괄 저장 ── */
+  useEffect(() => {
+    if (!products.length) return
+    const today = pmTodayStr()
+    const need = products.filter(p => p.status === 'active' && !(p.active_since && String(p.active_since).trim()))
+    if (need.length === 0) return
+    let cancelled = false
+    ;(async () => {
+      const patched = new Set<string>()
+      for (const p of need) {
+        if (cancelled) break
+        const { error } = await pmPatch(p.id, { active_since: today })
+        if (!error) patched.add(p.id)
+      }
+      if (cancelled || patched.size === 0) return
+      setProducts(prev => prev.map(x => (patched.has(x.id) ? { ...x, active_since: today } : x)))
+      try {
+        const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
+        if (raw) {
+          const parsed = JSON.parse(raw) as { ts: number; data: Product[] }
+          const newData = parsed.data.map(x => (patched.has(x.id) ? { ...x, active_since: today } : x))
+          localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: newData }))
+        }
+      } catch { /* ignore */ }
+    })()
+    return () => { cancelled = true }
+  }, [products])
 
   /* ── 카테고리 추가 ── */
   const handleCatAdd = () => {
@@ -1244,7 +1361,11 @@ export default function ProductsPage() {
       current_stock: o.current_stock !== undefined ? Number(o.current_stock) : 0,
       defective: Number(o.defective) || 0,
     }))
-    const payload = {
+    const todayReg = pmTodayStr()
+    const prevSince = (isEdit.active_since && String(isEdit.active_since).trim()) || null
+    let activeSinceOut: string | null = prevSince
+    if (editForm.status === 'active' && !activeSinceOut) activeSinceOut = todayReg
+    const payload: Record<string, unknown> = {
       code: editForm.code, name: editForm.name, abbr: editForm.abbr.trim(), category: cat, loca: editForm.loca,
       cost_price: Number(editForm.cost_price) || 0,
       cost_currency: editForm.cost_currency,
@@ -1252,6 +1373,7 @@ export default function ProductsPage() {
       options,
       promo_text: editForm.promo_text ?? '',
     }
+    if (editForm.status === 'active' && activeSinceOut) payload.active_since = activeSinceOut
     try {
       const { error } = await supabase
         .from('pm_products')
@@ -1262,7 +1384,12 @@ export default function ProductsPage() {
         return
       }
       setProducts(prev => {
-        const next = prev.map(p => (p.id === isEdit.id ? { ...p, ...payload, channel_prices: p.channel_prices } : p))
+        const next = prev.map(p => {
+          if (p.id !== isEdit.id) return p
+          const merged = { ...p, ...payload, channel_prices: p.channel_prices } as Product
+          if (payload.active_since !== undefined) merged.active_since = String(payload.active_since)
+          return merged
+        })
         const u = next.find(p => p.id === isEdit.id)
         if (u) patchProductInPmProductsCache(u)
         broadcastPmProductsQtySync()
@@ -1412,6 +1539,7 @@ export default function ProductsPage() {
         ordered: 0, received: 0, sold: 0,
       }))
       const costPriceVal = Number(form.cost_price) || 0
+      const todayReg = pmTodayStr()
       const payload = {
         code: form.code.trim(), name: form.name.trim(), abbr: form.abbr.trim(), category: cat, loca: form.loca,
         cost_price: costPriceVal,
@@ -1421,6 +1549,7 @@ export default function ProductsPage() {
         basic_info: null,
         registered_malls: [],
         promo_text: form.promo_text ?? '',
+        ...(form.status === 'active' ? { active_since: todayReg } : {}),
       }
       const addSuccess = (rawData: unknown) => {
         const row = Array.isArray(rawData) ? rawData[0] : rawData
@@ -1440,7 +1569,8 @@ export default function ProductsPage() {
         }
         // 알 수 없는 컬럼 오류 시 최소 페이로드로 재시도
         if (error.includes('42703') || error.includes('column') || code === '42703') {
-          const minPayload = { code: payload.code, name: payload.name, abbr: payload.abbr, category: payload.category, loca: payload.loca, cost_price: payload.cost_price, cost_currency: payload.cost_currency, status: payload.status, supplier: payload.supplier, options: payload.options, registered_malls: [] }
+          const minPayload: Record<string, unknown> = { code: payload.code, name: payload.name, abbr: payload.abbr, category: payload.category, loca: payload.loca, cost_price: payload.cost_price, cost_currency: payload.cost_currency, status: payload.status, supplier: payload.supplier, options: payload.options, registered_malls: [] }
+          if (form.status === 'active') minPayload.active_since = todayReg
           const { data: d2, error: e2 } = await pmInsert(minPayload)
           if (e2) { setAddDbError(`등록 실패: ${e2}`); return }
           addSuccess(d2); return
@@ -1486,8 +1616,26 @@ export default function ProductsPage() {
   }
 
   const handleStatusChange = async (id: string, status: ProductStatus) => {
-    const { error } = await pmPatch(id, { status })
-    if (!error) setProducts(prev => prev.map(p => p.id === id ? { ...p, status } : p))
+    const prev = products.find(p => p.id === id)
+    const today = pmTodayStr()
+    const payload: Record<string, unknown> = { status }
+    if (status === 'active' && prev && prev.status !== 'active' && !(prev.active_since && String(prev.active_since).trim())) {
+      payload.active_since = today
+    }
+    const { error } = await pmPatch(id, payload)
+    if (!error) {
+      setProducts(prevs => {
+        const next = prevs.map(p => {
+          if (p.id !== id) return p
+          const u = { ...p, status } as Product
+          if (payload.active_since) u.active_since = String(payload.active_since)
+          return u
+        })
+        const updated = next.find(p => p.id === id)
+        if (updated) patchProductInPmProductsCache(updated)
+        return next
+      })
+    }
     setEditStatusId(null)
   }
 
@@ -2520,6 +2668,24 @@ export default function ProductsPage() {
                         })
                       })()}
                       </div>
+                      {p.status === 'active' && (() => {
+                        const regRaw = (p.active_since && String(p.active_since).trim()) || pmTodayStr()
+                        const [y, mo, da] = regRaw.split('-')
+                        const regLabel = y && mo && da ? `${y}.${Number(mo)}.${Number(da)}` : regRaw
+                        const soldN = soldSinceRegByProductId[p.id] ?? 0
+                        const zeroSinceReg = soldN === 0
+                        return (
+                          <div style={{
+                            marginTop: 6,
+                            fontSize: 10,
+                            fontWeight: 700,
+                            color: zeroSinceReg ? '#dc2626' : '#64748b',
+                            letterSpacing: '0.02em',
+                          }}>
+                            등록일 {regLabel}
+                          </div>
+                        )
+                      })()}
                     </td>
 
                     {/* 상태 — 클릭하면 인라인 드롭다운으로 변경 */}

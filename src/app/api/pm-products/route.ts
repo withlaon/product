@@ -35,7 +35,7 @@ async function sbFetch(path: string, init: RequestInit = {}): Promise<Response> 
   }
 }
 
-const SELECT_COLS = 'id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,registered_malls,created_at'
+const SELECT_COLS = 'id,code,name,abbr,category,loca,cost_price,cost_currency,status,supplier,options,channel_prices,registered_malls,created_at,active_since'
 
 /** 상품 목록 조회 / 단일 상품 basic_info 조회 */
 export async function GET(req: NextRequest) {

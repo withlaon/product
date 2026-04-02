@@ -183,6 +183,9 @@ ALTER TABLE pm_products ALTER COLUMN cost_price TYPE NUMERIC(10,2) USING cost_pr
 -- 쇼핑몰 등록현황 컬럼 추가 (매핑 또는 상품전송 완료 시 쇼핑몰명 저장)
 ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS registered_malls JSONB DEFAULT '[]';
 
+-- 판매중 전환(또는 최초 판매중) 시점 — 등록일 표시·등록 이후 출고 판매 집계 기준 (YYYY-MM-DD)
+ALTER TABLE pm_products ADD COLUMN IF NOT EXISTS active_since TEXT DEFAULT NULL;
+
 -- ─── 발주/입고 관리 테이블 ──────────────────────────────────────
 -- pm_products와 연동하여 발주·입고 수량을 자동 반영합니다.
 
