@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import {
   loadShippedOrders, loadMappings, lookupMapping,
-  isShippedOrderDelivered, shippedOrderLocalYmd,
+  isShippedOrderDelivered, shippedOrderLocalYmd, ymdComparable,
   SHIPPED_ORDERS_KEY,
   type ShippedOrder, type MappingStore,
 } from '@/lib/orders'
@@ -217,11 +217,13 @@ export default function PurchaseManagePage() {
     const lastOrderByBarcode: Record<string, string> = {}
     for (const p of purchases) {
       if (p.status === 'cancelled') continue
+      const po = ymdComparable(p.order_date || '')
+      if (!po) continue
       for (const item of p.items) {
         const bc = item.barcode
         if (!bc) continue
-        if (!lastOrderByBarcode[bc] || p.order_date > lastOrderByBarcode[bc]) {
-          lastOrderByBarcode[bc] = p.order_date
+        if (!lastOrderByBarcode[bc] || po > ymdComparable(lastOrderByBarcode[bc])) {
+          lastOrderByBarcode[bc] = po
         }
       }
     }
@@ -248,9 +250,10 @@ export default function PurchaseManagePage() {
         if (!bc && item.sku) bc = item.sku
 
         if (!bc) continue
-        const base = lastOrderByBarcode[bc] || SHIP_BASE_DATE
-        if (shippedDate >= base) {
-          map[bc] = (map[bc] || 0) + item.quantity
+        const base = ymdComparable(lastOrderByBarcode[bc] || SHIP_BASE_DATE)
+        const shipDay = ymdComparable(shippedDate)
+        if (shipDay && base && shipDay >= base) {
+          map[bc] = (map[bc] || 0) + (Number(item.quantity) || 0)
         }
       }
     }
@@ -275,13 +278,13 @@ export default function PurchaseManagePage() {
        · 현재고 ≤ 3 이거나
        · 최근 발주일(없으면 기준일) 이후 출고 누적 판매 > 0 (당일 출고확정 포함, shipped_at 기준)
      정렬(그룹별 오름차순):
-       ① 품절(재고 0) → ② 재고 3초과 + 발주일 이후 판매 있음 → ③ 재고 3 이하(1~3)
+       ① 품절(재고 0) → ② 발주일 이후 판매 있음(재고 1~3 부족도 판매 그룹) → ③ 재고 부족만(판매 0)
        각 그룹 내: 재고 오름차순 → 판매 오름차순 → 바코드
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const listRank = (o: QualOpt): number => {
       if (o.currentStock === 0) return 0
-      if (o.currentStock > 3 && o.sold > 0) return 1
+      if (o.sold > 0) return 1
       return 2
     }
     const result: QualOpt[] = []
@@ -638,9 +641,9 @@ export default function PurchaseManagePage() {
                   1~3개: {qualOpts.filter(o => o.currentStock > 0 && o.currentStock <= 3).length}
                 </span>
               )}
-              {qualOpts.filter(o => o.currentStock > 3 && o.sold > 0).length > 0 && (
+              {qualOpts.filter(o => o.sold > 0).length > 0 && (
                 <span style={{ fontSize: '11px', background: '#eef2ff', color: '#4f46e5', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
-                  발주 후 판매: {qualOpts.filter(o => o.currentStock > 3 && o.sold > 0).length}
+                  발주 후 판매: {qualOpts.filter(o => o.sold > 0).length}
                 </span>
               )}
             </div>
@@ -681,22 +684,22 @@ export default function PurchaseManagePage() {
                 <tbody>
                   {qualOpts.map(opt => {
                     const sel = selectedKeys.has(opt.key)
-                    const highStockSold = opt.currentStock > 3 && opt.sold > 0
+                    const hasSalesRow = opt.sold > 0 && opt.currentStock > 0
                     const rowBg = sel
                       ? '#eff6ff'
                       : opt.currentStock === 0
                         ? '#fff7f7'
-                        : highStockSold
+                        : hasSalesRow
                           ? '#f5f3ff'
                           : undefined
                     return (
                       <tr key={opt.key} style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer', transition: 'background 0.15s' }}
                         onClick={() => toggleSelect(opt)}>
-                        {/* 재고 / 발주 후 판매 배지 */}
+                        {/* 재고 / 발주 후 판매 배지: 판매 1건 이상이면 재고 부족이어도 판매 표시 */}
                         <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 44, flexShrink: 0 }}>
                           {opt.currentStock === 0 ? (
                             <span style={{ fontSize: '8.5px', background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>품절</span>
-                          ) : highStockSold ? (
+                          ) : opt.sold > 0 ? (
                             <span style={{ fontSize: '8.5px', background: '#eef2ff', color: '#4f46e5', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>판매</span>
                           ) : (
                             <span style={{ fontSize: '8.5px', background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>부족</span>

@@ -123,7 +123,23 @@ export function shippedOrderLocalYmd(o: ShippedOrder): string {
       return `${y}-${m}-${day}`
     }
   }
-  return (o.order_date || '').slice(0, 10)
+  const od = (o.order_date || '').trim()
+  if (od.length >= 10) return od.slice(0, 10)
+  /* 출고확정인데 일자 필드가 비면 로컬 오늘 (당일 확정 집계 누락 방지) */
+  if (isShippedOrderDelivered(o)) {
+    const n = new Date()
+    return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
+  }
+  return ''
+}
+
+/** YYYY-M-D / YYYY-MM-DD 문자열을 비교·집계용 YYYY-MM-DD로 통일 */
+export function ymdComparable(s: string): string {
+  const t = (s || '').trim().slice(0, 10)
+  if (!t) return ''
+  const p = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
+  if (p) return `${p[1]}-${String(Number(p[2])).padStart(2, '0')}-${String(Number(p[3])).padStart(2, '0')}`
+  return t
 }
 
 /* ─── 주문 타입 ─────────────────────────────────────────── */

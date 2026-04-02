@@ -9,7 +9,7 @@ import { formatCurrency } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import {
   loadShippedOrders, loadMappings, lookupMapping,
-  isShippedOrderDelivered, shippedOrderLocalYmd,
+  isShippedOrderDelivered, shippedOrderLocalYmd, ymdComparable,
   type ShippedOrder, type MappingStore,
 } from '@/lib/orders'
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
@@ -758,8 +758,11 @@ function shippedQtySinceForProduct(
   for (const order of shipped) {
     if (!isShippedOrderDelivered(order)) continue
     const shippedDate = shippedOrderLocalYmd(order)
-    if (!shippedDate || shippedDate < since) continue
-    if (endExclusive && shippedDate >= endExclusive) continue
+    const sd = ymdComparable(shippedDate)
+    const s0 = ymdComparable(since)
+    const ex = endExclusive ? ymdComparable(endExclusive) : ''
+    if (!sd || !s0 || sd < s0) continue
+    if (ex && sd >= ex) continue
     for (const item of order.items ?? []) {
       let bc = lookupMapping(mappings, item.product_name ?? '', item.option).barcode || ''
       if (!bc) {
@@ -1197,7 +1200,7 @@ export default function ProductsPage() {
     [extraCats, deletedCats]
   )
 
-  /** 판매중 상품: 등록일 이후 1년 구간 내 출고확정 판매 수량(등록일 빨강 판단용) */
+  /** 판매중·삭제예정: 등록일 이후 1년 구간 내 출고확정 판매 수량(등록일 빨강 판단용) */
   const soldSinceRegByProductId = useMemo(() => {
     const shipped = loadShippedOrders()
     const mappings = loadMappings()
@@ -1214,11 +1217,12 @@ export default function ProductsPage() {
     }
     const map: Record<string, number> = {}
     for (const p of products) {
-      if (p.status !== 'active') continue
-      const since = (p.active_since ?? '').trim()
-      if (!since) { map[p.id] = 0; continue }
-      const endExclusive = ymdAddOneYear(since)
-      map[p.id] = shippedQtySinceForProduct(p, since, endExclusive, shipped, mappings, abbrOptIdx, abbrIdx)
+      if (p.status !== 'active' && p.status !== 'pending_delete') continue
+      const sinceRaw = ((p.active_since ?? '').trim() || (p.created_at ?? '').slice(0, 10)).trim()
+      const sinceNorm = ymdComparable(sinceRaw)
+      if (!sinceNorm) { map[p.id] = 0; continue }
+      const endExclusive = ymdAddOneYear(sinceNorm)
+      map[p.id] = shippedQtySinceForProduct(p, sinceNorm, endExclusive, shipped, mappings, abbrOptIdx, abbrIdx)
     }
     return map
   }, [products, shipAggTick])
@@ -2682,10 +2686,12 @@ export default function ProductsPage() {
                         })
                       })()}
                       </div>
-                      {p.status === 'active' && (() => {
-                        const regRaw = (p.active_since && String(p.active_since).trim()) || pmTodayStr()
+                      {(p.status === 'active' || p.status === 'pending_delete') && (() => {
+                        const regRaw = (p.active_since && String(p.active_since).trim())
+                          || (p.created_at ? String(p.created_at).slice(0, 10) : '')
+                          || pmTodayStr()
                         const [y, mo, da] = regRaw.split('-')
-                        const regLabel = y && mo && da ? `${y}.${Number(mo)}.${Number(da)}` : regRaw
+                        const regLabel = mo && da ? `${Number(mo)}/${Number(da)}` : regRaw
                         const soldN = soldSinceRegByProductId[p.id] ?? 0
                         const zeroSinceReg = soldN === 0
                         return (
