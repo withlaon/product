@@ -9,6 +9,7 @@ import { formatCurrency } from '@/lib/utils'
 import { supabase } from '@/lib/supabase'
 import {
   loadShippedOrders, loadMappings, lookupMapping,
+  isShippedOrderDelivered, shippedOrderLocalYmd,
   type ShippedOrder, type MappingStore,
 } from '@/lib/orders'
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
@@ -724,10 +725,20 @@ function pmTodayStr(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-/** 출고내역 기준, 등록일(포함) 이후 해당 상품 옵션 바코드 매칭 판매 수량 */
+/** 등록일 + 1년(같은 월·일) 전까지 구간의 상한(배타): [since, endExclusive) */
+function ymdAddOneYear(since: string): string {
+  const [y, m, d] = since.split('-').map(Number)
+  if (!y || !m || !d) return since
+  const dt = new Date(y, m - 1, d)
+  dt.setFullYear(dt.getFullYear() + 1)
+  return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}-${String(dt.getDate()).padStart(2, '0')}`
+}
+
+/** 출고내역 기준, 등록일 이후~endExclusive 전까지 출고확정분 판매 수량(endExclusive null 이면 상한 없음) */
 function shippedQtySinceForProduct(
   p: Product,
   since: string,
+  endExclusive: string | null,
   shipped: ShippedOrder[],
   mappings: MappingStore,
   abbrOptIdx: Record<string, string>,
@@ -745,8 +756,10 @@ function shippedQtySinceForProduct(
 
   let qty = 0
   for (const order of shipped) {
-    const shippedDate = (order.shipped_at || '').slice(0, 10) || order.order_date || ''
+    if (!isShippedOrderDelivered(order)) continue
+    const shippedDate = shippedOrderLocalYmd(order)
     if (!shippedDate || shippedDate < since) continue
+    if (endExclusive && shippedDate >= endExclusive) continue
     for (const item of order.items ?? []) {
       let bc = lookupMapping(mappings, item.product_name ?? '', item.option).barcode || ''
       if (!bc) {
@@ -1184,7 +1197,7 @@ export default function ProductsPage() {
     [extraCats, deletedCats]
   )
 
-  /** 판매중 상품: active_since(포함) 이후 출고내역 판매 수량 */
+  /** 판매중 상품: 등록일 이후 1년 구간 내 출고확정 판매 수량(등록일 빨강 판단용) */
   const soldSinceRegByProductId = useMemo(() => {
     const shipped = loadShippedOrders()
     const mappings = loadMappings()
@@ -1204,7 +1217,8 @@ export default function ProductsPage() {
       if (p.status !== 'active') continue
       const since = (p.active_since ?? '').trim()
       if (!since) { map[p.id] = 0; continue }
-      map[p.id] = shippedQtySinceForProduct(p, since, shipped, mappings, abbrOptIdx, abbrIdx)
+      const endExclusive = ymdAddOneYear(since)
+      map[p.id] = shippedQtySinceForProduct(p, since, endExclusive, shipped, mappings, abbrOptIdx, abbrIdx)
     }
     return map
   }, [products, shipAggTick])

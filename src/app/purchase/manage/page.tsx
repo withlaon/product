@@ -7,8 +7,11 @@ import { Input } from '@/components/ui/input'
 import { Modal } from '@/components/ui/modal'
 import {
   loadShippedOrders, loadMappings, lookupMapping,
+  isShippedOrderDelivered, shippedOrderLocalYmd,
+  SHIPPED_ORDERS_KEY,
   type ShippedOrder, type MappingStore,
 } from '@/lib/orders'
+import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
 import {
   Purchase, PurchaseItem, PmProduct, PmOption, PurchaseStatus, DateMode,
   ST, isUnresolved,
@@ -155,6 +158,26 @@ export default function PurchaseManagePage() {
     setMappings(loadMappings())
   }, [loadPurchases, loadProducts])
 
+  /* 출고확정 등 출고 저장소 변경 시 추천 목록 판매 수 즉시 반영 */
+  useEffect(() => {
+    const bump = () => {
+      setShippedOrders(loadShippedOrders())
+      setMappings(loadMappings())
+    }
+    window.addEventListener(DASHBOARD_REFRESH_EVENT, bump)
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === SHIPPED_ORDERS_KEY || e.key === 'pm_product_mapping_v1') bump()
+    }
+    window.addEventListener('storage', onStorage)
+    const onVis = () => { if (document.visibilityState === 'visible') bump() }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener(DASHBOARD_REFRESH_EVENT, bump)
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
+
   // selectedOpts가 바뀔 때마다 localStorage에 저장
   useEffect(() => {
     try {
@@ -206,7 +229,8 @@ export default function PurchaseManagePage() {
     // ② 출고내역 → 바코드별 판매수량 집계 (기준일 이후만)
     const map: Record<string, number> = {}
     for (const order of shippedOrders) {
-      const shippedDate = (order.shipped_at || '').slice(0, 10) || order.order_date
+      if (!isShippedOrderDelivered(order)) continue
+      const shippedDate = shippedOrderLocalYmd(order)
       for (const item of order.items) {
         // 1. 매핑으로 바코드 조회
         let bc = lookupMapping(mappings, item.product_name, item.option).barcode || ''

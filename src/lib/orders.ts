@@ -106,6 +106,26 @@ export function isVisibleInShippingHistory(o: ShippedOrder): boolean {
   return st === 'delivered'
 }
 
+/** 출고확정(delivered) — 판매·발주추천 집계에 포함되는 건만 */
+export function isShippedOrderDelivered(o: ShippedOrder): boolean {
+  return String((o as { status?: unknown }).status ?? '').trim().toLowerCase() === 'delivered'
+}
+
+/** 집계용 로컬 일자 YYYY-MM-DD (shipped_at ISO → 로컬 캘린더, 없으면 order_date 앞 10자) */
+export function shippedOrderLocalYmd(o: ShippedOrder): string {
+  const raw = (o.shipped_at || '').trim()
+  if (raw) {
+    const d = new Date(raw)
+    if (!Number.isNaN(d.getTime())) {
+      const y = d.getFullYear()
+      const m = String(d.getMonth() + 1).padStart(2, '0')
+      const day = String(d.getDate()).padStart(2, '0')
+      return `${y}-${m}-${day}`
+    }
+  }
+  return (o.order_date || '').slice(0, 10)
+}
+
 /* ─── 주문 타입 ─────────────────────────────────────────── */
 export interface OrderItem {
   product_name: string

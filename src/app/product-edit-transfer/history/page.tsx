@@ -600,7 +600,12 @@ export default function ShippingHistoryPage() {
       const confirmedIds     = new Set(toConfirm.map(o => o.id))
       const updatedShipped   = all.map(o =>
         confirmedIds.has(o.id)
-          ? { ...o, status: 'delivered' as const, stock_applied: stockAppliedIds.has(o.id) }
+          ? {
+              ...o,
+              status: 'delivered' as const,
+              stock_applied: stockAppliedIds.has(o.id),
+              shipped_at: new Date().toISOString(),
+            }
           : o
       )
       saveShippedOrders(updatedShipped)
