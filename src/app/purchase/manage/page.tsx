@@ -248,12 +248,18 @@ export default function PurchaseManagePage() {
 
   /* ── 발주 추천 목록 ──
      조건: 판매중(active) 옵션 중
-       · 현재고 ≤ 3 (0·1·2·3) 이거나
-       · 최근 발주일(없으면 기준일) 이후 출고 누적 판매수량 > 0
-     → 발주 전까지 동일 바코드는 shipSoldMap이 누적 판매를 유지(발주 확정 시 기준일이 갱신됨)
-     정렬: 재고 오름차순 → 판매 내림차순 → 바코드
+       · 현재고 ≤ 3 이거나
+       · 최근 발주일(없으면 기준일) 이후 출고 누적 판매 > 0 (당일 출고확정 포함, shipped_at 기준)
+     정렬(그룹별 오름차순):
+       ① 품절(재고 0) → ② 재고 3초과 + 발주일 이후 판매 있음 → ③ 재고 3 이하(1~3)
+       각 그룹 내: 재고 오름차순 → 판매 오름차순 → 바코드
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
+    const listRank = (o: QualOpt): number => {
+      if (o.currentStock === 0) return 0
+      if (o.currentStock > 3 && o.sold > 0) return 1
+      return 2
+    }
     const result: QualOpt[] = []
     for (const prod of products) {
       if (prod.status !== 'active') continue  // 판매중 상품만
@@ -286,8 +292,10 @@ export default function PurchaseManagePage() {
       }
     }
     return result.sort((a, b) => {
+      const ra = listRank(a), rb = listRank(b)
+      if (ra !== rb) return ra - rb
       if (a.currentStock !== b.currentStock) return a.currentStock - b.currentStock
-      if ((b.sold || 0) !== (a.sold || 0)) return (b.sold || 0) - (a.sold || 0)
+      if ((a.sold || 0) !== (b.sold || 0)) return (a.sold || 0) - (b.sold || 0)
       return (a.barcode || '').localeCompare(b.barcode || '')
     })
   }, [products, unreceivedMap, shipSoldMap])

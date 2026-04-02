@@ -15,6 +15,7 @@ import {
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
 import type { Order, ShippedOrder } from '@/lib/orders'
 import { supabase } from '@/lib/supabase'
+import { DEFAULT_EXCHANGE_RATE, unitToOrderKrw } from '@/app/purchase/_shared'
 
 /* ── 헬퍼 ─────────────────────────────────────────────────── */
 interface CachedOption { name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
@@ -644,19 +645,22 @@ export default function DashboardPage() {
     return keys.map(ym => ({ ym, amount: byMonth[ym] ?? 0 }))
   }, [allOrdersMerged, shippedById, curYM])
 
-  /* ── 당월 매입액 (발주금액: KRW 그대로, CNY는 환율 × 1.475) ── */
+  /* ── 선택 월 매입액: 발주관리 탭과 동일 — 발주 확정분(취소 제외) 상품 금액 합, unitToOrderKrw·pm_exchange_rate ── */
   const monthPurchaseCost = useMemo(() => {
-    const EX = 210
+    let exchangeRate = DEFAULT_EXCHANGE_RATE
+    try {
+      exchangeRate = Number(localStorage.getItem('pm_exchange_rate') || String(DEFAULT_EXCHANGE_RATE)) || DEFAULT_EXCHANGE_RATE
+    } catch { /* ignore */ }
     return purchases
-      .filter(p => p.order_date?.slice(0,7) === selMonth)
+      .filter(p => p.order_date?.slice(0, 7) === selMonth && p.status !== 'cancelled')
       .reduce((sum, p) => sum + p.items.reduce((is, item) => {
         if (!item.product_code) return is
         const prod = products.find(pp => pp.code === item.product_code)
-        if (!prod?.cost_price) return is
-        const isKrw = !prod.cost_currency || prod.cost_currency === 'KRW' || prod.cost_currency === '원'
-        return is + (isKrw ? prod.cost_price : prod.cost_price * EX * 1.475) * item.ordered
+        if (prod?.cost_price == null) return is
+        const unitKrw = unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate)
+        return is + unitKrw * item.ordered
       }, 0), 0)
-  }, [purchases, products, selMonth])
+  }, [purchases, products, selMonth, lastUpdate])
 
   /* ── 당월 택배비 (고유 운송장번호 × 2800원) ── */
   const monthShippingFee = useMemo(() => {
