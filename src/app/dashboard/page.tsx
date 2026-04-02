@@ -16,13 +16,31 @@ import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
 import type { Order, ShippedOrder } from '@/lib/orders'
 import { supabase } from '@/lib/supabase'
 import { DEFAULT_EXCHANGE_RATE, unitToOrderKrw } from '@/app/purchase/_shared'
+import { isCsItemPending, countPendingCsRows } from '@/lib/cs-pending'
 
 /* ── 헬퍼 ─────────────────────────────────────────────────── */
 interface CachedOption { name?: string; current_stock?: number; received?: number; sold?: number; [k: string]: unknown }
 interface CachedProduct { id: string; code?: string; name?: string; status?: string; options: CachedOption[]; cost_price?: number; cost_currency?: string }
 interface CsItem { id: string; status?: string; created_at?: string; [k: string]: unknown }
 interface PurchaseItem { product_code?: string; ordered: number; received: number }
-interface Purchase { id: string; order_date: string; status: string; items: PurchaseItem[] }
+interface Purchase {
+  id: string
+  order_date: string
+  status: string
+  items: PurchaseItem[]
+  supplier?: string
+  ordered_at?: string | null
+  received_at?: string | null
+}
+
+/** 발주/입고 — 발주관리 '발주 확정' 건만 매입액 집계 (입고탭 미입고확정·직접입고 완료 등 제외) */
+function isManagePurchaseConfirmForCost(p: Purchase): boolean {
+  if (p.status === 'cancelled') return false
+  if (!p.ordered_at || !String(p.ordered_at).trim()) return false
+  if (p.supplier === '미입고확정') return false
+  if (p.status === 'completed' && p.supplier === '직접입고') return false
+  return true
+}
 
 function loadCachedProducts(): CachedProduct[] {
   try { const { data } = JSON.parse(localStorage.getItem('pm_products_cache_v1') ?? '{}'); return Array.isArray(data) ? data : [] } catch { return [] }
@@ -492,7 +510,7 @@ export default function DashboardPage() {
 
   /* ── 발주 Supabase 로드 ── */
   const refreshPurchases = useCallback(() => {
-    supabase.from('pm_purchases').select('id,order_date,status,items')
+    supabase.from('pm_purchases').select('id,order_date,status,items,supplier,ordered_at,received_at')
       .then(({ data }) => { if (data) setPurchases(data as Purchase[]) })
   }, [])
 
@@ -645,14 +663,14 @@ export default function DashboardPage() {
     return keys.map(ym => ({ ym, amount: byMonth[ym] ?? 0 }))
   }, [allOrdersMerged, shippedById, curYM])
 
-  /* ── 선택 월 매입액: 발주관리 탭과 동일 — 발주 확정분(취소 제외) 상품 금액 합, unitToOrderKrw·pm_exchange_rate ── */
+  /* ── 선택 월 매입액: 발주관리에서 발주 확정한 건만(취소·입고탭 단독 등록 제외), unitToOrderKrw·pm_exchange_rate ── */
   const monthPurchaseCost = useMemo(() => {
     let exchangeRate = DEFAULT_EXCHANGE_RATE
     try {
       exchangeRate = Number(localStorage.getItem('pm_exchange_rate') || String(DEFAULT_EXCHANGE_RATE)) || DEFAULT_EXCHANGE_RATE
     } catch { /* ignore */ }
     return purchases
-      .filter(p => p.order_date?.slice(0, 7) === selMonth && p.status !== 'cancelled')
+      .filter(p => p.order_date?.slice(0, 7) === selMonth && isManagePurchaseConfirmForCost(p))
       .reduce((sum, p) => sum + p.items.reduce((is, item) => {
         if (!item.product_code) return is
         const prod = products.find(pp => pp.code === item.product_code)
@@ -693,7 +711,8 @@ export default function DashboardPage() {
   }, [allOrdersMerged, selMonth])
 
   /* ── CS ── */
-  const openCs = useMemo(() => csItems.filter(c => c.status !== 'resolved' && c.status !== 'closed'), [csItems])
+  const openCs = useMemo(() => csItems.filter(c => isCsItemPending(c)), [csItems])
+  const openCsRowCount = useMemo(() => countPendingCsRows(csItems), [csItems])
 
   if (loading) return (
     <div style={{ display:'flex', alignItems:'center', justifyContent:'center', height:'100%' }}>
@@ -933,7 +952,7 @@ export default function DashboardPage() {
               <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                 <MessageSquare size={14} color="#be123c" />
                 <span style={{ fontSize: '13.5px',fontWeight:900,color:'#0f172a' }}>미처리 CS</span>
-                <span style={{ background:openCs.length>0?'#fee2e2':'#f1f5f9', color:openCs.length>0?'#dc2626':'#94a3b8', fontSize: '11px',fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{openCs.length}</span>
+                <span style={{ background:openCsRowCount>0?'#fee2e2':'#f1f5f9', color:openCsRowCount>0?'#dc2626':'#94a3b8', fontSize: '11px',fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{openCsRowCount}</span>
               </div>
               <Link href="/cs-management" style={{ fontSize: '11px',fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
             </div>

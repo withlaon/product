@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { loadShippedOrders, loadMappings, lookupMapping } from '@/lib/orders'
 import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
+import { isCsItemPending as isCsItemPendingShared } from '@/lib/cs-pending'
 
 /* ─── 타입 ──────────────────────────────────────────────────────── */
 type CsType   = 'return' | 'exchange'
@@ -47,15 +48,6 @@ interface CsItem {
 type CsListRow =
   | { kind: 'single'; item: CsItem }
   | { kind: 'exchange_leg'; item: CsItem; leg: 'in' | 'out' }
-
-function exchangeAnyLegPending(item: CsItem): boolean {
-  const bin = (item.barcode_in ?? item.barcode ?? '').trim()
-  const bout = (item.barcode_out ?? '').trim()
-  if (bin && !item.exchange_in_processed_at) return true
-  if (bout && !item.exchange_out_processed_at) return true
-  if (!bin && !bout && !item.exchange_in_processed_at) return true
-  return false
-}
 
 function expandCsListRows(items: CsItem[], mode: 'pending' | 'processed', rightYM: string): CsListRow[] {
   const rows: CsListRow[] = []
@@ -393,9 +385,7 @@ export default function CsManagementPage() {
 
   /* ── 파생 목록 (교환은 입고·출고 행으로 펼침) ── */
   const pendingItems = useMemo(() => {
-    let list = enrichedItems.filter(i =>
-      i.type === 'return' ? i.status === 'pending' : exchangeAnyLegPending(i),
-    )
+    let list = enrichedItems.filter(i => isCsItemPendingShared(i))
     if (leftSearch) {
       const q = leftSearch.toLowerCase()
       list = list.filter(i =>
