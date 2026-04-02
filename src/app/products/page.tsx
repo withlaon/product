@@ -721,8 +721,10 @@ function rowToProduct(row: any): Product {
   }
 }
 
-function pmTodayStr(): string {
-  return new Date().toISOString().slice(0, 10)
+/** 등록일·1년 경과 비교용 로컬(브라우저) 캘린더 오늘 YYYY-MM-DD */
+function pmTodayLocalStr(): string {
+  const n = new Date()
+  return `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
 }
 
 /** 등록일 + 1년(같은 월·일) 전까지 구간의 상한(배타): [since, endExclusive) */
@@ -772,7 +774,7 @@ function shippedQtySinceForProduct(
         bc = abbrOptIdx[`${na}|||${ov}`] || abbrOptIdx[`${na}|||${oo}`] || abbrIdx[na] || ''
       }
       if (!bc && item.sku) bc = String(item.sku)
-      if (bc && myBcs.has(bc)) qty += item.quantity ?? 0
+      if (bc && myBcs.has(bc)) qty += Number(item.quantity) || 0
     }
   }
   return qty
@@ -1200,8 +1202,8 @@ export default function ProductsPage() {
     [extraCats, deletedCats]
   )
 
-  /** 판매중·삭제예정: 등록일 이후 1년 구간 내 출고확정 판매 수량(등록일 빨강 판단용) */
-  const soldSinceRegByProductId = useMemo(() => {
+  /** 판매중·삭제예정: 판매중 전환일(active_since) 이후 출고확정 누적 판매 수량(등록 1년 경과 후 색상 판단) */
+  const soldTotalSinceRegByProductId = useMemo(() => {
     const shipped = loadShippedOrders()
     const mappings = loadMappings()
     const normStr = (s: string) => s.replace(/\s/g, '').toLowerCase()
@@ -1221,8 +1223,7 @@ export default function ProductsPage() {
       const sinceRaw = ((p.active_since ?? '').trim() || (p.created_at ?? '').slice(0, 10)).trim()
       const sinceNorm = ymdComparable(sinceRaw)
       if (!sinceNorm) { map[p.id] = 0; continue }
-      const endExclusive = ymdAddOneYear(sinceNorm)
-      map[p.id] = shippedQtySinceForProduct(p, sinceNorm, endExclusive, shipped, mappings, abbrOptIdx, abbrIdx)
+      map[p.id] = shippedQtySinceForProduct(p, sinceNorm, null, shipped, mappings, abbrOptIdx, abbrIdx)
     }
     return map
   }, [products, shipAggTick])
@@ -1230,7 +1231,7 @@ export default function ProductsPage() {
   /* ── 기존 판매중 상품에 등록일 없으면 오늘로 일괄 저장 ── */
   useEffect(() => {
     if (!products.length) return
-    const today = pmTodayStr()
+    const today = pmTodayLocalStr()
     const need = products.filter(p => p.status === 'active' && !(p.active_since && String(p.active_since).trim()))
     if (need.length === 0) return
     let cancelled = false
@@ -1379,7 +1380,7 @@ export default function ProductsPage() {
       current_stock: o.current_stock !== undefined ? Number(o.current_stock) : 0,
       defective: Number(o.defective) || 0,
     }))
-    const todayReg = pmTodayStr()
+    const todayReg = pmTodayLocalStr()
     const prevSince = (isEdit.active_since && String(isEdit.active_since).trim()) || null
     let activeSinceOut: string | null = prevSince
     if (editForm.status === 'active' && !activeSinceOut) activeSinceOut = todayReg
@@ -1557,7 +1558,7 @@ export default function ProductsPage() {
         ordered: 0, received: 0, sold: 0,
       }))
       const costPriceVal = Number(form.cost_price) || 0
-      const todayReg = pmTodayStr()
+      const todayReg = pmTodayLocalStr()
       const payload = {
         code: form.code.trim(), name: form.name.trim(), abbr: form.abbr.trim(), category: cat, loca: form.loca,
         cost_price: costPriceVal,
@@ -1635,7 +1636,7 @@ export default function ProductsPage() {
 
   const handleStatusChange = async (id: string, status: ProductStatus) => {
     const prev = products.find(p => p.id === id)
-    const today = pmTodayStr()
+    const today = pmTodayLocalStr()
     const payload: Record<string, unknown> = { status }
     if (status === 'active' && prev && prev.status !== 'active' && !(prev.active_since && String(prev.active_since).trim())) {
       payload.active_since = today
@@ -2687,19 +2688,28 @@ export default function ProductsPage() {
                       })()}
                       </div>
                       {(p.status === 'active' || p.status === 'pending_delete') && (() => {
+                        /* 등록일 = 판매중 전환일(active_since); 없으면 삭제예정은 created_at 등 보조 */
                         const regRaw = (p.active_since && String(p.active_since).trim())
                           || (p.created_at ? String(p.created_at).slice(0, 10) : '')
-                          || pmTodayStr()
-                        const [y, mo, da] = regRaw.split('-')
-                        const regLabel = mo && da ? `${Number(mo)}/${Number(da)}` : regRaw
-                        const soldN = soldSinceRegByProductId[p.id] ?? 0
-                        const zeroSinceReg = soldN === 0
+                          || pmTodayLocalStr()
+                        const [y, mo, da] = regRaw.split(/[-T]/).map(s => s.trim())
+                        const regLabel = y && mo && da ? `${y}.${Number(mo)}.${Number(da)}` : regRaw
+                        const sinceNorm = ymdComparable(regRaw.slice(0, 10))
+                        const todayL = ymdComparable(pmTodayLocalStr())
+                        const regPlus1Y = sinceNorm ? ymdAddOneYear(sinceNorm) : ''
+                        const withinFirstYear = !!(sinceNorm && regPlus1Y && todayL < regPlus1Y)
+                        const soldTotal = soldTotalSinceRegByProductId[p.id] ?? 0
+                        const regColor = withinFirstYear
+                          ? '#2563eb'
+                          : soldTotal === 0
+                            ? '#dc2626'
+                            : '#2563eb'
                         return (
                           <div style={{
                             marginTop: 6,
                             fontSize: 10,
                             fontWeight: 700,
-                            color: zeroSinceReg ? '#dc2626' : '#64748b',
+                            color: regColor,
                             letterSpacing: '0.02em',
                           }}>
                             등록일 {regLabel}
