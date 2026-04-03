@@ -12,6 +12,7 @@ import {
   isShippedOrderDelivered, shippedOrderLocalYmd, ymdComparable,
   type ShippedOrder, type MappingStore,
 } from '@/lib/orders'
+import { archiveAmountsAndPurgeTracesForDeletedProduct } from '@/lib/product-delete-cascade'
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
 import {
   Plus, Search, Download, Upload, Package, TrendingUp, AlertTriangle,
@@ -1665,15 +1666,26 @@ export default function ProductsPage() {
   const handleDelete = async (id: string) => {
     const target = products.find(p => p.id === id)
     const label = target?.abbr || target?.name || '해당 상품'
-    if (!window.confirm(`"${label}" 상품을 삭제하시겠습니까?\n\n삭제하면 되돌릴 수 없으며, 매핑관리의 해당 상품 데이터도 함께 제거됩니다.\n\n※ 출고내역·발주/입고 이력은 삭제되지 않고 유지됩니다.`)) return
+    if (!window.confirm(`"${label}" 상품을 삭제하시겠습니까?\n\n삭제하면 되돌릴 수 없으며, 매핑관리의 해당 상품 데이터도 함께 제거됩니다.\n\n※ 출고내역·해당 상품의 발주/입고 이력은 삭제됩니다. 대시보드 월·일별 판매액·매입액 합계는 기존 금액이 유지됩니다.`)) return
     const { error } = await pmDelete(id)
     if (!error) {
       const barcodes = (target?.options ?? [])
         .map(o => String((o as { barcode?: string }).barcode ?? '').trim())
         .filter(Boolean)
+      if (target) {
+        await archiveAmountsAndPurgeTracesForDeletedProduct({
+          id: target.id,
+          code: target.code,
+          name: target.name,
+          abbr: target.abbr ?? '',
+          cost_price: target.cost_price,
+          cost_currency: target.cost_currency,
+          barcodes,
+        })
+      }
       setProducts(prev => prev.filter(p => p.id !== id))
       // 캐시에서 해당 상품만 즉시 제거 → 판매관리 탭이 삭제된 상품 데이터를 즉시 제외
-      // (출고내역·발주내역 데이터는 건드리지 않음)
+      // (출고·주문·발주 이력은 archiveAmountsAndPurgeTracesForDeletedProduct 에서 정리됨)
       try {
         const raw = localStorage.getItem('pm_products_cache_v1')
         if (raw) {

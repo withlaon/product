@@ -12,6 +12,7 @@ import {
   loadOrders, loadShippedOrders, loadInvoiceQueue,
   dashboardAmountForMergedRow,
 } from '@/lib/orders'
+import { loadDashboardRetention, type DashboardRetention } from '@/lib/product-delete-cascade'
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
 import type { Order, ShippedOrder } from '@/lib/orders'
 import { supabase } from '@/lib/supabase'
@@ -495,6 +496,7 @@ export default function DashboardPage() {
   const [selMonth,      setSelMonth]      = useState(curYM)
   const [lastUpdate,    setLastUpdate]    = useState<Date | null>(null)
   const [refreshing,    setRefreshing]    = useState(false)
+  const [retention,     setRetention]     = useState<DashboardRetention>({ salesByDay: {}, purchaseByMonth: {} })
 
   _selMonthForChart = selMonth
 
@@ -505,6 +507,7 @@ export default function DashboardPage() {
     setInvoiceQueue(loadInvoiceQueue())
     setProducts(loadCachedProducts())
     setCsItems(loadCsItems())
+    setRetention(loadDashboardRetention())
     setLastUpdate(new Date())
   }, [])
 
@@ -544,6 +547,7 @@ export default function DashboardPage() {
       'pm_orders_v1', 'pm_shipped_orders_v1', 'pm_invoice_queue_v1',
       'pm_products_cache_v1', 'pm_cs_v1',
       'pm_dashboard_refresh_ts', 'pm_products_cache_sync', 'pm_products_mapping_signal',
+      'pm_dashboard_retention_v1',
     ])
     const onStorage = (e: StorageEvent) => {
       if (e.key && WATCH_KEYS.has(e.key)) fullRefresh()
@@ -590,11 +594,16 @@ export default function DashboardPage() {
 
   /* ── KPI ── */
   const todayOrders  = useMemo(() => orders.filter(o => o.order_date === today), [orders, today])
-  const monthRevenue = useMemo(() =>
-    allOrdersMerged
+  const monthRevenue = useMemo(() => {
+    const live = allOrdersMerged
       .filter(o => o.order_date?.slice(0,7) === curYM && o.status !== 'cancelled')
-      .reduce((s, o) => s + dashboardAmountForMergedRow(o, shippedById), 0),
-  [allOrdersMerged, shippedById, curYM])
+      .reduce((s, o) => s + dashboardAmountForMergedRow(o, shippedById), 0)
+    let ret = 0
+    for (const [d, a] of Object.entries(retention.salesByDay)) {
+      if (d.slice(0, 7) === curYM) ret += a
+    }
+    return live + ret
+  }, [allOrdersMerged, shippedById, curYM, retention])
 
   const lowStock = useMemo(() => products
     .filter(p => p.status !== 'pending_delete')
@@ -642,9 +651,10 @@ export default function DashboardPage() {
       const day  = i + 1
       const date = `${selMonth}-${String(day).padStart(2,'0')}`
       const dayO = mo.filter(o => o.order_date === date)
-      return { day, count: dayO.length, amount: dayO.reduce((s, o) => s + dashboardAmountForMergedRow(o, shippedById), 0) }
+      const live = dayO.reduce((s, o) => s + dashboardAmountForMergedRow(o, shippedById), 0)
+      return { day, count: dayO.length, amount: live + (retention.salesByDay[date] ?? 0) }
     })
-  }, [allOrdersMerged, shippedById, selMonth])
+  }, [allOrdersMerged, shippedById, selMonth, retention])
 
   const monthTotal  = useMemo(() => chartData.reduce((s,d) => s+d.count, 0), [chartData])
   const monthRevSel = useMemo(() => chartData.reduce((s,d) => s+d.amount, 0), [chartData])
@@ -660,8 +670,13 @@ export default function DashboardPage() {
       if (!ym) continue
       byMonth[ym] = (byMonth[ym] ?? 0) + dashboardAmountForMergedRow(o, shippedById)
     }
+    for (const [day, amt] of Object.entries(retention.salesByDay)) {
+      const ym = day.slice(0, 7)
+      if (!ym) continue
+      byMonth[ym] = (byMonth[ym] ?? 0) + amt
+    }
     return keys.map(ym => ({ ym, amount: byMonth[ym] ?? 0 }))
-  }, [allOrdersMerged, shippedById, curYM])
+  }, [allOrdersMerged, shippedById, curYM, retention])
 
   /* ── 선택 월 매입액: 발주관리에서 발주 확정한 건만(취소·입고탭 단독 등록 제외), unitToOrderKrw·pm_exchange_rate ── */
   const monthPurchaseCost = useMemo(() => {
@@ -669,7 +684,7 @@ export default function DashboardPage() {
     try {
       exchangeRate = Number(localStorage.getItem('pm_exchange_rate') || String(DEFAULT_EXCHANGE_RATE)) || DEFAULT_EXCHANGE_RATE
     } catch { /* ignore */ }
-    return purchases
+    const live = purchases
       .filter(p => p.order_date?.slice(0, 7) === selMonth && isManagePurchaseConfirmForCost(p))
       .reduce((sum, p) => sum + p.items.reduce((is, item) => {
         if (!item.product_code) return is
@@ -678,7 +693,8 @@ export default function DashboardPage() {
         const unitKrw = unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate)
         return is + unitKrw * item.ordered
       }, 0), 0)
-  }, [purchases, products, selMonth, lastUpdate])
+    return live + (retention.purchaseByMonth[selMonth] ?? 0)
+  }, [purchases, products, selMonth, lastUpdate, retention])
 
   /* ── 당월 택배비 (고유 운송장번호 × 2800원) ── */
   const monthShippingFee = useMemo(() => {
