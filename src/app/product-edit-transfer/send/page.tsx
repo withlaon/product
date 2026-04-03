@@ -20,6 +20,7 @@ const DOWNLOAD_MALLS = [
   { id: 'tossshopping', label: '토스쇼핑',   color: '#4f46e5', bg: '#eef2ff' },
   { id: 'gsshop',       label: '지에스샵',   color: '#059669', bg: '#ecfdf5' },
   { id: 'always',       label: '올웨이즈',   color: '#d97706', bg: '#fffbeb' },
+  { id: 'jasondeal',    label: '제이슨딜',   color: '#0284c7', bg: '#f0f9ff' },
   { id: 'direct',       label: '직접등록',   color: '#7c3aed', bg: '#f5f3ff' },
 ] as const
 
@@ -65,10 +66,10 @@ function triggerExcelDownload(rows: Record<string, unknown>[], filename: string)
 }
 
 /* ─── Excel 다운로드 헬퍼 (헤더 없음 · 2차원 배열) ─────── */
-function triggerExcelDownloadNoHeader(data: unknown[][], filename: string) {
+function triggerExcelDownloadNoHeader(data: unknown[][], filename: string, sheetName = '송장') {
   const ws  = XLSX.utils.aoa_to_sheet(data)
   const wb  = XLSX.utils.book_new()
-  XLSX.utils.book_append_sheet(wb, ws, '송장')
+  XLSX.utils.book_append_sheet(wb, ws, sheetName)
   const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
   const blob = new Blob([out], { type: 'application/octet-stream' })
   const url  = URL.createObjectURL(blob)
@@ -124,6 +125,34 @@ function downloadGSShopInvoice(orders: ShippedOrder[]) {
     digitsOnly(o.tracking_number),
   ])
   triggerExcelDownloadNoHeader(data, `지에스샵_송장_${todayStr()}.xlsx`)
+}
+
+/* 제이슨딜 송장 업로드 양식(1행 헤더 · 2행 안내 · 3행~ 데이터) */
+const JASONDEAL_SHEET = '송장업로드 양식'
+const JASONDEAL_ROW_GUIDE: [string, string, string] = [
+  '출고하실 발주내역에 있는 \r\n주문번호를 입력해주세요\r\n예) \r\nJ1011563885126111561001xxxx\r\nNPA90715-4420xxxx\r\n\r\n업로드 실패 유형\r\n- 해당 정보가 누락되어 있을 경우 \r\n- 일치하는 주문번호가 없거나, 출고전 취소 주문일 경우\r\n \r\n* 출고전 취소로 업로드가 실패하는 경우, 제이슨딜 담당자에게 문의 바랍니다.',
+  '입력안내 시트에 있는 \r\n택배사 별 등록 택배사명 입력해주세요\r\n예) \r\nCJ대한통운\r\n\r\n업로드 실패 유형\r\n- 해당 정보가 누락되어 있을 경우\r\n- 지정된 택배사명이 아닐 경우 ',
+  '해당주문번호에 해당되는 상품을 출고할\r\n(특수문자를 제외한) 송장번호를 입력해주세요\r\n예)  35128643xxxx\r\n*엑셀 업로드 시, 송장번호 서식은 반드시\r\n “텍스트”로 지정되어야 합니다\r\n\r\n[업로드 실패 유형]\r\n- 해당 정보가 누락되어 있을 경우\r\n- 송장번호 숫자갯수가 20자를 초과할 경우\r\n   (예외 : UPS, USPS, 프레시솔루션, 큐익스프레스)\r\n- 알파벳 포함하여 업로드 할 경우\r\n   (예외 : 프레시솔루션, 건영택배)\r\n- 텍스트 입력하여 업로드 할 경우\r\n   (자체배송 업체의 경우 "자체배송" 텍스트만 허용, 조합불가)',
+]
+
+function downloadJasonDealInvoice(orders: ShippedOrder[]) {
+  const jdOrders = orders.filter(o =>
+    o.status === 'shipped' && o.tracking_number &&
+    (o.extra_data?.['import_source'] === '제이슨딜' || o.channel === '제이슨딜')
+  )
+  if (jdOrders.length === 0) {
+    alert('제이슨딜 배송처리된 주문이 없습니다.')
+    return
+  }
+  const header: unknown[] = ['주문번호', '택배사명', '송장번호']
+  const guide: unknown[] = [...JASONDEAL_ROW_GUIDE]
+  const dataRows: unknown[][] = jdOrders.map(o => [
+    o.order_number,
+    'CJ대한통운',
+    digitsOnly(o.tracking_number),
+  ])
+  const aoa: unknown[][] = [header, guide, ...dataRows]
+  triggerExcelDownloadNoHeader(aoa, `제이슨딜_송장_${todayStr()}.xlsx`, JASONDEAL_SHEET)
 }
 
 /* ─── 일반 쇼핑몰 송장 파일 생성 ────────────────────────── */
@@ -262,6 +291,8 @@ export default function InvoiceSendPage() {
         downloadMarketPlusInvoice(allShipped)
       } else if (mallId === 'gsshop') {
         downloadGSShopInvoice(allShipped)
+      } else if (mallId === 'jasondeal') {
+        downloadJasonDealInvoice(allShipped)
       } else {
         downloadMallInvoice(mallId, mallLabel, allShipped)
       }

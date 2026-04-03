@@ -20,6 +20,7 @@ const MALLS = [
   { id: 'tossshopping', label: '토스쇼핑',   color: '#4f46e5', bg: '#eef2ff', activeBg: '#e0e7ff' },
   { id: 'gsshop',       label: '지에스샵',   color: '#059669', bg: '#ecfdf5', activeBg: '#d1fae5' },
   { id: 'always',       label: '올웨이즈',   color: '#d97706', bg: '#fffbeb', activeBg: '#fef3c7' },
+  { id: 'jasondeal',    label: '제이슨딜',   color: '#0284c7', bg: '#f0f9ff', activeBg: '#e0f2fe' },
 ] as const
 
 type MallId = typeof MALLS[number]['id']
@@ -284,6 +285,43 @@ function parseGSShopRow(row: Record<string, unknown>, idx: number): RegOrder {
       상품상세코드:    String(row['상품상세코드'] ?? ''),
       상품명_인터넷:   String(row['상품명(인터넷)'] ?? ''),
       협력사지급금액:  String(row['협력사지급금액'] ?? ''),
+    },
+  }
+}
+
+/* ─── 제이슨딜 전용 파싱 (AD열=공급가) ───────────────────── */
+function jasonDealSupplyPrice(row: Record<string, unknown>): number {
+  const v = row['공급가']
+  if (v !== undefined && v !== '') {
+    const n = typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, ''))
+    if (Number.isFinite(n)) return n
+  }
+  return 0
+}
+
+function parseJasonDealRow(row: Record<string, unknown>, idx: number): RegOrder {
+  const orderNum = String(row['주문번호'] ?? `AUTO-JASON-${Date.now()}-${idx}`)
+  const supply = jasonDealSupplyPrice(row)
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
+    order_number: orderNum,
+    customer_name:    String(row['주문자명'] ?? '-'),
+    customer_phone:   String(row['주문자전화'] ?? row['주문인전화번호'] ?? ''),
+    shipping_address: String(row['전체주소'] ?? ''),
+    items: [{
+      product_name: String(row['상품명(전시)'] ?? row['상품명'] ?? '-'),
+      sku:          String(row['통합상품코드'] ?? ''),
+      quantity:     Number(row['주문수량'] ?? 1),
+      unit_price:   supply,
+      option:       String(row['옵션명'] ?? ''),
+    }],
+    total_amount: supply,
+    status: 'pending',
+    memo: String(row['배송시요청사항'] ?? ''),
+    extra_data: {
+      import_source: '제이슨딜',
+      주문번호: orderNum,
+      우편번호: String(row['우편번호'] ?? ''),
     },
   }
 }
@@ -594,6 +632,7 @@ export default function OrderRegistrationPage() {
         const isTossShopping = selectedMall === 'tossshopping'
         const isAlways       = selectedMall === 'always'
         const isGSShop       = selectedMall === 'gsshop'
+        const isJasonDeal    = selectedMall === 'jasondeal'
         const alwaysAoa = isAlways
           ? (XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][])
           : null
@@ -623,6 +662,7 @@ export default function OrderRegistrationPage() {
             return parseAlwaysRow(row, idx, nCell)
           }
           if (isGSShop)       return parseGSShopRow(row, idx)
+          if (isJasonDeal)    return parseJasonDealRow(row, idx)
           return parseGenericRow(row, idx, today, mallLabel)
         })
 
@@ -690,7 +730,7 @@ export default function OrderRegistrationPage() {
 
         const existingMain = loadOrders()
         // 같은 import_source+날짜 이전 업로드 제거 (당일 재업로드 허용)
-        const importSrc = isMarketPlus ? 'marketplus' : mallLabel  // tossshopping='토스쇼핑', always='올웨이즈', gsshop='지에스샵'
+        const importSrc = isMarketPlus ? 'marketplus' : mallLabel  // tossshopping, always, gsshop, 제이슨딜 등
         const toRemoveIds = new Set(
           existingMain
             .filter(o => o.extra_data?.['import_source'] === importSrc && o.order_date === today)
