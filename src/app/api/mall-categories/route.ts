@@ -408,7 +408,7 @@ const STATIC_CATEGORIES: Record<string, Array<{ id: string; name: string }>> = {
     { id:'KKA020', name:'패션잡화 > 주얼리/액세서리' },
   ],
 
-  /* ── 롯데온 ── */
+  /* ── 롯데ON ── */
   lotteon: [
     { id:'LTW001', name:'패션의류 > 여성의류 > 원피스' },
     { id:'LTW002', name:'패션의류 > 여성의류 > 블라우스/셔츠' },
@@ -426,7 +426,7 @@ const STATIC_CATEGORIES: Record<string, Array<{ id: string; name: string }>> = {
     { id:'LTS001', name:'스포츠/레저 > 스포츠의류' },
   ],
 
-  /* ── SSG ── */
+  /* ── SSG종합몰 ── */
   ssg: [
     { id:'SSW001', name:'패션의류 > 여성의류 > 원피스' },
     { id:'SSW002', name:'패션의류 > 여성의류 > 블라우스/셔츠' },

@@ -5,6 +5,7 @@ import { Sidebar } from './Sidebar'
 import { Header } from './Header'
 import { usePathname } from 'next/navigation'
 import { hydrateShippedOrdersFromServer } from '@/lib/orders'
+import { runMallDisplayNameMigration } from '@/lib/mall-display-names'
 
 const NO_LAYOUT_PATHS = ['/login', '/signup', '/oauth']
 
@@ -27,10 +28,13 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
   // 경로 변경 시 모바일 메뉴 닫기
   useEffect(() => { setMobileOpen(false) }, [pathname])
 
-  // 출고내역: Supabase와 로컬 캐시 동기화 (로그인·회원가입 제외)
+  // 쇼핑몰 표시명 1회 마이그레이션 → 출고 Supabase 동기화 (로그인·회원가입 제외)
   useEffect(() => {
     if (NO_LAYOUT_PATHS.includes(pathname)) return
-    void hydrateShippedOrdersFromServer()
+    void (async () => {
+      await runMallDisplayNameMigration()
+      await hydrateShippedOrdersFromServer()
+    })()
   }, [pathname])
 
   // 로그인/회원가입 페이지: 사이드바 없이 렌더링

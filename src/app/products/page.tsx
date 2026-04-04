@@ -305,8 +305,18 @@ function loadConnectedChannels(): { name: string; bg: string; color: string }[] 
     '에이블리':{ bg:'#fdf4ff', color:'#7e22ce' },
     '지그재그':{ bg:'#eff6ff', color:'#2563eb' },
     'G마켓':   { bg:'#fefce8', color:'#854d0e' },
+    '지마켓':  { bg:'#fefce8', color:'#854d0e' },
     '옥션':    { bg:'#f0fdf4', color:'#166534' },
     '스마트스토어': { bg:'#f0fdf4', color:'#15803d' },
+    '지에스샵':{ bg:'#ecfdf5', color:'#059669' },
+    'GS SHOP': { bg:'#ecfdf5', color:'#059669' },
+    'GS샵':    { bg:'#ecfdf5', color:'#059669' },
+    '롯데ON':  { bg:'#fef2f2', color:'#dc2626' },
+    '롯데온':  { bg:'#fef2f2', color:'#dc2626' },
+    'SSG종합몰': { bg:'#fff7ed', color:'#c2410c' },
+    'SSG':     { bg:'#fff7ed', color:'#c2410c' },
+    'SSG닷컴': { bg:'#fff7ed', color:'#c2410c' },
+    'SSG.COM': { bg:'#fff7ed', color:'#c2410c' },
   }
   try {
     const raw = localStorage.getItem('pm_mall_channels_v5')
@@ -2628,6 +2638,9 @@ export default function ProductsPage() {
                             '지그재그':'지그재',
                             'G마켓':   'G마켓',
                             '옥션':    '옥션',
+                            '지에스샵':'지에스',
+                            '롯데ON':  '롯데',
+                            'SSG종합몰':'SSG',
                           }
                           const abbr = abbrMap[mallName] ?? mallName.replace(/\s/g,'').slice(0,2)
                           const colors: Record<string,{bg:string;color:string}> = {
@@ -2639,6 +2652,9 @@ export default function ProductsPage() {
                             '지그재그':{ bg:'#eff6ff', color:'#2563eb' },
                             'G마켓':   { bg:'#fefce8', color:'#854d0e' },
                             '옥션':    { bg:'#f0fdf4', color:'#166534' },
+                            '지에스샵':{ bg:'#ecfdf5', color:'#059669' },
+                            '롯데ON':  { bg:'#fef2f2', color:'#dc2626' },
+                            'SSG종합몰': { bg:'#fff7ed', color:'#c2410c' },
                           }
                           const cs = colors[mallName] ?? { bg:'#f1f5f9', color:'#475569' }
                           const badgeKey = `${p.id}-${mi}`

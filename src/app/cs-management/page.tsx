@@ -282,8 +282,11 @@ const MALL_COLORS: Record<string, { color: string; bg: string }> = {
   '에이블리':    { color: '#db2777', bg: '#fdf2f8' },
   '올웨이즈':    { color: '#d97706', bg: '#fffbeb' },
   '토스쇼핑':    { color: '#4f46e5', bg: '#eef2ff' },
+  '롯데ON':      { color: '#dc2626', bg: '#fef2f2' },
   '롯데온':      { color: '#dc2626', bg: '#fef2f2' },
+  'SSG종합몰':   { color: '#c2410c', bg: '#fff7ed' },
   'SSG':         { color: '#c2410c', bg: '#fff7ed' },
+  'SSG닷컴':     { color: '#c2410c', bg: '#fff7ed' },
   '패션플러스':  { color: '#be185d', bg: '#fdf2f8' },
   '지에스샵':    { color: '#059669', bg: '#ecfdf5' },
   'GS SHOP':     { color: '#059669', bg: '#ecfdf5' },
@@ -1155,7 +1158,7 @@ export default function CsManagementPage() {
                     <label style={labelStyle}>쇼핑몰 <Req /></label>
                     <select value={form.mall} onChange={e => setF('mall', e.target.value)} className="pm-input pm-select" style={{ fontSize: '13px' }}>
                       <option value="">쇼핑몰 선택</option>
-                      {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데온', 'SSG', '패션플러스', '지에스샵', '기타'].map(m => (
+                      {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데ON', 'SSG종합몰', '패션플러스', '지에스샵', '기타'].map(m => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
@@ -1429,7 +1432,7 @@ export default function CsManagementPage() {
                   <label style={labelStyle}>쇼핑몰</label>
                   <select value={editDraft.mall} onChange={e => setEditDraft(d => d ? { ...d, mall: e.target.value } : d)} className="pm-input pm-select" style={{ fontSize: '13px' }}>
                     <option value="">쇼핑몰 선택</option>
-                    {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데온', 'SSG', '패션플러스', '지에스샵', '기타'].map(m => (
+                    {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데ON', 'SSG종합몰', '패션플러스', '지에스샵', '기타'].map(m => (
                       <option key={m} value={m}>{m}</option>
                     ))}
                   </select>

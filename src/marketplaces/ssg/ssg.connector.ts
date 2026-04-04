@@ -1,5 +1,5 @@
 /**
- * SSG닷컴 커넥터
+ * SSG종합몰 커넥터
  * API: https://api.ssg.com/openapi
  * 인증: API Key
  */
@@ -17,11 +17,11 @@ const BASE_URL = 'https://api.ssg.com/openapi/v1'
 
 export class SsgConnector extends BaseMarketplace {
   readonly mallKey  = 'ssg'
-  readonly mallName = 'SSG닷컴'
+  readonly mallName = 'SSG종합몰'
 
   private get apiKey(): string {
     const key = this.credentials.api_key
-    if (!key) throw new Error('SSG닷컴 API Key 누락')
+    if (!key) throw new Error('SSG종합몰 API Key 누락')
     return key
   }
 
@@ -34,7 +34,7 @@ export class SsgConnector extends BaseMarketplace {
       `${BASE_URL}/orders?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}&pageSize=${params.limit || 100}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(15000) }
     )
-    if (!res.ok) throw new Error(`SSG닷컴 주문 조회 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`SSG종합몰 주문 조회 오류: ${res.status}`)
     const data = await res.json()
     return (data.orders || []).map((o: Record<string, unknown>) => ({
       order_id      : String(o.ordItemNo || ''),
@@ -66,7 +66,7 @@ export class SsgConnector extends BaseMarketplace {
       body   : JSON.stringify({ dlvCmpCd: params.courier_code, invcNo: params.invoice_no }),
       signal : AbortSignal.timeout(10000),
     })
-    if (!res.ok) throw new Error(`SSG닷컴 송장 전송 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`SSG종합몰 송장 전송 오류: ${res.status}`)
   }
 
   async getClaims(params: ClaimQueryParams): Promise<UnifiedClaim[]> {
@@ -74,7 +74,7 @@ export class SsgConnector extends BaseMarketplace {
       `${BASE_URL}/claims?startDate=${params.start_date || ''}&endDate=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(10000) }
     )
-    if (!res.ok) throw new Error(`SSG닷컴 클레임 조회 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`SSG종합몰 클레임 조회 오류: ${res.status}`)
     const data = await res.json()
     return (data.claims || []).map((c: Record<string, unknown>) => ({
       claim_id      : String(c.clmNo || ''),

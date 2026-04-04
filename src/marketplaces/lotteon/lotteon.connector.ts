@@ -1,5 +1,5 @@
 /**
- * 롯데온 커넥터
+ * 롯데ON 커넥터
  * API: https://openapi.lotteon.com
  * 인증: API Key / OAuth2
  */
@@ -17,11 +17,11 @@ const BASE_URL = 'https://openapi.lotteon.com/v1'
 
 export class LotteonConnector extends BaseMarketplace {
   readonly mallKey  = 'lotteon'
-  readonly mallName = '롯데온'
+  readonly mallName = '롯데ON'
 
   private get apiKey(): string {
     const key = this.credentials.api_key
-    if (!key) throw new Error('롯데온 API Key 누락')
+    if (!key) throw new Error('롯데ON API Key 누락')
     return key
   }
 
@@ -34,7 +34,7 @@ export class LotteonConnector extends BaseMarketplace {
       `${BASE_URL}/orders?orderDateFrom=${params.start_date || ''}&orderDateTo=${params.end_date || ''}&pageSize=${params.limit || 100}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(15000) }
     )
-    if (!res.ok) throw new Error(`롯데온 주문 조회 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`롯데ON 주문 조회 오류: ${res.status}`)
     const data = await res.json()
     return (data.orderList || []).map((o: Record<string, unknown>) => ({
       order_id      : String(o.orderItemNo || ''),
@@ -69,7 +69,7 @@ export class LotteonConnector extends BaseMarketplace {
       }),
       signal : AbortSignal.timeout(10000),
     })
-    if (!res.ok) throw new Error(`롯데온 송장 전송 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`롯데ON 송장 전송 오류: ${res.status}`)
   }
 
   async getClaims(params: ClaimQueryParams): Promise<UnifiedClaim[]> {
@@ -77,7 +77,7 @@ export class LotteonConnector extends BaseMarketplace {
       `${BASE_URL}/claims?clmDtFrom=${params.start_date || ''}&clmDtTo=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(10000) }
     )
-    if (!res.ok) throw new Error(`롯데온 클레임 조회 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`롯데ON 클레임 조회 오류: ${res.status}`)
     const data = await res.json()
     return (data.claimList || []).map((c: Record<string, unknown>) => ({
       claim_id      : String(c.clmNo || ''),
