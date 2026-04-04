@@ -207,7 +207,7 @@ const STATIC_CATEGORIES: Record<string, Array<{ id: string; name: string }>> = {
     { id:'11A020', name:'패션잡화 > 주얼리/액세서리 > 귀걸이' },
   ],
 
-  /* ── ESM 지마켓 ── */
+  /* ── ESM G마켓 ── */
   gmarket: [
     { id:'GMW001', name:'여성의류 > 상의 > 티셔츠' },
     { id:'GMW002', name:'여성의류 > 상의 > 니트/스웨터' },
@@ -371,7 +371,7 @@ const STATIC_CATEGORIES: Record<string, Array<{ id: string; name: string }>> = {
     { id:'HCK002', name:'아동의류 > 아동하의' },
   ],
 
-  /* ── GS SHOP ── */
+  /* ── 지에스샵 ── */
   gsshop: [
     { id:'GSW001', name:'패션의류 > 여성의류 > 원피스' },
     { id:'GSW002', name:'패션의류 > 여성의류 > 니트/가디건' },

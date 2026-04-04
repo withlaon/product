@@ -1,5 +1,5 @@
 /**
- * GS샵 커넥터
+ * 지에스샵 커넥터
  * API: https://api.gsshop.com/openapi
  * 인증: API Key / 판매자 코드
  */
@@ -17,11 +17,11 @@ const BASE_URL = 'https://api.gsshop.com/openapi/v1'
 
 export class GsshopConnector extends BaseMarketplace {
   readonly mallKey  = 'gsshop'
-  readonly mallName = 'GS샵'
+  readonly mallName = '지에스샵'
 
   private get apiKey(): string {
     const key = this.credentials.api_key
-    if (!key) throw new Error('GS샵 API Key 누락')
+    if (!key) throw new Error('지에스샵 API Key 누락')
     return key
   }
 
@@ -38,7 +38,7 @@ export class GsshopConnector extends BaseMarketplace {
       `${BASE_URL}/orders?startDt=${params.start_date || ''}&endDt=${params.end_date || ''}&pageSize=${params.limit || 100}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(15000) }
     )
-    if (!res.ok) throw new Error(`GS샵 주문 조회 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`지에스샵 주문 조회 오류: ${res.status}`)
     const data = await res.json()
     return (data.orderList || []).map((o: Record<string, unknown>) => ({
       order_id      : String(o.ordItemNo || ''),
@@ -70,7 +70,7 @@ export class GsshopConnector extends BaseMarketplace {
       body   : JSON.stringify({ dlvCmpCd: params.courier_code, invcNo: params.invoice_no }),
       signal : AbortSignal.timeout(10000),
     })
-    if (!res.ok) throw new Error(`GS샵 송장 전송 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`지에스샵 송장 전송 오류: ${res.status}`)
   }
 
   async getClaims(params: ClaimQueryParams): Promise<UnifiedClaim[]> {
@@ -78,7 +78,7 @@ export class GsshopConnector extends BaseMarketplace {
       `${BASE_URL}/claims?startDt=${params.start_date || ''}&endDt=${params.end_date || ''}`,
       { headers: this.authHeader(), signal: AbortSignal.timeout(10000) }
     )
-    if (!res.ok) throw new Error(`GS샵 클레임 조회 오류: ${res.status}`)
+    if (!res.ok) throw new Error(`지에스샵 클레임 조회 오류: ${res.status}`)
     const data = await res.json()
     return (data.claimList || []).map((c: Record<string, unknown>) => ({
       claim_id      : String(c.clmNo || ''),

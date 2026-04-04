@@ -164,7 +164,10 @@ function normalizeMallForNetRev(channel: string): string {
   // 네이버페이·카페24 동일 배율(0.9), 표기만 다른 경우 통일
   if (s === '네이버페이' || s === '네이버 페이') return '카페24'
   if (/^SSG/i.test(s) || /\bSSG\.COM\b/i.test(s)) return 'SSG'
-  if (s === '지에스샵' || /^GS\s*SHOP$/i.test(s)) return 'GS SHOP'
+  if (
+    s === '지에스샵' || s === 'GS샵' || s === 'GS SHOP'
+    || /^GS\s*SHOP$/i.test(s)
+  ) return '지에스샵'
   return s
 }
 
@@ -190,7 +193,7 @@ export function dashboardOrderAmount(o: Order | ShippedOrder): number {
   const ch = normalizeMallForNetRev(o.channel)
   if (ch === '에이블리' || ch === '스마트스토어' || ch === '토스쇼핑' || ch === '카페24') return list * 0.9
   if (ch === '옥션' || ch === 'G마켓' || ch === '쿠팡' || ch === '11번가' || ch === '롯데온') return list * 0.87
-  if (ch === 'SSG' || ch === 'GS SHOP' || ch === '패션플러스' || ch === '하프클럽') return list * 0.75
+  if (ch === 'SSG' || ch === '지에스샵' || ch === '패션플러스' || ch === '하프클럽') return list * 0.75
   return base
 }
 

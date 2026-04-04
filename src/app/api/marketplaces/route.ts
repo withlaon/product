@@ -50,7 +50,7 @@ export async function POST(req: NextRequest) {
         fashionplus: { key: 'login_id',  label: 'SCM 로그인 ID' },
         // 지그재그(카카오스타일): partner-api.zigzag.kr 는 공식 파트너만 접근 가능 — 자격증명 형식 검증으로 대체
         zigzag     : { key: 'api_key',   label: 'Access Key' },
-        // ESM(옥션/지마켓): 공식 파트너 셀링툴만 API 사용 가능 — 로그인 ID 저장
+        // ESM(옥션/G마켓): 공식 파트너 셀링툴만 API 사용 가능 — 로그인 ID 저장
         gmarket    : { key: 'login_id',  label: 'ESM PLUS ID' },
         auction    : { key: 'login_id',  label: 'ESM PLUS ID' },
       }
@@ -127,7 +127,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           success: true, mall,
           message: isEsm
-            ? `${tokenLabel} 저장 완료. ESM(옥션/지마켓)은 공식 API 직접 연동이 불가하여 로그인 정보를 저장합니다.`
+            ? `${tokenLabel} 저장 완료. ESM(옥션/G마켓)은 공식 API 직접 연동이 불가하여 로그인 정보를 저장합니다.`
             : `${tokenLabel}이 저장되었습니다. (해당 쇼핑몰 API는 공개 문서가 제한적이어서 실시간 검증은 생략됩니다)`,
         })
       }
