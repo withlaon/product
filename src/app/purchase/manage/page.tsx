@@ -61,6 +61,19 @@ interface QualOpt {
 }
 interface SelectedOpt extends QualOpt { qty: string }
 
+/** 발주 추천·확정 목록 공통: 상품약어(접두 숫자_ 무시) → 원문 약어 → 옵션명 → 바코드 */
+function compareByProdAbbr(a: QualOpt, b: QualOpt): number {
+  const abA = stripCodePrefix(a.prodAbbr)
+  const abB = stripCodePrefix(b.prodAbbr)
+  let c = abA.localeCompare(abB, 'ko', { numeric: true })
+  if (c !== 0) return c
+  c = (a.prodAbbr || '').localeCompare(b.prodAbbr || '', 'ko', { numeric: true })
+  if (c !== 0) return c
+  c = (a.optName || '').localeCompare(b.optName || '', 'ko', { numeric: true })
+  if (c !== 0) return c
+  return (a.barcode || '').localeCompare(b.barcode || '', 'ko', { numeric: true })
+}
+
 const DRAFT_KEY = 'pm_purchase_draft_v1'
 
 export default function PurchaseManagePage() {
@@ -277,16 +290,9 @@ export default function PurchaseManagePage() {
      조건: 판매중(active) 옵션 중
        · 현재고 ≤ 3 이거나
        · 최근 발주일(없으면 기준일) 이후 출고 누적 판매 > 0 (당일 출고확정 포함, shipped_at 기준)
-     정렬(그룹별 오름차순):
-       ① 품절(재고 0) → ② 발주일 이후 판매 있음(재고 1~3 부족도 판매 그룹) → ③ 재고 부족만(판매 0)
-       각 그룹 내: 재고 오름차순 → 판매 오름차순 → 바코드
+     정렬: 상품약어 기준 오름차순(동일 상품 내 옵션명·바코드)
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
-    const listRank = (o: QualOpt): number => {
-      if (o.currentStock === 0) return 0
-      if (o.sold > 0) return 1
-      return 2
-    }
     const result: QualOpt[] = []
     for (const prod of products) {
       if (prod.status !== 'active') continue  // 판매중 상품만
@@ -318,13 +324,7 @@ export default function PurchaseManagePage() {
         })
       }
     }
-    return result.sort((a, b) => {
-      const ra = listRank(a), rb = listRank(b)
-      if (ra !== rb) return ra - rb
-      if (a.currentStock !== b.currentStock) return a.currentStock - b.currentStock
-      if ((a.sold || 0) !== (b.sold || 0)) return (a.sold || 0) - (b.sold || 0)
-      return (a.barcode || '').localeCompare(b.barcode || '')
-    })
+    return result.sort(compareByProdAbbr)
   }, [products, unreceivedMap, shipSoldMap])
 
   // 추천 목록 이미지 로딩: qualOpts 내 prodId 목록이 바뀔 때마다 재실행
@@ -368,6 +368,10 @@ export default function PurchaseManagePage() {
   }, [qualProdIdsKey])
 
   const selectedKeys = useMemo(() => new Set(selectedOpts.map(s => s.key)), [selectedOpts])
+  const selectedOptsSorted = useMemo(
+    () => [...selectedOpts].sort(compareByProdAbbr),
+    [selectedOpts]
+  )
 
   const toggleSelect = (opt: QualOpt) => {
     if (selectedKeys.has(opt.key)) {
@@ -401,7 +405,7 @@ export default function PurchaseManagePage() {
 
       // ② 각 선택 상품 → 행 데이터 구성
       const sheet1Rows: (string | number)[][] = []
-      for (const s of selectedOpts) {
+      for (const s of selectedOptsSorted) {
         const prod = fullProducts.find(p => p.id === s.prodId)
         if (!prod) continue
         const opt  = prod.options.find(o => o.barcode === s.barcode)
@@ -487,7 +491,7 @@ export default function PurchaseManagePage() {
 
   /* ── 발주 확정 ── */
   const handleSubmitOrder = async () => {
-    const valid = selectedOpts.filter(s => s.qty && Number(s.qty) > 0)
+    const valid = selectedOptsSorted.filter(s => s.qty && Number(s.qty) > 0)
     if (!valid.length || !orderDate) return
     setSaving(true)
     setSaveMsg({ type: 'ok', text: '발주 확정 중...' })
@@ -828,7 +832,7 @@ export default function PurchaseManagePage() {
 
               {/* 선택 상품 목록 */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px' }}>
-                {selectedOpts.map((s, i) => {
+                {selectedOptsSorted.map(s => {
                   const img = qualImages[s.barcode] || s.image
                   type FP = PmProduct & { cost_price?: number; cost_currency?: string }
                   const prod = (products as unknown as FP[]).find(p => p.id === s.prodId)
@@ -875,10 +879,10 @@ export default function PurchaseManagePage() {
                       </div>
                       {/* 수량 입력 */}
                       <Input type="number" min="1" value={s.qty}
-                        onChange={e => setSelectedOpts(prev => prev.map((o, j) => j === i ? { ...o, qty: e.target.value } : o))}
+                        onChange={e => setSelectedOpts(prev => prev.map(o => o.key === s.key ? { ...o, qty: e.target.value } : o))}
                         style={{ width: 64, textAlign: 'center', fontWeight: 800, flexShrink: 0 }} />
                       {/* 제거 버튼 */}
-                      <button onClick={() => setSelectedOpts(prev => prev.filter((_, j) => j !== i))}
+                      <button onClick={() => setSelectedOpts(prev => prev.filter(o => o.key !== s.key))}
                         style={{ width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#fff1f2', color: '#dc2626', border: 'none', borderRadius: 6, cursor: 'pointer', flexShrink: 0, marginTop: 2 }}>
                         <X size={11} />
                       </button>
