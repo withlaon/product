@@ -61,17 +61,11 @@ interface QualOpt {
 }
 interface SelectedOpt extends QualOpt { qty: string }
 
-/** 발주 추천·확정 목록 공통: 상품약어(접두 숫자_ 무시) → 원문 약어 → 옵션명 → 바코드 */
-function compareByProdAbbr(a: QualOpt, b: QualOpt): number {
-  const abA = stripCodePrefix(a.prodAbbr)
-  const abB = stripCodePrefix(b.prodAbbr)
-  let c = abA.localeCompare(abB, 'ko', { numeric: true })
+/** 발주 추천·발주 확정 목록 공통: 바코드 오름차순 */
+function compareByBarcode(a: QualOpt, b: QualOpt): number {
+  const c = (a.barcode || '').localeCompare(b.barcode || '', undefined, { numeric: true })
   if (c !== 0) return c
-  c = (a.prodAbbr || '').localeCompare(b.prodAbbr || '', 'ko', { numeric: true })
-  if (c !== 0) return c
-  c = (a.optName || '').localeCompare(b.optName || '', 'ko', { numeric: true })
-  if (c !== 0) return c
-  return (a.barcode || '').localeCompare(b.barcode || '', 'ko', { numeric: true })
+  return (a.key || '').localeCompare(b.key || '')
 }
 
 const DRAFT_KEY = 'pm_purchase_draft_v1'
@@ -290,7 +284,7 @@ export default function PurchaseManagePage() {
      조건: 판매중(active) 옵션 중
        · 현재고 ≤ 3 이거나
        · 최근 발주일(없으면 기준일) 이후 출고 누적 판매 > 0 (당일 출고확정 포함, shipped_at 기준)
-     정렬: 상품약어 기준 오름차순(동일 상품 내 옵션명·바코드)
+     정렬: 바코드 오름차순(부족·품절·판매 등으로 묶지 않음)
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const result: QualOpt[] = []
@@ -324,7 +318,7 @@ export default function PurchaseManagePage() {
         })
       }
     }
-    return result.sort(compareByProdAbbr)
+    return result.sort(compareByBarcode)
   }, [products, unreceivedMap, shipSoldMap])
 
   // 추천 목록 이미지 로딩: qualOpts 내 prodId 목록이 바뀔 때마다 재실행
@@ -369,7 +363,7 @@ export default function PurchaseManagePage() {
 
   const selectedKeys = useMemo(() => new Set(selectedOpts.map(s => s.key)), [selectedOpts])
   const selectedOptsSorted = useMemo(
-    () => [...selectedOpts].sort(compareByProdAbbr),
+    () => [...selectedOpts].sort(compareByBarcode),
     [selectedOpts]
   )
 
