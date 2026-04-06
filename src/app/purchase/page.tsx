@@ -64,9 +64,11 @@ function applyDeltaToCache(
 
 function calcOrderKrw(purchase: Purchase, products: FP[], exchangeRate: number): number {
   return purchase.items.reduce((sum, item) => {
-    const prod = products.find(p => p.code === item.product_code)
+    const ic = (item.product_code || '').trim()
+    const prod = products.find(p => (p.code || '').trim() === ic)
     if (!prod?.cost_price) return sum
-    return sum + unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate) * item.ordered
+    const qty = Number(item.ordered) || 0
+    return sum + unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate) * qty
   }, 0)
 }
 
@@ -185,23 +187,31 @@ export default function PurchaseMainPage() {
       const { error } = await apiUpdatePurchase(purchase.id, { items: newItems })
       if (error) { alert(`수정 실패: ${error}`); return }
 
-      const prod = products.find(p => p.code === item.product_code)
-      if (prod) {
-        await syncProductQty(products, [{
-          prodId:       prod.id,
-          optName:      item.option_name || '',
-          barcode:      item.barcode     || undefined,
-          orderedDelta:  newQty - oldQty,
-          receivedDelta: 0,
-        }])
-        const patches = [{ productCode: item.product_code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: newQty - oldQty, receivedDelta: 0 }]
-        const updated = applyDeltaToCache(products as FP[], patches)
-        saveCachedProducts(updated)
-        setProducts(updated)
-      }
-
+      // 발주·매입액 KPI·행 금액은 purchases 기준이므로 API 반영 직후 로컬 상태 먼저 갱신
       setPurchases(prev => prev.map(p => p.id === purchase.id ? { ...p, items: newItems } : p))
       setEditingKey(null)
+
+      const prod = products.find(p => (p.code || '').trim() === (item.product_code || '').trim())
+      if (prod) {
+        try {
+          await syncProductQty(products, [{
+            prodId:       prod.id,
+            optName:      item.option_name || '',
+            barcode:      item.barcode     || undefined,
+            orderedDelta:  newQty - oldQty,
+            receivedDelta: 0,
+          }])
+          const patches = [{ productCode: item.product_code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: newQty - oldQty, receivedDelta: 0 }]
+          const updated = applyDeltaToCache(products as FP[], patches)
+          saveCachedProducts(updated)
+          setProducts(updated)
+        } catch (syncErr) {
+          alert(`발주 수량은 저장되었으나 상품관리 동기화에 실패했습니다.\n${String(syncErr)}`)
+        }
+      }
+
+      try { localStorage.setItem('pm_products_mapping_signal', String(Date.now())) } catch { /* ignore */ }
+      broadcastDashboardRefresh()
     } catch (e) {
       alert(`수정 중 오류: ${String(e)}`)
     } finally {
