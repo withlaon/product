@@ -9,6 +9,7 @@ import {
   isUnresolved,
   DEFAULT_EXCHANGE_RATE, unitToOrderKrw,
 } from './_shared'
+import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
 import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp, Truck, Trash2, Pencil, Check, X, Search } from 'lucide-react'
 
 type FP = PmProduct & { cost_price?: number; cost_currency?: string }
@@ -46,7 +47,9 @@ function applyDeltaToCache(
       options: p.options.map(o => {
         const hit = patches.find(r =>
           r.productCode === p.code &&
-          (r.barcode ? o.barcode === r.barcode : o.name === r.optionName)
+          (r.barcode
+            ? (o.barcode || '').trim() === (r.barcode || '').trim()
+            : o.name === r.optionName)
         )
         if (!hit) return o
         return {
@@ -111,6 +114,7 @@ export default function PurchaseMainPage() {
   /* 저장 / 삭제 진행 중 */
   const [savingKeys,   setSavingKeys]   = useState<Set<string>>(new Set())
   const [deletingIds,  setDeletingIds]  = useState<Set<string>>(new Set())
+  const [deletingItemKeys, setDeletingItemKeys] = useState<Set<string>>(new Set())
 
   /* 우측: 미입고 리스트 (전체·바코드순) */
 
@@ -247,6 +251,8 @@ export default function PurchaseMainPage() {
 
       setPurchases(prev => prev.filter(p => p.id !== purchase.id))
       if (expandedPoId === purchase.id) setExpandedPoId(null)
+      try { localStorage.setItem('pm_products_mapping_signal', String(Date.now())) } catch { /* ignore */ }
+      broadcastDashboardRefresh()
     } catch (e) {
       alert(`삭제 중 오류: ${String(e)}`)
     } finally {
@@ -254,16 +260,113 @@ export default function PurchaseMainPage() {
     }
   }
 
-  /* ── 옵션 이미지 맵: 바코드 → 이미지 ── */
+  /* ── 발주 건 내 개별 품목 삭제 (발주수량·월매입·상품관리 반영) ── */
+  const handleDeletePurchaseItem = async (purchase: Purchase, itemIdx: number) => {
+    const item = purchase.items[itemIdx]
+    if (!item) return
+    const label = `${item.product_code} / ${item.option_name || '-'} / ${(item.barcode || '').trim() || '-'}`
+    if (!confirm(
+      `이 발주 품목을 삭제할까요?\n${label}\n발주 ${item.ordered}개\n\n` +
+      `상품관리 발주수량이 차감되고, 이 달 발주금액(월누적)에도 반영됩니다.`
+    )) return
+
+    const opKey = `${purchase.id}-${itemIdx}`
+    setDeletingItemKeys(prev => new Set(prev).add(opKey))
+    try {
+      const prod = products.find(p => p.code === item.product_code)
+      const patches = [{
+        productCode:   item.product_code,
+        barcode:       item.barcode || '',
+        optionName:    item.option_name || '',
+        orderedDelta:  -item.ordered,
+        receivedDelta: -item.received,
+      }]
+      const syncRows = prod
+        ? [{ prodId: prod.id, optName: item.option_name || '', barcode: item.barcode || undefined, orderedDelta: -item.ordered, receivedDelta: -item.received }]
+        : []
+
+      if (syncRows.length > 0) {
+        await syncProductQty(products, syncRows)
+        const updated = applyDeltaToCache(products as FP[], patches)
+        saveCachedProducts(updated)
+        setProducts(updated)
+      }
+
+      const newItems = purchase.items.filter((_, i) => i !== itemIdx)
+      if (newItems.length === 0) {
+        const { error } = await apiDeletePurchase(purchase.id)
+        if (error) { alert(`삭제 실패: ${error}`); return }
+        setPurchases(prev => prev.filter(p => p.id !== purchase.id))
+        if (expandedPoId === purchase.id) setExpandedPoId(null)
+      } else {
+        const { error } = await apiUpdatePurchase(purchase.id, { items: newItems })
+        if (error) { alert(`삭제 실패: ${error}`); return }
+        setPurchases(prev => prev.map(p => (p.id === purchase.id ? { ...p, items: newItems } : p)))
+      }
+
+      setEditingKey(null)
+      try { localStorage.setItem('pm_products_mapping_signal', String(Date.now())) } catch { /* ignore */ }
+      broadcastDashboardRefresh()
+    } catch (e) {
+      alert(`삭제 중 오류: ${String(e)}`)
+    } finally {
+      setDeletingItemKeys(prev => { const n = new Set(prev); n.delete(opKey); return n })
+    }
+  }
+
+  /* ── 옵션 이미지 맵: 바코드(트림) → 이미지 — 상품관리탭과 동일 ── */
   const optImages = useMemo(() => {
     const map: Record<string, string> = {}
     for (const p of products) {
       for (const o of p.options) {
-        if (o.barcode && o.image) map[o.barcode] = o.image
+        const bc = (o.barcode || '').trim()
+        if (bc && o.image) map[bc] = o.image
       }
     }
     return map
   }, [products])
+
+  /* ── 발주 목록 품목: 캐시에 이미지 없을 때 imageIds API로 바코드별 보강 ── */
+  const poListImageProdIdsKey = useMemo(() => {
+    const ids = new Set<string>()
+    for (const p of poList) {
+      for (const it of p.items) {
+        const prod = products.find(x => x.code === it.product_code)
+        if (prod?.id) ids.add(prod.id)
+      }
+    }
+    return [...ids].sort().join(',')
+  }, [poList, products])
+
+  const [poListApiImages, setPoListApiImages] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    if (!poListImageProdIdsKey) return
+    const prodIds = poListImageProdIdsKey.split(',').filter(Boolean)
+    let cancelled = false
+    const chunks: string[][] = []
+    for (let i = 0; i < prodIds.length; i += 20) chunks.push(prodIds.slice(i, i + 20))
+    ;(async () => {
+      for (const chunk of chunks) {
+        if (cancelled) break
+        try {
+          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
+          if (!res.ok || cancelled) continue
+          const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
+          if (!Array.isArray(data)) continue
+          const imgs: Record<string, string> = {}
+          data.forEach(prod => (prod.options ?? []).forEach(o => {
+            const b = (o.barcode && String(o.barcode).trim()) || ''
+            if (b && o.image) imgs[b] = o.image
+          }))
+          if (!cancelled && Object.keys(imgs).length > 0) {
+            setPoListApiImages(prev => ({ ...prev, ...imgs }))
+          }
+        } catch { /* ignore */ }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [poListImageProdIdsKey])
 
   /* ── 미입고 리스트: 미입고 수량이 있는 품목을 바코드 오름차순으로 flatten ── */
   const miItems = useMemo(() => {
@@ -487,7 +590,7 @@ export default function PurchaseMainPage() {
                                 <table style={{ width:'100%', borderCollapse:'collapse', fontSize: '11px' }}>
                                   <thead>
                                     <tr style={{ background:'#dbeafe' }}>
-                                      {['','상품코드','옵션명','바코드','발주수량',''].map((h, hi) => (
+                                      {['','상품코드','옵션명','바코드','발주수량','편집','삭제'].map((h, hi) => (
                                         <th key={hi} style={{ padding:'4px 8px', fontWeight:800, color:'#1d4ed8', textAlign: hi === 4 ? 'center' : 'left', fontSize: '10px' }}>{h}</th>
                                       ))}
                                     </tr>
@@ -497,9 +600,11 @@ export default function PurchaseMainPage() {
                                       const key      = `${p.id}-${i}`
                                       const isEditing = editingKey === key
                                       const isSaving  = savingKeys.has(key)
-                                      const itemImg   = (item.barcode && optImages[item.barcode]) || ''
+                                      const isItemDel = deletingItemKeys.has(key)
+                                      const bc        = (item.barcode || '').trim()
+                                      const itemImg   = bc ? (optImages[bc] || poListApiImages[bc]) : ''
                                       return (
-                                        <tr key={i} style={{ borderBottom:'1px solid #e0f2fe', background: isEditing ? '#fafffe' : undefined }}>
+                                        <tr key={i} style={{ borderBottom:'1px solid #e0f2fe', background: isEditing ? '#fafffe' : isItemDel ? '#fef2f2' : undefined, opacity: isItemDel ? 0.65 : 1 }}>
                                           <td style={{ padding:'4px 8px', width:36 }}>
                                             <div style={{ width:28, height:28, borderRadius:5, overflow:'hidden', background:'#dbeafe', flexShrink:0 }}>
                                               {itemImg
@@ -556,6 +661,21 @@ export default function PurchaseMainPage() {
                                                 <Pencil size={10} color="#64748b" />
                                               </button>
                                             )}
+                                          </td>
+                                          <td style={{ padding:'4px 8px', textAlign:'center' }}>
+                                            <button
+                                              type="button"
+                                              onClick={() => void handleDeletePurchaseItem(p, i)}
+                                              disabled={isEditing || isSaving || isItemDel || isDeleting}
+                                              title="이 품목만 삭제"
+                                              style={{
+                                                width:22, height:22, borderRadius:5, border:'1px solid #fecaca', background:'#fef2f2',
+                                                cursor: (isEditing || isSaving || isItemDel || isDeleting) ? 'not-allowed' : 'pointer',
+                                                display:'inline-flex', alignItems:'center', justifyContent:'center', padding:0, opacity: (isEditing || isSaving || isItemDel || isDeleting) ? 0.45 : 1,
+                                              }}
+                                            >
+                                              <Trash2 size={10} color="#ef4444" />
+                                            </button>
                                           </td>
                                         </tr>
                                       )

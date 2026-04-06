@@ -236,9 +236,10 @@ export default function ReceiveManagePage() {
         const itemKey  = `${p.id}|${i}`
 
         let prodId = '', prodAbbr = '', optImage = ''
-        if (barcode) {
+        const bcNorm = (barcode || '').trim()
+        if (bcNorm) {
           for (const prod of products) {
-            const opt = prod.options.find(o => o.barcode === barcode)
+            const opt = prod.options.find(o => (o.barcode || '').trim() === bcNorm)
             if (opt) { prodId = prod.id; prodAbbr = prod.abbr || prod.name; optImage = opt.image || ''; break }
           }
         }
@@ -293,7 +294,10 @@ export default function ReceiveManagePage() {
           const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
           if (!Array.isArray(data)) continue
           const imgs: Record<string, string> = {}
-          data.forEach(prod => (prod.options ?? []).forEach(o => { if (o.barcode && o.image) imgs[o.barcode] = o.image }))
+          data.forEach(prod => (prod.options ?? []).forEach(o => {
+            const b = (o.barcode && String(o.barcode).trim()) || ''
+            if (b && o.image) imgs[b] = o.image
+          }))
           if (!cancelled && Object.keys(imgs).length > 0) setLoadedImages(prev => ({ ...prev, ...imgs }))
         } catch { /* ignore */ }
       }
@@ -318,7 +322,7 @@ export default function ReceiveManagePage() {
       // prodId가 없는 경우 재탐색 (barcode 우선 → product_code+option_name fallback)
       if (!prodId && item.barcode) {
         for (const prod of products) {
-          const opt = prod.options.find(o => o.barcode === item.barcode)
+          const opt = prod.options.find(o => (o.barcode || '').trim() === (item.barcode || '').trim())
           if (opt) { prodId = prod.id; break }
         }
       }
@@ -684,7 +688,8 @@ export default function ReceiveManagePage() {
                     {unreceivedList.map((u, idx) => {
                       const k = uKey(u)
                       const sel = miSelected.has(k)
-                      const img = loadedImages[u.barcode] || u.image
+                      const bc = (u.barcode || '').trim()
+                      const img = (bc && loadedImages[bc]) || u.image
                       return (
                         <tr key={idx}
                           onClick={() => {
@@ -778,7 +783,8 @@ export default function ReceiveManagePage() {
                   <tbody>
                     {rcItems.map(item => {
                       const k = `${item.purchaseId}|${item.itemIndex}`
-                      const img = loadedImages[item.barcode] || item.optImage
+                      const bc = (item.barcode || '').trim()
+                      const img = (bc && loadedImages[bc]) || item.optImage
                       return (
                         <tr key={k} style={{ borderBottom:'1px solid #f8fafc', background:item.confirmed ? '#f0fdf4' : 'white' }}>
                           <td style={{ textAlign:'center', padding:'4px 8px' }}>

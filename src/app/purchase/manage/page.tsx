@@ -327,6 +327,27 @@ export default function PurchaseManagePage() {
     [qualOpts]
   )
 
+  /** 상품관리 캐시 우선, 없으면 imageIds API(qualImages) — 키는 바코드 트림 통일 */
+  const productOptionImageByBarcode = useMemo(() => {
+    const m: Record<string, string> = {}
+    for (const p of products) {
+      for (const o of p.options ?? []) {
+        const bc = (o.barcode || '').trim()
+        if (bc && o.image) m[bc] = o.image
+      }
+    }
+    return m
+  }, [products])
+  const mergedBarcodeImages = useMemo(
+    () => ({ ...qualImages, ...productOptionImageByBarcode }),
+    [qualImages, productOptionImageByBarcode]
+  )
+  const resolveQualImage = (barcode: string, fallback?: string) => {
+    const bc = (barcode || '').trim()
+    if (!bc) return fallback || ''
+    return mergedBarcodeImages[bc] || fallback || ''
+  }
+
   useEffect(() => {
     if (!qualProdIdsKey) return
     const prodIds = qualProdIdsKey.split(',').filter(Boolean)
@@ -349,7 +370,8 @@ export default function PurchaseManagePage() {
           const imgs: Record<string, string> = {}
           data.forEach(prod => {
             ;(prod.options ?? []).forEach(o => {
-              if (o.barcode && o.image) imgs[o.barcode] = o.image
+              const bc = (o.barcode && String(o.barcode).trim()) || ''
+              if (bc && o.image) imgs[bc] = o.image
             })
           })
           if (!cancelled && Object.keys(imgs).length > 0) {
@@ -409,7 +431,7 @@ export default function PurchaseManagePage() {
         const englishName = COLOR_EN_MAP[colorCode] || ''
         const koreanName  = (opt as PmOption & { korean_name?: string }).korean_name || opt.name || ''
         const chineseName = (opt as PmOption & { chinese_name?: string }).chinese_name || ''
-        const imgVal      = qualImages[s.barcode] || s.image || ''
+        const imgVal      = resolveQualImage(s.barcode, s.image)
         const abbrClean   = stripCodePrefix(prod.abbr || prod.name)
 
         sheet1Rows.push([
@@ -705,7 +727,7 @@ export default function PurchaseManagePage() {
                         </td>
                         {/* 이미지 (약어 앞으로 이동) */}
                         <td style={{ padding: '4px 5px', textAlign: 'center', width: 46 }}>
-                          {(() => { const img = qualImages[opt.barcode] || opt.image; return img
+                          {(() => { const img = resolveQualImage(opt.barcode, opt.image); return img
                             ? <img src={img} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block', margin: '0 auto' }} />
                             : <div style={{ width: 36, height: 36, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                                 <Package size={14} style={{ color: '#cbd5e1' }} />
@@ -827,7 +849,7 @@ export default function PurchaseManagePage() {
               {/* 선택 상품 목록 */}
               <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px' }}>
                 {selectedOptsSorted.map(s => {
-                  const img = qualImages[s.barcode] || s.image
+                  const img = resolveQualImage(s.barcode, s.image)
                   type FP = PmProduct & { cost_price?: number; cost_currency?: string }
                   const prod = (products as unknown as FP[]).find(p => p.id === s.prodId)
                   const unitCost = prod?.cost_price ?? null
@@ -1032,7 +1054,7 @@ export default function PurchaseManagePage() {
       {showAddModal && (
         <AddProductModal
           products={products}
-          qualImages={qualImages}
+          qualImages={mergedBarcodeImages}
           selectedKeys={selectedKeys}
           onAdd={opt => {
             if (!selectedKeys.has(opt.key)) setSelectedOpts(prev => [...prev, opt])
@@ -1183,7 +1205,7 @@ function AddProductModal({
             </thead>
             <tbody>
               {filtered.map(item => {
-                const img = qualImages[item.barcode] || item.image
+                const img = qualImages[(item.barcode || '').trim()] || item.image
                 const alreadySel = selectedKeys.has(item.key)
                 return (
                   <tr key={item.key} style={{ borderBottom: '1px solid #f8fafc', background: alreadySel ? '#f0fdf4' : undefined }}>
