@@ -170,6 +170,47 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
   mallOrders.forEach(o => {
     trackingMap[o.order_number] = { carrier: o.carrier ?? '', tracking: digitsOnly(o.tracking_number) }
   })
+
+  /* 토스쇼핑: 주문서등록에서 저장한 주문배송관리 시트 원본 유지 → 5행부터 F열 택배사, G열 송장번호 */
+  if (mallId === 'tossshopping') {
+    const COL_B = 1
+    const COL_F = 5
+    const COL_G = 6
+    let headerBlock: unknown[][] | null = null
+    const outDataRows: unknown[][] = []
+    let sheetName = '주문내역'
+    for (const dayData of allDayData) {
+      const aoa = dayData.toss_raw_aoa
+      if (!aoa || aoa.length < 5) continue
+      if (!headerBlock) {
+        headerBlock = aoa.slice(0, 4).map(r => [...(r as unknown[])])
+        sheetName = dayData.toss_sheet_name || sheetName
+      }
+      for (let r = 4; r < aoa.length; r++) {
+        const src = (aoa[r] as unknown[]) || []
+        const orderNum = String(src[COL_B] ?? '').trim()
+        if (!orderNum) continue
+        const tInfo = trackingMap[orderNum]
+        if (tInfo) {
+          const row = [...src]
+          row[COL_F] = 'CJ대한통운'
+          row[COL_G] = tInfo.tracking
+          outDataRows.push(row)
+        }
+      }
+    }
+    if (headerBlock && outDataRows.length > 0) {
+      const out = [...headerBlock, ...outDataRows]
+      triggerExcelDownloadNoHeader(out, `${mallLabel}_송장_${todayStr()}.xlsx`, sheetName)
+      return
+    }
+    alert(
+      '토스쇼핑 송장 파일을 만들 수 없습니다.\n' +
+        '주문서등록 탭에서 「주문배송관리」 엑셀을 업로드해 저장한 뒤, 배송처리된 주문번호가 파일의 주문번호(B열)와 같은지 확인해 주세요.'
+    )
+    return
+  }
+
   const rows: Record<string, unknown>[] = []
   let usedRaw = false
   for (const dayData of allDayData) {
@@ -177,9 +218,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
       const orderNum = String(raw['주문번호'] ?? raw['주문아이디'] ?? raw['order_number'] ?? raw['OrderNumber'] ?? '')
       const tInfo = trackingMap[orderNum]
       if (tInfo) {
-        if (mallId === 'tossshopping') {
-          rows.push({ ...raw, '송장번호': tInfo.tracking })
-        } else if (mallId === 'always') {
+        if (mallId === 'always') {
           rows.push({ ...raw, '운송장번호': tInfo.tracking })
         } else {
           rows.push({ ...raw, '택배사': tInfo.carrier, '송장번호': tInfo.tracking })
@@ -200,17 +239,6 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
         '택배사': o.carrier ?? '', '송장번호': digitsOnly(o.tracking_number),
       })
     })
-  }
-  // 토스쇼핑: 1행 빈 행 / 2행 헤더 / 3행~ 데이터
-  if (mallId === 'tossshopping' && rows.length > 0) {
-    const headers = Object.keys(rows[0])
-    const aoa: unknown[][] = [
-      [],        // 1번 행: 빈 행
-      headers,   // 2번 행: 헤더
-      ...rows.map(r => headers.map(h => r[h] ?? '')),  // 3번 행~: 데이터
-    ]
-    triggerExcelDownloadNoHeader(aoa, `${mallLabel}_송장_${todayStr()}.xlsx`)
-    return
   }
   triggerExcelDownload(rows, `${mallLabel}_송장_${todayStr()}.xlsx`)
 }

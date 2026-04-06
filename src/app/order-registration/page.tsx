@@ -52,6 +52,9 @@ interface DayData {
   date: string
   orders: RegOrder[]
   raw_rows?: Record<string, unknown>[]  // 원본 Excel 행 (송장전송 파일 재생성용)
+  /** 토스쇼핑 주문배송관리 양식: 시트 전체(헤더 1~4행 + 데이터) 보존 — 송장 다운로드 시 동일 양식 유지 */
+  toss_raw_aoa?: unknown[][]
+  toss_sheet_name?: string
   uploaded_at: string
 }
 
@@ -229,32 +232,55 @@ function loadCachedProductsForPrice(): CachedProductPrice[] {
   return []
 }
 
-/* ─── 토스쇼핑 전용 파싱 ─────────────────────────────────── */
-function parseTossShoppingRow(row: Record<string, unknown>, idx: number): RegOrder {
-  const orderNum = String(row['주문번호'] ?? `AUTO-TOSS-${Date.now()}-${idx}`)
+/* ─── 토스쇼핑 주문배송관리 양식 (2026~): 열 H,K,P,Q,R,T,V,AA 및 주문번호(B) 등
+   열(0부터): A=0 … H=7 상품명, K=10 옵션명, P=15 구매자명, Q=16 구매자연락처, R=17 수령인명,
+   T=19 배송지, V=21 주문요청사항, AA=26 주문금액. 데이터는 5행(인덱스 4)~ ── */
+const TOSS_COL = {
+  주문일시: 0, 주문번호: 1, 주문상품번호: 2, 주문건수: 12,
+  상품명: 7, 옵션명: 10, 구매자명: 15, 구매자연락처: 16, 수령인명: 17,
+  수령인연락처: 18, 배송지: 19, 주문요청사항: 21, 주문금액: 26,
+  택배사: 5, 송장번호: 6,
+} as const
+
+function parseTossShoppingAoaRow(row: unknown[], idx: number): RegOrder {
+  const orderNum = String(row[TOSS_COL.주문번호] ?? '').trim()
+  const amountRaw = row[TOSS_COL.주문금액]
+  const amount =
+    typeof amountRaw === 'number'
+      ? amountRaw
+      : parseFloat(String(amountRaw ?? '0').replace(/,/g, '')) || 0
+  const qty = Number(row[TOSS_COL.주문건수] ?? 1) || 1
+  const unitPrice = qty > 0 ? amount / qty : amount
+
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
     order_number: orderNum,
-    customer_name:    String(row['수령인명'] ?? row['구매자명'] ?? '-'),
-    customer_phone:   String(row['수령인 연락처'] ?? row['구매자 연락처'] ?? ''),
-    shipping_address: String(row['주소'] ?? ''),
+    customer_name:
+      String(row[TOSS_COL.수령인명] ?? row[TOSS_COL.구매자명] ?? '-'),
+    customer_phone: String(row[TOSS_COL.수령인연락처] ?? row[TOSS_COL.구매자연락처] ?? ''),
+    shipping_address: String(row[TOSS_COL.배송지] ?? ''),
     items: [{
-      product_name: String(row['상품명'] ?? '-'),
-      sku:          String(row['옵션코드'] ?? row['상품코드'] ?? ''),
-      quantity:     Number(row['수량'] ?? 1),
-      unit_price:   Number(row['거래금액'] ?? 0),
-      option:       String(row['옵션'] ?? ''),
+      product_name: String(row[TOSS_COL.상품명] ?? '-'),
+      sku:          String(row[TOSS_COL.주문상품번호] ?? ''),
+      quantity:     qty,
+      unit_price:   unitPrice,
+      option:       String(row[TOSS_COL.옵션명] ?? ''),
     }],
-    total_amount: Number(row['거래금액'] ?? 0),
+    total_amount: amount,
     status: 'pending',
-    memo: String(row['요청사항'] ?? ''),
+    memo: String(row[TOSS_COL.주문요청사항] ?? ''),
     extra_data: {
-      import_source:   '토스쇼핑',
-      주문번호:        orderNum,
-      주문상품번호:    String(row['주문상품번호'] ?? ''),
-      우편번호:        String(row['우편번호'] ?? ''),
-      발송기한:        String(row['발송기한'] ?? ''),
-      택배사코드:      String(row['택배사코드'] ?? ''),
+      import_source: '토스쇼핑',
+      주문번호: orderNum,
+      주문상품번호: String(row[TOSS_COL.주문상품번호] ?? ''),
+      토스_H_상품명: String(row[TOSS_COL.상품명] ?? ''),
+      토스_K_옵션명: String(row[TOSS_COL.옵션명] ?? ''),
+      토스_P_구매자명: String(row[TOSS_COL.구매자명] ?? ''),
+      토스_Q_구매자연락처: String(row[TOSS_COL.구매자연락처] ?? ''),
+      토스_R_수령인명: String(row[TOSS_COL.수령인명] ?? ''),
+      토스_T_배송지: String(row[TOSS_COL.배송지] ?? ''),
+      토스_V_주문요청사항: String(row[TOSS_COL.주문요청사항] ?? ''),
+      토스_AA_주문금액: String(row[TOSS_COL.주문금액] ?? ''),
     },
   }
 }
@@ -626,7 +652,6 @@ export default function OrderRegistrationPage() {
       try {
         const wb   = XLSX.read(ev.target?.result, { type: 'array', cellDates: true })
         const ws   = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
         const mallLabel      = MALLS.find(m => m.id === selectedMall)!.label
         const isMarketPlus   = selectedMall === 'marketplus'
         const isTossShopping = selectedMall === 'tossshopping'
@@ -637,10 +662,27 @@ export default function OrderRegistrationPage() {
           ? (XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][])
           : null
 
-        if (rows.length === 0) {
-          setImportMsg({ text: '엑셀에 데이터가 없습니다.', ok: false })
-          setImporting(false)
-          return
+        let rows: Record<string, unknown>[] = []
+        let tossRawAoa: unknown[][] | undefined
+        let tossSheetName: string | undefined
+
+        if (isTossShopping) {
+          tossSheetName = wb.SheetNames[0] || '주문내역'
+          tossRawAoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][]
+          if (tossRawAoa.length < 5) {
+            setImportMsg({ text: '토스쇼핑 주문배송관리 양식: 5행부터 데이터가 필요합니다.', ok: false })
+            setImporting(false)
+            if (fileRef.current) fileRef.current.value = ''
+            return
+          }
+        } else {
+          rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
+          if (rows.length === 0) {
+            setImportMsg({ text: '엑셀에 데이터가 없습니다.', ok: false })
+            setImporting(false)
+            if (fileRef.current) fileRef.current.value = ''
+            return
+          }
         }
 
         const uploadedAt     = new Date().toISOString()
@@ -648,23 +690,53 @@ export default function OrderRegistrationPage() {
         // 마켓플러스: 자동 매핑 수집
         const autoMappingUpdates: Record<string, string> = {}
 
-        const orders: RegOrder[] = rows.map((row, idx) => {
-          if (isMarketPlus) {
-            const { order, autoMappingKey, autoMappingAbbr } = parseMarketPlusRow(row, idx, today)
-            if (autoMappingKey && autoMappingAbbr) {
-              autoMappingUpdates[autoMappingKey] = autoMappingAbbr
+        let orders: RegOrder[] = []
+        let tossSyntheticRaw: Record<string, unknown>[] = []
+
+        if (isTossShopping && tossRawAoa) {
+          for (let i = 4; i < tossRawAoa.length; i++) {
+            const line = tossRawAoa[i] as unknown[]
+            if (!line?.length) continue
+            const orderNum = String(line[TOSS_COL.주문번호] ?? '').trim()
+            if (!orderNum) continue
+            orders.push(parseTossShoppingAoaRow(line, i))
+            tossSyntheticRaw.push({
+              주문번호: line[TOSS_COL.주문번호],
+              주문상품번호: line[TOSS_COL.주문상품번호],
+              상품명: line[TOSS_COL.상품명],
+              옵션명: line[TOSS_COL.옵션명],
+              구매자명: line[TOSS_COL.구매자명],
+              '구매자 연락처': line[TOSS_COL.구매자연락처],
+              수령인명: line[TOSS_COL.수령인명],
+              배송지: line[TOSS_COL.배송지],
+              주문요청사항: line[TOSS_COL.주문요청사항],
+              주문금액: line[TOSS_COL.주문금액],
+            })
+          }
+          if (orders.length === 0) {
+            setImportMsg({ text: '토스쇼핑: 유효한 주문번호(B열)가 있는 데이터 행이 없습니다.', ok: false })
+            setImporting(false)
+            if (fileRef.current) fileRef.current.value = ''
+            return
+          }
+        } else {
+          orders = rows.map((row, idx) => {
+            if (isMarketPlus) {
+              const { order, autoMappingKey, autoMappingAbbr } = parseMarketPlusRow(row, idx, today)
+              if (autoMappingKey && autoMappingAbbr) {
+                autoMappingUpdates[autoMappingKey] = autoMappingAbbr
+              }
+              return order
             }
-            return order
-          }
-          if (isTossShopping) return parseTossShoppingRow(row, idx)
-          if (isAlways) {
-            const nCell = alwaysAoa?.[idx + 1]?.[13]
-            return parseAlwaysRow(row, idx, nCell)
-          }
-          if (isGSShop)       return parseGSShopRow(row, idx)
-          if (isJasonDeal)    return parseJasonDealRow(row, idx)
-          return parseGenericRow(row, idx, today, mallLabel)
-        })
+            if (isAlways) {
+              const nCell = alwaysAoa?.[idx + 1]?.[13]
+              return parseAlwaysRow(row, idx, nCell)
+            }
+            if (isGSShop)       return parseGSShopRow(row, idx)
+            if (isJasonDeal)    return parseJasonDealRow(row, idx)
+            return parseGenericRow(row, idx, today, mallLabel)
+          })
+        }
 
         // 판매가 = 0 인 항목: 상품관리 캐시에서 채널 판매가 보정
         const cachedProds = loadCachedProductsForPrice()
@@ -699,7 +771,9 @@ export default function OrderRegistrationPage() {
           mall: selectedMall,
           date: today,
           orders,
-          raw_rows: rows,  // 원본 행 저장 (송장전송 파일 재생성용)
+          raw_rows: isTossShopping ? tossSyntheticRaw : rows,
+          toss_raw_aoa: tossRawAoa,
+          toss_sheet_name: tossSheetName,
           uploaded_at: uploadedAt,
         }
         saveDayData(newData)
