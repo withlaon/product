@@ -1584,7 +1584,14 @@ export default function ProductsPage() {
       const addSuccess = (rawData: unknown) => {
         const row = Array.isArray(rawData) ? rawData[0] : rawData
         const p = rowToProduct(row as Record<string, unknown>)
-        setProducts(prev => [...prev, p].sort((a, b) => a.code.localeCompare(b.code)))
+        setProducts(prev => {
+          const next = [...prev, p].sort((a, b) => a.code.localeCompare(b.code))
+          try {
+            localStorage.setItem(PRODUCTS_CACHE_KEY, JSON.stringify({ ts: Date.now(), data: next }))
+          } catch { /* ignore */ }
+          return next
+        })
+        broadcastPmProductsQtySync()
         if (cat && cat !== '전체' && !extraCats.includes(cat)) setExtraCats(prev => { const u=[...prev,cat]; saveCats(u); return u })
         setIsAdd(false); setForm(INIT_FORM)
       }
