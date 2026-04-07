@@ -165,25 +165,51 @@ export default function PurchaseManagePage() {
     setMappings(loadMappings())
   }, [loadPurchases, loadProducts])
 
-  /* 출고확정 등 출고 저장소 변경 시 추천 목록 판매 수 즉시 반영 */
+  /* 출고·매핑·상품 캐시 변경 시 발주 추천 목록 실시간 반영 (상품관리 판매예정 등) */
   useEffect(() => {
-    const bump = () => {
+    const bumpShip = () => {
       setShippedOrders(loadShippedOrders())
       setMappings(loadMappings())
     }
-    window.addEventListener(DASHBOARD_REFRESH_EVENT, bump)
+    const applyProductsFromStorage = () => {
+      try {
+        const raw = localStorage.getItem(SHARED_CACHE_KEY)
+        if (!raw) {
+          void loadProducts(true)
+          return
+        }
+        const { data } = JSON.parse(raw) as { data?: unknown }
+        if (Array.isArray(data) && data.length > 0) {
+          setProducts(data as PmProduct[])
+          return
+        }
+      } catch { /* ignore */ }
+      void loadProducts(true)
+    }
+
+    window.addEventListener(DASHBOARD_REFRESH_EVENT, bumpShip)
     const onStorage = (e: StorageEvent) => {
-      if (e.key === SHIPPED_ORDERS_KEY || e.key === 'pm_product_mapping_v1') bump()
+      if (e.key === SHIPPED_ORDERS_KEY || e.key === 'pm_product_mapping_v1') bumpShip()
+      if (e.key === SHARED_CACHE_KEY || e.key === 'pm_products_mapping_signal') {
+        applyProductsFromStorage()
+      }
     }
     window.addEventListener('storage', onStorage)
-    const onVis = () => { if (document.visibilityState === 'visible') bump() }
+    window.addEventListener('pm_products_cache_sync', applyProductsFromStorage)
+    const onVis = () => {
+      if (document.visibilityState === 'visible') {
+        bumpShip()
+        applyProductsFromStorage()
+      }
+    }
     document.addEventListener('visibilitychange', onVis)
     return () => {
-      window.removeEventListener(DASHBOARD_REFRESH_EVENT, bump)
+      window.removeEventListener(DASHBOARD_REFRESH_EVENT, bumpShip)
       window.removeEventListener('storage', onStorage)
+      window.removeEventListener('pm_products_cache_sync', applyProductsFromStorage)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [])
+  }, [loadProducts])
 
   // selectedOpts가 바뀔 때마다 localStorage에 저장
   useEffect(() => {

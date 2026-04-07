@@ -1662,7 +1662,10 @@ export default function ProductsPage() {
           return u
         })
         const updated = next.find(p => p.id === id)
-        if (updated) patchProductInPmProductsCache(updated)
+        if (updated) {
+          patchProductInPmProductsCache(updated)
+          broadcastPmProductsQtySync()
+        }
         return next
       })
     }
