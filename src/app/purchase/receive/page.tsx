@@ -129,6 +129,7 @@ export default function ReceiveManagePage() {
   const [miSelected,    setMiSelected]    = useState<Set<string>>(new Set())
   const [miQtys,        setMiQtys]        = useState<Record<string, string>>({})
   const [loadedImages,  setLoadedImages]  = useState<Record<string, string>>({})
+  const [optImageFetchGen, setOptImageFetchGen] = useState(0)
 
   /* ── 데이터 로드 ── */
   const loadPurchases = useCallback(async () => {
@@ -160,7 +161,10 @@ export default function ReceiveManagePage() {
 
   /* ── 상품관리탭 발주·입고 변경 → 미입고 내역 실시간 반영 ── */
   useEffect(() => {
-    const reload = () => { void loadProducts(true) }
+    const reload = () => {
+      setOptImageFetchGen(n => n + 1)
+      void loadProducts(true)
+    }
     const onStorage = (e: StorageEvent) => {
       if (
         e.key === PM_PRODUCTS_CACHE_SYNC_KEY ||
@@ -289,7 +293,7 @@ export default function ReceiveManagePage() {
       for (const chunk of chunks) {
         if (cancelled) break
         try {
-          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
+          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`, { cache: 'no-store' })
           if (!res.ok || cancelled) continue
           const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
           if (!Array.isArray(data)) continue
@@ -303,7 +307,7 @@ export default function ReceiveManagePage() {
       }
     })()
     return () => { cancelled = true }
-  }, [imageProdIdsKey])
+  }, [imageProdIdsKey, optImageFetchGen])
 
   /* ── 입고확정 ── */
   const handleConfirm = async () => {

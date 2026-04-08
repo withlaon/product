@@ -3,10 +3,15 @@ import { NextRequest, NextResponse } from 'next/server'
 export const runtime = 'nodejs'
 export const maxDuration = 55   // Disk IO 스로틀 상태에서 충분한 시간
 
+export const dynamic = 'force-dynamic'
+
 const SUPABASE_URL  = (process.env.NEXT_PUBLIC_SUPABASE_URL  ?? '').trim()
 const SERVICE_KEY   = (process.env.SUPABASE_SERVICE_ROLE_KEY ?? '').trim()
 const TABLE         = 'pm_products'
 const TIMEOUT_MS    = 50000  // Disk IO 고갈 상태 대응: 50s
+
+/** 옵션 이미지 배치 조회(?imageIds)는 저장 직후 다른 탭에서도 최신 URL이 필요하므로 캐시하지 않음 */
+const NO_STORE = { 'Cache-Control': 'no-store, must-revalidate' } as const
 
 /** AbortController + timeout 을 붙인 native fetch */
 async function sbFetch(path: string, init: RequestInit = {}): Promise<Response> {
@@ -74,15 +79,13 @@ export async function GET(req: NextRequest) {
         {
           headers: imgHeaders,
           signal: AbortSignal.timeout(TIMEOUT_MS),
-          next: { revalidate: 3600 }, // Vercel 엣지 캐시: 1시간
+          cache: 'no-store',
         }
       ).catch(() => null)
 
-      if (!imgRes || !imgRes.ok) return NextResponse.json([])
+      if (!imgRes || !imgRes.ok) return NextResponse.json([], { headers: NO_STORE })
       const data = await imgRes.json()
-      return NextResponse.json(Array.isArray(data) ? data : [], {
-        headers: { 'Cache-Control': 'public, max-age=3600, stale-while-revalidate=600' },
-      })
+      return NextResponse.json(Array.isArray(data) ? data : [], { headers: NO_STORE })
     }
 
     // RPC 함수 우선 시도 (statement_timeout 120s 설정됨 → 57014 오류 우회)

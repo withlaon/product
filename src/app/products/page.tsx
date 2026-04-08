@@ -687,6 +687,23 @@ async function uploadToStorage(base64: string, path: string): Promise<string | n
   }
 }
 
+/** 등록·수정 저장 시 data: URL 을 스토리지 public URL 로 치환 (다른 탭·목록 API와 동일하게 동작) */
+async function persistDataUrlOptionImages(productId: string, options: ProductOption[]): Promise<ProductOption[]> {
+  return Promise.all(
+    options.map(async (o, idx) => {
+      const img = o.image ?? ''
+      if (!img.startsWith('data:')) return o
+      try {
+        const compressed = await compressImage(img, 200, 0.7)
+        const path = `${productId}/${idx}_${Date.now()}.jpg`
+        const url = await uploadToStorage(compressed, path)
+        if (url) return { ...o, image: url }
+      } catch { /* keep base64 if upload fails */ }
+      return o
+    })
+  )
+}
+
 /* ─── 옵션 이미지 파일→압축 base64 (상품 등록 폼용) ─────────── */
 function useOptImageUpload(setForm: React.Dispatch<React.SetStateAction<typeof INIT_FORM>>) {
   return (idx: number, file: File) => {
@@ -943,7 +960,7 @@ export default function ProductsPage() {
       const product = products[i]
       try {
         // 이미지가 포함된 전체 옵션 조회 (캐시된 API 사용)
-        const res = await fetch(`${PM_API}?imageIds=${product.id}`)
+        const res = await fetch(`${PM_API}?imageIds=${product.id}`, { cache: 'no-store' })
         if (!res.ok) { totalErrors++; continue }
 
         const arr = await res.json() as Array<{ id: string; options?: Array<{ image?: string; [k: string]: unknown }> }>
@@ -1378,18 +1395,21 @@ export default function ProductsPage() {
     if (!editForm.code || !editForm.name || !cat) return
     setEditSaving(true)
     setEditSaveError('')
-    const options: ProductOption[] = editForm.options.filter(o => o.name).map(o => ({
-      name: o.name, size: o.size ?? 'FREE',
-      korean_name: o.korean_name || getKoreanColor(o.name),
-      chinese_name: o.chinese_name,
-      barcode: o.barcode || genBarcode(editForm.code, o.name),
-      image: o.image,
-      ordered: Number(o.ordered) || 0,
-      received: Number(o.received) || 0,
-      sold: Number(o.sold) || 0,
-      current_stock: o.current_stock !== undefined ? Number(o.current_stock) : 0,
-      defective: Number(o.defective) || 0,
-    }))
+    const options: ProductOption[] = await persistDataUrlOptionImages(
+      isEdit.id,
+      editForm.options.filter(o => o.name).map(o => ({
+        name: o.name, size: o.size ?? 'FREE',
+        korean_name: o.korean_name || getKoreanColor(o.name),
+        chinese_name: o.chinese_name,
+        barcode: o.barcode || genBarcode(editForm.code, o.name),
+        image: o.image,
+        ordered: Number(o.ordered) || 0,
+        received: Number(o.received) || 0,
+        sold: Number(o.sold) || 0,
+        current_stock: o.current_stock !== undefined ? Number(o.current_stock) : 0,
+        defective: Number(o.defective) || 0,
+      }))
+    )
     const todayReg = pmTodayLocalStr()
     const prevSince = (isEdit.active_since && String(isEdit.active_since).trim()) || null
     let activeSinceOut: string | null = prevSince
@@ -1525,8 +1545,8 @@ export default function ProductsPage() {
     }
     if (toFetch.length === 0) return
 
-    // 미캐시 상품: 1번 배치 API 호출 (service role, Vercel 엣지 캐시 적용)
-    fetch(`${PM_API}?imageIds=${toFetch.join(',')}`)
+    // 미캐시 상품: 배치 API (캐시 없음 — 저장 직후 최신 이미지 URL)
+    fetch(`${PM_API}?imageIds=${toFetch.join(',')}`, { cache: 'no-store' })
       .then(res => res.ok ? res.json() : [])
       .then((data: Array<{ id: string; options?: Array<{ image?: string }> }>) => {
         if (cancelled || !Array.isArray(data)) return
@@ -1580,9 +1600,18 @@ export default function ProductsPage() {
         promo_text: form.promo_text ?? '',
         ...(form.status === 'active' ? { active_since: todayReg } : {}),
       }
-      const addSuccess = (rawData: unknown) => {
+      const finalizeAdd = async (rawData: unknown) => {
         const row = Array.isArray(rawData) ? rawData[0] : rawData
-        const p = rowToProduct(row as Record<string, unknown>)
+        let p = rowToProduct(row as Record<string, unknown>)
+        const normalized = await persistDataUrlOptionImages(p.id, p.options)
+        const changed = normalized.some((o, i) => (o.image ?? '') !== (p.options[i]?.image ?? ''))
+        if (changed) {
+          const { error: uErr } = await supabase.from('pm_products').update({ options: normalized }).eq('id', p.id)
+          if (!uErr) p = { ...p, options: normalized }
+        }
+        const imgs = p.options.map(o => o.image ?? '')
+        mergeImgCache({ [p.id]: imgs })
+        setPageImages(prev => ({ ...prev, [p.id]: imgs }))
         setProducts(prev => {
           const next = [...prev, p].sort((a, b) => a.code.localeCompare(b.code))
           try {
@@ -1601,7 +1630,7 @@ export default function ProductsPage() {
         if (code === '22P02' || error.includes('integer')) {
           const { data: d2, error: e2 } = await pmInsert({ ...payload, cost_price: Math.round(costPriceVal) })
           if (e2) { setAddDbError(`등록 실패: ${e2}`); return }
-          addSuccess(d2); return
+          await finalizeAdd(d2); return
         }
         // 알 수 없는 컬럼 오류 시 최소 페이로드로 재시도
         if (error.includes('42703') || error.includes('column') || code === '42703') {
@@ -1609,12 +1638,12 @@ export default function ProductsPage() {
           if (form.status === 'active') minPayload.active_since = todayReg
           const { data: d2, error: e2 } = await pmInsert(minPayload)
           if (e2) { setAddDbError(`등록 실패: ${e2}`); return }
-          addSuccess(d2); return
+          await finalizeAdd(d2); return
         }
         setAddDbError(`등록 실패: ${error}`)
         return
       }
-      addSuccess(data)
+      await finalizeAdd(data)
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e)
       setAddDbError(`등록 실패: ${msg}`)

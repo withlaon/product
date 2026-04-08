@@ -99,6 +99,7 @@ function MonthNav({ month, setMonth }: { month: string; setMonth: (m: string) =>
 export default function PurchaseMainPage() {
   const [purchases,    setPurchases]    = useState<Purchase[]>([])
   const [products,     setProducts]     = useState<FP[]>([])
+  const [optImageFetchGen, setOptImageFetchGen] = useState(0)
   const [exchangeRate, setExchangeRate] = useState(DEFAULT_EXCHANGE_RATE)
 
   /* 좌측: 발주 목록 */
@@ -135,17 +136,26 @@ export default function PurchaseMainPage() {
     loadPurchases()
     const onVisible = () => { if (document.visibilityState === 'visible') loadPurchases() }
     const onStorage = (e: StorageEvent) => {
-      if (e.key === CACHE_KEY) setProducts(loadCachedProducts())
+      if (e.key === CACHE_KEY) {
+        setProducts(loadCachedProducts())
+        setOptImageFetchGen(n => n + 1)
+      }
       if (e.key === 'pm_exchange_rate') {
         const er = Number(e.newValue)
         if (er > 0) setExchangeRate(er)
       }
     }
+    const onPmProductsSync = () => {
+      setProducts(loadCachedProducts())
+      setOptImageFetchGen(n => n + 1)
+    }
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('storage', onStorage)
+    window.addEventListener('pm_products_cache_sync', onPmProductsSync)
     return () => {
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('storage', onStorage)
+      window.removeEventListener('pm_products_cache_sync', onPmProductsSync)
     }
   }, [loadPurchases])
 
@@ -360,7 +370,7 @@ export default function PurchaseMainPage() {
       for (const chunk of chunks) {
         if (cancelled) break
         try {
-          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
+          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`, { cache: 'no-store' })
           if (!res.ok || cancelled) continue
           const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
           if (!Array.isArray(data)) continue
@@ -376,7 +386,7 @@ export default function PurchaseMainPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [poListImageProdIdsKey])
+  }, [poListImageProdIdsKey, optImageFetchGen])
 
   /* ── 미입고 리스트: 미입고 수량이 있는 품목을 바코드 오름차순으로 flatten ── */
   const miItems = useMemo(() => {
@@ -433,7 +443,7 @@ export default function PurchaseMainPage() {
       for (const chunk of chunks) {
         if (cancelled) break
         try {
-          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
+          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`, { cache: 'no-store' })
           if (!res.ok || cancelled) continue
           const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
           if (!Array.isArray(data)) continue
@@ -448,7 +458,7 @@ export default function PurchaseMainPage() {
       }
     })()
     return () => { cancelled = true }
-  }, [miImageProdIdsKey])
+  }, [miImageProdIdsKey, optImageFetchGen])
 
   /* KPI */
   const poOrderedQty = useMemo(() =>

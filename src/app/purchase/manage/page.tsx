@@ -110,8 +110,10 @@ export default function PurchaseManagePage() {
   }, [])
 
   const [loadError, setLoadError] = useState('')
-  // 추천 목록 옵션이미지: 바코드 → base64 (별도 비동기 로딩)
+  // 추천 목록 옵션이미지: 바코드 → URL (별도 비동기 로딩)
   const [qualImages, setQualImages] = useState<Record<string, string>>({})
+  /** 상품 저장 시 동일 prodId 묶음이면 imageIds effect 가 재실행되지 않아 갱신용 */
+  const [qualImageNonce, setQualImageNonce] = useState(0)
   // 출고내역 + 매핑 (판매수량 계산용)
   const [shippedOrders, setShippedOrders] = useState<ShippedOrder[]>([])
   const [mappings,      setMappings]      = useState<MappingStore>({})
@@ -187,18 +189,26 @@ export default function PurchaseManagePage() {
       void loadProducts(true)
     }
 
+    const bumpQualImages = () => setQualImageNonce(n => n + 1)
+
     window.addEventListener(DASHBOARD_REFRESH_EVENT, bumpShip)
     const onStorage = (e: StorageEvent) => {
       if (e.key === SHIPPED_ORDERS_KEY || e.key === 'pm_product_mapping_v1') bumpShip()
       if (e.key === SHARED_CACHE_KEY || e.key === 'pm_products_mapping_signal') {
+        bumpQualImages()
         applyProductsFromStorage()
       }
     }
     window.addEventListener('storage', onStorage)
-    window.addEventListener('pm_products_cache_sync', applyProductsFromStorage)
+    const onPmProductsSync = () => {
+      bumpQualImages()
+      applyProductsFromStorage()
+    }
+    window.addEventListener('pm_products_cache_sync', onPmProductsSync)
     const onVis = () => {
       if (document.visibilityState === 'visible') {
         bumpShip()
+        bumpQualImages()
         applyProductsFromStorage()
       }
     }
@@ -206,7 +216,7 @@ export default function PurchaseManagePage() {
     return () => {
       window.removeEventListener(DASHBOARD_REFRESH_EVENT, bumpShip)
       window.removeEventListener('storage', onStorage)
-      window.removeEventListener('pm_products_cache_sync', applyProductsFromStorage)
+      window.removeEventListener('pm_products_cache_sync', onPmProductsSync)
       document.removeEventListener('visibilitychange', onVis)
     }
   }, [loadProducts])
@@ -396,7 +406,7 @@ export default function PurchaseManagePage() {
       for (const chunk of chunks) {
         if (cancelled) break
         try {
-          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`)
+          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`, { cache: 'no-store' })
           if (!res.ok || cancelled) continue
           const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
           if (!Array.isArray(data)) continue
@@ -414,7 +424,7 @@ export default function PurchaseManagePage() {
       }
     })()
     return () => { cancelled = true }
-  }, [qualProdIdsKey])
+  }, [qualProdIdsKey, qualImageNonce])
 
   const selectedKeys = useMemo(() => new Set(selectedOpts.map(s => s.key)), [selectedOpts])
   const selectedOptsSorted = useMemo(
