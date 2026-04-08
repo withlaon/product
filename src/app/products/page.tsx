@@ -1017,13 +1017,20 @@ export default function ProductsPage() {
   const [specialNotes, setSpecialNotes] = useState<Record<string, SpecialNote>>({})
   useEffect(() => { setSpecialNotes(loadSpecialNotes()) }, [])
 
-  /* ── 판매중만: 모든 옵션 재고=0 이면 자동 품절 (판매예정·전송준비 등은 재고 0이어도 상태 유지) ── */
+  /* ── 판매중만: 모든 옵션 재고=0 이면 자동 품절
+      판매예정·전송준비·품절·삭제예정은 재고와 무관하게 절대 자동 변경하지 않음 (직접 상태 수정만 허용) ── */
+  const STATUSES_NEVER_AUTO_TO_SOLDOUT: ReadonlySet<ProductStatus> = new Set([
+    'upcoming', 'ready_to_ship', 'soldout', 'pending_delete',
+  ])
   const autoMarkSoldout = async (loaded: Product[]) => {
-    const toSoldout = loaded.filter(p =>
-      p.status === 'active' &&
-      p.options.length > 0 &&
-      p.options.every(o => optStock(o) === 0)
-    )
+    const toSoldout = loaded.filter(p => {
+      if (STATUSES_NEVER_AUTO_TO_SOLDOUT.has(p.status)) return false
+      return (
+        p.status === 'active' &&
+        p.options.length > 0 &&
+        p.options.every(o => optStock(o) === 0)
+      )
+    })
     if (toSoldout.length === 0) return
     await Promise.all(toSoldout.map(p => pmPatch(p.id, { status: 'soldout' })))
     setProducts(prev => prev.map(p =>
@@ -2033,6 +2040,13 @@ export default function ProductsPage() {
 
     for (const [code, { rows, sheetRowStart }] of map.entries()) {
       const first = rows[0]
+      const existing = products.find(p => p.code === code)
+      const statusCell = String(first['상태'] || '').trim()
+      const parsedStatus = statusCell ? statusMap[statusCell] : undefined
+      /** 기존 행: 엑셀에 상태가 비어 있으면 DB 상태 유지 (판매예정이 active로 덮어써져 자동 품절되는 것 방지) */
+      const resolvedStatus: ProductStatus = existing
+        ? (parsedStatus !== undefined ? parsedStatus : existing.status)
+        : (parsedStatus ?? 'active')
       const options: ProductOption[] = rows
         .filter(r => String(r['옵션코드'] || '').trim())
         .map((r, ri) => {
@@ -2062,7 +2076,7 @@ export default function ProductsPage() {
         loca: String(first['LOCA'] || ''),
         cost_price: Number(first['원가']) || 0,
         cost_currency: (String(first['통화'] || 'CNY') as CostCurrency),
-        status: statusMap[String(first['상태'] || '')] || 'active' as ProductStatus,
+        status: resolvedStatus,
         supplier: String(first['구매처'] || ''),
         options,
         channel_prices: [] as ChannelPrice[],
@@ -2077,7 +2091,6 @@ export default function ProductsPage() {
       // 22P02(invalid input syntax for integer) 오류 시 반올림 후 재시도
       const payloadIntCost = { ...payload, cost_price: Math.round(payload.cost_price) }
 
-      const existing = products.find(p => p.code === code)
       if (existing) {
         let { error, code: errCode } = await pmPatch(existing.id, payload)
         if (error) {
