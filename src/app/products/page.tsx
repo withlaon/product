@@ -1571,9 +1571,11 @@ export default function ProductsPage() {
   const handleAdd = async () => {
     const cat = form.category === '__new__' ? form.newCat.trim() : form.category
     const errors = new Set<string>()
-    if (!form.code.trim()) errors.add('code')
+    const codeTrim = form.code.trim()
+    if (!codeTrim) errors.add('code')
     if (!form.name.trim()) errors.add('name')
     if (!cat) errors.add('category')
+    if (codeTrim && products.some(p => (p.code || '').trim() === codeTrim)) errors.add('code_dup')
     if (errors.size > 0) { setAddErrors(errors); return }
     setAddErrors(new Set())
     setAddDbError('')
@@ -1590,7 +1592,7 @@ export default function ProductsPage() {
       const costPriceVal = Number(form.cost_price) || 0
       const todayReg = pmTodayLocalStr()
       const payload = {
-        code: form.code.trim(), name: form.name.trim(), abbr: form.abbr.trim(), category: cat, loca: form.loca,
+        code: codeTrim, name: form.name.trim(), abbr: form.abbr.trim(), category: cat, loca: form.loca,
         cost_price: costPriceVal,
         cost_currency: form.cost_currency,
         status: form.status, supplier: form.supplier,
@@ -2906,10 +2908,10 @@ export default function ProductsPage() {
           <div>
             <Label>상품코드 *</Label>
             <Input placeholder="WA5AC001" value={form.code}
-              style={addErrors.has('code') ? { borderColor:'#ef4444', outline:'none' } : undefined}
+              style={(addErrors.has('code') || addErrors.has('code_dup')) ? { borderColor:'#ef4444', outline:'none' } : undefined}
               onChange={e => {
                 const newCode = e.target.value
-                setAddErrors(prev => { const n = new Set(prev); n.delete('code'); return n })
+                setAddErrors(prev => { const n = new Set(prev); n.delete('code'); n.delete('code_dup'); return n })
                 setForm(f => ({
                   ...f,
                   code: newCode,
@@ -2918,6 +2920,7 @@ export default function ProductsPage() {
               }}
             />
             {addErrors.has('code') && <p style={{ fontSize:11, color:'#ef4444', marginTop:3 }}>상품코드를 입력해주세요</p>}
+            {addErrors.has('code_dup') && <p style={{ fontSize:11, color:'#ef4444', marginTop:3 }}>이미 등록된 상품코드입니다. 다른 코드를 입력해주세요.</p>}
           </div>
           <div>
             <Label>상품명 *</Label>
