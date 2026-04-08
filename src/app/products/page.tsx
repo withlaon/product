@@ -1000,11 +1000,10 @@ export default function ProductsPage() {
   const [specialNotes, setSpecialNotes] = useState<Record<string, SpecialNote>>({})
   useEffect(() => { setSpecialNotes(loadSpecialNotes()) }, [])
 
-  /* ── 전체 옵션 재고=0 상품 자동 품절 처리 ── */
+  /* ── 판매중만: 모든 옵션 재고=0 이면 자동 품절 (판매예정·전송준비 등은 재고 0이어도 상태 유지) ── */
   const autoMarkSoldout = async (loaded: Product[]) => {
     const toSoldout = loaded.filter(p =>
-      p.status !== 'soldout' &&
-      p.status !== 'pending_delete' &&
+      p.status === 'active' &&
       p.options.length > 0 &&
       p.options.every(o => optStock(o) === 0)
     )
