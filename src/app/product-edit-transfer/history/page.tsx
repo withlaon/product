@@ -5,12 +5,12 @@ import * as XLSX from 'xlsx'
 import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, PackageCheck, FileDown, Pencil, Check, X, Search, HeadphonesIcon, AlertTriangle, Clock, RefreshCw, TrendingDown, Wand2, Zap } from 'lucide-react'
 import {
   loadShippedOrders, saveShippedOrders, removeShippedOrdersByIds,
-  loadOrders, saveOrders, isVisibleInShippingHistory,
+  loadOrders, saveOrders, isVisibleInShippingHistory, isShippedOrderDelivered,
   loadMappings, saveMappings, lookupMapping, makeMappingKey, extractColor,
   resolveMappedBarcode, MAPPING_KEY, SHIPPED_ORDERS_KEY,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
-import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
+import { broadcastDashboardRefresh, broadcastPmProductsCacheSync } from '@/lib/dashboard-sync'
 
 /* ─── CS 타입 & 헬퍼 ────────────────────────────────────── */
 type CsType   = 'return' | 'exchange'
@@ -89,11 +89,103 @@ function loadCachedProducts(): CachedProduct[] {
 }
 function saveCachedProducts(products: CachedProduct[]) {
   try {
+    let ts = Date.now()
     const raw = localStorage.getItem('pm_products_cache_v1')
-    if (!raw) return
-    const parsed = JSON.parse(raw)
-    localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ...parsed, data: products }))
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw) as { ts?: number }
+        if (typeof parsed.ts === 'number') ts = parsed.ts
+      } catch { /* ignore */ }
+    }
+    localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts, data: products }))
   } catch {}
+}
+
+/** 출고 재고 반영용 — 목록 API(이미지 제외)로 최신 옵션·현재고 조회 */
+async function fetchPmProductsListForStock(): Promise<CachedProduct[]> {
+  try {
+    const res = await fetch(`/api/pm-products?t=${Date.now()}`, { cache: 'no-store' })
+    if (!res.ok) return loadCachedProducts()
+    const data = await res.json()
+    return Array.isArray(data) ? (data as CachedProduct[]) : loadCachedProducts()
+  } catch {
+    return loadCachedProducts()
+  }
+}
+
+/** 현재고만 갱신 — full=1 로 옵션 이미지 등 보존 후 PATCH */
+async function patchStockChangesToServer(
+  stockChanges: Record<string, Record<number, number>>,
+): Promise<{ ok: boolean; errors: string[] }> {
+  const errors: string[] = []
+  for (const pid of Object.keys(stockChanges)) {
+    const changes = stockChanges[pid]
+    if (!changes || Object.keys(changes).length === 0) continue
+    try {
+      const res = await fetch(`/api/pm-products?id=${encodeURIComponent(pid)}&full=1`)
+      if (!res.ok) {
+        errors.push(`${pid}: 조회 ${res.status}`)
+        continue
+      }
+      const row = (await res.json()) as { options?: CachedOption[] }
+      const opts = Array.isArray(row?.options) ? row.options : []
+      const patched = opts.map((o, i) =>
+        i in changes ? { ...o, current_stock: Math.max(0, changes[i]!) } : o,
+      )
+      const patchRes = await fetch('/api/pm-products', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: pid, options: patched }),
+      })
+      if (!patchRes.ok) {
+        const txt = await patchRes.text().catch(() => '')
+        errors.push(`${pid}: 저장 ${patchRes.status} ${txt.slice(0, 80)}`)
+      }
+    } catch (e) {
+      errors.push(`${pid}: ${e instanceof Error ? e.message : String(e)}`)
+    }
+  }
+  return { ok: errors.length === 0, errors }
+}
+
+/** 출고 건 수량만큼 현재고 차감 (상품 목록은 API에서 받은 배열 기준) */
+function runStockDeductionForOrders(orders: ShippedOrder[], products: CachedProduct[]) {
+  const currentMappings = loadMappings()
+  const stockChanges: Record<string, Record<number, number>> = {}
+  const notFound: string[] = []
+  const stockAppliedIds = new Set<string>()
+
+  for (const order of orders) {
+    const item = order.items[0]
+    if (!item) continue
+    const barcode = resolveMappedBarcode(currentMappings, item)
+    const bcNorm = barcode.trim()
+    if (!bcNorm) { notFound.push(item.product_name ?? '?'); continue }
+    let found = false
+    for (const product of products) {
+      product.options.forEach((opt, i) => {
+        if ((opt.barcode ?? '').trim() === bcNorm && !found) {
+          found = true
+          const cur = opt.current_stock !== undefined
+            ? opt.current_stock
+            : Math.max(0, (opt.received ?? 0) - (opt.sold ?? 0))
+          const qty = item.quantity ?? 1
+          if (!stockChanges[product.id]) stockChanges[product.id] = {}
+          stockChanges[product.id][i] = (stockChanges[product.id][i] ?? cur) - qty
+        }
+      })
+    }
+    if (found) stockAppliedIds.add(order.id)
+    else notFound.push(item.product_name ?? '?')
+  }
+
+  const updatedProducts = products.map(p => {
+    const changes = stockChanges[p.id]
+    if (!changes) return p
+    return { ...p, options: p.options.map((o, i) => i in changes ? { ...o, current_stock: Math.max(0, changes[i]!) } : o) }
+  })
+
+  return { stockChanges, updatedProducts, notFound, stockAppliedIds }
 }
 
 /* ─── 바코드 자동매칭 ────────────────────────────────────── */
@@ -346,6 +438,49 @@ export default function ShippingHistoryPage() {
     }
   }, [])
 
+  /** 당해 연도 4월·출고확정·미재고반영 건 1회 백필 → 상품관리 현재고·stock_applied 동기화 */
+  useEffect(() => {
+    const KEY = 'pm_april_ship_stock_backfill_v1'
+    void (async () => {
+      try {
+        if (typeof window === 'undefined' || localStorage.getItem(KEY) === 'done') return
+        const year = new Date().getFullYear()
+        const all = loadShippedOrders()
+        const backlog = all.filter(o => {
+          if (!isShippedOrderDelivered(o)) return false
+          if (o.stock_applied === true) return false
+          const raw = (o.shipped_at || o.order_date || '').trim()
+          if (!raw) return false
+          const d = new Date(raw)
+          if (Number.isNaN(d.getTime())) return raw.slice(0, 7) === `${year}-04`
+          return d.getFullYear() === year && d.getMonth() === 3
+        })
+        if (backlog.length === 0) {
+          localStorage.setItem(KEY, 'done')
+          return
+        }
+        const products = await fetchPmProductsListForStock()
+        if (products.length === 0) return
+        const { stockChanges, updatedProducts, stockAppliedIds } = runStockDeductionForOrders(backlog, products)
+        if (Object.keys(stockChanges).length === 0) {
+          localStorage.setItem(KEY, 'done')
+          return
+        }
+        const patchResult = await patchStockChangesToServer(stockChanges)
+        if (!patchResult.ok) return
+        saveCachedProducts(updatedProducts)
+        const idSet = new Set(backlog.map(o => o.id))
+        const merged = all.map(o =>
+          idSet.has(o.id) && stockAppliedIds.has(o.id) ? { ...o, stock_applied: true } : o,
+        )
+        saveShippedOrders(merged)
+        broadcastPmProductsCacheSync()
+        localStorage.setItem(KEY, 'done')
+        setShipped(merged.filter(isVisibleInShippingHistory))
+      } catch { /* ignore */ }
+    })()
+  }, [])
+
   /* 날짜/월별 필터 → 검색 */
   const displayOrders = useMemo(() => {
     let list: ShippedOrder[]
@@ -533,46 +668,6 @@ export default function ShippingHistoryPage() {
   /* ── 출고확정 실제 처리 ── */
   const [isConfirming, setIsConfirming] = useState(false)
 
-  /* ── 재고 차감 공통 로직 ── */
-  const runStockDeduction = (orders: ShippedOrder[]) => {
-    const currentMappings = loadMappings()
-    const products        = loadCachedProducts()
-    const stockChanges: Record<string, Record<number, number>> = {}
-    const notFound: string[] = []
-    const stockAppliedIds = new Set<string>()
-
-    orders.forEach(order => {
-      const item = order.items[0]
-      if (!item) return
-      const barcode = resolveMappedBarcode(currentMappings, item)
-      if (!barcode) { notFound.push(item.product_name ?? '?'); return }
-      let found = false
-      products.forEach(product => {
-        product.options.forEach((opt, i) => {
-          if (opt.barcode === barcode && !found) {
-            found = true
-            const cur = opt.current_stock !== undefined
-              ? opt.current_stock
-              : Math.max(0, (opt.received ?? 0) - (opt.sold ?? 0))
-            const qty = item.quantity ?? 1
-            if (!stockChanges[product.id]) stockChanges[product.id] = {}
-            stockChanges[product.id][i] = (stockChanges[product.id][i] ?? cur) - qty
-          }
-        })
-      })
-      if (found) stockAppliedIds.add(order.id)
-      else notFound.push(item.product_name ?? '?')
-    })
-
-    const updatedProducts = products.map(p => {
-      const changes = stockChanges[p.id]
-      if (!changes) return p
-      return { ...p, options: p.options.map((o, i) => i in changes ? { ...o, current_stock: Math.max(0, changes[i]) } : o) }
-    })
-
-    return { stockChanges, updatedProducts, notFound, stockAppliedIds }
-  }
-
   const doConfirmShipping = async (toConfirm: ShippedOrder[]) => {
     const mapsGuard = loadMappings()
     const noBarcode = toConfirm.filter(o => {
@@ -588,14 +683,21 @@ export default function ShippingHistoryPage() {
     }
     setIsConfirming(true)
     try {
-      const { stockChanges, updatedProducts, notFound, stockAppliedIds } = runStockDeduction(toConfirm)
+      const products = await fetchPmProductsListForStock()
+      if (products.length === 0) {
+        alert('상품 목록을 불러올 수 없습니다. 네트워크를 확인하거나 상품관리 탭에서 목록을 연 뒤 다시 시도해 주세요.')
+        return
+      }
+      const { stockChanges, updatedProducts, notFound, stockAppliedIds } = runStockDeductionForOrders(toConfirm, products)
 
       saveCachedProducts(updatedProducts)
-      await Promise.all(Object.keys(stockChanges).map(async pid => {
-        const p = updatedProducts.find(pp => pp.id === pid)
-        if (!p) return
-        await fetch('/api/pm-products', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ id: pid, options: p.options }) })
-      }))
+      const patchResult = await patchStockChangesToServer(stockChanges)
+      if (!patchResult.ok) {
+        alert(
+          `출고는 확정했으나 일부 상품의 DB 현재고 반영에 실패했습니다.\n${patchResult.errors.slice(0, 5).join('\n')}`,
+        )
+      }
+      broadcastPmProductsCacheSync()
       const all              = loadShippedOrders()
       const confirmedIds     = new Set(toConfirm.map(o => o.id))
       const updatedShipped   = all.map(o =>
@@ -659,18 +761,19 @@ export default function ShippingHistoryPage() {
 
     setIsConfirming(true)
     try {
-      const { stockChanges, updatedProducts, notFound, stockAppliedIds } = runStockDeduction(targets)
+      const products = await fetchPmProductsListForStock()
+      if (products.length === 0) {
+        alert('상품 목록을 불러올 수 없습니다. 다시 시도해 주세요.')
+        return
+      }
+      const { stockChanges, updatedProducts, notFound, stockAppliedIds } = runStockDeductionForOrders(targets, products)
 
       saveCachedProducts(updatedProducts)
-      await Promise.all(Object.keys(stockChanges).map(async pid => {
-        const p = updatedProducts.find(pp => pp.id === pid)
-        if (!p) return
-        await fetch('/api/pm-products', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: pid, options: p.options }),
-        })
-      }))
+      const patchResult = await patchStockChangesToServer(stockChanges)
+      if (!patchResult.ok) {
+        alert(`DB 현재고 반영 실패:\n${patchResult.errors.slice(0, 5).join('\n')}`)
+      }
+      broadcastPmProductsCacheSync()
 
       // stock_applied 플래그 업데이트 (상태변경 없이 재고 반영 표시만 갱신)
       const all            = loadShippedOrders()

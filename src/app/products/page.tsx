@@ -13,7 +13,7 @@ import {
   type ShippedOrder, type MappingStore,
 } from '@/lib/orders'
 import { archiveAmountsAndPurgeTracesForDeletedProduct } from '@/lib/product-delete-cascade'
-import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
+import { DASHBOARD_REFRESH_EVENT, broadcastPmProductsCacheSync } from '@/lib/dashboard-sync'
 import {
   Plus, Search, Download, Upload, Package, TrendingUp, AlertTriangle,
   Edit, Trash2, X, Store, ImageIcon, Link2,
@@ -136,13 +136,8 @@ const CATS_STORAGE_KEY = 'pm_categories_v1'
 const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
 const PRODUCTS_CACHE_TTL = 30 * 60 * 1000 // 30분
 /** 입고관리 등 다른 화면이 발주·입고(미입고) 수량을 즉시 맞추기 위한 동기 신호 */
-const PM_PRODUCTS_CACHE_SYNC_KEY = 'pm_products_cache_sync'
-
 function broadcastPmProductsQtySync() {
-  try { localStorage.setItem(PM_PRODUCTS_CACHE_SYNC_KEY, String(Date.now())) } catch {}
-  if (typeof window !== 'undefined') {
-    window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
-  }
+  broadcastPmProductsCacheSync()
 }
 
 function patchProductInPmProductsCache(updated: Product) {
