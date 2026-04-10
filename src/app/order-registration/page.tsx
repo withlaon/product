@@ -288,11 +288,23 @@ function parseTossShoppingAoaRow(row: unknown[], idx: number): RegOrder {
 /* ─── 지에스샵 전용 파싱 ─────────────────────────────────── */
 function parseGSShopRow(row: Record<string, unknown>, idx: number): RegOrder {
   const orderNum = String(row['출하지시번호'] ?? `AUTO-GS-${Date.now()}-${idx}`)
+  const cell = (key: string) => {
+    const v = row[key]
+    if (v === undefined || v === null) return ''
+    return String(v).trim()
+  }
+  /* GSSHOP order xlsx: N-column phone, else O-column receiver phone, else legacy handset column. */
+  const customer_phone =
+    cell('\uBC1B\uC740\uBD84 \uC804\uD654\uBC88\uD638') ||
+    cell('\uBC1B\uC740\uBD84\uC804\uD654\uBC88\uD638') ||
+    cell('\uC218\uCDE8\uC778\uC804\uD654\uBC88\uD638') ||
+    cell('\uC218\uCDE8\uC778 \uC804\uD654\uBC88\uD638') ||
+    cell('\uC218\uCDE8\uC778\uD578\uB4DC\uD3F0')
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
     order_number: orderNum,
     customer_name:    String(row['수취인'] ?? '-'),
-    customer_phone:   String(row['수취인핸드폰'] ?? ''),
+    customer_phone,
     shipping_address: String(row['수취인주소'] ?? ''),
     items: [{
       product_name: String(row['상품명(송장)'] ?? row['상품명(인터넷)'] ?? '-'),
