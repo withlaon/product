@@ -1,8 +1,10 @@
 'use client'
 import { useState, useEffect } from 'react'
-import { Plus, Trash2, Save, CheckCircle2, KeyRound, Globe, User, Lock } from 'lucide-react'
+import * as XLSX from 'xlsx'
+import { Plus, Trash2, Save, CheckCircle2, KeyRound, Globe, User, Lock, FileSpreadsheet } from 'lucide-react'
 
 const LS_KEY = 'pm_site_accounts_v1'
+const EXCEL_DOWNLOAD_LABEL = '\uC5D1\uC140\uD30C\uC77C\uB2E4\uC6B4'
 
 interface SiteAccount {
   id:       string
@@ -26,6 +28,11 @@ function lsSave(data: SiteAccount[]) {
   try { localStorage.setItem(LS_KEY, JSON.stringify(data)) } catch {}
 }
 
+function todayYmd() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 export default function SettingsPage() {
   const [accounts, setAccounts] = useState<SiteAccount[]>([])
   const [saved,    setSaved]    = useState(false)
@@ -36,6 +43,15 @@ export default function SettingsPage() {
     lsSave(accounts)
     setSaved(true)
     setTimeout(() => setSaved(false), 2500)
+  }
+
+  const handleExcelDownload = () => {
+    const header = ['\uC0AC\uC774\uD2B8\uBA85', '\uC544\uC774\uB514', '\uBE44\uBC00\uBC88\uD638', '\uC0AC\uC774\uD2B8 \uC8FC\uC18C']
+    const rows = accounts.map(a => [a.siteName, a.username, a.password, a.siteUrl])
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '\uACC4\uC815')
+    XLSX.writeFile(wb, `\uC544\uC774\uB514\uBE44\uBC88_${todayYmd()}.xlsx`)
   }
 
   const handleAdd = () => setAccounts(prev => [...prev, newAccount()])
@@ -66,7 +82,11 @@ export default function SettingsPage() {
               <CheckCircle2 size={14}/>저장되었습니다
             </span>
           )}
-          <button onClick={handleSave}
+          <button type="button" onClick={handleExcelDownload}
+            style={{ display:'flex', alignItems:'center', gap:6, fontSize: '13px', fontWeight:800, color:'#1e40af', background:'#eff6ff', border:'1.5px solid #93c5fd', borderRadius:9, padding:'8px 16px', cursor:'pointer' }}>
+            <FileSpreadsheet size={14}/>{EXCEL_DOWNLOAD_LABEL}
+          </button>
+          <button type="button" onClick={handleSave}
             style={{ display:'flex', alignItems:'center', gap:6, fontSize: '13px', fontWeight:800, color:'white', background:'#2563eb', border:'none', borderRadius:9, padding:'8px 18px', cursor:'pointer' }}>
             <Save size={14}/>저장
           </button>
