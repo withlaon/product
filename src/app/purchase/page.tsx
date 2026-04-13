@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import {
-  Purchase, PmProduct,
+  Purchase, PmProduct, PurchaseItem,
   getThisMonth, shiftMonth,
   fmtMonthLabel, fmtDateShort,
   apiFetchPurchases, apiUpdatePurchase, apiDeletePurchase,
@@ -34,23 +34,45 @@ function saveCachedProducts(list: FP[]) {
   } catch {}
 }
 
-/** 로컬 캐시에서 ordered/received 델타 반영 후 저장 */
+
+function notifyProductsCacheSync() {
+  try {
+    window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
+  } catch { /* ignore */ }
+}
+
+function resolveProductForItem(products: FP[], item: PurchaseItem): FP | null {
+  const bc = (item.barcode || '').trim()
+  if (bc) {
+    for (const p of products) {
+      if (p.options.some(o => (o.barcode || '').trim() === bc)) return p
+    }
+  }
+  const code = (item.product_code || '').trim()
+  if (!code) return null
+  return products.find(x => (x.code || '').trim() === code) ?? null
+}
+
+/** Local cache: apply ordered/received delta */
 function applyDeltaToCache(
   list: FP[],
   patches: { productCode: string; barcode: string; optionName: string; orderedDelta: number; receivedDelta: number }[],
 ): FP[] {
   return list.map(p => {
-    const match = patches.find(r => r.productCode === p.code)
-    if (!match) return p
+    const codeTrim = (p.code || '').trim()
+    const relevant = patches.filter(r => (r.productCode || '').trim() === codeTrim)
+    if (relevant.length === 0) return p
     return {
       ...p,
       options: p.options.map(o => {
-        const hit = patches.find(r =>
-          r.productCode === p.code &&
-          (r.barcode
-            ? (o.barcode || '').trim() === (r.barcode || '').trim()
-            : o.name === r.optionName)
-        )
+        const bcO = (o.barcode || '').trim()
+        const hit = relevant.find(r => {
+          const bcR = (r.barcode || '').trim()
+          if (bcR) return bcO === bcR
+          const on = (r.optionName || '').trim()
+          if (!on) return false
+          return o.name === on || (o.korean_name && o.korean_name === on)
+        })
         if (!hit) return o
         return {
           ...o,
@@ -201,23 +223,27 @@ export default function PurchaseMainPage() {
       setPurchases(prev => prev.map(p => p.id === purchase.id ? { ...p, items: newItems } : p))
       setEditingKey(null)
 
-      const prod = products.find(p => (p.code || '').trim() === (item.product_code || '').trim())
+      const prod = resolveProductForItem(products as FP[], item)
       if (prod) {
         try {
+          const bcTrim = (item.barcode || '').trim()
           await syncProductQty(products, [{
             prodId:       prod.id,
             optName:      item.option_name || '',
-            barcode:      item.barcode     || undefined,
+            barcode:      bcTrim || undefined,
             orderedDelta:  newQty - oldQty,
             receivedDelta: 0,
           }])
-          const patches = [{ productCode: item.product_code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: newQty - oldQty, receivedDelta: 0 }]
+          const patches = [{ productCode: prod.code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: newQty - oldQty, receivedDelta: 0 }]
           const updated = applyDeltaToCache(products as FP[], patches)
           saveCachedProducts(updated)
           setProducts(updated)
+          notifyProductsCacheSync()
         } catch (syncErr) {
           alert(`발주 수량은 저장되었으나 상품관리 동기화에 실패했습니다.\n${String(syncErr)}`)
         }
+      } else {
+        alert('상품관리에서 해당 바코드·상품코드로 상품을 찾지 못해 발주 수량을 연동하지 않았습니다.')
       }
 
       try { localStorage.setItem('pm_products_mapping_signal', String(Date.now())) } catch { /* ignore */ }
@@ -241,29 +267,35 @@ export default function PurchaseMainPage() {
 
     setDeletingIds(prev => new Set(prev).add(purchase.id))
     try {
-      const patches = purchase.items
-        .filter(i => i.ordered > 0 || i.received > 0)
-        .map(i => ({
-          productCode:   i.product_code,
-          barcode:       i.barcode      || '',
-          optionName:    i.option_name  || '',
-          orderedDelta:  -i.ordered,
+      const syncRows: { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }[] = []
+      const patches: { productCode: string; barcode: string; optionName: string; orderedDelta: number; receivedDelta: number }[] = []
+      for (const i of purchase.items) {
+        if (i.ordered <= 0 && i.received <= 0) continue
+        const prod = resolveProductForItem(products as FP[], i)
+        if (!prod) continue
+        const bcTrim = (i.barcode || '').trim()
+        syncRows.push({
+          prodId: prod.id,
+          optName: i.option_name || '',
+          barcode: bcTrim || undefined,
+          orderedDelta: -i.ordered,
           receivedDelta: -i.received,
-        }))
-
-      const syncRows = patches
-        .map(r => {
-          const prod = products.find(p => p.code === r.productCode)
-          if (!prod) return null
-          return { prodId: prod.id, optName: r.optionName, barcode: r.barcode || undefined, orderedDelta: r.orderedDelta, receivedDelta: r.receivedDelta }
         })
-        .filter((r): r is NonNullable<typeof r> => r !== null)
+        patches.push({
+          productCode: prod.code,
+          barcode: i.barcode || '',
+          optionName: i.option_name || '',
+          orderedDelta: -i.ordered,
+          receivedDelta: -i.received,
+        })
+      }
 
       if (syncRows.length > 0) {
         await syncProductQty(products, syncRows)
         const updated = applyDeltaToCache(products as FP[], patches)
         saveCachedProducts(updated)
         setProducts(updated)
+        notifyProductsCacheSync()
       }
 
       const { error } = await apiDeletePurchase(purchase.id)
@@ -293,23 +325,29 @@ export default function PurchaseMainPage() {
     const opKey = `${purchase.id}-${itemIdx}`
     setDeletingItemKeys(prev => new Set(prev).add(opKey))
     try {
-      const prod = products.find(p => p.code === item.product_code)
-      const patches = [{
-        productCode:   item.product_code,
-        barcode:       item.barcode || '',
-        optionName:    item.option_name || '',
-        orderedDelta:  -item.ordered,
-        receivedDelta: -item.received,
-      }]
-      const syncRows = prod
-        ? [{ prodId: prod.id, optName: item.option_name || '', barcode: item.barcode || undefined, orderedDelta: -item.ordered, receivedDelta: -item.received }]
+      const prod = resolveProductForItem(products as FP[], item)
+      const patches = prod
+        ? [{
+            productCode: prod.code,
+            barcode:       item.barcode || '',
+            optionName:    item.option_name || '',
+            orderedDelta:  -item.ordered,
+            receivedDelta: -item.received,
+          }]
         : []
+      const bcTrim = (item.barcode || '').trim()
+      const syncRows = prod
+        ? [{ prodId: prod.id, optName: item.option_name || '', barcode: bcTrim || undefined, orderedDelta: -item.ordered, receivedDelta: -item.received }]
+        : []
+
+      const warnNoPmSync = syncRows.length === 0 && (item.ordered > 0 || item.received > 0)
 
       if (syncRows.length > 0) {
         await syncProductQty(products, syncRows)
         const updated = applyDeltaToCache(products as FP[], patches)
         saveCachedProducts(updated)
         setProducts(updated)
+        notifyProductsCacheSync()
       }
 
       const newItems = purchase.items.filter((_, i) => i !== itemIdx)
@@ -324,6 +362,10 @@ export default function PurchaseMainPage() {
         setPurchases(prev => prev.map(p => (p.id === purchase.id ? { ...p, items: newItems } : p)))
       }
 
+
+      if (warnNoPmSync) {
+        alert('상품관리에서 해당 바코드·상품코드로 상품을 찾지 못해 발주 수량을 차감하지 않았습니다. 발주 목록에서는 삭제되었습니다.')
+      }
       setEditingKey(null)
       try { localStorage.setItem('pm_products_mapping_signal', String(Date.now())) } catch { /* ignore */ }
       broadcastDashboardRefresh()

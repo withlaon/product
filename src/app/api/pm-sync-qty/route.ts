@@ -84,10 +84,14 @@ export async function POST(req: NextRequest) {
 
         // ② 수량 업데이트
         const updatedOpts = baseOpts.map((opt: PmOption) => {
-          const u = rows.find(r =>
-            (r.barcode && r.barcode === opt.barcode) ||
-            (r.optName && (r.optName === opt.name || r.optName === opt.korean_name))
-          )
+          const ob = String(opt.barcode ?? '').trim()
+          const u = rows.find(r => {
+            const rb = String(r.barcode ?? '').trim()
+            if (rb) return rb === ob
+            const on = String(r.optName ?? '').trim()
+            if (!on) return false
+            return on === String(opt.name ?? '').trim() || on === String(opt.korean_name ?? '').trim()
+          })
           if (!u) return opt
 
           const newOrdered  = Math.max(0, (opt.ordered  || 0) + u.orderedDelta)
