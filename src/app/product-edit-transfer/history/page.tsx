@@ -89,15 +89,7 @@ function loadCachedProducts(): CachedProduct[] {
 }
 function saveCachedProducts(products: CachedProduct[]) {
   try {
-    let ts = Date.now()
-    const raw = localStorage.getItem('pm_products_cache_v1')
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw) as { ts?: number }
-        if (typeof parsed.ts === 'number') ts = parsed.ts
-      } catch { /* ignore */ }
-    }
-    localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts, data: products }))
+    localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts: Date.now(), data: products }))
   } catch {}
 }
 

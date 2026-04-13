@@ -1193,9 +1193,16 @@ export default function ProductsPage() {
     }
   }, [])
 
-  /* ── 매핑관리탭 변경 감지: storage 이벤트(다른 탭) + visibilitychange(같은 탭 복귀) ── */
+  /* ── 매핑관리탭 변경 감지 + 출고확정 재고 동기화: storage 이벤트(다른 탭) + visibilitychange(같은 탭 복귀) ── */
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
+      if (e.key === 'pm_products_cache_sync') {
+        // 출고확정으로 재고가 차감된 경우 → 즉시 캐시에서 상품 목록 갱신
+        const updated = loadProductsAnyCached()
+        if (updated.length > 0) setProducts(updated)
+        setRefreshKey(k => k + 1)
+        return
+      }
       if (e.key === 'pm_products_mapping_signal' || e.key === 'pm_channel_mappings_v2') {
         setLocalMallsMap(buildLocalMallsMap())
         setLocalMallCodesMap(buildLocalMallCodesMap())
@@ -1215,6 +1222,10 @@ export default function ProductsPage() {
           localStorage.removeItem('pm_products_mapping_signal')
           try { localStorage.removeItem('pm_products_cache_v1') } catch {}
           setRefreshKey(k => k + 1)
+        } else {
+          // 출고확정 이후 탭 전환 복귀 시 캐시에서 즉시 재고 반영
+          const updated = loadProductsAnyCached()
+          if (updated.length > 0) setProducts(updated)
         }
       }
     }
