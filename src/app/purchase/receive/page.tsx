@@ -447,10 +447,13 @@ export default function ReceiveManagePage() {
   }
 
   /* ── 파일 업로드 ──
-     1. W로 시작하는 상품코드만 표시
-     2. 한국어 옵션명 → pm_products의 영어 옵션명(name)으로 자동변환
-     3. 바코드 자동완성
-     4. 상품코드 내림차순 정렬
+     [패킹리스트(装箱单) 시트 우선]
+       E열 29행~ = 상품 바코드, I열 29행~ = 입고수량
+     [그 외 시트 / 폴백]
+       1. W로 시작하는 상품코드만 표시
+       2. 한국어 옵션명 → pm_products의 영어 옵션명(name)으로 자동변환
+       3. 바코드 자동완성
+       4. 상품코드 내림차순 정렬
   ── */
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -458,69 +461,101 @@ export default function ReceiveManagePage() {
     const reader = new FileReader()
     reader.onload = (ev) => {
       try {
-        const wb  = XLSX.read(ev.target?.result, { type: 'binary' })
-        const ws  = wb.Sheets[wb.SheetNames[0]]
-
-        const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', header: 'A' })
-
-        /* 헤더 행 탐색 (B열이 '품번' | '상품코드' 포함) */
-        const headerIdx = raw.findIndex(row =>
-          String(row['B'] || '').trim().includes('품번') ||
-          String(row['B'] || '').trim().includes('상품코드') ||
-          String(row['B'] || '').toLowerCase().trim() === 'product_code'
-        )
+        const wb = XLSX.read(ev.target?.result, { type: 'binary' })
 
         let parsedItems: { product_code:string; option_name:string; barcode:string; qty:string }[] = []
         let dateVal = ''; let supplierVal = ''
 
-        if (headerIdx >= 0) {
-          /* ── 패킹리스트 형식: B=품번, D=컬러, E=수량 ── */
-          const dataRows = raw.slice(headerIdx + 2)
-            .filter(row =>
-              String(row['B'] || '').trim() &&
-              !String(row['B'] || '').includes('합계') &&
-              !String(row['B'] || '').includes('총')
-            )
-          parsedItems = dataRows.map(row => ({
-            product_code: String(row['B'] || '').trim(),
-            option_name:  String(row['D'] || '').trim(),
-            barcode:      '',
-            qty:          String(row['E'] || '').trim(),
-          })).filter(i => i.product_code && i.qty && Number(i.qty) > 0)
-        } else {
-          /* ── 기존 헤더 기반 파싱 ── */
-          const allRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
-          if (!allRows.length) return
-          const COL = {
-            product_code: ['상품코드','product_code','상품 코드','코드','품번'],
-            option_name:  ['옵션명','option_name','옵션','옵션 명','옵션이름','컬러','색상','color'],
-            barcode:      ['바코드','barcode','바 코드','BARCODE'],
-            qty:          ['입고수량','수량','입고 수량','qty','QTY','Qty','입고량'],
-            order_date:   ['입고일','입고일자','날짜','date','입고 일자'],
-            supplier:     ['구매처','공급처','supplier','거래처'],
-          }
-          const headers   = Object.keys(allRows[0])
-          const findCol   = (keys: string[]) =>
-            headers.find(h => keys.map(k => k.toLowerCase()).includes(h.toLowerCase())) ?? ''
-          const cCode = findCol(COL.product_code); const cOpt = findCol(COL.option_name)
-          const cBar  = findCol(COL.barcode);      const cQty = findCol(COL.qty)
-          const cDate = findCol(COL.order_date);   const cSup = findCol(COL.supplier)
-          parsedItems = allRows
-            .map(row => ({
-              product_code: String(row[cCode] ?? '').trim(),
-              option_name:  String(row[cOpt]  ?? '').trim(),
-              barcode:      String(row[cBar]  ?? '').trim(),
-              qty:          String(row[cQty]  ?? '').trim(),
-            }))
-            .filter(i => i.product_code || i.barcode)
-          if (cDate) dateVal     = String(allRows[0][cDate] ?? '').slice(0, 10)
-          if (cSup)  supplierVal = String(allRows[0][cSup]  ?? '').trim()
-        }
-
-        /* ── 1. W로 시작하는 상품코드만 ── */
-        parsedItems = parsedItems.filter(i =>
-          i.product_code.toUpperCase().startsWith('W')
+        /* 패킹리스트(装箱单) 시트 탐색 */
+        const packingSheetName = wb.SheetNames.find(name =>
+          name.includes('装箱单') || name.includes('패킹리스트')
         )
+
+        if (packingSheetName) {
+          /* ── 패킹리스트(装箱单): E열=바코드, I열=입고수량, 29행부터 ── */
+          const ws  = wb.Sheets[packingSheetName]
+          const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', header: 'A' })
+          // 29행 = 0-index 28
+          const dataRows = raw.slice(28).filter(row =>
+            String(row['E'] || '').trim() &&
+            Number(String(row['I'] || '').trim()) > 0
+          )
+          parsedItems = dataRows.map(row => {
+            const barcode = String(row['E'] || '').trim()
+            const qty     = String(row['I'] || '').trim()
+            let product_code = ''
+            let option_name  = ''
+            for (const prod of products) {
+              const opt = prod.options.find(o => o.barcode === barcode)
+              if (opt) {
+                product_code = prod.code
+                option_name  = opt.name || ''
+                break
+              }
+            }
+            return { product_code, option_name, barcode, qty }
+          }).filter(i => i.barcode)
+        } else {
+          /* ── 폴백: 첫 번째 시트 기존 로직 ── */
+          const ws  = wb.Sheets[wb.SheetNames[0]]
+          const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', header: 'A' })
+
+          /* 헤더 행 탐색 (B열이 '품번' | '상품코드' 포함) */
+          const headerIdx = raw.findIndex(row =>
+            String(row['B'] || '').trim().includes('품번') ||
+            String(row['B'] || '').trim().includes('상품코드') ||
+            String(row['B'] || '').toLowerCase().trim() === 'product_code'
+          )
+
+          if (headerIdx >= 0) {
+            /* ── 패킹리스트 형식: B=품번, D=컬러, E=수량 ── */
+            const dataRows = raw.slice(headerIdx + 2)
+              .filter(row =>
+                String(row['B'] || '').trim() &&
+                !String(row['B'] || '').includes('합계') &&
+                !String(row['B'] || '').includes('총')
+              )
+            parsedItems = dataRows.map(row => ({
+              product_code: String(row['B'] || '').trim(),
+              option_name:  String(row['D'] || '').trim(),
+              barcode:      '',
+              qty:          String(row['E'] || '').trim(),
+            })).filter(i => i.product_code && i.qty && Number(i.qty) > 0)
+          } else {
+            /* ── 기존 헤더 기반 파싱 ── */
+            const allRows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '' })
+            if (!allRows.length) return
+            const COL = {
+              product_code: ['상품코드','product_code','상품 코드','코드','품번'],
+              option_name:  ['옵션명','option_name','옵션','옵션 명','옵션이름','컬러','색상','color'],
+              barcode:      ['바코드','barcode','바 코드','BARCODE'],
+              qty:          ['입고수량','수량','입고 수량','qty','QTY','Qty','입고량'],
+              order_date:   ['입고일','입고일자','날짜','date','입고 일자'],
+              supplier:     ['구매처','공급처','supplier','거래처'],
+            }
+            const headers   = Object.keys(allRows[0])
+            const findCol   = (keys: string[]) =>
+              headers.find(h => keys.map(k => k.toLowerCase()).includes(h.toLowerCase())) ?? ''
+            const cCode = findCol(COL.product_code); const cOpt = findCol(COL.option_name)
+            const cBar  = findCol(COL.barcode);      const cQty = findCol(COL.qty)
+            const cDate = findCol(COL.order_date);   const cSup = findCol(COL.supplier)
+            parsedItems = allRows
+              .map(row => ({
+                product_code: String(row[cCode] ?? '').trim(),
+                option_name:  String(row[cOpt]  ?? '').trim(),
+                barcode:      String(row[cBar]  ?? '').trim(),
+                qty:          String(row[cQty]  ?? '').trim(),
+              }))
+              .filter(i => i.product_code || i.barcode)
+            if (cDate) dateVal     = String(allRows[0][cDate] ?? '').slice(0, 10)
+            if (cSup)  supplierVal = String(allRows[0][cSup]  ?? '').trim()
+          }
+
+          /* ── 1. W로 시작하는 상품코드만 (폴백 포맷에만 적용) ── */
+          parsedItems = parsedItems.filter(i =>
+            i.product_code.toUpperCase().startsWith('W')
+          )
+        }
 
         /* ── 2. 영어 옵션명 자동변환 + 3. 바코드 자동완성 ── */
         parsedItems = parsedItems.map(item => {
@@ -540,8 +575,8 @@ export default function ReceiveManagePage() {
           if (!opt) return item
           return {
             ...item,
-            option_name: opt.name || item.option_name,  // 영어 옵션명으로 교체
-            barcode:     opt.barcode || item.barcode,    // 바코드 자동완성
+            option_name: opt.name || item.option_name,
+            barcode:     opt.barcode || item.barcode,
           }
         })
 
@@ -549,7 +584,7 @@ export default function ReceiveManagePage() {
         parsedItems = parsedItems.sort((a, b) => b.product_code.localeCompare(a.product_code))
 
         if (!parsedItems.length) {
-          alert('W로 시작하는 상품코드가 없거나 파싱 가능한 행이 없습니다.')
+          alert('파싱 가능한 데이터가 없습니다. 파일 형식을 확인해 주세요.')
           return
         }
         setForm(f => ({
