@@ -472,13 +472,12 @@ export default function ReceiveManagePage() {
         )
 
         if (packingSheetName) {
-          /* ── 패킹리스트(装箱单): E열=바코드, I열=입고수량, 29행부터 ── */
+          /* ── 패킹리스트(装箱单): E열=바코드(있는 행만), I열=입고수량, 29행부터 ── */
           const ws  = wb.Sheets[packingSheetName]
           const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', header: 'A' })
-          // 29행 = 0-index 28
+          // 29행 = 0-index 28 / E열 바코드가 있는 행만 포함
           const dataRows = raw.slice(28).filter(row =>
-            String(row['E'] || '').trim() &&
-            Number(String(row['I'] || '').trim()) > 0
+            String(row['E'] || '').trim()
           )
           parsedItems = dataRows.map(row => {
             const barcode = String(row['E'] || '').trim()
