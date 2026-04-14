@@ -718,3 +718,15 @@ GROUP BY mall_key;
 CREATE INDEX IF NOT EXISTS idx_marketplace_products_sync ON marketplace_products(sync_status) WHERE sync_status != 'synced';
 CREATE INDEX IF NOT EXISTS idx_master_skus_low_stock ON master_skus(product_id) WHERE stock <= safety_stock AND status = 'active';
 CREATE INDEX IF NOT EXISTS idx_unified_orders_new ON unified_orders(mall_key, created_at) WHERE status IN ('paid','preparing');
+
+-- ══════════════════════════════════════════════════════════════════════════
+-- 물류비 테이블 (pm_logistics)
+-- ══════════════════════════════════════════════════════════════════════════
+CREATE TABLE IF NOT EXISTS pm_logistics (
+  id         UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  date       DATE NOT NULL,
+  amount     INTEGER NOT NULL DEFAULT 0,
+  memo       TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_pm_logistics_date ON pm_logistics(date DESC);

@@ -33,15 +33,7 @@ interface Purchase {
   ordered_at?: string | null
   received_at?: string | null
 }
-
-/** 발주/입고 — 발주관리 '발주 확정' 건만 매입액 집계 (입고탭 미입고확정·직접입고 완료 등 제외) */
-function isManagePurchaseConfirmForCost(p: Purchase): boolean {
-  if (p.status === 'cancelled') return false
-  if (!p.ordered_at || !String(p.ordered_at).trim()) return false
-  if (p.supplier === '미입고확정') return false
-  if (p.status === 'completed' && p.supplier === '직접입고') return false
-  return true
-}
+interface LogisticsEntry { id: string; date: string; amount: number; memo: string }
 
 function loadCachedProducts(): CachedProduct[] {
   try { const { data } = JSON.parse(localStorage.getItem('pm_products_cache_v1') ?? '{}'); return Array.isArray(data) ? data : [] } catch { return [] }
@@ -492,6 +484,7 @@ export default function DashboardPage() {
   const [products,      setProducts]      = useState<CachedProduct[]>([])
   const [csItems,       setCsItems]       = useState<CsItem[]>([])
   const [purchases,     setPurchases]     = useState<Purchase[]>([])
+  const [logisticsFees, setLogisticsFees] = useState<LogisticsEntry[]>([])
   const [loading,       setLoading]       = useState(true)
   const [selMonth,      setSelMonth]      = useState(curYM)
   const [lastUpdate,    setLastUpdate]    = useState<Date | null>(null)
@@ -517,11 +510,20 @@ export default function DashboardPage() {
       .then(({ data }) => { if (data) setPurchases(data as Purchase[]) })
   }, [])
 
-  /* ── 로컬 + 발주 전부 (실시간 대시보드 기준) ── */
+  /* ── 물류비 로드 ── */
+  const refreshLogistics = useCallback(() => {
+    fetch('/api/pm-logistics')
+      .then(r => r.json())
+      .then(data => { if (Array.isArray(data)) setLogisticsFees(data) })
+      .catch(() => {})
+  }, [])
+
+  /* ── 로컬 + 발주 + 물류비 전부 (실시간 대시보드 기준) ── */
   const fullRefresh = useCallback(() => {
     refreshLocal()
     refreshPurchases()
-  }, [refreshLocal, refreshPurchases])
+    refreshLogistics()
+  }, [refreshLocal, refreshPurchases, refreshLogistics])
 
   /* ── 전체 새로고침 (버튼용) ── */
   const handleRefresh = useCallback(async () => {
@@ -678,23 +680,32 @@ export default function DashboardPage() {
     return keys.map(ym => ({ ym, amount: byMonth[ym] ?? 0 }))
   }, [allOrdersMerged, shippedById, curYM, retention])
 
-  /* ── 선택 월 매입액: 발주관리에서 발주 확정한 건만(취소·입고탭 단독 등록 제외), unitToOrderKrw·pm_exchange_rate ── */
+  /* ── 선택 월 매입액: 입고관리 입고 수량 기준 + 물류비 ── */
   const monthPurchaseCost = useMemo(() => {
     let exchangeRate = DEFAULT_EXCHANGE_RATE
     try {
       exchangeRate = Number(localStorage.getItem('pm_exchange_rate') || String(DEFAULT_EXCHANGE_RATE)) || DEFAULT_EXCHANGE_RATE
     } catch { /* ignore */ }
-    const live = purchases
-      .filter(p => p.order_date?.slice(0, 7) === selMonth && isManagePurchaseConfirmForCost(p))
+    // 입고금액: received_at(없으면 order_date) 기준 월 필터, received 수량 × 단가
+    const receivedCost = purchases
+      .filter(p => {
+        if (p.status === 'cancelled') return false
+        const dateKey = (p.received_at ?? p.order_date)?.slice(0, 7)
+        return dateKey === selMonth && p.items.some(i => (i.received || 0) > 0)
+      })
       .reduce((sum, p) => sum + p.items.reduce((is, item) => {
-        if (!item.product_code) return is
+        if (!item.product_code || !(item.received > 0)) return is
         const prod = products.find(pp => pp.code === item.product_code)
         if (prod?.cost_price == null) return is
         const unitKrw = unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate)
-        return is + unitKrw * item.ordered
+        return is + unitKrw * item.received
       }, 0), 0)
-    return live + (retention.purchaseByMonth[selMonth] ?? 0)
-  }, [purchases, products, selMonth, lastUpdate, retention])
+    // 물류비
+    const logisticsCost = logisticsFees
+      .filter(f => f.date?.slice(0, 7) === selMonth)
+      .reduce((s, f) => s + (f.amount || 0), 0)
+    return receivedCost + logisticsCost + (retention.purchaseByMonth[selMonth] ?? 0)
+  }, [purchases, products, selMonth, logisticsFees, lastUpdate, retention])
 
   /* ── 당월 택배비 (고유 운송장번호 × 2800원) ── */
   const monthShippingFee = useMemo(() => {

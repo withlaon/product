@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Package, Warehouse,
   Settings,
   PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, ShoppingCart, Truck, GitMerge,
-  ClipboardList, Printer, Send, HeadphonesIcon, History, TrendingUp,
+  ClipboardList, Printer, Send, HeadphonesIcon, History, TrendingUp, Container,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -47,6 +47,7 @@ const navGroups: NavGroup[] = [
         ],
       },
       { label: '불량등록',     href: '/inventory',             icon: Warehouse },
+      { label: '물류비',       href: '/logistics',             icon: Container },
     ],
   },
   {
