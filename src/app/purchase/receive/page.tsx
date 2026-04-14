@@ -472,11 +472,17 @@ export default function ReceiveManagePage() {
         )
 
         if (packingSheetName) {
-          /* ── 패킹리스트(装箱单): E열=바코드(있는 행만), I열=입고수량, 29행부터 ── */
+          /* ── 패킹리스트(装箱单): E열=바코드(款号/품번), I열=입고수량 ── */
           const ws  = wb.Sheets[packingSheetName]
           const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', header: 'A' })
-          // 29행 = 0-index 28 / E열 바코드가 있는 행만 포함
-          const dataRows = raw.slice(28).filter(row =>
+          // E열에 '款号' 또는 '품번' 포함하는 헤더 행 동적 탐색 → 없으면 28(29행) 폴백
+          const hIdx = raw.findIndex(row =>
+            String(row['E'] || '').includes('款号') ||
+            String(row['E'] || '').includes('품번')
+          )
+          const startIdx = hIdx >= 0 ? hIdx + 1 : 28
+          // E열 바코드가 있는 행만 포함
+          const dataRows = raw.slice(startIdx).filter(row =>
             String(row['E'] || '').trim()
           )
           parsedItems = dataRows.map(row => {
