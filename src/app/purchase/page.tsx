@@ -430,77 +430,36 @@ export default function PurchaseMainPage() {
     return () => { cancelled = true }
   }, [poListImageProdIdsKey, optImageFetchGen])
 
-  /* ── 미입고 리스트: 미입고 수량이 있는 품목을 바코드 오름차순으로 flatten ── */
+  /* ── 미입고 리스트: 상품관리탭 products 옵션 기준 (바코드별 ordered-received > 0) ── */
   const miItems = useMemo(() => {
     const rows: {
       barcode: string; productCode: string; optionName: string
-      orderDate: string; supplier: string
+      image: string
       ordered: number; received: number; missing: number
     }[] = []
-    for (const p of purchases) {
-      if (!isUnresolved(p)) continue
-      for (const item of p.items) {
-        const mis = Math.max(0, item.ordered - item.received)
-        if (mis <= 0) continue
+    for (const p of products) {
+      for (const o of p.options) {
+        const ordered  = Number(o.ordered)  || 0
+        const received = Number(o.received) || 0
+        const missing  = Math.max(0, ordered - received)
+        if (missing <= 0) continue
         rows.push({
-          barcode:     item.barcode     || '',
-          productCode: item.product_code,
-          optionName:  item.option_name  || '',
-          orderDate:   p.order_date,
-          supplier:    p.supplier        || '',
-          ordered:     item.ordered,
-          received:    item.received,
-          missing:     mis,
+          barcode:     (o.barcode || '').trim(),
+          productCode: p.code,
+          optionName:  o.name || (o as { korean_name?: string }).korean_name || '',
+          image:       (o as { image?: string }).image || '',
+          ordered,
+          received,
+          missing,
         })
       }
     }
     return rows.sort((a, b) => {
       const pc = a.productCode.localeCompare(b.productCode)
       if (pc !== 0) return pc
-      const bc = (a.barcode || '').localeCompare(b.barcode || '')
-      if (bc !== 0) return bc
-      return a.orderDate.localeCompare(b.orderDate)
+      return (a.barcode || '').localeCompare(b.barcode || '')
     })
-  }, [purchases])
-
-  /* ── 미입고 리스트: 상품 이미지 API 보강 (캐시에 image 없을 때) ── */
-  const miImageProdIdsKey = useMemo(() => {
-    const ids = new Set<string>()
-    for (const r of miItems) {
-      const p = products.find(x => x.code === r.productCode)
-      if (p?.id) ids.add(p.id)
-    }
-    return [...ids].sort().join(',')
-  }, [miItems, products])
-
-  const [miLoadedImages, setMiLoadedImages] = useState<Record<string, string>>({})
-
-  useEffect(() => {
-    if (!miImageProdIdsKey) return
-    const prodIds = miImageProdIdsKey.split(',').filter(Boolean)
-    let cancelled = false
-    const chunks: string[][] = []
-    for (let i = 0; i < prodIds.length; i += 20) chunks.push(prodIds.slice(i, i + 20))
-    ;(async () => {
-      for (const chunk of chunks) {
-        if (cancelled) break
-        try {
-          const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`, { cache: 'no-store' })
-          if (!res.ok || cancelled) continue
-          const data = await res.json() as Array<{ id: string; options?: Array<{ barcode?: string; image?: string }> }>
-          if (!Array.isArray(data)) continue
-          const imgs: Record<string, string> = {}
-          data.forEach(prod => (prod.options ?? []).forEach(o => {
-            if (o.barcode && o.image) imgs[String(o.barcode).trim()] = o.image
-          }))
-          if (!cancelled && Object.keys(imgs).length > 0) {
-            setMiLoadedImages(prev => ({ ...prev, ...imgs }))
-          }
-        } catch { /* ignore */ }
-      }
-    })()
-    return () => { cancelled = true }
-  }, [miImageProdIdsKey, optImageFetchGen])
+  }, [products])
 
   /* KPI */
   const poOrderedQty = useMemo(() =>
@@ -791,17 +750,13 @@ export default function PurchaseMainPage() {
                       <th style={thStyle()}>바코드</th>
                       <th style={thStyle('left')}>상품코드</th>
                       <th style={thStyle('left')}>옵션명</th>
-                      <th style={thStyle('left')}>발주일</th>
                       <th style={thStyle()}>발주</th>
                       <th style={thStyle()}>입고</th>
                       <th style={thStyle()}>미입고</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {miItems.map((row, idx) => {
-                      const bc = (row.barcode || '').trim()
-                      const rowImg = (bc && (miLoadedImages[bc] || optImages[bc])) || ''
-                      return (
+                    {miItems.map((row, idx) => (
                       <tr key={idx}
                         style={{ borderBottom:'1px solid #f8fafc' }}
                         onMouseEnter={e => { e.currentTarget.style.background='#fffbeb' }}
@@ -809,8 +764,8 @@ export default function PurchaseMainPage() {
                       >
                         <td style={{ ...tdStyle(), width:36 }}>
                           <div style={{ width:28, height:28, borderRadius:6, overflow:'hidden', background:'#f1f5f9', flexShrink:0, margin:'0 auto' }}>
-                            {rowImg
-                              ? <img src={rowImg} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
+                            {row.image
+                              ? <img src={row.image} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/>
                               : <div style={{ width:'100%', height:'100%' }}/>}
                           </div>
                         </td>
@@ -825,10 +780,6 @@ export default function PurchaseMainPage() {
                             {row.optionName || '-'}
                           </span>
                         </td>
-                        <td style={{ ...tdStyle('left') }}>
-                          <span style={{ fontSize: '11.5px', fontWeight:700, color:'#334155' }}>{fmtDateShort(row.orderDate)}</span>
-                          <span style={{ display:'block', fontSize: '10px', color:'#94a3b8' }}>{row.supplier||'-'}</span>
-                        </td>
                         <td style={{ ...tdStyle(), fontWeight:700, color:'#64748b' }}>{row.ordered}</td>
                         <td style={{ ...tdStyle(), fontWeight:700, color:'#059669' }}>{row.received}</td>
                         <td style={{ ...tdStyle() }}>
@@ -838,8 +789,7 @@ export default function PurchaseMainPage() {
                           </span>
                         </td>
                       </tr>
-                      )
-                    })}
+                    ))}
                   </tbody>
                 </table>
             }
