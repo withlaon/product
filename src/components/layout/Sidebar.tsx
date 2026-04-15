@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Package, Warehouse,
   Settings,
   PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, ShoppingCart, Truck, GitMerge,
-  ClipboardList, Printer, Send, HeadphonesIcon, History, TrendingUp, Container,
+  ClipboardList, Printer, Send, HeadphonesIcon, History, TrendingUp, Container, MapPin,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -59,6 +59,7 @@ const navGroups: NavGroup[] = [
       { label: '송장출력/등록',  href: '/product-edit-transfer/print',    icon: Printer },
       { label: '송장전송파일',   href: '/product-edit-transfer/send',     icon: Send },
       { label: '출고내역',       href: '/product-edit-transfer/history',  icon: History },
+      { label: 'LOCA',           href: '/loca',                           icon: MapPin },
     ],
   },
   {

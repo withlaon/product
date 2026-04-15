@@ -12,6 +12,7 @@ const pageTitles: Record<string, { title: string; desc: string }> = {
   '/inventory':             { title: '불량등록',     desc: '불량 접수 및 상품 불량·재고 반영' },
   '/mapping':               { title: '매핑관리',     desc: '쇼핑몰 상품 매핑 관리' },
   '/settings':              { title: '설정',         desc: '시스템 환경설정' },
+  '/loca':                  { title: 'LOCA 관리',    desc: '카테고리별 상품 위치(LOCA) 목록 조회 및 출력' },
 }
 
 interface HeaderProps {
