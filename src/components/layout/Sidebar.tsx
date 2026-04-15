@@ -44,10 +44,10 @@ const navGroups: NavGroup[] = [
         children: [
           { label: '발주관리', href: '/purchase/manage',  icon: PackagePlus },
           { label: '입고관리', href: '/purchase/receive', icon: Truck },
+          { label: '물류비',   href: '/logistics',        icon: Container },
         ],
       },
       { label: '불량등록',     href: '/inventory',             icon: Warehouse },
-      { label: '물류비',       href: '/logistics',             icon: Container },
     ],
   },
   {

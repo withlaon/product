@@ -1007,6 +1007,7 @@ export default function ProductsPage() {
     cost_price:string; cost_currency:CostCurrency; status:ProductStatus; options:EditOptRow[]
     promo_text:string
     special_notes:string
+    active_since:string
   }
   const [editForm, setEditForm] = useState<EditFormState | null>(null)
   const [specialNotes, setSpecialNotes] = useState<Record<string, SpecialNote>>({})
@@ -1383,6 +1384,7 @@ export default function ProductsPage() {
       options: initOptions(p, cachedImgs),
       promo_text: p.promo_text ?? '',
       special_notes: loadSpecialNotes()[p.id]?.note ?? '',
+      active_since: (p.active_since && String(p.active_since).trim()) || '',
     })
     setIsEdit(p)
     // 이미지 포함 전체 데이터 백그라운드 로드
@@ -1424,8 +1426,10 @@ export default function ProductsPage() {
       }))
     )
     const todayReg = pmTodayLocalStr()
+    // 수정 모달에서 직접 입력한 등록일 우선, 없으면 기존값, 그래도 없고 판매중이면 오늘
+    const formSince = editForm.active_since.trim()
     const prevSince = (isEdit.active_since && String(isEdit.active_since).trim()) || null
-    let activeSinceOut: string | null = prevSince
+    let activeSinceOut: string | null = formSince || prevSince
     if (editForm.status === 'active' && !activeSinceOut) activeSinceOut = todayReg
     const payload: Record<string, unknown> = {
       code: editForm.code, name: editForm.name, abbr: editForm.abbr.trim(), category: cat, loca: editForm.loca,
@@ -1435,7 +1439,7 @@ export default function ProductsPage() {
       options,
       promo_text: editForm.promo_text ?? '',
     }
-    if (editForm.status === 'active' && activeSinceOut) payload.active_since = activeSinceOut
+    if (activeSinceOut) payload.active_since = activeSinceOut
     try {
       const { error } = await supabase
         .from('pm_products')
@@ -3278,6 +3282,13 @@ export default function ProductsPage() {
               <Select value={editForm.status} onChange={e => setEditForm(f => f ? ({ ...f, status: e.target.value as ProductStatus }) : f)}>
                 {ST_OPTIONS.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
               </Select>
+            </div>
+
+            <div><Label>등록일 <span style={{ fontSize:10, color:'#94a3b8', fontWeight:500 }}>(판매중 최초 전환일)</span></Label>
+              <Input type="date" value={editForm.active_since}
+                onChange={e => setEditForm(f => f ? ({ ...f, active_since: e.target.value }) : f)}
+              />
+              <p style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, marginTop:3 }}>처음 판매중으로 변경된 날짜. 비워두면 자동 설정됩니다.</p>
             </div>
 
             <div style={{ gridColumn:'1/-1' }}>
