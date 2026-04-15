@@ -268,83 +268,89 @@ export default function LocaPage() {
   const COL_HEADERS = ['상품코드', '이미지', '옵션명', 'LOCA', '상품약어', '상품명']
 
   return (
-    <div>
-      {/* ── 카테고리 탭 ── */}
-      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-        {cats.map(cat => (
-          <button
-            key={cat}
-            onClick={() => setSelectedCat(cat)}
-            style={{
-              padding: '6px 18px',
-              borderRadius: 20,
-              fontSize: 13,
-              fontWeight: 700,
-              border: selectedCat === cat ? 'none' : '1px solid #e2e8f0',
-              cursor: 'pointer',
-              background: selectedCat === cat ? '#2563eb' : '#fff',
-              color: selectedCat === cat ? '#fff' : '#475569',
-              transition: 'all 150ms',
-              boxShadow: selectedCat === cat ? '0 2px 8px rgba(37,99,235,0.25)' : 'none',
-            }}
-          >
-            {cat}
-          </button>
-        ))}
-      </div>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
 
-      {/* ── 액션 바 ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-        <span style={{ fontSize: 16, fontWeight: 800, color: '#1e293b' }}>{printTitle}</span>
-        {filtered.length > 0 && (
-          <span style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>{filtered.length}개 상품</span>
-        )}
-        <div style={{ flex: 1 }}/>
-        <button
-          onClick={() => { loadCache(); fetchFresh() }}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#475569' }}
-        >
-          <RefreshCw size={13}/> 새로고침
-        </button>
-        <button
-          onClick={handlePrint}
-          disabled={filtered.length === 0}
-          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 16px', border: 'none', borderRadius: 8, background: filtered.length === 0 ? '#94a3b8' : '#2563eb', color: '#fff', cursor: filtered.length === 0 ? 'not-allowed' : 'pointer', fontSize: 12.5, fontWeight: 700 }}
-        >
-          <Printer size={13}/> 인쇄
-        </button>
-      </div>
-
-      {/* ── 화면 테이블 ── */}
-      {loading && products.length === 0 ? (
-        <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>데이터를 불러오는 중...</div>
-      ) : !selectedCat ? (
-        <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>카테고리를 선택하세요.</div>
-      ) : filtered.length === 0 ? (
-        <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>해당 카테고리에 등록된 상품이 없습니다.</div>
-      ) : (
-        <div style={{ overflowX: 'auto', border: '1px solid #bfdbfe', borderRadius: 10, background: '#fff' }}>
-          <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', minWidth: 580 }}>
-            <colgroup>
-              <col style={{ width: 104 }}/><col style={{ width: 68 }}/><col style={{ width: 87 }}/>
-              <col style={{ width: 80 }}/><col style={{ width: 143 }}/><col/>
-            </colgroup>
-            <thead>
-              <tr>
-                <td colSpan={6} style={{ border: '1px solid #bfdbfe', padding: '6px 10px', fontSize: 14, fontWeight: 800, background: '#f0f9ff', color: '#1e3a5f' }}>
-                  {printTitle}
-                </td>
-              </tr>
-              <tr>
-                {COL_HEADERS.map(h => (
-                  <th key={h} style={{ border: '1px solid #93c5fd', padding: '5px 7px', fontSize: 12, fontWeight: 700, background: '#bde0f5', textAlign: 'center', color: '#1e3a5f' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>{renderRows()}</tbody>
-          </table>
+      {/* ── 상단 고정 영역 ── */}
+      <div style={{ flexShrink: 0 }}>
+        {/* 카테고리 탭 */}
+        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 12 }}>
+          {cats.map(cat => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCat(cat)}
+              style={{
+                padding: '6px 18px',
+                borderRadius: 20,
+                fontSize: 13,
+                fontWeight: 700,
+                border: selectedCat === cat ? 'none' : '1px solid #e2e8f0',
+                cursor: 'pointer',
+                background: selectedCat === cat ? '#2563eb' : '#fff',
+                color: selectedCat === cat ? '#fff' : '#475569',
+                transition: 'all 150ms',
+                boxShadow: selectedCat === cat ? '0 2px 8px rgba(37,99,235,0.25)' : 'none',
+              }}
+            >
+              {cat}
+            </button>
+          ))}
         </div>
-      )}
+
+        {/* 액션 바 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+          <span style={{ fontSize: 16, fontWeight: 800, color: '#1e293b' }}>{printTitle}</span>
+          {filtered.length > 0 && (
+            <span style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>{filtered.length}개 상품</span>
+          )}
+          <div style={{ flex: 1 }}/>
+          <button
+            onClick={() => { loadCache(); fetchFresh() }}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#475569' }}
+          >
+            <RefreshCw size={13}/> 새로고침
+          </button>
+          <button
+            onClick={handlePrint}
+            disabled={filtered.length === 0}
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 16px', border: 'none', borderRadius: 8, background: filtered.length === 0 ? '#94a3b8' : '#2563eb', color: '#fff', cursor: filtered.length === 0 ? 'not-allowed' : 'pointer', fontSize: 12.5, fontWeight: 700 }}
+          >
+            <Printer size={13}/> 인쇄
+          </button>
+        </div>
+      </div>
+
+      {/* ── 스크롤 테이블 영역 ── */}
+      <div style={{ flex: 1, overflow: 'auto', minHeight: 0 }}>
+        {loading && products.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>데이터를 불러오는 중...</div>
+        ) : !selectedCat ? (
+          <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>카테고리를 선택하세요.</div>
+        ) : filtered.length === 0 ? (
+          <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>해당 카테고리에 등록된 상품이 없습니다.</div>
+        ) : (
+          <div style={{ border: '1px solid #bfdbfe', borderRadius: 10, background: '#fff' }}>
+            <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', minWidth: 580 }}>
+              <colgroup>
+                <col style={{ width: 104 }}/><col style={{ width: 68 }}/><col style={{ width: 87 }}/>
+                <col style={{ width: 80 }}/><col style={{ width: 143 }}/><col/>
+              </colgroup>
+              <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
+                <tr>
+                  <td colSpan={6} style={{ border: '1px solid #bfdbfe', padding: '6px 10px', fontSize: 14, fontWeight: 800, background: '#f0f9ff', color: '#1e3a5f' }}>
+                    {printTitle}
+                  </td>
+                </tr>
+                <tr>
+                  {COL_HEADERS.map(h => (
+                    <th key={h} style={{ border: '1px solid #93c5fd', padding: '5px 7px', fontSize: 12, fontWeight: 700, background: '#bde0f5', textAlign: 'center', color: '#1e3a5f' }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>{renderRows()}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
 
       {/* ── 인쇄 전용 숨김 영역 (팝업창에 HTML 주입용) ── */}
       <div ref={printAreaRef} style={{ display: 'none' }}>
