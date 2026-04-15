@@ -38,6 +38,7 @@ const navGroups: NavGroup[] = [
     label: '상품 · 재고',
     items: [
       { label: '상품관리',     href: '/products',              icon: Package },
+      { label: 'LOCA',         href: '/loca',                  icon: MapPin },
       { label: '판매관리',     href: '/sales',                 icon: TrendingUp },
       {
         label: '발주/입고관리', href: '/purchase', icon: PackagePlus,
@@ -59,7 +60,6 @@ const navGroups: NavGroup[] = [
       { label: '송장출력/등록',  href: '/product-edit-transfer/print',    icon: Printer },
       { label: '송장전송파일',   href: '/product-edit-transfer/send',     icon: Send },
       { label: '출고내역',       href: '/product-edit-transfer/history',  icon: History },
-      { label: 'LOCA',           href: '/loca',                           icon: MapPin },
     ],
   },
   {

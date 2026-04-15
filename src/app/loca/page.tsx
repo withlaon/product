@@ -1,12 +1,12 @@
 'use client'
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Printer, RefreshCw } from 'lucide-react'
 
 /* ── 상수 ── */
-const CATS_STORAGE_KEY = 'pm_categories_v1'
-const PRODUCTS_CACHE_KEY = 'pm_products_cache_v1'
-const INIT_EXTRA_CATS = ['가방', '의류', '잡화']
+const CATS_STORAGE_KEY       = 'pm_categories_v1'
+const PRODUCTS_CACHE_KEY     = 'pm_products_cache_v1'
+const INIT_EXTRA_CATS        = ['가방', '의류', '잡화']
 const PM_PRODUCTS_CACHE_SYNC_KEY = 'pm_products_cache_sync'
 
 /* ── 타입 ── */
@@ -14,7 +14,6 @@ interface ProductOption {
   name: string
   size?: string
   korean_name?: string
-  chinese_name?: string
   image?: string
   barcode?: string
   ordered?: number
@@ -66,10 +65,11 @@ function chunk<T>(arr: T[], n: number): T[][] {
 
 /* ── 메인 컴포넌트 ── */
 export default function LocaPage() {
-  const [cats, setCats]           = useState<string[]>([])
+  const [cats, setCats]               = useState<string[]>([])
   const [selectedCat, setSelectedCat] = useState('')
-  const [products, setProducts]   = useState<Product[]>([])
-  const [loading, setLoading]     = useState(true)
+  const [products, setProducts]       = useState<Product[]>([])
+  const [loading, setLoading]         = useState(true)
+  const printAreaRef                  = useRef<HTMLDivElement>(null)
 
   const refreshCats = useCallback(() => {
     const loaded = loadCats()
@@ -121,216 +121,214 @@ export default function LocaPage() {
 
   const printTitle = selectedCat ? `${selectedCat}_LOCA` : 'LOCA'
 
-  /* ── 테이블 공통 렌더 ── */
-  const COL_HEADERS = ['상품코드', '이미지', '옵션명', 'LOCA', '상품약어', '상품명']
+  /* ── 팝업 인쇄 ── */
+  const handlePrint = () => {
+    if (!printAreaRef.current) return
+    const html = printAreaRef.current.innerHTML
+    const win = window.open('', '_blank', 'width=900,height=700')
+    if (!win) return
+    win.document.write(`<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <title>${printTitle}</title>
+  <style>
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; box-sizing: border-box; margin: 0; padding: 0; }
+    @page { margin: 10mm; size: A4 portrait; }
+    body { font-family: Arial, sans-serif; background: #fff; }
+    table { border-collapse: collapse; width: 100%; table-layout: fixed; }
+    thead { display: table-header-group; }
+    tbody { display: table-row-group; }
+    tr { page-break-inside: avoid; }
+    td, th { border: 1px solid #000; font-size: 9pt; vertical-align: middle; }
+    img { display: block; max-width: 100%; max-height: 100%; object-fit: cover; margin: auto; }
+  </style>
+</head>
+<body>${html}</body>
+</html>`)
+    win.document.close()
+    win.focus()
+    setTimeout(() => { win.print(); win.close() }, 600)
+  }
 
-  const renderHeaderRow = (forPrint: boolean) => (
-    <tr>
-      {COL_HEADERS.map(h => (
-        <th
-          key={h}
-          style={{
-            border: forPrint ? '1px solid #000' : '1px solid #93c5fd',
-            padding: forPrint ? '2pt 4pt' : '5px 7px',
-            fontSize: forPrint ? '9pt' : 12,
-            fontWeight: 700,
-            background: '#bde0f5',
-            textAlign: 'center',
-            whiteSpace: 'nowrap',
-            color: '#1e3a5f',
-          }}
-        >{h}</th>
-      ))}
-    </tr>
-  )
-
-  const renderRows = (forPrint: boolean) =>
+  /* ── 공통 렌더: 상품 행 ── */
+  const renderRows = () =>
     filtered.map(p => {
-      const opts        = p.options ?? []
-      const firstImg    = opts[0]?.image ?? ''
-      const optNames    = opts.map(o => o.name || o.korean_name || '').filter(Boolean)
-      const pairs       = chunk(optNames, 2)
-      const abbr        = koreanOnly(p.abbr || '')
-      const bdr         = forPrint ? '1px solid #000' : '1px solid #e2e8f0'
-      const pad         = forPrint ? '2pt 4pt' : '5px 7px'
-      const fs          = forPrint ? '9pt' : 12
+      const opts     = p.options ?? []
+      const firstImg = opts[0]?.image ?? ''
+      const optNames = opts.map(o => o.name || o.korean_name || '').filter(Boolean)
+      const pairs    = chunk(optNames, 2)
+      const abbr     = koreanOnly(p.abbr || '')
 
       return (
         <tr key={p.id}>
-          <td style={{ border: bdr, padding: pad, fontSize: fs, fontFamily: 'monospace', verticalAlign: 'middle' }}>
+          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, fontFamily: 'monospace', verticalAlign: 'middle' }}>
             {p.code}
           </td>
-          <td style={{ border: bdr, padding: forPrint ? '2pt' : '3px', textAlign: 'center', verticalAlign: 'middle' }}>
+          <td style={{ border: '1px solid #e2e8f0', padding: '3px', textAlign: 'center', verticalAlign: 'middle' }}>
             {firstImg
-              ? <img
-                  src={firstImg}
-                  alt=""
-                  style={{
-                    width: forPrint ? 34 : 46,
-                    height: forPrint ? 34 : 46,
-                    objectFit: 'cover',
-                    display: 'block',
-                    margin: 'auto',
-                    borderRadius: forPrint ? 0 : 4,
-                  }}
-                />
-              : <span style={{ color: '#cbd5e1', fontSize: forPrint ? '8pt' : 11 }}>—</span>
+              ? <img src={firstImg} alt="" style={{ width: 46, height: 46, objectFit: 'cover', display: 'block', margin: 'auto', borderRadius: 4 }}/>
+              : <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
             }
           </td>
-          <td style={{ border: bdr, padding: pad, fontSize: fs, verticalAlign: 'middle' }}>
+          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, verticalAlign: 'middle' }}>
             {pairs.map((pair, i) => (
-              <div key={i} style={{ lineHeight: '1.5', whiteSpace: 'nowrap' }}>{pair.join(', ')}</div>
+              <div key={i} style={{ lineHeight: '1.6', whiteSpace: 'nowrap' }}>{pair.join(', ')}</div>
             ))}
           </td>
-          <td style={{ border: bdr, padding: pad, fontSize: fs, fontWeight: 800, textAlign: 'center', verticalAlign: 'middle' }}>
+          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, fontWeight: 800, textAlign: 'center', verticalAlign: 'middle' }}>
             {p.loca}
           </td>
-          <td style={{ border: bdr, padding: pad, fontSize: fs, verticalAlign: 'middle' }}>
+          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, verticalAlign: 'middle' }}>
             {abbr}
           </td>
-          <td style={{ border: bdr, padding: pad, fontSize: fs, verticalAlign: 'middle', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: forPrint ? 'clip' : 'ellipsis' }}>
+          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, verticalAlign: 'middle', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
             {p.name}
           </td>
         </tr>
       )
     })
 
-  const colGroup = (forPrint: boolean) => (
-    <colgroup>
-      <col style={{ width: forPrint ? '15%' : 104 }}/>
-      <col style={{ width: forPrint ? '10%' : 68 }}/>
-      <col style={{ width: forPrint ? '18%' : 130 }}/>
-      <col style={{ width: forPrint ? '10%' : 80 }}/>
-      <col style={{ width: forPrint ? '13%' : 100 }}/>
-      <col/>
-    </colgroup>
-  )
+  /* ── 인쇄용 렌더: 상품 행 (스타일만 다름) ── */
+  const renderPrintRows = () =>
+    filtered.map(p => {
+      const opts     = p.options ?? []
+      const firstImg = opts[0]?.image ?? ''
+      const optNames = opts.map(o => o.name || o.korean_name || '').filter(Boolean)
+      const pairs    = chunk(optNames, 2)
+      const abbr     = koreanOnly(p.abbr || '')
 
-  const titleRow = (forPrint: boolean) => (
-    <tr>
-      <td
-        colSpan={6}
-        style={{
-          border: forPrint ? '1px solid #000' : '1px solid #bde0f5',
-          borderBottom: forPrint ? '1px solid #000' : '1px solid #bde0f5',
-          padding: forPrint ? '3pt 5pt' : '6px 10px',
-          fontSize: forPrint ? '11pt' : 14,
-          fontWeight: 800,
-          background: forPrint ? '#fff' : '#f0f9ff',
-          color: '#1e3a5f',
-        }}
-      >
-        {printTitle}
-      </td>
-    </tr>
-  )
+      return (
+        <tr key={p.id}>
+          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', fontFamily: 'monospace', verticalAlign: 'middle' }}>
+            {p.code}
+          </td>
+          <td style={{ border: '1px solid #000', padding: '2pt', textAlign: 'center', verticalAlign: 'middle', width: '10%' }}>
+            {firstImg && (
+              <img src={firstImg} alt="" style={{ width: 34, height: 34, objectFit: 'cover', display: 'block', margin: 'auto' }}/>
+            )}
+          </td>
+          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', verticalAlign: 'middle' }}>
+            {pairs.map((pair, i) => (
+              <div key={i} style={{ lineHeight: '1.4' }}>{pair.join(', ')}</div>
+            ))}
+          </td>
+          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', fontWeight: 800, textAlign: 'center', verticalAlign: 'middle' }}>
+            {p.loca}
+          </td>
+          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', verticalAlign: 'middle' }}>
+            {abbr}
+          </td>
+          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', verticalAlign: 'middle', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+            {p.name}
+          </td>
+        </tr>
+      )
+    })
+
+  const COL_HEADERS = ['상품코드', '이미지', '옵션명', 'LOCA', '상품약어', '상품명']
 
   return (
-    <>
-      {/* ── 인쇄 CSS ── */}
-      <style>{`
-        @media print {
-          aside, header, .loca-no-print { display: none !important; }
-          div[style*="margin-left"] { margin-left: 0 !important; }
-          main {
-            padding: 0 !important;
-            overflow: visible !important;
-            height: auto !important;
-          }
-          .loca-screen-area { display: none !important; }
-          .loca-print-area  { display: block !important; }
-          * {
-            -webkit-print-color-adjust: exact !important;
-            print-color-adjust: exact !important;
-          }
-          @page { margin: 10mm; size: A4 portrait; }
-        }
-        .loca-print-area { display: none; }
-      `}</style>
-
-      {/* ── 화면 UI ── */}
-      <div className="loca-screen-area">
-        {/* 카테고리 탭 */}
-        <div className="loca-no-print" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-          {cats.map(cat => (
-            <button
-              key={cat}
-              onClick={() => setSelectedCat(cat)}
-              style={{
-                padding: '6px 18px',
-                borderRadius: 20,
-                fontSize: 13,
-                fontWeight: 700,
-                border: selectedCat === cat ? 'none' : '1px solid #e2e8f0',
-                cursor: 'pointer',
-                background: selectedCat === cat ? '#2563eb' : '#fff',
-                color: selectedCat === cat ? '#fff' : '#475569',
-                transition: 'all 150ms',
-                boxShadow: selectedCat === cat ? '0 2px 8px rgba(37,99,235,0.25)' : 'none',
-              }}
-            >
-              {cat}
-            </button>
-          ))}
-        </div>
-
-        {/* 액션 바 */}
-        <div className="loca-no-print" style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
-          <span style={{ fontSize: 16, fontWeight: 800, color: '#1e293b' }}>{printTitle}</span>
-          {filtered.length > 0 && (
-            <span style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>{filtered.length}개 상품</span>
-          )}
-          <div style={{ flex: 1 }}/>
+    <div>
+      {/* ── 카테고리 탭 ── */}
+      <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+        {cats.map(cat => (
           <button
-            onClick={() => { loadCache(); fetchFresh() }}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#475569' }}
+            key={cat}
+            onClick={() => setSelectedCat(cat)}
+            style={{
+              padding: '6px 18px',
+              borderRadius: 20,
+              fontSize: 13,
+              fontWeight: 700,
+              border: selectedCat === cat ? 'none' : '1px solid #e2e8f0',
+              cursor: 'pointer',
+              background: selectedCat === cat ? '#2563eb' : '#fff',
+              color: selectedCat === cat ? '#fff' : '#475569',
+              transition: 'all 150ms',
+              boxShadow: selectedCat === cat ? '0 2px 8px rgba(37,99,235,0.25)' : 'none',
+            }}
           >
-            <RefreshCw size={13}/> 새로고침
+            {cat}
           </button>
-          <button
-            onClick={() => window.print()}
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 16px', border: 'none', borderRadius: 8, background: '#2563eb', color: '#fff', cursor: 'pointer', fontSize: 12.5, fontWeight: 700 }}
-          >
-            <Printer size={13}/> 인쇄
-          </button>
-        </div>
-
-        {/* 화면 테이블 */}
-        {loading && products.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>데이터를 불러오는 중...</div>
-        ) : !selectedCat ? (
-          <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>카테고리를 선택하세요.</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>해당 카테고리에 등록된 상품이 없습니다.</div>
-        ) : (
-          <div style={{ overflowX: 'auto', border: '1px solid #bfdbfe', borderRadius: 10, background: '#fff' }}>
-            <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', minWidth: 580 }}>
-              {colGroup(false)}
-              <thead>
-                {titleRow(false)}
-                {renderHeaderRow(false)}
-              </thead>
-              <tbody>
-                {renderRows(false)}
-              </tbody>
-            </table>
-          </div>
-        )}
+        ))}
       </div>
 
-      {/* ── 인쇄 전용 영역 ── */}
-      <div className="loca-print-area">
+      {/* ── 액션 바 ── */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+        <span style={{ fontSize: 16, fontWeight: 800, color: '#1e293b' }}>{printTitle}</span>
+        {filtered.length > 0 && (
+          <span style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>{filtered.length}개 상품</span>
+        )}
+        <div style={{ flex: 1 }}/>
+        <button
+          onClick={() => { loadCache(); fetchFresh() }}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 14px', border: '1px solid #e2e8f0', borderRadius: 8, background: '#f8fafc', cursor: 'pointer', fontSize: 12.5, fontWeight: 700, color: '#475569' }}
+        >
+          <RefreshCw size={13}/> 새로고침
+        </button>
+        <button
+          onClick={handlePrint}
+          disabled={filtered.length === 0}
+          style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '6px 16px', border: 'none', borderRadius: 8, background: filtered.length === 0 ? '#94a3b8' : '#2563eb', color: '#fff', cursor: filtered.length === 0 ? 'not-allowed' : 'pointer', fontSize: 12.5, fontWeight: 700 }}
+        >
+          <Printer size={13}/> 인쇄
+        </button>
+      </div>
+
+      {/* ── 화면 테이블 ── */}
+      {loading && products.length === 0 ? (
+        <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>데이터를 불러오는 중...</div>
+      ) : !selectedCat ? (
+        <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>카테고리를 선택하세요.</div>
+      ) : filtered.length === 0 ? (
+        <div style={{ padding: 48, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>해당 카테고리에 등록된 상품이 없습니다.</div>
+      ) : (
+        <div style={{ overflowX: 'auto', border: '1px solid #bfdbfe', borderRadius: 10, background: '#fff' }}>
+          <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', minWidth: 580 }}>
+            <colgroup>
+              <col style={{ width: 104 }}/><col style={{ width: 68 }}/><col style={{ width: 130 }}/>
+              <col style={{ width: 80 }}/><col style={{ width: 100 }}/><col/>
+            </colgroup>
+            <thead>
+              <tr>
+                <td colSpan={6} style={{ border: '1px solid #bfdbfe', padding: '6px 10px', fontSize: 14, fontWeight: 800, background: '#f0f9ff', color: '#1e3a5f' }}>
+                  {printTitle}
+                </td>
+              </tr>
+              <tr>
+                {COL_HEADERS.map(h => (
+                  <th key={h} style={{ border: '1px solid #93c5fd', padding: '5px 7px', fontSize: 12, fontWeight: 700, background: '#bde0f5', textAlign: 'center', color: '#1e3a5f' }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>{renderRows()}</tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── 인쇄 전용 숨김 영역 (팝업창에 HTML 주입용) ── */}
+      <div ref={printAreaRef} style={{ display: 'none' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', fontFamily: 'Arial, sans-serif' }}>
-          {colGroup(true)}
+          <colgroup>
+            <col style={{ width: '15%' }}/><col style={{ width: '10%' }}/><col style={{ width: '18%' }}/>
+            <col style={{ width: '10%' }}/><col style={{ width: '13%' }}/><col/>
+          </colgroup>
           <thead>
-            {titleRow(true)}
-            {renderHeaderRow(true)}
+            <tr>
+              <td colSpan={6} style={{ border: '1px solid #000', padding: '3pt 5pt', fontSize: '11pt', fontWeight: 800 }}>
+                {printTitle}
+              </td>
+            </tr>
+            <tr>
+              {COL_HEADERS.map(h => (
+                <th key={h} style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', fontWeight: 700, background: '#bde0f5', textAlign: 'center' }}>{h}</th>
+              ))}
+            </tr>
           </thead>
-          <tbody>
-            {renderRows(true)}
-          </tbody>
+          <tbody>{renderPrintRows()}</tbody>
         </table>
       </div>
-    </>
+    </div>
   )
 }
