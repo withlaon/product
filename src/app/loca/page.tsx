@@ -140,8 +140,9 @@ export default function LocaPage() {
     thead { display: table-header-group; }
     tbody { display: table-row-group; }
     tr { page-break-inside: avoid; }
-    td, th { border: 1px solid #000; font-size: 9pt; vertical-align: middle; }
-    img { display: block; max-width: 100%; max-height: 100%; object-fit: cover; margin: auto; }
+    td, th { border: 1px solid #000; font-size: 9pt; vertical-align: middle; padding: 0; overflow: hidden; }
+    div { box-sizing: border-box; }
+    img { display: block; object-fit: cover; margin: auto; }
   </style>
 </head>
 <body>${html}</body>
@@ -151,7 +152,8 @@ export default function LocaPage() {
     setTimeout(() => { win.print(); win.close() }, 600)
   }
 
-  /* ── 공통 렌더: 상품 행 ── */
+  /* ── 화면 행 고정 높이 ── */
+  const ROW_H = 54
   const renderRows = () =>
     filtered.map(p => {
       const opts     = p.options ?? []
@@ -159,37 +161,56 @@ export default function LocaPage() {
       const optNames = opts.map(o => o.name || o.korean_name || '').filter(Boolean)
       const pairs    = chunk(optNames, 2)
       const abbr     = koreanOnly(p.abbr || '')
+      const isDel    = p.status === 'pending_delete'
+
+      const cell: React.CSSProperties = { border: '1px solid #e2e8f0', padding: 0, height: ROW_H }
+      const inner: React.CSSProperties = {
+        height: ROW_H, overflow: 'hidden', display: 'flex', alignItems: 'center',
+      }
 
       return (
         <tr key={p.id}>
-          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, verticalAlign: 'middle' }}>
-            {p.code}
+          <td style={cell}>
+            <div style={{ ...inner, padding: '0 6px', fontSize: 12, color: isDel ? '#dc2626' : undefined }}>
+              {p.code}
+            </div>
           </td>
-          <td style={{ border: '1px solid #e2e8f0', padding: '3px', textAlign: 'center', verticalAlign: 'middle' }}>
-            {firstImg
-              ? <img src={firstImg} alt="" style={{ width: 46, height: 46, objectFit: 'cover', display: 'block', margin: 'auto', borderRadius: 4 }}/>
-              : <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
-            }
+          <td style={cell}>
+            <div style={{ ...inner, justifyContent: 'center' }}>
+              {firstImg
+                ? <img src={firstImg} alt="" style={{ width: 46, height: 46, objectFit: 'cover', display: 'block', borderRadius: 4 }}/>
+                : <span style={{ color: '#cbd5e1', fontSize: 11 }}>—</span>
+              }
+            </div>
           </td>
-          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, verticalAlign: 'middle' }}>
-            {pairs.map((pair, i) => (
-              <div key={i} style={{ lineHeight: '1.6', whiteSpace: 'nowrap' }}>{pair.join(', ')}</div>
-            ))}
+          <td style={cell}>
+            <div style={{ ...inner, flexDirection: 'column', justifyContent: 'center', padding: '0 6px' }}>
+              {pairs.map((pair, i) => (
+                <div key={i} style={{ fontSize: 12, lineHeight: '1.6', whiteSpace: 'nowrap' }}>{pair.join(', ')}</div>
+              ))}
+            </div>
           </td>
-          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, fontWeight: 800, textAlign: 'center', verticalAlign: 'middle' }}>
-            {p.loca}
+          <td style={cell}>
+            <div style={{ ...inner, justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>
+              {p.loca}
+            </div>
           </td>
-          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, verticalAlign: 'middle' }}>
-            {abbr}
+          <td style={cell}>
+            <div style={{ ...inner, padding: '0 6px', fontSize: 12 }}>
+              {abbr}
+            </div>
           </td>
-          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, verticalAlign: 'middle', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>
-            {p.name}
+          <td style={cell}>
+            <div style={{ ...inner, padding: '0 6px', fontSize: 12, whiteSpace: 'nowrap' }}>
+              {p.name}
+            </div>
           </td>
         </tr>
       )
     })
 
-  /* ── 인쇄용 렌더: 상품 행 (스타일만 다름) ── */
+  /* ── 인쇄용 행 고정 높이 ── */
+  const ROW_H_PT = '40pt'
   const renderPrintRows = () =>
     filtered.map(p => {
       const opts     = p.options ?? []
@@ -197,30 +218,48 @@ export default function LocaPage() {
       const optNames = opts.map(o => o.name || o.korean_name || '').filter(Boolean)
       const pairs    = chunk(optNames, 2)
       const abbr     = koreanOnly(p.abbr || '')
+      const isDel    = p.status === 'pending_delete'
+
+      const cell: React.CSSProperties = { border: '1px solid #000', padding: 0, height: ROW_H_PT, overflow: 'hidden' }
+      const inner: React.CSSProperties = {
+        height: ROW_H_PT, overflow: 'hidden', display: 'flex', alignItems: 'center',
+      }
 
       return (
         <tr key={p.id}>
-          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', verticalAlign: 'middle' }}>
-            {p.code}
+          <td style={cell}>
+            <div style={{ ...inner, padding: '0 4pt', fontSize: '9pt', color: isDel ? '#dc2626' : undefined }}>
+              {p.code}
+            </div>
           </td>
-          <td style={{ border: '1px solid #000', padding: '2pt', textAlign: 'center', verticalAlign: 'middle', width: '10%' }}>
-            {firstImg && (
-              <img src={firstImg} alt="" style={{ width: 34, height: 34, objectFit: 'cover', display: 'block', margin: 'auto' }}/>
-            )}
+          <td style={cell}>
+            <div style={{ ...inner, justifyContent: 'center' }}>
+              {firstImg && (
+                <img src={firstImg} alt="" style={{ width: 34, height: 34, objectFit: 'cover', display: 'block', margin: 'auto' }}/>
+              )}
+            </div>
           </td>
-          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', verticalAlign: 'middle' }}>
-            {pairs.map((pair, i) => (
-              <div key={i} style={{ lineHeight: '1.4' }}>{pair.join(', ')}</div>
-            ))}
+          <td style={cell}>
+            <div style={{ ...inner, flexDirection: 'column', justifyContent: 'center', padding: '0 4pt' }}>
+              {pairs.map((pair, i) => (
+                <div key={i} style={{ fontSize: '9pt', lineHeight: '1.4' }}>{pair.join(', ')}</div>
+              ))}
+            </div>
           </td>
-          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', fontWeight: 800, textAlign: 'center', verticalAlign: 'middle' }}>
-            {p.loca}
+          <td style={cell}>
+            <div style={{ ...inner, justifyContent: 'center', fontSize: '9pt', fontWeight: 800 }}>
+              {p.loca}
+            </div>
           </td>
-          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', verticalAlign: 'middle' }}>
-            {abbr}
+          <td style={cell}>
+            <div style={{ ...inner, padding: '0 4pt', fontSize: '9pt' }}>
+              {abbr}
+            </div>
           </td>
-          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', verticalAlign: 'middle', overflow: 'hidden', whiteSpace: 'nowrap' }}>
-            {p.name}
+          <td style={cell}>
+            <div style={{ ...inner, padding: '0 4pt', fontSize: '9pt', whiteSpace: 'nowrap' }}>
+              {p.name}
+            </div>
           </td>
         </tr>
       )
