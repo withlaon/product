@@ -162,7 +162,7 @@ export default function LocaPage() {
 
       return (
         <tr key={p.id}>
-          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, fontFamily: 'monospace', verticalAlign: 'middle' }}>
+          <td style={{ border: '1px solid #e2e8f0', padding: '4px 6px', fontSize: 12, verticalAlign: 'middle' }}>
             {p.code}
           </td>
           <td style={{ border: '1px solid #e2e8f0', padding: '3px', textAlign: 'center', verticalAlign: 'middle' }}>
@@ -200,7 +200,7 @@ export default function LocaPage() {
 
       return (
         <tr key={p.id}>
-          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', fontFamily: 'monospace', verticalAlign: 'middle' }}>
+          <td style={{ border: '1px solid #000', padding: '2pt 4pt', fontSize: '9pt', verticalAlign: 'middle' }}>
             {p.code}
           </td>
           <td style={{ border: '1px solid #000', padding: '2pt', textAlign: 'center', verticalAlign: 'middle', width: '10%' }}>
@@ -287,8 +287,8 @@ export default function LocaPage() {
         <div style={{ overflowX: 'auto', border: '1px solid #bfdbfe', borderRadius: 10, background: '#fff' }}>
           <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', minWidth: 580 }}>
             <colgroup>
-              <col style={{ width: 104 }}/><col style={{ width: 68 }}/><col style={{ width: 130 }}/>
-              <col style={{ width: 80 }}/><col style={{ width: 100 }}/><col/>
+              <col style={{ width: 104 }}/><col style={{ width: 68 }}/><col style={{ width: 87 }}/>
+              <col style={{ width: 80 }}/><col style={{ width: 143 }}/><col/>
             </colgroup>
             <thead>
               <tr>
@@ -311,8 +311,8 @@ export default function LocaPage() {
       <div ref={printAreaRef} style={{ display: 'none' }}>
         <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', fontFamily: 'Arial, sans-serif' }}>
           <colgroup>
-            <col style={{ width: '15%' }}/><col style={{ width: '10%' }}/><col style={{ width: '18%' }}/>
-            <col style={{ width: '10%' }}/><col style={{ width: '13%' }}/><col/>
+            <col style={{ width: '15%' }}/><col style={{ width: '10%' }}/><col style={{ width: '12%' }}/>
+            <col style={{ width: '10%' }}/><col style={{ width: '19%' }}/><col/>
           </colgroup>
           <thead>
             <tr>
