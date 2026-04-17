@@ -255,8 +255,8 @@ const CH_STYLE: Record<string, { bg:string; color:string }> = {
 // 현재고: current_stock 필드 우선, 없으면 legacy received - sold
 const optStock       = (o: ProductOption) =>
   o.current_stock !== undefined ? o.current_stock : Math.max(0, o.received - (o.sold || 0))
-// 판매수량 = 입고 - 현재고 (사용자 요청)
-const optSold        = (o: ProductOption) => Math.max(0, o.received - optStock(o))
+// 판매수량 = 입고 - 현재고 - 불량수량 (불량은 판매가 아니므로 제외)
+const optSold        = (o: ProductOption) => Math.max(0, o.received - optStock(o) - (o.defective || 0))
 const optDefective   = (o: ProductOption) => o.defective || 0
 const optUndelivered = (o: ProductOption) => Math.max(0, o.ordered - o.received)
 const totalCurStock  = (p: Product) => p.options.reduce((s, o) => s + optStock(o), 0)
