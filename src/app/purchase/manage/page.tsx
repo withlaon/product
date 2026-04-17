@@ -318,16 +318,14 @@ export default function PurchaseManagePage() {
 
   /* ── 발주 추천 목록 ──
      조건:
-       · 판매중(active): 현재고 ≤ 3 또는 발주일 이후 출고 판매 > 0
-       · 판매예정(upcoming): 위 조건 충족 옵션 + (그 외 옵션도 전부 포함 — 출시 전 발주 준비)
+       · 판매중(active)만 포함: 현재고 ≤ 3 또는 발주일 이후 출고 판매 > 0
+       · 판매예정(upcoming)은 발주 추천 목록에서 제외
      정렬: 바코드 오름차순
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const result: QualOpt[] = []
     for (const prod of products) {
-      const isActive = prod.status === 'active'
-      const isUpcoming = prod.status === 'upcoming'
-      if (!isActive && !isUpcoming) continue
+      if (prod.status !== 'active') continue
 
       for (const opt of prod.options) {
         const stock = opt.current_stock ?? 0
@@ -335,14 +333,10 @@ export default function PurchaseManagePage() {
         const sold  = shipSoldMap[opt.barcode || ''] || 0
         const includeLowStock = stock <= 3
         const includePostOrderSales = sold > 0
-        const matchActiveRule = includeLowStock || includePostOrderSales
-        if (isActive && !matchActiveRule) continue
-        // 판매예정(upcoming): 재고/판매 조건 없어도 옵션 전부 추천에 올림
+        if (!includeLowStock && !includePostOrderSales) continue
 
         let reason: QualOpt['reason'] = 'lowStock'
-        if (isUpcoming && !matchActiveRule) {
-          reason = 'upcoming'
-        } else if (stock > 3 && sold > 0) reason = 'sold'
+        if (stock > 3 && sold > 0) reason = 'sold'
         else if (stock <= 3 && sold > 0) reason = 'both'
         else if (stock <= 3 && unr > 0) reason = 'unreceived'
 
@@ -692,7 +686,7 @@ export default function PurchaseManagePage() {
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <AlertTriangle size={14} style={{ color: '#d97706' }} />
             <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>발주 추천 목록</span>
-            <span style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 600 }}>판매중·판매예정 · 재고 부족(≤3) 또는 발주일 이후 판매 · 판매예정은 옵션 전체</span>
+            <span style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 600 }}>판매중(active) · 재고 부족(≤3) 또는 발주일 이후 판매 · 판매예정 상품 제외</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {qualOpts.filter(o => o.currentStock === 0).length > 0 && (
                 <span style={{ fontSize: '11px', background: '#fff1f2', color: '#dc2626', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
@@ -707,11 +701,6 @@ export default function PurchaseManagePage() {
               {qualOpts.filter(o => o.sold > 0).length > 0 && (
                 <span style={{ fontSize: '11px', background: '#eef2ff', color: '#4f46e5', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
                   발주 후 판매: {qualOpts.filter(o => o.sold > 0).length}
-                </span>
-              )}
-              {qualOpts.filter(o => o.reason === 'upcoming').length > 0 && (
-                <span style={{ fontSize: '11px', background: '#dbeafe', color: '#1d4ed8', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
-                  판매예정: {qualOpts.filter(o => o.reason === 'upcoming').length}
                 </span>
               )}
             </div>
@@ -763,11 +752,9 @@ export default function PurchaseManagePage() {
                     return (
                       <tr key={opt.key} style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer', transition: 'background 0.15s' }}
                         onClick={() => toggleSelect(opt)}>
-                        {/* 재고 / 발주 후 판매 배지: 판매 1건 이상이면 재고 부족이어도 판매 표시 */}
+                        {/* 재고 / 발주 후 판매 배지 */}
                         <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 44, flexShrink: 0 }}>
-                          {opt.reason === 'upcoming' ? (
-                            <span style={{ fontSize: '8.5px', background: '#dbeafe', color: '#1d4ed8', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>예정</span>
-                          ) : opt.currentStock === 0 ? (
+                          {opt.currentStock === 0 ? (
                             <span style={{ fontSize: '8.5px', background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>품절</span>
                           ) : opt.sold > 0 ? (
                             <span style={{ fontSize: '8.5px', background: '#eef2ff', color: '#4f46e5', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>판매</span>

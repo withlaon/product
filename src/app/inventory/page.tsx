@@ -1,10 +1,11 @@
 'use client'
 
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ShieldAlert, RefreshCw, Package } from 'lucide-react'
+import { ShieldAlert, RefreshCw, Package, FileDown } from 'lucide-react'
 
 type TxType = 'in' | 'out' | 'defective' | 'adjust'
 interface TxRecord {
@@ -41,6 +42,7 @@ interface PmProduct {
 }
 
 const TX_KEY = 'pm_inv_tx_v1'
+const SHARED_CACHE_KEY = 'pm_products_cache_v1'
 
 function loadTx(): TxRecord[] {
   try {
@@ -64,6 +66,11 @@ function norm(s: string) {
   return s.trim().toLowerCase()
 }
 
+function getThisMonth() {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 export default function InventoryPage() {
   const [products, setProducts] = useState<PmProduct[]>([])
   const [txList, setTxList] = useState<TxRecord[]>([])
@@ -77,10 +84,19 @@ export default function InventoryPage() {
   const [noteInput, setNoteInput] = useState('')
   const [syncFlag, setSyncFlag] = useState(0)
 
+  // 월별 검색
+  const [filterMonth, setFilterMonth] = useState(getThisMonth())
+
   const loadProducts = useCallback(async () => {
     setLoading(true)
     const { data } = await supabase.from('pm_products').select('id,code,name,abbr,category,options').order('code', { ascending: true })
-    if (data) setProducts(data as PmProduct[])
+    if (data) {
+      setProducts(data as PmProduct[])
+      // 상품관리탭 캐시도 갱신하여 실시간 반영
+      try {
+        localStorage.setItem(SHARED_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }))
+      } catch { /* ignore */ }
+    }
     setLoading(false)
   }, [])
 
@@ -247,12 +263,25 @@ export default function InventoryPage() {
     setSaving(false)
     setQtyInput('1')
     setNoteInput('')
+    // 상품관리탭 캐시 무효화 → 다른 탭에서 즉시 반영
     try {
+      localStorage.removeItem(SHARED_CACHE_KEY)
       window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
     } catch { /* ignore */ }
+    // DB에서 최신 데이터 재로드
+    void loadProducts()
   }
 
-  const defectTx = useMemo(() => txList.filter(t => t.type === 'defective').sort((a, b) => b.date.localeCompare(a.date)), [txList])
+  const defectTx = useMemo(
+    () => txList.filter(t => t.type === 'defective').sort((a, b) => b.date.localeCompare(a.date)),
+    [txList],
+  )
+
+  // 월별 필터링된 불량 이력
+  const filteredDefectTx = useMemo(
+    () => defectTx.filter(t => t.date.startsWith(filterMonth)),
+    [defectTx, filterMonth],
+  )
 
   const cumulativeRegistrations = useMemo(
     () => defectTx.reduce((s, t) => s + Math.abs(t.qty), 0),
@@ -276,6 +305,32 @@ export default function InventoryPage() {
     return m
   }, [products])
 
+  // 월별 엑셀 다운로드
+  const handleExcelDownload = () => {
+    if (filteredDefectTx.length === 0) {
+      alert('해당 월에 불량 등록 내역이 없습니다.')
+      return
+    }
+    const rows = filteredDefectTx.map(tx => {
+      const meta = metaByBarcode[tx.barcode] ?? { abbr: '', image: '' }
+      return {
+        '일시': new Date(tx.date).toLocaleString('ko-KR'),
+        '상품코드': tx.product_code,
+        '상품약어': meta.abbr || '',
+        '상품명': tx.product_name,
+        '옵션명': tx.option_name,
+        '바코드': tx.barcode,
+        '수량': Math.abs(tx.qty),
+        '비고': tx.note,
+      }
+    })
+    const ws = XLSX.utils.json_to_sheet(rows)
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, '불량등록이력')
+    const [year, month] = filterMonth.split('-')
+    XLSX.writeFile(wb, `불량등록이력_${year}년${month}월.xlsx`)
+  }
+
   return (
     <div className="pm-page space-y-5" style={{ maxWidth: 1280, margin: '0 auto' }}>
       <div className="pm-card" style={{ padding: '14px 18px' }}>
@@ -287,7 +342,7 @@ export default function InventoryPage() {
             <p style={{ fontSize: 15, fontWeight: 900, color: '#1e293b' }}>불량등록</p>
             <p style={{ fontSize: 12, fontWeight: 600, color: '#64748b', marginTop: 4, lineHeight: 1.45 }}>
               바코드만 입력하면 상품코드·옵션명이 채워지고, 상품코드·옵션명만 입력하면 바코드가 채워집니다. 등록 시 상품관리의{' '}
-              <b style={{ color: '#c2410c' }}>불량·현재고</b>가 바로 반영됩니다.
+              <b style={{ color: '#c2410c' }}>불량·현재고</b>가 바코드 기준으로 즉시 반영됩니다.
             </p>
           </div>
           <Button variant="outline" size="sm" onClick={() => void loadProducts()} style={{ marginLeft: 'auto' }}>
@@ -356,17 +411,49 @@ export default function InventoryPage() {
       </div>
 
       <div className="pm-card overflow-hidden">
-        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(15,23,42,0.07)', display: 'flex', alignItems: 'center', gap: 8 }}>
+        <div style={{ padding: '12px 16px', borderBottom: '1px solid rgba(15,23,42,0.07)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
           <Package size={16} color="#64748b" />
           <span style={{ fontSize: 14, fontWeight: 900, color: '#1e293b' }}>불량 등록 이력</span>
-          <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>{defectTx.length}건</span>
+          {/* 월별 검색 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+            <label style={{ fontSize: 11, fontWeight: 700, color: '#64748b', whiteSpace: 'nowrap' }}>월 선택</label>
+            <input
+              type="month"
+              value={filterMonth}
+              onChange={e => setFilterMonth(e.target.value)}
+              style={{
+                fontSize: 12, fontWeight: 700, color: '#1e293b',
+                border: '1.5px solid #e2e8f0', borderRadius: 7, padding: '4px 8px',
+                background: '#f8fafc', cursor: 'pointer', outline: 'none',
+              }}
+            />
+          </div>
+          <span style={{ fontSize: 12, color: '#94a3b8', fontWeight: 700 }}>
+            {filteredDefectTx.length}건
+            <span style={{ marginLeft: 6, fontSize: 11, color: '#cbd5e1' }}>/ 전체 {defectTx.length}건</span>
+          </span>
+          {/* 엑셀 다운로드 버튼 */}
+          <button
+            onClick={handleExcelDownload}
+            style={{
+              marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 5,
+              fontSize: 12, fontWeight: 800, color: '#059669',
+              background: '#ecfdf5', border: '1.5px solid #6ee7b7',
+              borderRadius: 8, padding: '6px 14px', cursor: 'pointer',
+            }}
+          >
+            <FileDown size={13} />
+            엑셀 다운로드
+          </button>
         </div>
         <div style={{ maxHeight: 480, overflowY: 'auto' }}>
           {loading ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>불러오는 중...</div>
-          ) : defectTx.length === 0 ? (
+          ) : filteredDefectTx.length === 0 ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-              <p style={{ fontWeight: 700 }}>불량 등록 내역이 없습니다.</p>
+              <p style={{ fontWeight: 700 }}>
+                {filterMonth} 불량 등록 내역이 없습니다.
+              </p>
             </div>
           ) : (
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
@@ -380,7 +467,7 @@ export default function InventoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {defectTx.map(tx => {
+                {filteredDefectTx.map(tx => {
                   const meta = metaByBarcode[tx.barcode] ?? { abbr: '', image: '' }
                   const qty = Math.abs(tx.qty)
                   return (
