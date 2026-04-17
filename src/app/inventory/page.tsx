@@ -92,10 +92,7 @@ export default function InventoryPage() {
     const { data } = await supabase.from('pm_products').select('id,code,name,abbr,category,options').order('code', { ascending: true })
     if (data) {
       setProducts(data as PmProduct[])
-      // 상품관리탭 캐시도 갱신하여 실시간 반영
-      try {
-        localStorage.setItem(SHARED_CACHE_KEY, JSON.stringify({ ts: Date.now(), data }))
-      } catch { /* ignore */ }
+      // 상품관리 공유 캐시에는 쓰지 않음 (불량등록은 일부 필드만 조회하므로 기존 캐시 덮어쓰면 안 됨)
     }
     setLoading(false)
   }, [])
