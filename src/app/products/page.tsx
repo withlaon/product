@@ -150,13 +150,26 @@ function patchProductInPmProductsCache(updated: Product) {
   } catch { /* ignore */ }
 }
 
+/** 캐시 데이터 유효성 검사: status, channel_prices 필드가 있어야 유효 (불량등록 등 부분 데이터 거부) */
+function isValidProductCacheData(data: unknown[]): boolean {
+  if (!data.length) return false
+  const first = data[0] as Record<string, unknown>
+  return typeof first.status === 'string' && Array.isArray(first.channel_prices)
+}
+
 /** TTL 관계없이 저장된 캐시 데이터 반환 (스테일 포함) */
 function loadProductsAnyCached(): Product[] {
   try {
     const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
     if (!raw) return []
     const { data: cached } = JSON.parse(raw)
-    if (Array.isArray(cached) && cached.length > 0) return cached
+    if (!Array.isArray(cached) || cached.length === 0) return []
+    if (!isValidProductCacheData(cached)) {
+      // 불완전한 캐시(status/channel_prices 없음) → 자동 삭제 후 재요청 유도
+      try { localStorage.removeItem(PRODUCTS_CACHE_KEY) } catch {}
+      return []
+    }
+    return cached
   } catch {}
   return []
 }
@@ -166,7 +179,11 @@ function loadProductsFromCache(): Product[] {
     const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
     if (!raw) return []
     const { ts, data: cached } = JSON.parse(raw)
-    if (Date.now() - ts < PRODUCTS_CACHE_TTL && Array.isArray(cached)) return cached
+    if (!Array.isArray(cached) || !isValidProductCacheData(cached)) {
+      try { localStorage.removeItem(PRODUCTS_CACHE_KEY) } catch {}
+      return []
+    }
+    if (Date.now() - ts < PRODUCTS_CACHE_TTL) return cached
   } catch {}
   return []
 }
@@ -176,7 +193,11 @@ function hasFreshCache(): boolean {
     const raw = localStorage.getItem(PRODUCTS_CACHE_KEY)
     if (!raw) return false
     const { ts, data: cached } = JSON.parse(raw)
-    return Date.now() - ts < PRODUCTS_CACHE_TTL && Array.isArray(cached) && cached.length > 0
+    if (!Array.isArray(cached) || !isValidProductCacheData(cached)) {
+      try { localStorage.removeItem(PRODUCTS_CACHE_KEY) } catch {}
+      return false
+    }
+    return Date.now() - ts < PRODUCTS_CACHE_TTL
   } catch { return false }
 }
 
@@ -2547,7 +2568,7 @@ export default function ProductsPage() {
                 </tr>
               )}
               {paginated.map(p => {
-                const st  = ST[p.status]
+                const st  = ST[p.status] ?? ST['active']
                 const tot = totalCurStock(p)
                 const low = tot <= 2
 
