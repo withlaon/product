@@ -120,10 +120,10 @@ export default function ReceiveManagePage() {
   const [form,  setForm]  = useState(EMPTY_FORM)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  /* 수정/삭제 모달 */
-  const [editTarget,   setEditTarget]   = useState<Purchase | null>(null)
-  const [editFormData, setEditFormData] = useState<Purchase | null>(null)
-  const [deleteTarget, setDeleteTarget] = useState<Purchase | null>(null)
+  /* 개별 아이템 수정/삭제 */
+  const [editItem,     setEditItem]     = useState<{ purchase: Purchase; itemIndex: number } | null>(null)
+  const [editItemForm, setEditItemForm] = useState<PurchaseItem | null>(null)
+  const [deleteItem,   setDeleteItem]   = useState<{ purchase: Purchase; itemIndex: number } | null>(null)
 
   /* 미입고 선택 → 입고확정 */
   const [miSelected,    setMiSelected]    = useState<Set<string>>(new Set())
@@ -408,21 +408,21 @@ export default function ReceiveManagePage() {
     }
   }
 
-  /* ── 수정 ── */
-  const handleEditSave = async () => {
-    if (!editTarget || !editFormData) return
+  /* ── 아이템 1개 수정 저장 ── */
+  const handleItemEditSave = async () => {
+    if (!editItem || !editItemForm) return
     setSaving(true)
-    const maxLen = Math.max(editTarget.items.length, editFormData.items.length)
-    const deltas: SyncDelta[] = []
-    for (let i = 0; i < maxLen; i++) {
-      const newItem = editFormData.items[i] || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
-      const oldItem = editTarget.items[i]  || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
-      const oD = newItem.ordered  - oldItem.ordered
-      const rD = newItem.received - oldItem.received
-      if (oD === 0 && rD === 0) continue
-      // 바코드 우선 매칭
-      let prodId = ''
+    const { purchase, itemIndex } = editItem
+    const oldItem = purchase.items[itemIndex]
+    const newItem = editItemForm
+    const k = `${purchase.id}|${itemIndex}`
+    const wasConfirmed = confirmedKeys.has(k)
+
+    // 확정된 아이템만 재고 차이 반영 (바코드 우선 매칭)
+    const rD = wasConfirmed ? newItem.received - oldItem.received : 0
+    if (rD !== 0) {
       const bc = (newItem.barcode || oldItem.barcode || '').trim()
+      let prodId = ''
       if (bc) {
         for (const prod of products) {
           if (prod.options.find(o => (o.barcode || '').trim() === bc)) { prodId = prod.id; break }
@@ -432,30 +432,38 @@ export default function ReceiveManagePage() {
         const prod = products.find(p => p.code === newItem.product_code || p.code === oldItem.product_code)
         prodId = prod?.id ?? ''
       }
-      if (!prodId) continue
-      deltas.push({ prodId, optName: newItem.option_name, barcode: bc || undefined, orderedDelta: oD, receivedDelta: rD })
+      if (prodId) {
+        await syncProductQty(products, [{ prodId, optName: newItem.option_name, barcode: bc || undefined, orderedDelta: 0, receivedDelta: rD }])
+      }
     }
-    await apiUpdatePurchase(editTarget.id, {
-      order_date: editFormData.order_date, supplier: editFormData.supplier,
-      status: editFormData.status, items: editFormData.items,
-    })
-    if (deltas.length) await syncProductQty(products, deltas)
+
+    const newItems = [...purchase.items]
+    newItems[itemIndex] = { ...newItem }
+    await apiUpdatePurchase(purchase.id, { items: newItems })
+
     localStorage.removeItem(CACHE_KEY)
     try {
       window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
       localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
     } catch { /* ignore */ }
+
     await loadPurchases(); await loadProducts(true)
-    setEditTarget(null); setEditFormData(null); setSaving(false)
+    setEditItem(null); setEditItemForm(null); setSaving(false)
   }
 
-  /* ── 삭제 ── */
-  const handleDelete = async (p: Purchase) => {
+  /* ── 아이템 1개 삭제 ── */
+  const handleItemDelete = async () => {
+    if (!deleteItem) return
     setSaving(true)
-    const deltas: SyncDelta[] = p.items.map(item => {
-      // 바코드 우선 매칭
-      let prodId = ''
+    const { purchase, itemIndex } = deleteItem
+    const item = purchase.items[itemIndex]
+    const k    = `${purchase.id}|${itemIndex}`
+    const wasConfirmed = confirmedKeys.has(k)
+
+    // 확정됐던 아이템이면 재고에서 차감 (바코드 우선 매칭)
+    if (wasConfirmed && item.received > 0) {
       const bc = (item.barcode || '').trim()
+      let prodId = ''
       if (bc) {
         for (const prod of products) {
           if (prod.options.find(o => (o.barcode || '').trim() === bc)) { prodId = prod.id; break }
@@ -465,22 +473,35 @@ export default function ReceiveManagePage() {
         const prod = products.find(pr => pr.code === item.product_code)
         prodId = prod?.id ?? ''
       }
-      return { prodId, optName: item.option_name, barcode: bc || undefined, orderedDelta: -item.ordered, receivedDelta: -item.received }
-    }).filter(d => d.prodId)
-    if (deltas.length) await syncProductQty(products, deltas)
+      if (prodId) {
+        await syncProductQty(products, [{ prodId, optName: item.option_name, barcode: bc || undefined, orderedDelta: 0, receivedDelta: -item.received }])
+      }
+    }
+
+    const newItems = purchase.items.filter((_, i) => i !== itemIndex)
+    if (newItems.length === 0) {
+      // 마지막 아이템이면 발주 레코드 자체 삭제
+      await apiDeletePurchase(purchase.id)
+      const newCK = new Set([...confirmedKeys].filter(ck => !ck.startsWith(`${purchase.id}|`)))
+      setConfirmedKeys(newCK)
+      try { localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newCK])) } catch { /* ignore */ }
+    } else {
+      await apiUpdatePurchase(purchase.id, { items: newItems })
+      if (wasConfirmed) {
+        const newCK = new Set(confirmedKeys); newCK.delete(k)
+        setConfirmedKeys(newCK)
+        try { localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newCK])) } catch { /* ignore */ }
+      }
+    }
+
     localStorage.removeItem(CACHE_KEY)
-    await apiDeletePurchase(p.id)
-    // 삭제된 발주의 confirmedKeys 정리
-    const newCK = new Set([...confirmedKeys].filter(k => !k.startsWith(`${p.id}|`)))
-    setConfirmedKeys(newCK)
-    try { localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newCK])) } catch { /* ignore */ }
-    // 대시보드·상품관리탭 실시간 반영
     try {
       window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
       localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
     } catch { /* ignore */ }
+
     await loadPurchases(); await loadProducts(true)
-    setDeleteTarget(null); setSaving(false)
+    setDeleteItem(null); setSaving(false)
   }
 
   /* ── 파일 업로드 ──
@@ -856,7 +877,7 @@ export default function ReceiveManagePage() {
                       <th style={{ padding:'5px 8px', borderBottom:'1px solid #f1f5f9', width:28 }}>
                         <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ cursor:'pointer' }}/>
                       </th>
-                      {['이미지','약어','옵션','바코드','수량','확정',''].map(h => (
+                      {['이미지','약어','옵션','바코드','수량','확정','수정/삭제'].map(h => (
                         <th key={h} style={{ padding:'5px 6px', fontWeight:800, color:'#64748b', fontSize: '10px', textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
                       ))}
                     </tr>
@@ -867,7 +888,7 @@ export default function ReceiveManagePage() {
                       const totalQty = purchase.items.reduce((s, i) => s + i.received, 0)
                       return (
                         <React.Fragment key={purchase.id}>
-                          {/* 발주 그룹 헤더 */}
+                          {/* 발주 그룹 헤더 (정보 표시만) */}
                           <tr style={{ background:'#f1f5f9' }}>
                             <td colSpan={8} style={{ padding:'5px 10px' }}>
                               <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
@@ -877,18 +898,6 @@ export default function ReceiveManagePage() {
                                 <span style={{ fontSize:'10px', color:'#94a3b8' }}>
                                   {purchase.items.length}종 · 총 {totalQty}개
                                 </span>
-                                <div style={{ marginLeft:'auto', display:'flex', gap:4 }}>
-                                  <button
-                                    onClick={() => { setEditTarget(purchase); setEditFormData(JSON.parse(JSON.stringify(purchase))) }}
-                                    style={{ fontSize:'10px', fontWeight:800, color:'#7e22ce', background:'#fdf4ff', border:'none', borderRadius:5, padding:'2px 8px', cursor:'pointer', display:'flex', alignItems:'center', gap:2 }}>
-                                    <Edit2 size={9}/>수정
-                                  </button>
-                                  <button
-                                    onClick={() => setDeleteTarget(purchase)}
-                                    style={{ fontSize:'10px', fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'none', borderRadius:5, padding:'2px 8px', cursor:'pointer', display:'flex', alignItems:'center', gap:2 }}>
-                                    <Trash2 size={9}/>삭제
-                                  </button>
-                                </div>
                               </div>
                             </td>
                           </tr>
@@ -927,7 +936,18 @@ export default function ReceiveManagePage() {
                                     ? <span style={{ fontSize: '9px', fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
                                     : <span style={{ fontSize: '9px', fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
                                 </td>
-                                <td/>
+                                <td style={{ textAlign:'center', padding:'4px 4px', whiteSpace:'nowrap' }}>
+                                  <button
+                                    onClick={() => { setEditItem({ purchase, itemIndex: item.itemIndex }); setEditItemForm({ ...purchase.items[item.itemIndex] }) }}
+                                    style={{ fontSize:'9px', fontWeight:800, color:'#7e22ce', background:'#fdf4ff', border:'none', borderRadius:4, padding:'2px 6px', cursor:'pointer', marginRight:3 }}>
+                                    <Edit2 size={9} style={{ display:'inline', verticalAlign:'middle', marginRight:2 }}/>수정
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteItem({ purchase, itemIndex: item.itemIndex })}
+                                    style={{ fontSize:'9px', fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'none', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
+                                    <Trash2 size={9} style={{ display:'inline', verticalAlign:'middle', marginRight:2 }}/>삭제
+                                  </button>
+                                </td>
                               </tr>
                             )
                           })}
@@ -1002,54 +1022,67 @@ export default function ReceiveManagePage() {
         </div>
       </Modal>
 
-      {/* ── 수정 모달 ── */}
-      {editTarget && editFormData && (
-        <Modal isOpen onClose={() => { setEditTarget(null); setEditFormData(null) }} title={`입고 수정 — ${editTarget.order_date}`} size="xl">
-          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
-            <div><L>입고일</L><Input type="date" value={editFormData.order_date} onChange={e => setEditFormData(f => f ? { ...f, order_date: e.target.value } : f)}/></div>
-            <div><L>구매처</L><Input value={editFormData.supplier} onChange={e => setEditFormData(f => f ? { ...f, supplier: e.target.value } : f)}/></div>
-          </div>
-          {editFormData.items.map((item, i) => (
-            <div key={i} style={{ display:'grid', gridTemplateColumns:'1.4fr 1fr 1.6fr 0.8fr 0.8fr auto', gap:8, marginBottom:8, alignItems:'center' }}>
-              <Input value={item.product_code} onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],product_code:e.target.value}; return{...f,items:it} })}/>
-              <Input value={item.option_name}  onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],option_name:e.target.value}; return{...f,items:it} })}/>
-              <Input value={item.barcode}       onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],barcode:e.target.value}; return{...f,items:it} })}/>
-              <Input type="number" value={item.ordered}  onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],ordered:Number(e.target.value)||0}; return{...f,items:it} })}/>
-              <Input type="number" value={item.received} onChange={e => setEditFormData(f => { if(!f) return f; const it=[...f.items]; it[i]={...it[i],received:Number(e.target.value)||0}; return{...f,items:it} })}/>
-              <button onClick={() => setEditFormData(f => f ? { ...f, items: f.items.filter((_, j) => j !== i) } : f)}
-                style={{ width:32, height:32, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:7, cursor:'pointer' }}>
-                <X size={12}/>
-              </button>
+      {/* ── 아이템 수정 모달 ── */}
+      {editItem && editItemForm && (() => {
+        const { purchase, itemIndex } = editItem
+        return (
+          <Modal isOpen onClose={() => { setEditItem(null); setEditItemForm(null) }} title={`상품 수정 — ${purchase.supplier || '직접입고'}`} size="md">
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
+              <div><L>상품코드</L><Input value={editItemForm.product_code} onChange={e => setEditItemForm(f => f ? { ...f, product_code: e.target.value } : f)}/></div>
+              <div><L>옵션명</L><Input value={editItemForm.option_name} onChange={e => setEditItemForm(f => f ? { ...f, option_name: e.target.value } : f)}/></div>
+              <div style={{ gridColumn:'1/-1' }}><L>바코드</L><Input value={editItemForm.barcode} onChange={e => setEditItemForm(f => f ? { ...f, barcode: e.target.value } : f)}/></div>
+              <div><L>발주수량</L><Input type="number" min="0" value={editItemForm.ordered} onChange={e => setEditItemForm(f => f ? { ...f, ordered: Number(e.target.value) || 0 } : f)}/></div>
+              <div><L>입고수량</L><Input type="number" min="0" value={editItemForm.received} onChange={e => setEditItemForm(f => f ? { ...f, received: Number(e.target.value) || 0 } : f)}/></div>
             </div>
-          ))}
-          <button onClick={() => setEditFormData(f => f ? { ...f, items: [...f.items, { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }] } : f)}
-            style={{ fontSize: '12px', fontWeight:800, color:'#059669', background:'#f0fdf4', border:'none', borderRadius:8, padding:'6px 14px', cursor:'pointer', display:'flex', alignItems:'center', gap:4, marginBottom:16 }}>
-            <Plus size={12}/>상품 추가
-          </button>
-          <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
-            <Button variant="outline" onClick={() => { setEditTarget(null); setEditFormData(null) }}>취소</Button>
-            <Button onClick={handleEditSave} disabled={saving}>저장</Button>
-          </div>
-        </Modal>
-      )}
+            {confirmedKeys.has(`${purchase.id}|${itemIndex}`) && (
+              <div style={{ padding:'8px 12px', background:'#eff6ff', borderRadius:8, marginBottom:12 }}>
+                <p style={{ fontSize:'11px', color:'#1d4ed8' }}>
+                  ✅ 이미 확정된 항목입니다. 입고수량 변경 시 상품관리탭 재고에 즉시 반영됩니다.
+                </p>
+              </div>
+            )}
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8 }}>
+              <Button variant="outline" onClick={() => { setEditItem(null); setEditItemForm(null) }}>취소</Button>
+              <Button onClick={handleItemEditSave} disabled={saving} style={{ background:'#7e22ce', borderColor:'#7e22ce' }}>
+                <Edit2 size={12}/>{saving ? '저장 중...' : '저장'}
+              </Button>
+            </div>
+          </Modal>
+        )
+      })()}
 
-      {/* ── 삭제 확인 모달 ── */}
-      {deleteTarget && (
-        <Modal isOpen onClose={() => setDeleteTarget(null)} title="입고 삭제 확인" size="sm">
-          <div style={{ textAlign:'center', padding:'16px 0' }}>
-            <Trash2 size={36} style={{ color:'#dc2626', margin:'0 auto 12px' }}/>
-            <p style={{ fontSize: '14px', fontWeight:800, color:'#1e293b', marginBottom:8 }}>{deleteTarget.order_date} 입고를 삭제하시겠습니까?</p>
-            <p style={{ fontSize: '12px', color:'#64748b' }}>삭제 시 확정된 입고 수량이 상품관리에서 차감됩니다.</p>
-          </div>
-          <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
-            <Button variant="outline" onClick={() => setDeleteTarget(null)}>취소</Button>
-            <Button onClick={() => handleDelete(deleteTarget)} disabled={saving}
-              style={{ background:'#dc2626', borderColor:'#dc2626', opacity:saving ? 0.6 : 1 }}>
-              <Trash2 size={13}/>{saving ? '삭제 중...' : '삭제'}
-            </Button>
-          </div>
-        </Modal>
-      )}
+      {/* ── 아이템 삭제 확인 모달 ── */}
+      {deleteItem && (() => {
+        const { purchase, itemIndex } = deleteItem
+        const item = purchase.items[itemIndex]
+        const wasConfirmed = confirmedKeys.has(`${purchase.id}|${itemIndex}`)
+        return (
+          <Modal isOpen onClose={() => setDeleteItem(null)} title="입고 항목 삭제 확인" size="sm">
+            <div style={{ textAlign:'center', padding:'16px 0' }}>
+              <Trash2 size={36} style={{ color:'#dc2626', margin:'0 auto 12px' }}/>
+              <p style={{ fontSize:'14px', fontWeight:800, color:'#1e293b', marginBottom:6 }}>
+                {item.product_code} / {item.option_name}
+              </p>
+              <p style={{ fontSize:'12px', color:'#64748b', marginBottom:4 }}>
+                입고수량 <strong>{item.received}개</strong>
+              </p>
+              {wasConfirmed
+                ? <p style={{ fontSize:'11px', color:'#dc2626', background:'#fff1f2', padding:'6px 12px', borderRadius:7 }}>
+                    ⚠️ 확정된 항목입니다. 삭제 시 재고에서 <strong>{item.received}개</strong>가 차감됩니다.
+                  </p>
+                : <p style={{ fontSize:'11px', color:'#64748b' }}>미확정 항목 — 재고에는 영향이 없습니다.</p>
+              }
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+              <Button variant="outline" onClick={() => setDeleteItem(null)}>취소</Button>
+              <Button onClick={handleItemDelete} disabled={saving}
+                style={{ background:'#dc2626', borderColor:'#dc2626', opacity: saving ? 0.6 : 1 }}>
+                <Trash2 size={13}/>{saving ? '삭제 중...' : '삭제'}
+              </Button>
+            </div>
+          </Modal>
+        )
+      })()}
     </div>
   )
 }
