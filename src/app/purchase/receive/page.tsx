@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -412,37 +412,74 @@ export default function ReceiveManagePage() {
   const handleEditSave = async () => {
     if (!editTarget || !editFormData) return
     setSaving(true)
-    const deltas = editFormData.items.map((newItem, i) => {
-      const oldItem = editTarget.items[i] || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
-      const prod = products.find(p => p.code === newItem.product_code || p.code === oldItem.product_code)
-      return {
-        prodId: prod?.id ?? '',
-        optName: newItem.option_name,
-        orderedDelta:  newItem.ordered  - oldItem.ordered,
-        receivedDelta: newItem.received - oldItem.received,
+    const maxLen = Math.max(editTarget.items.length, editFormData.items.length)
+    const deltas: SyncDelta[] = []
+    for (let i = 0; i < maxLen; i++) {
+      const newItem = editFormData.items[i] || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
+      const oldItem = editTarget.items[i]  || { product_code:'', option_name:'', barcode:'', ordered:0, received:0 }
+      const oD = newItem.ordered  - oldItem.ordered
+      const rD = newItem.received - oldItem.received
+      if (oD === 0 && rD === 0) continue
+      // 바코드 우선 매칭
+      let prodId = ''
+      const bc = (newItem.barcode || oldItem.barcode || '').trim()
+      if (bc) {
+        for (const prod of products) {
+          if (prod.options.find(o => (o.barcode || '').trim() === bc)) { prodId = prod.id; break }
+        }
       }
-    }).filter(d => d.prodId && (d.orderedDelta !== 0 || d.receivedDelta !== 0))
+      if (!prodId) {
+        const prod = products.find(p => p.code === newItem.product_code || p.code === oldItem.product_code)
+        prodId = prod?.id ?? ''
+      }
+      if (!prodId) continue
+      deltas.push({ prodId, optName: newItem.option_name, barcode: bc || undefined, orderedDelta: oD, receivedDelta: rD })
+    }
     await apiUpdatePurchase(editTarget.id, {
       order_date: editFormData.order_date, supplier: editFormData.supplier,
       status: editFormData.status, items: editFormData.items,
     })
     if (deltas.length) await syncProductQty(products, deltas)
-    localStorage.removeItem('pm_products_cache_v1')
-    await loadPurchases(); await loadProducts()
+    localStorage.removeItem(CACHE_KEY)
+    try {
+      window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
+      localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
+    } catch { /* ignore */ }
+    await loadPurchases(); await loadProducts(true)
     setEditTarget(null); setEditFormData(null); setSaving(false)
   }
 
   /* ── 삭제 ── */
   const handleDelete = async (p: Purchase) => {
     setSaving(true)
-    const deltas = p.items.map(item => {
-      const prod = products.find(pr => pr.code === item.product_code)
-      return { prodId: prod?.id ?? '', optName: item.option_name, orderedDelta: -item.ordered, receivedDelta: -item.received }
+    const deltas: SyncDelta[] = p.items.map(item => {
+      // 바코드 우선 매칭
+      let prodId = ''
+      const bc = (item.barcode || '').trim()
+      if (bc) {
+        for (const prod of products) {
+          if (prod.options.find(o => (o.barcode || '').trim() === bc)) { prodId = prod.id; break }
+        }
+      }
+      if (!prodId) {
+        const prod = products.find(pr => pr.code === item.product_code)
+        prodId = prod?.id ?? ''
+      }
+      return { prodId, optName: item.option_name, barcode: bc || undefined, orderedDelta: -item.ordered, receivedDelta: -item.received }
     }).filter(d => d.prodId)
     if (deltas.length) await syncProductQty(products, deltas)
-    localStorage.removeItem('pm_products_cache_v1')
+    localStorage.removeItem(CACHE_KEY)
     await apiDeletePurchase(p.id)
-    await loadPurchases(); await loadProducts()
+    // 삭제된 발주의 confirmedKeys 정리
+    const newCK = new Set([...confirmedKeys].filter(k => !k.startsWith(`${p.id}|`)))
+    setConfirmedKeys(newCK)
+    try { localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newCK])) } catch { /* ignore */ }
+    // 대시보드·상품관리탭 실시간 반영
+    try {
+      window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
+      localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
+    } catch { /* ignore */ }
+    await loadPurchases(); await loadProducts(true)
     setDeleteTarget(null); setSaving(false)
   }
 
@@ -804,7 +841,7 @@ export default function ReceiveManagePage() {
           </div>
 
           {/* 컨텐츠 */}
-          {rcItems.length === 0 ? (
+          {rcPurchases.length === 0 ? (
             <div style={{ flex:1, display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', color:'#94a3b8', gap:8, padding:'2rem' }}>
               <PackagePlus size={32} style={{ opacity:0.2 }}/>
               <p style={{ fontSize: '13px', fontWeight:700 }}>{fmtDayLabel(day)} 입고 내역 없음</p>
@@ -819,47 +856,82 @@ export default function ReceiveManagePage() {
                       <th style={{ padding:'5px 8px', borderBottom:'1px solid #f1f5f9', width:28 }}>
                         <input type="checkbox" checked={allChecked} onChange={e => toggleAll(e.target.checked)} style={{ cursor:'pointer' }}/>
                       </th>
-                      {['이미지','약어','옵션','바코드','수량','확정'].map(h => (
+                      {['이미지','약어','옵션','바코드','수량','확정',''].map(h => (
                         <th key={h} style={{ padding:'5px 6px', fontWeight:800, color:'#64748b', fontSize: '10px', textAlign:'center', borderBottom:'1px solid #f1f5f9', whiteSpace:'nowrap' }}>{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {rcItems.map(item => {
-                      const k = `${item.purchaseId}|${item.itemIndex}`
-                      const bc = (item.barcode || '').trim()
-                      const img = (bc && loadedImages[bc]) || item.optImage
+                    {rcPurchases.map(purchase => {
+                      const purchaseItems = rcItems.filter(item => item.purchaseId === purchase.id)
+                      const totalQty = purchase.items.reduce((s, i) => s + i.received, 0)
                       return (
-                        <tr key={k} style={{ borderBottom:'1px solid #f8fafc', background:item.confirmed ? '#f0fdf4' : 'white' }}>
-                          <td style={{ textAlign:'center', padding:'4px 8px' }}>
-                            <input type="checkbox" checked={selectedKeys.has(k)}
-                              onChange={e => {
-                                const ns = new Set(selectedKeys)
-                                e.target.checked ? ns.add(k) : ns.delete(k)
-                                setSelectedKeys(ns)
-                              }} style={{ cursor:'pointer' }}/>
-                          </td>
-                          <td style={{ textAlign:'center', padding:'4px 6px', width:40 }}>
-                            {img
-                              ? <img src={img} alt="" style={{ width:30, height:30, objectFit:'cover', borderRadius:5, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
-                              : <div style={{ width:30, height:30, background:'#f1f5f9', borderRadius:5, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                                  <Package size={12} style={{ color:'#cbd5e1' }}/>
-                                </div>}
-                          </td>
-                          <td style={{ padding:'4px 6px', fontWeight:700, color:'#0f172a', fontSize: '10.5px', maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                            {item.prodAbbr || item.product_code}
-                          </td>
-                          <td style={{ padding:'4px 6px', color:'#475569', fontSize: '10.5px', maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.option_name}</td>
-                          <td data-pm-barcode="1" style={{ padding:'4px 6px', fontSize: 11, letterSpacing: '0.02em', color: item.barcode ? '#000000' : '#f59e0b', fontWeight: item.barcode ? 900 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                            {item.barcode || '미매핑'}
-                          </td>
-                          <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize: '12px' }}>{item.received}</td>
-                          <td style={{ textAlign:'center' }}>
-                            {item.confirmed
-                              ? <span style={{ fontSize: '9px', fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
-                              : <span style={{ fontSize: '9px', fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
-                          </td>
-                        </tr>
+                        <React.Fragment key={purchase.id}>
+                          {/* 발주 그룹 헤더 */}
+                          <tr style={{ background:'#f1f5f9' }}>
+                            <td colSpan={8} style={{ padding:'5px 10px' }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                                <span style={{ fontSize:'10.5px', fontWeight:800, color:'#334155' }}>
+                                  {purchase.supplier || '직접입고'}
+                                </span>
+                                <span style={{ fontSize:'10px', color:'#94a3b8' }}>
+                                  {purchase.items.length}종 · 총 {totalQty}개
+                                </span>
+                                <div style={{ marginLeft:'auto', display:'flex', gap:4 }}>
+                                  <button
+                                    onClick={() => { setEditTarget(purchase); setEditFormData(JSON.parse(JSON.stringify(purchase))) }}
+                                    style={{ fontSize:'10px', fontWeight:800, color:'#7e22ce', background:'#fdf4ff', border:'none', borderRadius:5, padding:'2px 8px', cursor:'pointer', display:'flex', alignItems:'center', gap:2 }}>
+                                    <Edit2 size={9}/>수정
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteTarget(purchase)}
+                                    style={{ fontSize:'10px', fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'none', borderRadius:5, padding:'2px 8px', cursor:'pointer', display:'flex', alignItems:'center', gap:2 }}>
+                                    <Trash2 size={9}/>삭제
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                          {/* 아이템 행 */}
+                          {purchaseItems.map(item => {
+                            const k = `${item.purchaseId}|${item.itemIndex}`
+                            const bc = (item.barcode || '').trim()
+                            const img = (bc && loadedImages[bc]) || item.optImage
+                            return (
+                              <tr key={k} style={{ borderBottom:'1px solid #f8fafc', background:item.confirmed ? '#f0fdf4' : 'white' }}>
+                                <td style={{ textAlign:'center', padding:'4px 8px' }}>
+                                  <input type="checkbox" checked={selectedKeys.has(k)}
+                                    onChange={e => {
+                                      const ns = new Set(selectedKeys)
+                                      e.target.checked ? ns.add(k) : ns.delete(k)
+                                      setSelectedKeys(ns)
+                                    }} style={{ cursor:'pointer' }}/>
+                                </td>
+                                <td style={{ textAlign:'center', padding:'4px 6px', width:40 }}>
+                                  {img
+                                    ? <img src={img} alt="" style={{ width:30, height:30, objectFit:'cover', borderRadius:5, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
+                                    : <div style={{ width:30, height:30, background:'#f1f5f9', borderRadius:5, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                        <Package size={12} style={{ color:'#cbd5e1' }}/>
+                                      </div>}
+                                </td>
+                                <td style={{ padding:'4px 6px', fontWeight:700, color:'#0f172a', fontSize: '10.5px', maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                  {item.prodAbbr || item.product_code}
+                                </td>
+                                <td style={{ padding:'4px 6px', color:'#475569', fontSize: '10.5px', maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.option_name}</td>
+                                <td data-pm-barcode="1" style={{ padding:'4px 6px', fontSize: 11, letterSpacing: '0.02em', color: item.barcode ? '#000000' : '#f59e0b', fontWeight: item.barcode ? 900 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                                  {item.barcode || '미매핑'}
+                                </td>
+                                <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize: '12px' }}>{item.received}</td>
+                                <td style={{ textAlign:'center' }}>
+                                  {item.confirmed
+                                    ? <span style={{ fontSize: '9px', fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
+                                    : <span style={{ fontSize: '9px', fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
+                                </td>
+                                <td/>
+                              </tr>
+                            )
+                          })}
+                        </React.Fragment>
                       )
                     })}
                   </tbody>
@@ -934,7 +1006,7 @@ export default function ReceiveManagePage() {
       {editTarget && editFormData && (
         <Modal isOpen onClose={() => { setEditTarget(null); setEditFormData(null) }} title={`입고 수정 — ${editTarget.order_date}`} size="xl">
           <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12, marginBottom:16 }}>
-            <div><L>발주일</L><Input type="date" value={editFormData.order_date} onChange={e => setEditFormData(f => f ? { ...f, order_date: e.target.value } : f)}/></div>
+            <div><L>입고일</L><Input type="date" value={editFormData.order_date} onChange={e => setEditFormData(f => f ? { ...f, order_date: e.target.value } : f)}/></div>
             <div><L>구매처</L><Input value={editFormData.supplier} onChange={e => setEditFormData(f => f ? { ...f, supplier: e.target.value } : f)}/></div>
           </div>
           {editFormData.items.map((item, i) => (
