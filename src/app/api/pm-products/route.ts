@@ -102,7 +102,7 @@ export async function GET(req: NextRequest) {
         headers: rpcHeaders,
         body: '{}',
         signal: AbortSignal.timeout(TIMEOUT_MS),
-        next: { revalidate: 300 },
+        cache: 'no-store',
       }
     ).catch(() => null)
 
@@ -124,7 +124,7 @@ export async function GET(req: NextRequest) {
         {
           headers: { ...rpcHeaders },
           signal: AbortSignal.timeout(TIMEOUT_MS),
-          next: { revalidate: 300 },
+          cache: 'no-store',
         }
       )
       if (!res.ok) {
@@ -145,7 +145,7 @@ export async function GET(req: NextRequest) {
     }))
 
     return NextResponse.json(stripped, {
-      headers: { 'Cache-Control': 'public, max-age=1800, stale-while-revalidate=60' },
+      headers: { 'Cache-Control': 'no-store, must-revalidate' },
     })
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
