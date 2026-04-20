@@ -171,7 +171,11 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
     trackingMap[o.order_number] = { carrier: o.carrier ?? '', tracking: digitsOnly(o.tracking_number) }
   })
 
-  /* 토스쇼핑: 주문서등록에서 저장한 주문배송관리 시트 원본 유지 → 5행부터 F열 택배사, G열 송장번호 */
+  /* 토스쇼핑: 주문서등록에서 저장한 주문배송관리 시트 원본 유지
+     원본 Excel 구조: 1행=빈행, 2행=그룹헤더, 3행=컬럼헤더, 4행=수정안내, 5행~=데이터
+     sheet_to_json(header:1)로 저장된 AOA는 A2 범위 시작이므로:
+       index 0 = Excel 2행(그룹헤더), 1 = 3행(컬럼헤더), 2 = 4행(수정안내), 3~ = 데이터
+     다운로드시 index 0 앞에 빈 행 삽입 → Excel 1행=빈행 재현 */
   if (mallId === 'tossshopping') {
     const COL_B = 1
     const COL_F = 5
@@ -181,12 +185,14 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
     let sheetName = '주문내역'
     for (const dayData of allDayData) {
       const aoa = dayData.toss_raw_aoa
-      if (!aoa || aoa.length < 5) continue
+      if (!aoa || aoa.length < 4) continue
       if (!headerBlock) {
-        headerBlock = aoa.slice(0, 4).map(r => [...(r as unknown[])])
+        // index 0~2: Excel 2~4행 (그룹헤더·컬럼헤더·수정안내)
+        headerBlock = aoa.slice(0, 3).map(r => [...(r as unknown[])])
         sheetName = dayData.toss_sheet_name || sheetName
       }
-      for (let r = 4; r < aoa.length; r++) {
+      // index 3~: Excel 5행(첫 데이터)부터
+      for (let r = 3; r < aoa.length; r++) {
         const src = (aoa[r] as unknown[]) || []
         const orderNum = String(src[COL_B] ?? '').trim()
         if (!orderNum) continue
@@ -200,7 +206,9 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
       }
     }
     if (headerBlock && outDataRows.length > 0) {
-      const out = [...headerBlock, ...outDataRows]
+      // 원본 Excel 1행(빈 행) 재현 후 헤더·데이터 순서대로
+      const emptyFirstRow: unknown[] = []
+      const out = [emptyFirstRow, ...headerBlock, ...outDataRows]
       triggerExcelDownloadNoHeader(out, `${mallLabel}_송장_${todayStr()}.xlsx`, sheetName)
       return
     }

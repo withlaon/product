@@ -317,14 +317,14 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
   @page{size:A4 portrait;margin:12mm 10mm}
   *{-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important}
   body{font-family:'Malgun Gothic',sans-serif;margin:0;padding:10px}
-  h2{margin:0 0 10px;font-size:14px}
-  table{width:100%;border-collapse:collapse;font-size:11px}
-  th,td{border:1px solid #475569;padding:5px 8px}
-  th{background:#1e293b;color:#fff;font-weight:800;text-align:left}
+  h2{margin:0 0 10px;font-size:16px;font-weight:900}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{border:1px solid #475569;padding:5px 8px;font-weight:700}
+  th{background:#1e293b;color:#fff;font-weight:900;text-align:left}
   [contenteditable]{outline:none;border-bottom:1px dashed #cbd5e1}
   [contenteditable]:focus{background:rgba(255,251,235,0.9);border-radius:2px;border-bottom-color:#f59e0b}
-  .btn{padding:8px 18px;background:#1e293b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:700;margin-bottom:12px}
-  @media print{.btn{display:none}body{padding:0}h2{font-size:13px}[contenteditable]{border-bottom:none}}
+  .btn{padding:8px 18px;background:#1e293b;color:white;border:none;border-radius:8px;cursor:pointer;font-size:15px;font-weight:700;margin-bottom:12px}
+  @media print{.btn{display:none}body{padding:0}h2{font-size:15px;font-weight:900}[contenteditable]{border-bottom:none}}
 </style></head><body>
 <h2>📋 피킹리스트 — ${today} (${rows.length}건)</h2>
 <button class="btn" onclick="window.print()">🖨 인쇄</button>
@@ -339,7 +339,7 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
   </tr></thead>
   <tbody>${trRows}</tbody>
 </table>
-<div style="margin-top:14px;font-size:10.5px;color:#64748b;line-height:1.8">
+<div style="margin-top:14px;font-size:12.5px;color:#64748b;line-height:1.8;font-weight:700">
   ● 하늘배경: 합포장(동일 수령인·주소) — 수령인 이름 색상으로 그룹 구분<br>
   ● 노란배경: 수량 2개 이상(수량 빨간색) &nbsp; ● 진하늘배경: 합포장+2개이상<br>
   ※ 색상 칸 클릭 → 직접 수정 가능 · 수정 후 인쇄 버튼 클릭
