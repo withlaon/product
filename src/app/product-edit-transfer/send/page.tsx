@@ -178,6 +178,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
      다운로드시 index 0 앞에 빈 행 삽입 → Excel 1행=빈행 재현 */
   if (mallId === 'tossshopping') {
     const COL_B = 1
+    const COL_D = 3  // D열: 주문상태 → 배송중
     const COL_F = 5
     const COL_G = 6
     let headerBlock: unknown[][] | null = null
@@ -199,6 +200,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
         const tInfo = trackingMap[orderNum]
         if (tInfo) {
           const row = [...src]
+          row[COL_D] = '배송중'
           row[COL_F] = 'CJ대한통운'
           row[COL_G] = tInfo.tracking
           outDataRows.push(row)
