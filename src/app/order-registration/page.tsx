@@ -232,15 +232,27 @@ function loadCachedProductsForPrice(): CachedProductPrice[] {
   return []
 }
 
-/* ─── 토스쇼핑 주문배송관리 양식 (2026~): 열 H,K,P,Q,R,T,V,AA 및 주문번호(B) 등
-   열(0부터): A=0 … H=7 상품명, K=10 옵션명, P=15 구매자명, Q=16 구매자연락처, R=17 수령인명,
-   T=19 배송지, V=21 주문요청사항, AA=26 주문금액. 데이터는 5행(인덱스 4)~ ── */
+/* ─── 토스쇼핑 주문배송관리 양식 (2026~)
+   열(0부터, A=0): B=1 주문번호, F=5 택배사, G=6 송장번호, I=8 상품명, L=11 옵션명,
+   M=12 주문건수, P=15 구매자명, Q=16 구매자연락처, R=17 수령인명,
+   S=18 수령인연락처, T=19 배송지, V=21 주문요청사항, AA=26 주문금액.
+   파일 범위: A2~  →  sheet_to_json header:1 인덱스 3부터가 Excel 5행(데이터 첫 행) ── */
 const TOSS_COL = {
   주문일시: 0, 주문번호: 1, 주문상품번호: 2, 주문건수: 12,
-  상품명: 7, 옵션명: 10, 구매자명: 15, 구매자연락처: 16, 수령인명: 17,
+  상품명: 8,   // I열 (상품명)
+  옵션명: 11,  // L열 (옵션명)
+  구매자명: 15, 구매자연락처: 16, 수령인명: 17,
   수령인연락처: 18, 배송지: 19, 주문요청사항: 21, 주문금액: 26,
   택배사: 5, 송장번호: 6,
 } as const
+
+/** 토스쇼핑 옵션명에서 FREE 제거: "블랙, free" → "블랙" */
+function cleanTossOption(raw: unknown): string {
+  return String(raw ?? '')
+    .replace(/,?\s*FREE\s*/gi, '')
+    .replace(/,\s*$/, '')
+    .trim()
+}
 
 function parseTossShoppingAoaRow(row: unknown[], idx: number): RegOrder {
   const orderNum = String(row[TOSS_COL.주문번호] ?? '').trim()
@@ -264,7 +276,7 @@ function parseTossShoppingAoaRow(row: unknown[], idx: number): RegOrder {
       sku:          String(row[TOSS_COL.주문상품번호] ?? ''),
       quantity:     qty,
       unit_price:   unitPrice,
-      option:       String(row[TOSS_COL.옵션명] ?? ''),
+      option:       cleanTossOption(row[TOSS_COL.옵션명]),  // FREE 제거
     }],
     total_amount: amount,
     status: 'pending',
@@ -273,8 +285,8 @@ function parseTossShoppingAoaRow(row: unknown[], idx: number): RegOrder {
       import_source: '토스쇼핑',
       주문번호: orderNum,
       주문상품번호: String(row[TOSS_COL.주문상품번호] ?? ''),
-      토스_H_상품명: String(row[TOSS_COL.상품명] ?? ''),
-      토스_K_옵션명: String(row[TOSS_COL.옵션명] ?? ''),
+      토스_I_상품명: String(row[TOSS_COL.상품명] ?? ''),
+      토스_L_옵션명: cleanTossOption(row[TOSS_COL.옵션명]),
       토스_P_구매자명: String(row[TOSS_COL.구매자명] ?? ''),
       토스_Q_구매자연락처: String(row[TOSS_COL.구매자연락처] ?? ''),
       토스_R_수령인명: String(row[TOSS_COL.수령인명] ?? ''),
@@ -681,7 +693,8 @@ export default function OrderRegistrationPage() {
         if (isTossShopping) {
           tossSheetName = wb.SheetNames[0] || '주문내역'
           tossRawAoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][]
-          if (tossRawAoa.length < 5) {
+          // 범위가 A2~이므로 sheet_to_json 인덱스 3이 Excel 5행(데이터 첫 행)
+          if (tossRawAoa.length < 4) {
             setImportMsg({ text: '토스쇼핑 주문배송관리 양식: 5행부터 데이터가 필요합니다.', ok: false })
             setImporting(false)
             if (fileRef.current) fileRef.current.value = ''
@@ -706,7 +719,8 @@ export default function OrderRegistrationPage() {
         let tossSyntheticRaw: Record<string, unknown>[] = []
 
         if (isTossShopping && tossRawAoa) {
-          for (let i = 4; i < tossRawAoa.length; i++) {
+          // 범위 A2~이므로 인덱스 3 = Excel 5행 (데이터 첫 행)
+          for (let i = 3; i < tossRawAoa.length; i++) {
             const line = tossRawAoa[i] as unknown[]
             if (!line?.length) continue
             const orderNum = String(line[TOSS_COL.주문번호] ?? '').trim()
