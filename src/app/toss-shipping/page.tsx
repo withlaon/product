@@ -3,9 +3,13 @@ import { useState, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { Upload, Download, Truck, X, CheckCircle2, Package } from 'lucide-react'
 
+/* ── 열 인덱스 (0-based, A=0)
+   B=1  F=5  G=6  I=8  L=11  Q=16  R=17  T=19  V=21 ── */
+const COL = { B:1, F:5, G:6, I:8, L:11, Q:16, R:17, T:19, V:21 } as const
+
 /* ── 주문 1건 타입 ── */
 interface TossOrder {
-  rowIndex:    number  // 0-indexed (xlsx rows 배열 내 위치)
+  excelR:      number  // XLSX encode_cell 용 0-indexed row (A1 기준)
   orderNum:    string  // B열: 주문번호
   productName: string  // I열: 상품명
   optionName:  string  // L열: 옵션명
@@ -34,32 +38,30 @@ export default function TossShippingPage() {
         const ab = ev.target?.result as ArrayBuffer
         setOriginalFile(ab)
 
-        const wb   = XLSX.read(ab, { type: 'array' })
-        const ws   = wb.Sheets[wb.SheetNames[0]]
-        const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { header: 'A', defval: '' })
+        const wb    = XLSX.read(ab, { type: 'array' })
+        const ws    = wb.Sheets[wb.SheetNames[0]]
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1')
 
-        // 데이터 시작 행 자동 탐색: B열이 숫자로만 구성된 주문번호인 첫 행
-        // (토스쇼핑 주문서: 행1=카테고리헤더, 행2=열명, 행3=수정가능여부, 행5~=데이터)
-        let dataStart = 4 // 기본값: index 4 = Excel 5행
-        for (let i = 3; i < rows.length; i++) {
-          const b = String(rows[i]['B'] || '').trim()
-          if (b && /^\d{6,}$/.test(b)) { dataStart = i; break }
+        // encode_cell로 각 행·열을 직접 읽어 sheet_to_json 인덱스 오프셋 문제 방지
+        const getCell = (r: number, c: number): string => {
+          const cell = ws[XLSX.utils.encode_cell({ r, c })]
+          return cell ? String(cell.v ?? '').trim() : ''
         }
 
         const parsed: TossOrder[] = []
-        for (let i = dataStart; i < rows.length; i++) {
-          const row      = rows[i]
-          const orderNum = String(row['B'] || '').trim()
-          if (!orderNum || !/^\d+$/.test(orderNum)) continue
+        for (let r = range.s.r; r <= range.e.r; r++) {
+          const orderNum = getCell(r, COL.B)
+          // B열이 6자리 이상 숫자인 행만 데이터로 인식
+          if (!orderNum || !/^\d{6,}$/.test(orderNum)) continue
           parsed.push({
-            rowIndex:    i,
+            excelR:      r,               // encode_cell 전달용 0-indexed row
             orderNum,
-            productName: String(row['I'] || '').trim(),
-            optionName:  String(row['L'] || '').trim(),
-            phone:       String(row['Q'] || '').trim(),
-            recipient:   String(row['R'] || '').trim(),
-            address:     String(row['T'] || '').trim(),
-            request:     String(row['V'] || '').trim(),
+            productName: getCell(r, COL.I),  // I열: 상품명
+            optionName:  getCell(r, COL.L),  // L열: 옵션명
+            phone:       getCell(r, COL.Q),  // Q열: 전화번호
+            recipient:   getCell(r, COL.R),  // R열: 수취인명
+            address:     getCell(r, COL.T),  // T열: 주소
+            request:     getCell(r, COL.V),  // V열: 배송요청사항
           })
         }
 
@@ -84,9 +86,9 @@ export default function TossShippingPage() {
     const ws = wb.Sheets[wb.SheetNames[0]]
 
     for (const order of orders) {
-      const excelRow = order.rowIndex + 1  // 0-indexed → 1-indexed 셀 주소
-      ws[`F${excelRow}`] = { t: 's', v: 'CJ대한통운' }
-      ws[`G${excelRow}`] = { t: 's', v: trackingMap[order.orderNum] || '' }
+      // encode_cell로 정확한 행·열 위치에 기록 (F열=5, G열=6)
+      ws[XLSX.utils.encode_cell({ r: order.excelR, c: COL.F })] = { t: 's', v: 'CJ대한통운' }
+      ws[XLSX.utils.encode_cell({ r: order.excelR, c: COL.G })] = { t: 's', v: trackingMap[order.orderNum] || '' }
     }
 
     const out  = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
