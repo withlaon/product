@@ -7,6 +7,14 @@ import { Upload, Download, Truck, X, CheckCircle2, Package } from 'lucide-react'
    B=1  F=5  G=6  I=8  L=11  Q=16  R=17  T=19  V=21 ── */
 const COL = { B:1, F:5, G:6, I:8, L:11, Q:16, R:17, T:19, V:21 } as const
 
+/** 옵션명에서 FREE 제거: "블랙, free" → "블랙" */
+function cleanOption(raw: string): string {
+  return raw
+    .replace(/,?\s*FREE\s*/gi, '')  // ", FREE" / ", free" 등 제거 (대소문자 무관)
+    .replace(/,\s*$/, '')           // 남은 trailing 쉼표 제거
+    .trim()
+}
+
 /* ── 주문 1건 타입 ── */
 interface TossOrder {
   excelR:      number  // XLSX encode_cell 용 0-indexed row (A1 기준)
@@ -56,8 +64,8 @@ export default function TossShippingPage() {
           parsed.push({
             excelR:      r,               // encode_cell 전달용 0-indexed row
             orderNum,
-            productName: getCell(r, COL.I),  // I열: 상품명
-            optionName:  getCell(r, COL.L),  // L열: 옵션명
+            productName: getCell(r, COL.I),                  // I열: 상품명
+            optionName:  cleanOption(getCell(r, COL.L)),   // L열: 옵션명 (FREE 제거)
             phone:       getCell(r, COL.Q),  // Q열: 전화번호
             recipient:   getCell(r, COL.R),  // R열: 수취인명
             address:     getCell(r, COL.T),  // T열: 주소
