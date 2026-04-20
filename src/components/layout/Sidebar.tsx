@@ -59,6 +59,7 @@ const navGroups: NavGroup[] = [
       { label: '주문관리',       href: '/product-transfer',               icon: ShoppingCart },
       { label: '송장출력/등록',  href: '/product-edit-transfer/print',    icon: Printer },
       { label: '송장전송파일',   href: '/product-edit-transfer/send',     icon: Send },
+      { label: '토스 송장입력', href: '/toss-shipping',                  icon: Truck },
       { label: '출고내역',       href: '/product-edit-transfer/history',  icon: History },
     ],
   },
