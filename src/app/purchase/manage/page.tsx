@@ -566,28 +566,48 @@ export default function PurchaseManagePage() {
       }
       const { error: insertErr } = await apiInsertPurchase(purchase)
       if (insertErr) { setSaveMsg({ type: 'err', text: `발주 확정 실패: ${insertErr}` }); setSaving(false); return }
-      // 바코드 기준으로 상품관리탭 발주 수량 카운팅
-      const deltas = valid.map(s => ({
-        prodId:       s.prodId,
-        optName:      s.optName,
-        barcode:      s.barcode,   // 바코드 우선 매칭
-        orderedDelta: Number(s.qty),
-        receivedDelta: 0,
-      }))
-      setSaveMsg({ type: 'ok', text: `상품관리 발주수량 반영 중 (${deltas.length}종)...` })
-      await syncProductQty(products, deltas)
-      localStorage.removeItem(SHARED_CACHE_KEY)  // 캐시 클리어 → 강제 재로딩
+
+      // ── 바코드 기준으로 상품관리탭 발주수량 카운팅 ──────────────────────
+      // prodId 미설정 항목은 바코드로 products 배열에서 직접 탐색하여 보완
+      const deltas = valid.map(s => {
+        let prodId = s.prodId || ''
+        // prodId가 없으면 products에서 바코드 검색하여 보완
+        if (!prodId && s.barcode) {
+          for (const p of products) {
+            if (p.options.some(o => (o.barcode || '').trim() === s.barcode.trim())) {
+              prodId = p.id
+              break
+            }
+          }
+        }
+        return {
+          prodId,
+          optName:      s.optName,
+          barcode:      s.barcode,
+          orderedDelta: Number(s.qty),
+          receivedDelta: 0,
+        }
+      }).filter(d => d.prodId)   // prodId 없는 항목 제외
+
+      if (deltas.length > 0) {
+        setSaveMsg({ type: 'ok', text: `상품관리 발주수량 반영 중 (${deltas.length}종)...` })
+        await syncProductQty(products, deltas)
+      }
+
+      // 캐시 클리어 → 모든 탭 실시간 갱신
+      localStorage.removeItem(SHARED_CACHE_KEY)
       try {
-        window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))   // 상품관리탭 실시간 동기화
+        window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
         localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
       } catch { /* ignore */ }
+
       await loadPurchases()
       await loadProducts(true)
       localStorage.removeItem(DRAFT_KEY)
       setSelectedOpts([])
       setOrderSupplier('')
       setOrderDate(getToday())
-      setSaveMsg({ type: 'ok', text: '✅ 발주 확정 완료! 상품관리 발주수량에 반영되었습니다.' })
+      setSaveMsg({ type: 'ok', text: `✅ 발주 확정 완료! ${deltas.length}개 옵션의 발주수량이 상품관리탭에 반영됐습니다.` })
       setTimeout(() => setSaveMsg(null), 4000)
     } catch (e: unknown) {
       setSaveMsg({ type: 'err', text: `❌ 오류: ${e instanceof Error ? e.message : String(e)}` })
