@@ -164,7 +164,7 @@ function parseMarketPlusRow(row: Record<string, unknown>, idx: number, today: st
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
     order_number: orderNum,
     customer_name:    String(row['수령인'] ?? '-'),
-    customer_phone:   String(row['수령인 전화번호'] ?? ''),
+    customer_phone:   String(row['수령인 휴대전화'] ?? row['수령인 전화번호'] ?? ''),
     shipping_address: String(row['수령인 주소(전체)'] ?? row['수령인 주소'] ?? ''),
     items: [{
       product_name: productName,
