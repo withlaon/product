@@ -208,10 +208,34 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
       }
     }
     if (headerBlock && outDataRows.length > 0) {
-      // 원본 Excel 1행(빈 행) 재현 후 헤더·데이터 순서대로
+      /* 원본 Excel 1행(빈 행) 재현 후 헤더·데이터 순서대로 */
       const emptyFirstRow: unknown[] = []
       const out = [emptyFirstRow, ...headerBlock, ...outDataRows]
-      triggerExcelDownloadNoHeader(out, `${mallLabel}_송장_${todayStr()}.xlsx`, sheetName)
+      const ws = XLSX.utils.aoa_to_sheet(out)
+
+      /* A1:AD1 안내문 + 토스쇼핑 양식 병합셀 복원 */
+      const row1Val = allDayData.find(d => d.toss_row1_value)?.toss_row1_value ?? ''
+      if (row1Val) ws['A1'] = { t: 's', v: row1Val }
+      ws['!merges'] = [
+        { s: { r: 0, c:  0 }, e: { r: 0, c: 29 } }, // A1:AD1  (1행 전체 안내문)
+        { s: { r: 1, c:  1 }, e: { r: 1, c:  4 } }, // B2:E2   (주문 정보)
+        { s: { r: 1, c:  5 }, e: { r: 1, c:  6 } }, // F2:G2   (배송 정보)
+        { s: { r: 1, c:  7 }, e: { r: 1, c: 14 } }, // H2:O2   (상품 정보)
+        { s: { r: 1, c: 15 }, e: { r: 1, c: 21 } }, // P2:V2   (구매자/수령인 정보)
+        { s: { r: 1, c: 22 }, e: { r: 1, c: 26 } }, // W2:AA2  (배송 정보2)
+        { s: { r: 1, c: 27 }, e: { r: 1, c: 29 } }, // AB2:AD2 (금액 정보)
+      ]
+
+      const wb = XLSX.utils.book_new()
+      XLSX.utils.book_append_sheet(wb, ws, sheetName)
+      const outBuf = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+      const blob = new Blob([outBuf], { type: 'application/octet-stream' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${mallLabel}_송장_${todayStr()}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
       return
     }
     alert(

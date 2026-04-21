@@ -55,6 +55,8 @@ interface DayData {
   /** 토스쇼핑 주문배송관리 양식: 시트 전체(헤더 1~4행 + 데이터) 보존 — 송장 다운로드 시 동일 양식 유지 */
   toss_raw_aoa?: unknown[][]
   toss_sheet_name?: string
+  /** A1:AD1 병합 영역의 안내문 텍스트 — 다운로드 시 원본 병합 구조 재현용 */
+  toss_row1_value?: string
   uploaded_at: string
 }
 
@@ -689,11 +691,14 @@ export default function OrderRegistrationPage() {
         let rows: Record<string, unknown>[] = []
         let tossRawAoa: unknown[][] | undefined
         let tossSheetName: string | undefined
+        let tossRow1Value: string | undefined
 
         if (isTossShopping) {
           tossSheetName = wb.SheetNames[0] || '주문내역'
           tossRawAoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][]
           // 범위가 A2~이므로 sheet_to_json 인덱스 3이 Excel 5행(데이터 첫 행)
+          // A1:AD1 병합셀의 안내문 텍스트 별도 보존 (!ref 범위 밖이므로 sheet_to_json에 포함 안 됨)
+          tossRow1Value = String(ws['A1']?.v ?? '')
           if (tossRawAoa.length < 4) {
             setImportMsg({ text: '토스쇼핑 주문배송관리 양식: 5행부터 데이터가 필요합니다.', ok: false })
             setImporting(false)
@@ -800,6 +805,7 @@ export default function OrderRegistrationPage() {
           raw_rows: isTossShopping ? tossSyntheticRaw : rows,
           toss_raw_aoa: tossRawAoa,
           toss_sheet_name: tossSheetName,
+          toss_row1_value: tossRow1Value,
           uploaded_at: uploadedAt,
         }
         saveDayData(newData)
