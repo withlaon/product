@@ -171,17 +171,17 @@ export type OptionSuggestion = {
 
 /** 바코드 → 상품약어 + 옵션명 + 이미지 (공백 제거 후 대소문자 무시) */
 function lookupByBarcode(barcode: string): Omit<OptionSuggestion, 'barcode'> | null {
-  const bc = barcode.trim()
+  const bc = barcode.trim().toLowerCase()
   if (!bc) return null
   const products = loadCachedProducts()
   for (const p of products) {
     const opts = p.options ?? []
     for (let i = 0; i < opts.length; i++) {
       const o = opts[i]
-      if ((o.barcode ?? '').trim() === bc) {
+      if ((o.barcode ?? '').trim().toLowerCase() === bc) {
         return {
-          product_abbr: p.abbr ?? '',
-          option_name : String(o.korean_name ?? o.name ?? ''),
+          product_abbr: p.abbr || '',
+          option_name : String(o.korean_name || o.name || ''),
           option_image: overlayOptionImage(String(p.id), i, String(o.image ?? '')),
         }
       }
@@ -341,6 +341,11 @@ export default function CsManagementPage() {
   const [showAbbrDrop,    setShowAbbrDrop]    = useState(false)
   const abbrDropRef = useRef<HTMLDivElement>(null)
 
+  /* 바코드 매칭 상태 */
+  const [barcodeMatched,    setBarcodeMatched]    = useState(false)
+  const [barcodeInMatched,  setBarcodeInMatched]  = useState(false)
+  const [barcodeOutMatched, setBarcodeOutMatched] = useState(false)
+
   useEffect(() => {
     const raw = loadCs()
     const migrated = raw.map(migrateExchangeProcessedFields)
@@ -437,6 +442,9 @@ export default function CsManagementPage() {
     setFormQty(EMPTY_QTY)
     setAbbrSuggestions([])
     setShowAbbrDrop(false)
+    setBarcodeMatched(false)
+    setBarcodeInMatched(false)
+    setBarcodeOutMatched(false)
     setModal({ open: true, type, tab: 'direct' })
   }
 
@@ -446,35 +454,38 @@ export default function CsManagementPage() {
   /* ── 바코드 변경 → 약어/옵션명/이미지 자동입력 ── */
   const handleBarcodeChange = (v: string) => {
     const found = lookupByBarcode(v)
+    setBarcodeMatched(found !== null)
     setForm(f => ({
       ...f,
       barcode      : v,
-      product_abbr : found?.product_abbr || f.product_abbr,
-      option_name  : found?.option_name  || f.option_name,
-      option_image : found?.option_image || f.option_image,
+      product_abbr : found !== null ? (found.product_abbr || f.product_abbr) : f.product_abbr,
+      option_name  : found !== null ? (found.option_name  || f.option_name)  : f.option_name,
+      option_image : found !== null ? (found.option_image || f.option_image) : f.option_image,
     }))
   }
 
   const handleExchangeInChange = (v: string) => {
     const found = lookupByBarcode(v)
+    setBarcodeInMatched(found !== null)
     setForm(f => ({
       ...f,
       barcode_in   : v,
       barcode      : v,
-      product_abbr : found?.product_abbr || f.product_abbr,
-      option_name  : found?.option_name  || f.option_name,
-      option_image : found?.option_image || f.option_image,
+      product_abbr : found !== null ? (found.product_abbr || f.product_abbr) : f.product_abbr,
+      option_name  : found !== null ? (found.option_name  || f.option_name)  : f.option_name,
+      option_image : found !== null ? (found.option_image || f.option_image) : f.option_image,
     }))
   }
 
   const handleExchangeOutChange = (v: string) => {
     const found = lookupByBarcode(v)
+    setBarcodeOutMatched(found !== null)
     setForm(f => ({
       ...f,
       barcode_out       : v,
-      product_abbr_out  : found?.product_abbr ?? f.product_abbr_out,
-      option_name_out   : found?.option_name ?? f.option_name_out,
-      option_image_out  : found?.option_image ?? f.option_image_out,
+      product_abbr_out  : found !== null ? (found.product_abbr || f.product_abbr_out) : f.product_abbr_out,
+      option_name_out   : found !== null ? (found.option_name  || f.option_name_out)  : f.option_name_out,
+      option_image_out  : found !== null ? (found.option_image || f.option_image_out) : f.option_image_out,
     }))
   }
 
@@ -1176,10 +1187,13 @@ export default function CsManagementPage() {
                     <div>
                       <label style={labelStyle}>
                         바코드 <Req />
-                        <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 6 }}>입력 시 약어/옵션명/이미지 자동입력</span>
+                        <span style={{ fontSize: '10px', fontWeight: 600, color: barcodeMatched ? '#059669' : '#94a3b8', marginLeft: 6 }}>
+                          {barcodeMatched ? '✓ 상품 인식됨 — 약어/옵션명 자동입력 완료' : '입력 시 약어/옵션명/이미지 자동입력'}
+                        </span>
                       </label>
                       <div style={{ display: 'flex', gap: 8 }}>
-                        <input value={form.barcode} onChange={e => handleBarcodeChange(e.target.value)} placeholder="바코드 번호" className="pm-input" style={{ flex: 1 }} />
+                        <input value={form.barcode} onChange={e => handleBarcodeChange(e.target.value)} placeholder="바코드 번호" className="pm-input"
+                          style={{ flex: 1, borderColor: barcodeMatched ? '#86efac' : undefined, background: barcodeMatched ? '#f0fdf4' : undefined }} />
                         <button onClick={autoLookupTracking} type="button" title="출고내역에서 송장번호 자동 조회"
                           style={{ padding: '0 12px', height: 36, background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: '11.5px', fontWeight: 800, color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
                           <Search size={12} /> 송장조회
@@ -1195,9 +1209,11 @@ export default function CsManagementPage() {
                       <div>
                         <label style={labelStyle}>
                           기존 출고 바코드 (교환입고) <Req />
+                          {barcodeInMatched && <span style={{ fontSize: '10px', fontWeight: 600, color: '#059669', marginLeft: 6 }}>✓ 상품 인식됨</span>}
                         </label>
                         <div style={{ display: 'flex', gap: 8 }}>
-                          <input value={form.barcode_in} onChange={e => handleExchangeInChange(e.target.value)} placeholder="출고했던 상품 바코드" className="pm-input" style={{ flex: 1, fontFamily: 'monospace' }} />
+                          <input value={form.barcode_in} onChange={e => handleExchangeInChange(e.target.value)} placeholder="출고했던 상품 바코드" className="pm-input"
+                            style={{ flex: 1, fontFamily: 'monospace', borderColor: barcodeInMatched ? '#86efac' : undefined, background: barcodeInMatched ? '#f0fdf4' : undefined }} />
                           <button onClick={autoLookupTracking} type="button" title="출고내역에서 송장번호 자동 조회"
                             style={{ padding: '0 12px', height: 36, background: '#f1f5f9', border: '1px solid #e2e8f0', borderRadius: 10, fontSize: '11.5px', fontWeight: 800, color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }}>
                             <Search size={12} /> 송장조회
@@ -1210,8 +1226,10 @@ export default function CsManagementPage() {
                       <div>
                         <label style={labelStyle}>
                           교환 발송 바코드 (교환출고) <Req />
+                          {barcodeOutMatched && <span style={{ fontSize: '10px', fontWeight: 600, color: '#059669', marginLeft: 6 }}>✓ 상품 인식됨</span>}
                         </label>
-                        <input value={form.barcode_out} onChange={e => handleExchangeOutChange(e.target.value)} placeholder="새로 보낼 상품 바코드" className="pm-input" style={{ fontFamily: 'monospace' }} />
+                        <input value={form.barcode_out} onChange={e => handleExchangeOutChange(e.target.value)} placeholder="새로 보낼 상품 바코드" className="pm-input"
+                          style={{ fontFamily: 'monospace', borderColor: barcodeOutMatched ? '#86efac' : undefined, background: barcodeOutMatched ? '#f0fdf4' : undefined }} />
                       </div>
                     </>
                   )}
@@ -1223,7 +1241,8 @@ export default function CsManagementPage() {
                       <input value={form.product_abbr} onChange={e => handleAbbrChange(e.target.value)}
                         onBlur={() => setTimeout(() => setShowAbbrDrop(false), 150)}
                         onFocus={() => { if (abbrSuggestions.length > 0) setShowAbbrDrop(true) }}
-                        placeholder="예: BLK-MT" className="pm-input" autoComplete="off" />
+                        placeholder="예: BLK-MT" className="pm-input" autoComplete="off"
+                        style={{ borderColor: (barcodeMatched || barcodeInMatched) && form.product_abbr ? '#86efac' : undefined, background: (barcodeMatched || barcodeInMatched) && form.product_abbr ? '#f0fdf4' : undefined }} />
                       {showAbbrDrop && abbrSuggestions.length > 0 && (
                         <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 200, background: '#fff', border: '1.5px solid #e2e8f0', borderRadius: 10, boxShadow: '0 8px 24px rgba(15,23,42,0.12)', marginTop: 3, maxHeight: 200, overflowY: 'auto' }}>
                           {abbrSuggestions.map((s, i) => (
@@ -1246,7 +1265,8 @@ export default function CsManagementPage() {
                     </div>
                     <div>
                       <label style={labelStyle}>옵션명 <span style={{ fontSize: '10px', fontWeight: 600, color: '#94a3b8', marginLeft: 4 }}>→ 바코드 자동</span></label>
-                      <input value={form.option_name} onChange={e => handleOptionNameChange(e.target.value)} placeholder="예: 블랙/FREE" className="pm-input" />
+                      <input value={form.option_name} onChange={e => handleOptionNameChange(e.target.value)} placeholder="예: 블랙/FREE" className="pm-input"
+                        style={{ borderColor: (barcodeMatched || barcodeInMatched) && form.option_name ? '#86efac' : undefined, background: (barcodeMatched || barcodeInMatched) && form.option_name ? '#f0fdf4' : undefined }} />
                     </div>
                   </div>
 
