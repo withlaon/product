@@ -187,16 +187,25 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
     for (const dayData of allDayData) {
       const aoa = dayData.toss_raw_aoa
       if (!aoa || aoa.length < 4) continue
+
+      /* 파일 양식 자동 감지:
+         신양식(A1 시작): aoa[0]=안내문, aoa[1]=그룹헤더, aoa[2]=컬럼헤더, aoa[3]=수정안내, aoa[4~]=데이터
+         구양식(A2 시작): aoa[0]=그룹헤더, aoa[1]=컬럼헤더, aoa[2]=수정안내, aoa[3~]=데이터
+         → B열(index=1)에 '주문번호'가 있는 행을 찾아 헤더/데이터 오프셋 결정 */
+      const colHdrIdx = aoa.findIndex(r => String((r as unknown[])[COL_B] ?? '').trim() === '주문번호')
+      const dataStart = colHdrIdx >= 0 ? colHdrIdx + 2 : 4  // 수정안내 행 다음부터 데이터
+
       if (!headerBlock) {
-        // index 0~2: Excel 2~4행 (그룹헤더·컬럼헤더·수정안내)
-        headerBlock = aoa.slice(0, 3).map(r => [...(r as unknown[])])
+        const hdrStart = colHdrIdx > 0 ? colHdrIdx - 1 : 0  // 그룹헤더 행 index
+        headerBlock = aoa.slice(hdrStart, hdrStart + 3).map(r => [...(r as unknown[])])
         sheetName = dayData.toss_sheet_name || sheetName
       }
-      // index 3~: Excel 5행(첫 데이터)부터
-      for (let r = 3; r < aoa.length; r++) {
+
+      for (let r = dataStart; r < aoa.length; r++) {
         const src = (aoa[r] as unknown[]) || []
         const orderNum = String(src[COL_B] ?? '').trim()
-        if (!orderNum) continue
+        // 주문번호: 숫자 4자리 이상인 행만 데이터로 인식 (헤더·안내 행 제외)
+        if (!orderNum || !/^\d{4,}/.test(orderNum)) continue
         const tInfo = trackingMap[orderNum]
         if (tInfo) {
           const row = [...src]
@@ -208,7 +217,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
       }
     }
     if (headerBlock && outDataRows.length > 0) {
-      /* 원본 Excel 1행(빈 행) 재현 후 헤더·데이터 순서대로 */
+      /* 1행=안내문(A1 병합셀), 2행=그룹헤더, 3행=컬럼헤더, 4행=수정안내, 5행~=데이터 */
       const emptyFirstRow: unknown[] = []
       const out = [emptyFirstRow, ...headerBlock, ...outDataRows]
       const ws = XLSX.utils.aoa_to_sheet(out)

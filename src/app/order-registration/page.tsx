@@ -238,7 +238,10 @@ function loadCachedProductsForPrice(): CachedProductPrice[] {
    열(0부터, A=0): B=1 주문번호, F=5 택배사, G=6 송장번호, I=8 상품명, L=11 옵션명,
    M=12 주문건수, P=15 구매자명, Q=16 구매자연락처, R=17 수령인명,
    S=18 수령인연락처, T=19 배송지, V=21 주문요청사항, AB=27 주문금액.
-   파일 범위: A2~  →  sheet_to_json header:1 인덱스 3부터가 Excel 5행(데이터 첫 행) ── */
+   파일 범위: A1:AD~ (dimension ref A1 시작)
+     aoa[0]=Row1(안내문), aoa[1]=Row2(그룹헤더), aoa[2]=Row3(컬럼헤더),
+     aoa[3]=Row4(수정안내), aoa[4~]=Row5~(데이터)
+   → B열 '주문번호' 행 감지로 데이터 시작 인덱스 자동 결정 ── */
 const TOSS_COL = {
   주문일시: 0, 주문번호: 1, 주문상품번호: 2, 주문건수: 12,
   상품명: 8,   // I열 (상품명)
@@ -696,10 +699,9 @@ export default function OrderRegistrationPage() {
         if (isTossShopping) {
           tossSheetName = wb.SheetNames[0] || '주문내역'
           tossRawAoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][]
-          // 범위가 A2~이므로 sheet_to_json 인덱스 3이 Excel 5행(데이터 첫 행)
-          // A1:AD1 병합셀의 안내문 텍스트 별도 보존 (!ref 범위 밖이므로 sheet_to_json에 포함 안 됨)
+          // A1:AD1 병합셀의 안내문 텍스트 별도 보존
           tossRow1Value = String(ws['A1']?.v ?? '')
-          if (tossRawAoa.length < 4) {
+          if (tossRawAoa.length < 5) {
             setImportMsg({ text: '토스쇼핑 주문배송관리 양식: 5행부터 데이터가 필요합니다.', ok: false })
             setImporting(false)
             if (fileRef.current) fileRef.current.value = ''
@@ -724,12 +726,18 @@ export default function OrderRegistrationPage() {
         let tossSyntheticRaw: Record<string, unknown>[] = []
 
         if (isTossShopping && tossRawAoa) {
-          // 범위 A2~이므로 인덱스 3 = Excel 5행 (데이터 첫 행)
-          for (let i = 3; i < tossRawAoa.length; i++) {
+          /* 파일 양식 자동 감지:
+             신양식(A1 시작): aoa[0]=안내문, aoa[1]=그룹헤더, aoa[2]=컬럼헤더, aoa[3]=수정안내, aoa[4~]=데이터
+             구양식(A2 시작): aoa[0]=그룹헤더, aoa[1]=컬럼헤더, aoa[2]=수정안내, aoa[3~]=데이터
+             → B열(index=1)에 '주문번호'가 있는 행 다음 다음 행부터 데이터 */
+          const tossColHdrIdx = tossRawAoa.findIndex(r => String((r as unknown[])[TOSS_COL.주문번호] ?? '').trim() === '주문번호')
+          const tossDataStart = tossColHdrIdx >= 0 ? tossColHdrIdx + 2 : 4
+          for (let i = tossDataStart; i < tossRawAoa.length; i++) {
             const line = tossRawAoa[i] as unknown[]
             if (!line?.length) continue
             const orderNum = String(line[TOSS_COL.주문번호] ?? '').trim()
-            if (!orderNum) continue
+            // 주문번호: 숫자 4자리 이상인 행만 데이터로 인식 (헤더·안내 행 제외)
+            if (!orderNum || !/^\d{4,}/.test(orderNum)) continue
             orders.push(parseTossShoppingAoaRow(line, i))
             tossSyntheticRaw.push({
               주문번호: line[TOSS_COL.주문번호],
