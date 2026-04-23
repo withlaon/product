@@ -323,10 +323,14 @@ export default function LogisticsPage() {
           </div>
           <div>
             <label style={{ display:'block', fontSize:'11.5px', fontWeight:800, color:'#475569', marginBottom:5 }}>메모</label>
-            <Input placeholder="예: 배송비, 창고비 등"
+            <select
               value={form.memo}
               onChange={e => setForm(f => ({ ...f, memo: e.target.value }))}
-            />
+              style={{ width:'100%', height:38, padding:'0 10px', fontSize:'13px', fontWeight:700, color: form.memo ? '#0f172a' : '#94a3b8', border:'1.5px solid #e2e8f0', borderRadius:8, background:'white', cursor:'pointer', outline:'none' }}>
+              <option value="">선택하세요</option>
+              <option value="물류비">물류비</option>
+              <option value="화물비">화물비</option>
+            </select>
           </div>
           <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:4 }}>
             <Button variant="outline" onClick={closeModal}>취소</Button>

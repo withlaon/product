@@ -318,14 +318,14 @@ export default function PurchaseManagePage() {
 
   /* ── 발주 추천 목록 ──
      조건:
-       · 판매중(active)만 포함: 현재고 ≤ 3 또는 발주일 이후 출고 판매 > 0
+       · 판매중(active) 또는 전송준비(ready_to_ship) 포함: 현재고 ≤ 3 또는 발주일 이후 출고 판매 > 0
        · 판매예정(upcoming)은 발주 추천 목록에서 제외
      정렬: 바코드 오름차순
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const result: QualOpt[] = []
     for (const prod of products) {
-      if (prod.status !== 'active') continue
+      if (prod.status !== 'active' && prod.status !== 'ready_to_ship') continue
 
       for (const opt of prod.options) {
         const stock = opt.current_stock ?? 0
@@ -709,7 +709,7 @@ export default function PurchaseManagePage() {
           <div style={{ padding: '10px 14px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
             <AlertTriangle size={14} style={{ color: '#d97706' }} />
             <span style={{ fontSize: '13px', fontWeight: 800, color: '#0f172a' }}>발주 추천 목록</span>
-            <span style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 600 }}>판매중(active) · 재고 부족(≤3) 또는 발주일 이후 판매 · 판매예정 상품 제외</span>
+            <span style={{ fontSize: '10.5px', color: '#94a3b8', fontWeight: 600 }}>판매중(active)·전송준비(ready_to_ship) · 재고 부족(≤3) 또는 발주일 이후 판매 · 판매예정 상품 제외</span>
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
               {qualOpts.filter(o => o.currentStock === 0).length > 0 && (
                 <span style={{ fontSize: '11px', background: '#fff1f2', color: '#dc2626', fontWeight: 700, padding: '2px 8px', borderRadius: 99 }}>
