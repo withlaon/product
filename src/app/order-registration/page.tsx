@@ -701,8 +701,8 @@ export default function OrderRegistrationPage() {
           tossRawAoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][]
           // A1:AD1 병합셀의 안내문 텍스트 별도 보존
           tossRow1Value = String(ws['A1']?.v ?? '')
-          if (tossRawAoa.length < 5) {
-            setImportMsg({ text: '토스쇼핑 주문배송관리 양식: 5행부터 데이터가 필요합니다.', ok: false })
+          if (tossRawAoa.length < 4) {
+            setImportMsg({ text: '토스쇼핑 주문배송관리 양식: 헤더 행이 없습니다. 올바른 주문배송관리 엑셀 파일인지 확인해주세요.', ok: false })
             setImporting(false)
             if (fileRef.current) fileRef.current.value = ''
             return
