@@ -176,3 +176,49 @@ export async function archiveAmountsAndPurgeTracesForDeletedProduct(p: DeletedPr
 
   broadcastDashboardRefresh()
 }
+
+/**
+ * 옵션 삭제 시: 삭제된 바코드에 해당하는 발주 항목·출고·주문 이력을 제거.
+ * - pm_purchases: 해당 바코드 item 제거 (item이 없어지면 발주 행 전체 삭제)
+ * - localStorage 주문·송장큐·출고내역: 해당 바코드(sku)를 포함한 주문 행 삭제
+ */
+export async function purgeDataByBarcodes(barcodes: string[]): Promise<void> {
+  if (typeof window === 'undefined' || barcodes.length === 0) return
+  const bcSet = new Set(barcodes.map(String).filter(Boolean))
+  if (bcSet.size === 0) return
+
+  /* ── 발주(pm_purchases) ── */
+  const purchases = await apiFetchPurchases()
+  for (const row of purchases) {
+    const remaining = (row.items ?? []).filter(it => !bcSet.has(String(it.barcode ?? '').trim()))
+    if (remaining.length === row.items?.length) continue
+    if (remaining.length === 0) {
+      await apiDeletePurchase(row.id)
+    } else {
+      await apiUpdatePurchase(row.id, { items: remaining })
+    }
+  }
+
+  /* ── localStorage 주문·송장큐·출고내역 ── */
+  function orderTouchesBarcodes(o: Order | ShippedOrder): boolean {
+    return (o.items ?? []).some(it => bcSet.has(String(it.sku ?? '').trim()))
+  }
+
+  const orders  = loadOrders()
+  const queue   = loadInvoiceQueue()
+  const shipped = loadShippedOrders()
+
+  const removeIds = new Set<string>()
+  orders.forEach(o  => { if (orderTouchesBarcodes(o)) removeIds.add(o.id) })
+  queue.forEach(o   => { if (orderTouchesBarcodes(o)) removeIds.add(o.id) })
+  shipped.forEach(o => { if (orderTouchesBarcodes(o)) removeIds.add(o.id) })
+
+  const ids = [...removeIds]
+  if (ids.length > 0) {
+    removeShippedOrdersByIds(ids)
+    removeOrdersByIds(ids)
+    removeInvoiceQueueByIds(ids)
+  }
+
+  broadcastDashboardRefresh()
+}

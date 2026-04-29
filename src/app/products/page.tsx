@@ -12,7 +12,7 @@ import {
   isShippedOrderDelivered, shippedOrderLocalYmd, ymdComparable,
   type ShippedOrder, type MappingStore,
 } from '@/lib/orders'
-import { archiveAmountsAndPurgeTracesForDeletedProduct } from '@/lib/product-delete-cascade'
+import { archiveAmountsAndPurgeTracesForDeletedProduct, purgeDataByBarcodes } from '@/lib/product-delete-cascade'
 import { DASHBOARD_REFRESH_EVENT, broadcastPmProductsCacheSync } from '@/lib/dashboard-sync'
 import {
   Plus, Search, Download, Upload, Package, TrendingUp, AlertTriangle,
@@ -1431,6 +1431,15 @@ export default function ProductsPage() {
     if (!editForm.code || !editForm.name || !cat) return
     setEditSaving(true)
     setEditSaveError('')
+
+    // 삭제된 옵션의 바코드 수집 (저장 전 원본 옵션과 비교)
+    const newBarcodeSet = new Set(
+      editForm.options.filter(o => o.name).map(o => String(o.barcode || '').trim()).filter(Boolean)
+    )
+    const deletedBarcodes = (isEdit.options ?? [])
+      .map(o => String(o.barcode ?? '').trim())
+      .filter(bc => bc && !newBarcodeSet.has(bc))
+
     const options: ProductOption[] = await persistDataUrlOptionImages(
       isEdit.id,
       editForm.options.filter(o => o.name).map(o => ({
@@ -1504,6 +1513,10 @@ export default function ProductsPage() {
         const { [isEdit.id]: _, ...rest } = prevNotes
         saveSpecialNotes(rest)
         setSpecialNotes(rest)
+      }
+      // 삭제된 옵션 바코드에 해당하는 발주·입고·판매내역 정리
+      if (deletedBarcodes.length > 0) {
+        void purgeDataByBarcodes(deletedBarcodes)
       }
       setIsEdit(null)
       setEditForm(null)
