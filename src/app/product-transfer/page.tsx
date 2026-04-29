@@ -496,7 +496,29 @@ export default function OrdersPage() {
       })
     const draft: MappingStore = {}
     Object.keys(keySet).forEach(key => {
-      draft[key] = mappings[key] ?? { abbreviation: '', loca: '' }
+      if (mappings[key]) {
+        draft[key] = mappings[key]
+        return
+      }
+      // 정확 키 미일치 시: 같은 주문서 상품명으로 이전에 수동 매핑된 항목 검색 → 상품 기본 정보 자동 적용
+      const [productName] = splitMappingKey(key)
+      const fallback = Object.entries(mappings).find(([k, v]) => {
+        if (!v.product_id) return false
+        const [pn] = splitMappingKey(k)
+        return pn === productName
+      })?.[1]
+      if (fallback) {
+        draft[key] = {
+          abbreviation: fallback.abbreviation || '',
+          loca: fallback.loca || '',
+          product_id: fallback.product_id,
+          product_code: fallback.product_code,
+          my_product_name: fallback.my_product_name,
+          // barcode/my_option_name은 옵션별로 다를 수 있어 비워둠 (자동매핑 버튼으로 보완)
+        }
+      } else {
+        draft[key] = { abbreviation: '', loca: '' }
+      }
     })
     setDraftMappings(draft)
     setMappingFilter('all')
@@ -614,10 +636,34 @@ export default function OrdersPage() {
 
     const newDraft = { ...draftMappings }
     Object.entries(newDraft).forEach(([key, m]) => {
-      // 이미 연결된 항목은 건너뜀 (수동 저장된 매핑 보존)
+      const [productName, option] = splitMappingKey(key)
+
+      // product_id는 있지만 barcode가 없는 항목: 옵션 매칭만 보완 (상품명 기준 자동 적용된 항목)
+      if (m.product_id && !m.barcode) {
+        const p = myProducts.find(pr => pr.id === m.product_id)
+        if (p && option) {
+          const matchedOpt = matchOption(option, p.options)
+          if (matchedOpt) {
+            newDraft[key] = {
+              ...m,
+              my_option_name: matchedOpt.name,
+              barcode: matchedOpt.barcode,
+              abbreviation: m.abbreviation || p.abbr || '',
+              loca: m.loca || p.loca || '',
+            }
+            mapped++
+          } else {
+            skipped++
+          }
+        } else {
+          skipped++
+        }
+        return
+      }
+
+      // 이미 완전히 연결된 항목은 건너뜀 (수동 저장된 매핑 보존)
       if (m.product_id) { skipped++; return }
 
-      const [productName, option] = splitMappingKey(key)
       const p = matchProduct(productName)
       if (!p) return
 
