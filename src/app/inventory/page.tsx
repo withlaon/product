@@ -5,7 +5,7 @@ import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
-import { ShieldAlert, RefreshCw, Package, FileDown } from 'lucide-react'
+import { ShieldAlert, RefreshCw, Package, FileDown, Pencil, Trash2, Check, X } from 'lucide-react'
 
 type TxType = 'in' | 'out' | 'defective' | 'adjust'
 interface TxRecord {
@@ -86,6 +86,12 @@ export default function InventoryPage() {
 
   // 월별 검색
   const [filterMonth, setFilterMonth] = useState(getThisMonth())
+
+  // 불량 이력 편집
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editQty, setEditQty] = useState('')
+  const [editNote, setEditNote] = useState('')
+  const [actionLoading, setActionLoading] = useState<string | null>(null) // 처리 중인 tx.id
 
   const loadProducts = useCallback(async () => {
     setLoading(true)
@@ -267,6 +273,74 @@ export default function InventoryPage() {
     } catch { /* ignore */ }
     // DB에서 최신 데이터 재로드
     void loadProducts()
+  }
+
+  /* ── 불량 이력 삭제: 바코드 기준으로 defective 차감 + 재고 복구 ── */
+  const handleDeleteTx = async (tx: TxRecord) => {
+    if (!confirm(`이 불량 이력을 삭제하시겠습니까?\n수량 ${Math.abs(tx.qty)}개가 재고에 복구됩니다.`)) return
+    setActionLoading(tx.id)
+    const n = Math.abs(tx.qty)
+    const entry = barcodeIndex.get(tx.barcode)
+    if (entry) {
+      await batchUpdateOptions([{
+        prodId: entry.prod.id,
+        optName: entry.opt.name,
+        updater: o => ({
+          ...o,
+          current_stock: getStock(o) + n,
+          defective: Math.max(0, (o.defective || 0) - n),
+        }),
+      }])
+      try {
+        localStorage.removeItem(SHARED_CACHE_KEY)
+        window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
+      } catch { /* ignore */ }
+      void loadProducts()
+    }
+    const updated = txList.filter(t => t.id !== tx.id)
+    setTxList(updated)
+    saveTx(updated)
+    setActionLoading(null)
+  }
+
+  /* ── 불량 이력 편집 시작 ── */
+  const startEdit = (tx: TxRecord) => {
+    setEditingId(tx.id)
+    setEditQty(String(Math.abs(tx.qty)))
+    setEditNote(tx.note)
+  }
+
+  /* ── 불량 이력 편집 저장: 수량 차이만큼 DB 보정 ── */
+  const handleEditSave = async (tx: TxRecord) => {
+    const newN = Number(editQty)
+    if (!newN || newN < 1) { alert('수량을 올바르게 입력하세요.'); return }
+    setActionLoading(tx.id)
+    const oldN = Math.abs(tx.qty)
+    const delta = newN - oldN // 양수 = 불량 증가, 음수 = 불량 감소
+    const entry = barcodeIndex.get(tx.barcode)
+    if (entry && delta !== 0) {
+      await batchUpdateOptions([{
+        prodId: entry.prod.id,
+        optName: entry.opt.name,
+        updater: o => ({
+          ...o,
+          current_stock: Math.max(0, getStock(o) - delta),
+          defective: Math.max(0, (o.defective || 0) + delta),
+        }),
+      }])
+      try {
+        localStorage.removeItem(SHARED_CACHE_KEY)
+        window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
+      } catch { /* ignore */ }
+      void loadProducts()
+    }
+    const updated = txList.map(t =>
+      t.id === tx.id ? { ...t, qty: -newN, note: editNote.trim() || t.note } : t,
+    )
+    setTxList(updated)
+    saveTx(updated)
+    setEditingId(null)
+    setActionLoading(null)
   }
 
   const defectTx = useMemo(
@@ -456,8 +530,8 @@ export default function InventoryPage() {
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
                 <tr style={{ background: '#f8fafc', position: 'sticky', top: 0 }}>
-                  {['일시', '이미지', '상품코드', '상품약어', '상품명', '바코드', '수량', '비고'].map(h => (
-                    <th key={h} style={{ padding: '8px 10px', fontWeight: 800, fontSize: 10, color: '#64748b', textAlign: h === '수량' ? 'right' : 'left', borderBottom: '1px solid #e2e8f0' }}>
+                  {['일시', '이미지', '상품코드', '상품약어', '상품명', '바코드', '수량', '비고', '작업'].map(h => (
+                    <th key={h} style={{ padding: '8px 10px', fontWeight: 800, fontSize: 10, color: '#64748b', textAlign: h === '수량' ? 'right' : 'left', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap' }}>
                       {h}
                     </th>
                   ))}
@@ -467,8 +541,10 @@ export default function InventoryPage() {
                 {filteredDefectTx.map(tx => {
                   const meta = metaByBarcode[tx.barcode] ?? { abbr: '', image: '' }
                   const qty = Math.abs(tx.qty)
+                  const isEditing = editingId === tx.id
+                  const isBusy = actionLoading === tx.id
                   return (
-                    <tr key={tx.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                    <tr key={tx.id} style={{ borderBottom: '1px solid #f1f5f9', background: isEditing ? '#fffbeb' : undefined }}>
                       <td style={{ padding: '8px 10px', whiteSpace: 'nowrap', color: '#64748b', fontSize: 11 }}>{new Date(tx.date).toLocaleString('ko-KR')}</td>
                       <td style={{ padding: '6px 10px' }}>
                         <div style={{ width: 36, height: 36, borderRadius: 6, overflow: 'hidden', background: '#f1f5f9' }}>
@@ -479,8 +555,72 @@ export default function InventoryPage() {
                       <td style={{ padding: '8px 10px', fontWeight: 900, color: '#7e22ce', fontSize: 11 }}>{meta.abbr || '—'}</td>
                       <td style={{ padding: '8px 10px', fontWeight: 700, color: '#334155', maxWidth: 200 }}>{tx.product_name}</td>
                       <td style={{ padding: '8px 10px', fontSize: 11, fontWeight: 900, color: '#000', letterSpacing: '0.02em' }}>{tx.barcode || '—'}</td>
-                      <td style={{ padding: '8px 10px', textAlign: 'right', fontWeight: 900, color: '#c2410c' }}>{qty.toLocaleString()}</td>
-                      <td style={{ padding: '8px 10px', color: '#94a3b8', fontSize: 11 }}>{tx.note}</td>
+                      {/* 수량 셀: 편집 중이면 입력 필드 */}
+                      <td style={{ padding: '8px 10px', textAlign: 'right' }}>
+                        {isEditing ? (
+                          <input
+                            type="number" min={1} value={editQty}
+                            onChange={e => setEditQty(e.target.value)}
+                            style={{ width: 64, textAlign: 'right', fontWeight: 900, fontSize: 13, border: '1.5px solid #f97316', borderRadius: 6, padding: '2px 6px', outline: 'none' }}
+                          />
+                        ) : (
+                          <span style={{ fontWeight: 900, color: '#c2410c' }}>{qty.toLocaleString()}</span>
+                        )}
+                      </td>
+                      {/* 비고 셀: 편집 중이면 입력 필드 */}
+                      <td style={{ padding: '8px 10px' }}>
+                        {isEditing ? (
+                          <input
+                            value={editNote}
+                            onChange={e => setEditNote(e.target.value)}
+                            style={{ width: 120, fontSize: 12, border: '1.5px solid #f97316', borderRadius: 6, padding: '2px 6px', outline: 'none' }}
+                          />
+                        ) : (
+                          <span style={{ color: '#94a3b8', fontSize: 11 }}>{tx.note}</span>
+                        )}
+                      </td>
+                      {/* 작업 버튼 */}
+                      <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                        {isEditing ? (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              onClick={() => void handleEditSave(tx)}
+                              disabled={isBusy}
+                              title="저장"
+                              style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#16a34a', color: '#fff', cursor: isBusy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 800 }}
+                            >
+                              <Check size={12} /> 저장
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              disabled={isBusy}
+                              title="취소"
+                              style={{ padding: '4px 8px', borderRadius: 6, border: 'none', background: '#e2e8f0', color: '#475569', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 3, fontSize: 11, fontWeight: 800 }}
+                            >
+                              <X size={12} /> 취소
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', gap: 4 }}>
+                            <button
+                              onClick={() => startEdit(tx)}
+                              disabled={!!actionLoading}
+                              title="편집"
+                              style={{ padding: '4px 7px', borderRadius: 6, border: 'none', background: '#eff6ff', color: '#2563eb', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+                            >
+                              <Pencil size={13} />
+                            </button>
+                            <button
+                              onClick={() => void handleDeleteTx(tx)}
+                              disabled={isBusy || !!actionLoading}
+                              title="삭제"
+                              style={{ padding: '4px 7px', borderRadius: 6, border: 'none', background: '#fff1f2', color: '#e11d48', cursor: isBusy ? 'not-allowed' : 'pointer', display: 'flex', alignItems: 'center' }}
+                            >
+                              {isBusy ? <RefreshCw size={13} style={{ animation: 'spin 1s linear infinite' }} /> : <Trash2 size={13} />}
+                            </button>
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   )
                 })}
