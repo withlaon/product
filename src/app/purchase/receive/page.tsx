@@ -95,6 +95,20 @@ interface RcItem {
   optImage:     string
 }
 
+/* ── 바코드 기준 합산된 아이템 타입 ── */
+interface RcItemMerged {
+  mergeKey:      string       // barcode 또는 product_code|||option_name
+  barcode:       string
+  product_code:  string
+  option_name:   string
+  totalReceived: number       // 합산 수량
+  sourceItems:   RcItem[]     // 원본 아이템 목록
+  confirmed:     boolean      // 모든 원본이 확정
+  prodId:        string
+  prodAbbr:      string
+  optImage:      string
+}
+
 function loadLocalSet(key: string): Set<string> {
   if (typeof window === 'undefined') return new Set()
   try { const r = localStorage.getItem(key); return r ? new Set(JSON.parse(r)) : new Set() }
@@ -279,6 +293,44 @@ export default function ReceiveManagePage() {
     })
   }, [rcPurchases, products, confirmedKeys])
 
+  /* ── 바코드 기준 합산 목록 (같은 바코드는 수량 합계로 1행 표시) ── */
+  const rcItemsMerged = useMemo((): RcItemMerged[] => {
+    const groups = new Map<string, RcItemMerged>()
+    for (const item of rcItems) {
+      const key = (item.barcode || '').trim() || `${item.product_code}|||${item.option_name}`
+      if (!groups.has(key)) {
+        groups.set(key, {
+          mergeKey: key,
+          barcode: item.barcode,
+          product_code: item.product_code,
+          option_name: item.option_name,
+          totalReceived: 0,
+          sourceItems: [],
+          confirmed: true,
+          prodId: item.prodId || '',
+          prodAbbr: item.prodAbbr || '',
+          optImage: item.optImage || '',
+        })
+      }
+      const g = groups.get(key)!
+      g.totalReceived += item.received
+      g.sourceItems.push(item)
+      if (!g.prodId   && item.prodId)   g.prodId   = item.prodId
+      if (!g.prodAbbr && item.prodAbbr) g.prodAbbr = item.prodAbbr
+      if (!g.optImage && item.optImage) g.optImage = item.optImage
+    }
+    for (const g of groups.values()) {
+      g.confirmed = g.sourceItems.every(i => confirmedKeys.has(`${i.purchaseId}|${i.itemIndex}`))
+    }
+    return [...groups.values()].sort((a, b) => {
+      const c = a.product_code.localeCompare(b.product_code)
+      if (c !== 0) return c
+      const o = (a.option_name || '').localeCompare(b.option_name || '')
+      if (o !== 0) return o
+      return (a.barcode || '').localeCompare(b.barcode || '')
+    })
+  }, [rcItems, confirmedKeys])
+
   /* ── 이미지 배치 로딩 ── */
   const imageProdIdsKey = useMemo(
     () => [...new Set([
@@ -347,7 +399,22 @@ export default function ReceiveManagePage() {
       }
     }).filter(d => d.prodId)
 
-    if (deltas.length) await syncProductQty(products, deltas)
+    // 동일 바코드(prodId+barcode) delta 합산 → syncProductQty의 rows.find 한계 해결
+    const mergedDeltas: typeof deltas = []
+    for (const d of deltas) {
+      const existing = mergedDeltas.find(m =>
+        m.prodId === d.prodId &&
+        (d.barcode && m.barcode ? m.barcode === d.barcode : m.optName === d.optName)
+      )
+      if (existing) {
+        existing.receivedDelta += d.receivedDelta
+        existing.orderedDelta  += d.orderedDelta
+      } else {
+        mergedDeltas.push({ ...d })
+      }
+    }
+
+    if (mergedDeltas.length) await syncProductQty(products, mergedDeltas)
 
     const newKeys = new Set(confirmedKeys)
     for (const item of toConfirm) newKeys.add(`${item.purchaseId}|${item.itemIndex}`)
@@ -355,8 +422,8 @@ export default function ReceiveManagePage() {
     localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newKeys]))
 
     /* ── 옵티미스틱 업데이트 ── */
-    if (deltas.length) {
-      const updatedProducts = applyProductDeltas(products, deltas)
+    if (mergedDeltas.length) {
+      const updatedProducts = applyProductDeltas(products, mergedDeltas)
       setProducts(updatedProducts)
       try { localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), data: updatedProducts })) } catch { /* ignore */ }
     } else {
@@ -366,7 +433,7 @@ export default function ReceiveManagePage() {
 
     setSaving(false)
     setSelectedKeys(new Set())
-    if (!deltas.length) {
+    if (!mergedDeltas.length) {
       alert('바코드 또는 상품코드가 매핑된 상품이 없어 수량 반영이 되지 않았습니다.\n입고 상품의 바코드/상품코드를 확인해 주세요.')
     }
   }
@@ -815,9 +882,21 @@ export default function ReceiveManagePage() {
   )
 
   /* 전체 체크박스 */
-  const allChecked = rcItems.length > 0 && rcItems.every(i => selectedKeys.has(`${i.purchaseId}|${i.itemIndex}`))
-  const toggleAll  = (v: boolean) =>
-    setSelectedKeys(v ? new Set(rcItems.map(i => `${i.purchaseId}|${i.itemIndex}`)) : new Set())
+  // 합산 목록 기준: 모든 merged 행의 모든 sourceItem이 선택됐는지
+  const allChecked = rcItemsMerged.length > 0 && rcItemsMerged.every(m =>
+    m.sourceItems.every(i => selectedKeys.has(`${i.purchaseId}|${i.itemIndex}`))
+  )
+  const toggleAll = (v: boolean) => {
+    if (v) {
+      const keys = new Set<string>()
+      for (const m of rcItemsMerged) {
+        for (const i of m.sourceItems) keys.add(`${i.purchaseId}|${i.itemIndex}`)
+      }
+      setSelectedKeys(keys)
+    } else {
+      setSelectedKeys(new Set())
+    }
+  }
 
   return (
     <div className="pm-page" style={{ display:'flex', flexDirection:'column', height:'100%', gap:10 }}>
@@ -996,80 +1075,101 @@ export default function ReceiveManagePage() {
                     </tr>
                   </thead>
                   <tbody>
+                    {/* 발주 그룹 헤더 (그룹별 삭제 버튼 보존) */}
                     {rcPurchases.map(purchase => {
-                      const purchaseItems = rcItems.filter(item => item.purchaseId === purchase.id)
                       const totalQty = purchase.items.reduce((s, i) => s + i.received, 0)
                       return (
-                        <React.Fragment key={purchase.id}>
-                          {/* 발주 그룹 헤더 */}
-                          <tr style={{ background:'#f1f5f9' }}>
-                            <td colSpan={8} style={{ padding:'5px 10px' }}>
-                              <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-                                <span style={{ fontSize:'10.5px', fontWeight:800, color:'#334155' }}>
-                                  {purchase.supplier || '직접입고'}
-                                </span>
-                                <span style={{ fontSize:'10px', color:'#94a3b8' }}>
-                                  {purchase.items.length}종 · 총 {totalQty}개
-                                </span>
+                        <tr key={purchase.id} style={{ background:'#f1f5f9' }}>
+                          <td colSpan={8} style={{ padding:'5px 10px' }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                              <span style={{ fontSize:'10.5px', fontWeight:800, color:'#334155' }}>
+                                {purchase.supplier || '직접입고'}
+                              </span>
+                              <span style={{ fontSize:'10px', color:'#94a3b8' }}>
+                                {purchase.items.length}종 · 총 {totalQty}개
+                              </span>
+                              <button
+                                onClick={() => setDeletePurchase(purchase)}
+                                style={{ marginLeft:'auto', fontSize:'9px', fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'1px solid #fca5a5', borderRadius:4, padding:'2px 8px', cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
+                                <Trash2 size={9}/>전체 삭제
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                    {/* 바코드 기준 합산 행 */}
+                    {rcItemsMerged.map(merged => {
+                      const allSrcSelected = merged.sourceItems.every(i => selectedKeys.has(`${i.purchaseId}|${i.itemIndex}`))
+                      const anySrcSelected = merged.sourceItems.some(i => selectedKeys.has(`${i.purchaseId}|${i.itemIndex}`))
+                      const bc  = (merged.barcode || '').trim()
+                      const img = (bc && loadedImages[bc]) || merged.optImage
+                      const isMulti = merged.sourceItems.length > 1
+                      // 단일 소스 아이템이면 편집/삭제 버튼 표시 가능
+                      const singleSrc  = merged.sourceItems.length === 1 ? merged.sourceItems[0] : null
+                      const srcPurchase = singleSrc ? rcPurchases.find(p => p.id === singleSrc.purchaseId) : null
+                      return (
+                        <tr key={merged.mergeKey} style={{ borderBottom:'1px solid #f8fafc', background: merged.confirmed ? '#f0fdf4' : 'white' }}>
+                          <td style={{ textAlign:'center', padding:'4px 8px' }}>
+                            <input type="checkbox"
+                              checked={allSrcSelected}
+                              ref={el => { if (el) el.indeterminate = anySrcSelected && !allSrcSelected }}
+                              onChange={e => {
+                                const ns = new Set(selectedKeys)
+                                for (const i of merged.sourceItems) {
+                                  const k = `${i.purchaseId}|${i.itemIndex}`
+                                  e.target.checked ? ns.add(k) : ns.delete(k)
+                                }
+                                setSelectedKeys(ns)
+                              }} style={{ cursor:'pointer' }}/>
+                          </td>
+                          <td style={{ textAlign:'center', padding:'4px 6px', width:40 }}>
+                            {img
+                              ? <img src={img} alt="" style={{ width:30, height:30, objectFit:'cover', borderRadius:5, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
+                              : <div style={{ width:30, height:30, background:'#f1f5f9', borderRadius:5, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                                  <Package size={12} style={{ color:'#cbd5e1' }}/>
+                                </div>}
+                          </td>
+                          <td style={{ padding:'4px 6px', fontWeight:700, color:'#0f172a', fontSize:'10.5px', maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {merged.prodAbbr || merged.product_code}
+                          </td>
+                          <td style={{ padding:'4px 6px', color:'#475569', fontSize:'10.5px', maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {merged.option_name}
+                          </td>
+                          <td data-pm-barcode="1" style={{ padding:'4px 6px', fontSize:11, letterSpacing:'0.02em', color: merged.barcode ? '#000000' : '#f59e0b', fontWeight: merged.barcode ? 900 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
+                            {merged.barcode || '미매핑'}
+                          </td>
+                          <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize:'12px' }}>
+                            {merged.totalReceived}
+                            {isMulti && (
+                              <span style={{ fontSize:'9px', color:'#94a3b8', fontWeight:600, marginLeft:3 }}>
+                                ({merged.sourceItems.length}건 합)
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ textAlign:'center' }}>
+                            {merged.confirmed
+                              ? <span style={{ fontSize:'9px', fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
+                              : <span style={{ fontSize:'9px', fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
+                          </td>
+                          <td style={{ textAlign:'center', padding:'4px 4px', whiteSpace:'nowrap' }}>
+                            {/* 단일 소스 아이템에만 편집/삭제 버튼 표시 */}
+                            {srcPurchase && singleSrc && (
+                              <>
                                 <button
-                                  onClick={() => setDeletePurchase(purchase)}
-                                  style={{ marginLeft:'auto', fontSize:'9px', fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'1px solid #fca5a5', borderRadius:4, padding:'2px 8px', cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
-                                  <Trash2 size={9}/>전체 삭제
+                                  onClick={() => { setEditItem({ purchase: srcPurchase, itemIndex: singleSrc.itemIndex }); setEditItemForm({ ...srcPurchase.items[singleSrc.itemIndex] }) }}
+                                  style={{ fontSize:'9px', fontWeight:800, color:'#7e22ce', background:'#fdf4ff', border:'none', borderRadius:4, padding:'2px 6px', cursor:'pointer', marginRight:3 }}>
+                                  <Edit2 size={9} style={{ display:'inline', verticalAlign:'middle', marginRight:2 }}/>수정
                                 </button>
-                              </div>
-                            </td>
-                          </tr>
-                          {/* 아이템 행 */}
-                          {purchaseItems.map(item => {
-                            const k = `${item.purchaseId}|${item.itemIndex}`
-                            const bc = (item.barcode || '').trim()
-                            const img = (bc && loadedImages[bc]) || item.optImage
-                            return (
-                              <tr key={k} style={{ borderBottom:'1px solid #f8fafc', background:item.confirmed ? '#f0fdf4' : 'white' }}>
-                                <td style={{ textAlign:'center', padding:'4px 8px' }}>
-                                  <input type="checkbox" checked={selectedKeys.has(k)}
-                                    onChange={e => {
-                                      const ns = new Set(selectedKeys)
-                                      e.target.checked ? ns.add(k) : ns.delete(k)
-                                      setSelectedKeys(ns)
-                                    }} style={{ cursor:'pointer' }}/>
-                                </td>
-                                <td style={{ textAlign:'center', padding:'4px 6px', width:40 }}>
-                                  {img
-                                    ? <img src={img} alt="" style={{ width:30, height:30, objectFit:'cover', borderRadius:5, border:'1px solid #e2e8f0', display:'block', margin:'0 auto' }}/>
-                                    : <div style={{ width:30, height:30, background:'#f1f5f9', borderRadius:5, margin:'0 auto', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                                        <Package size={12} style={{ color:'#cbd5e1' }}/>
-                                      </div>}
-                                </td>
-                                <td style={{ padding:'4px 6px', fontWeight:700, color:'#0f172a', fontSize: '10.5px', maxWidth:70, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                  {item.prodAbbr || item.product_code}
-                                </td>
-                                <td style={{ padding:'4px 6px', color:'#475569', fontSize: '10.5px', maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{item.option_name}</td>
-                                <td data-pm-barcode="1" style={{ padding:'4px 6px', fontSize: 11, letterSpacing: '0.02em', color: item.barcode ? '#000000' : '#f59e0b', fontWeight: item.barcode ? 900 : 700, maxWidth:80, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>
-                                  {item.barcode || '미매핑'}
-                                </td>
-                                <td style={{ textAlign:'center', fontWeight:800, color:'#0ea5e9', fontSize: '12px' }}>{item.received}</td>
-                                <td style={{ textAlign:'center' }}>
-                                  {item.confirmed
-                                    ? <span style={{ fontSize: '9px', fontWeight:800, color:'#15803d', background:'#dcfce7', padding:'2px 6px', borderRadius:99 }}>확정</span>
-                                    : <span style={{ fontSize: '9px', fontWeight:800, color:'#d97706', background:'#fef3c7', padding:'2px 6px', borderRadius:99 }}>대기</span>}
-                                </td>
-                                <td style={{ textAlign:'center', padding:'4px 4px', whiteSpace:'nowrap' }}>
-                                  <button
-                                    onClick={() => { setEditItem({ purchase, itemIndex: item.itemIndex }); setEditItemForm({ ...purchase.items[item.itemIndex] }) }}
-                                    style={{ fontSize:'9px', fontWeight:800, color:'#7e22ce', background:'#fdf4ff', border:'none', borderRadius:4, padding:'2px 6px', cursor:'pointer', marginRight:3 }}>
-                                    <Edit2 size={9} style={{ display:'inline', verticalAlign:'middle', marginRight:2 }}/>수정
-                                  </button>
-                                  <button
-                                    onClick={() => setDeleteItem({ purchase, itemIndex: item.itemIndex })}
-                                    style={{ fontSize:'9px', fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'none', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
-                                    <Trash2 size={9} style={{ display:'inline', verticalAlign:'middle', marginRight:2 }}/>삭제
-                                  </button>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </React.Fragment>
+                                <button
+                                  onClick={() => setDeleteItem({ purchase: srcPurchase, itemIndex: singleSrc.itemIndex })}
+                                  style={{ fontSize:'9px', fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'none', borderRadius:4, padding:'2px 6px', cursor:'pointer' }}>
+                                  <Trash2 size={9} style={{ display:'inline', verticalAlign:'middle', marginRight:2 }}/>삭제
+                                </button>
+                              </>
+                            )}
+                          </td>
+                        </tr>
                       )
                     })}
                   </tbody>
