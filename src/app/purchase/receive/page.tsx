@@ -28,21 +28,25 @@ function applyProductDeltas(prods: PmProduct[], deltas: SyncDelta[]): PmProduct[
   return prods.map(prod => {
     const related = deltas.filter(d => d.prodId === prod.id)
     if (!related.length) return prod
-    return {
-      ...prod,
-      options: prod.options.map((opt: PmOption) => {
-        const delta = related.find(d =>
-          (d.barcode && d.barcode === opt.barcode) ||
-          (!d.barcode && d.optName && (d.optName === opt.name || d.optName === opt.korean_name))
-        )
-        if (!delta) return opt
-        const newOrdered  = Math.max(0, (opt.ordered  || 0) + delta.orderedDelta)
-        const newReceived = Math.max(0, (opt.received || 0) + delta.receivedDelta)
-        const prevStock   = opt.current_stock ?? Math.max(0, (opt.received || 0) - (opt.sold || 0))
-        const newStock    = Math.max(0, prevStock + delta.receivedDelta)
-        return { ...opt, ordered: newOrdered, received: newReceived, current_stock: newStock }
-      }),
-    }
+    const updatedOptions = prod.options.map((opt: PmOption) => {
+      const delta = related.find(d =>
+        (d.barcode && d.barcode === opt.barcode) ||
+        (!d.barcode && d.optName && (d.optName === opt.name || d.optName === opt.korean_name))
+      )
+      if (!delta) return opt
+      const newOrdered  = Math.max(0, (opt.ordered  || 0) + delta.orderedDelta)
+      const newReceived = Math.max(0, (opt.received || 0) + delta.receivedDelta)
+      const prevStock   = opt.current_stock ?? Math.max(0, (opt.received || 0) - (opt.sold || 0))
+      const newStock    = Math.max(0, prevStock + delta.receivedDelta)
+      return { ...opt, ordered: newOrdered, received: newReceived, current_stock: newStock }
+    })
+    // 품절 상태이고 입고 후 전체 재고 합산 > 0 이면 자동으로 판매중 복구
+    const totalStock = updatedOptions.reduce((sum, opt) => {
+      const st = opt.current_stock ?? Math.max(0, (opt.received || 0) - (opt.sold || 0))
+      return sum + st
+    }, 0)
+    const nextStatus = prod.status === 'soldout' && totalStock > 0 ? 'active' : prod.status
+    return { ...prod, options: updatedOptions, status: nextStatus }
   })
 }
 

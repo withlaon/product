@@ -56,9 +56,9 @@ export async function POST(req: NextRequest) {
 
     for (const [prodId, rows] of Object.entries(grouped)) {
       try {
-        // ① Supabase에서 최신 options 직접 조회 (이미지 포함 전체 필드)
+        // ① Supabase에서 최신 status + options 조회
         const getRes = await fetch(
-          `${SUPABASE_URL}/rest/v1/${TABLE}?select=id,options&id=eq.${encodeURIComponent(prodId)}`,
+          `${SUPABASE_URL}/rest/v1/${TABLE}?select=id,status,options&id=eq.${encodeURIComponent(prodId)}`,
           {
             headers: {
               ...BASE_HEADERS,
@@ -74,7 +74,7 @@ export async function POST(req: NextRequest) {
           continue
         }
 
-        const product = await getRes.json() as { id: string; options: PmOption[] }
+        const product = await getRes.json() as { id: string; status?: string; options: PmOption[] }
         const baseOpts: PmOption[] = Array.isArray(product?.options) ? product.options : []
 
         if (baseOpts.length === 0) {
@@ -104,13 +104,25 @@ export async function POST(req: NextRequest) {
           return { ...opt, ordered: newOrdered, received: newReceived, current_stock: newStock }
         })
 
-        // ③ Supabase에 PATCH (SERVICE_ROLE_KEY → RLS 우회)
+        // ③ 품절 상태이고 입고 후 전체 재고 합산 > 0 이면 자동으로 판매중 복구
+        const totalStock = updatedOpts.reduce((sum, opt) => {
+          const st = opt.current_stock !== undefined
+            ? (opt.current_stock as number)
+            : Math.max(0, ((opt.received as number) || 0) - ((opt.sold as number) || 0))
+          return sum + st
+        }, 0)
+        const patchPayload: Record<string, unknown> = { options: updatedOpts }
+        if (product.status === 'soldout' && totalStock > 0) {
+          patchPayload.status = 'active'
+        }
+
+        // ④ Supabase에 PATCH (SERVICE_ROLE_KEY → RLS 우회)
         const patchRes = await fetch(
           `${SUPABASE_URL}/rest/v1/${TABLE}?id=eq.${encodeURIComponent(prodId)}`,
           {
             method: 'PATCH',
             headers: { ...BASE_HEADERS, Prefer: 'return=minimal' },
-            body: JSON.stringify({ options: updatedOpts }),
+            body: JSON.stringify(patchPayload),
             signal: AbortSignal.timeout(30000),
           }
         )
