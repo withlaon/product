@@ -121,9 +121,11 @@ export default function ReceiveManagePage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   /* 개별 아이템 수정/삭제 */
-  const [editItem,     setEditItem]     = useState<{ purchase: Purchase; itemIndex: number } | null>(null)
-  const [editItemForm, setEditItemForm] = useState<PurchaseItem | null>(null)
-  const [deleteItem,   setDeleteItem]   = useState<{ purchase: Purchase; itemIndex: number } | null>(null)
+  const [editItem,       setEditItem]       = useState<{ purchase: Purchase; itemIndex: number } | null>(null)
+  const [editItemForm,   setEditItemForm]   = useState<PurchaseItem | null>(null)
+  const [deleteItem,     setDeleteItem]     = useState<{ purchase: Purchase; itemIndex: number } | null>(null)
+  /* 발주 그룹 전체 삭제 */
+  const [deletePurchase, setDeletePurchase] = useState<Purchase | null>(null)
 
   /* 미입고 선택 → 입고확정 */
   const [miSelected,    setMiSelected]    = useState<Set<string>>(new Set())
@@ -378,11 +380,19 @@ export default function ReceiveManagePage() {
         ordered:  Number(miQtys[uKey(u)]) || 0,
         received: Number(miQtys[uKey(u)]) || 0,
       }))
-      const { error } = await apiInsertPurchase({
+      const { data: newPurchase, error } = await apiInsertPurchase({
         order_date: getToday(), supplier: '미입고확정',
         status: 'completed', ordered_at: new Date().toISOString(), received_at: new Date().toISOString(), items,
       })
       if (error) throw new Error(error)
+
+      // 생성된 발주의 모든 항목을 confirmedKeys에 등록 (삭제 시 수량 역산 활성화)
+      if (newPurchase) {
+        const newCK = new Set(confirmedKeys)
+        newPurchase.items.forEach((_, idx) => newCK.add(`${newPurchase.id}|${idx}`))
+        setConfirmedKeys(newCK)
+        try { localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newCK])) } catch { /* ignore */ }
+      }
 
       const deltas: SyncDelta[] = confirmed.map((u, i) => ({
         prodId: u.prodId, optName: items[i].option_name, barcode: u.barcode || undefined,
@@ -458,7 +468,9 @@ export default function ReceiveManagePage() {
     const { purchase, itemIndex } = deleteItem
     const item = purchase.items[itemIndex]
     const k    = `${purchase.id}|${itemIndex}`
-    const wasConfirmed = confirmedKeys.has(k)
+    // confirmedKeys에 있거나 purchase 자체가 completed/partial이면 수량 역산
+    const wasConfirmed = confirmedKeys.has(k) ||
+      purchase.status === 'completed' || purchase.status === 'partial'
 
     // 확정됐던 아이템이면 재고에서 차감 (바코드 우선 매칭)
     if (wasConfirmed && item.received > 0) {
@@ -502,6 +514,49 @@ export default function ReceiveManagePage() {
 
     await loadPurchases(); await loadProducts(true)
     setDeleteItem(null); setSaving(false)
+  }
+
+  /* ── 발주 그룹 전체 삭제: 모든 입고수량 역산 후 발주 레코드 삭제 ── */
+  const handlePurchaseDelete = async () => {
+    if (!deletePurchase) return
+    setSaving(true)
+    const deltas: SyncDelta[] = []
+    for (let i = 0; i < deletePurchase.items.length; i++) {
+      const item = deletePurchase.items[i]
+      if (item.received <= 0) continue
+      // confirmedKeys 또는 purchase 상태가 completed/partial이면 수량 역산
+      const isConfirmed = confirmedKeys.has(`${deletePurchase.id}|${i}`) ||
+        deletePurchase.status === 'completed' || deletePurchase.status === 'partial'
+      if (!isConfirmed) continue
+      const bc = (item.barcode || '').trim()
+      let prodId = ''
+      if (bc) {
+        for (const prod of products) {
+          if (prod.options.find(o => (o.barcode || '').trim() === bc)) { prodId = prod.id; break }
+        }
+      }
+      if (!prodId) {
+        const prod = products.find(pr => pr.code === item.product_code)
+        prodId = prod?.id ?? ''
+      }
+      if (prodId) {
+        deltas.push({ prodId, optName: item.option_name, barcode: bc || undefined, orderedDelta: 0, receivedDelta: -item.received })
+      }
+    }
+    if (deltas.length) await syncProductQty(products, deltas)
+    await apiDeletePurchase(deletePurchase.id)
+    const newCK = new Set([...confirmedKeys].filter(k => !k.startsWith(`${deletePurchase.id}|`)))
+    setConfirmedKeys(newCK)
+    try { localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newCK])) } catch { /* ignore */ }
+    localStorage.removeItem(CACHE_KEY)
+    try {
+      window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
+      localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
+    } catch { /* ignore */ }
+    await loadPurchases()
+    await loadProducts(true)
+    setDeletePurchase(null)
+    setSaving(false)
   }
 
   /* ── 파일 업로드 ──
@@ -888,7 +943,7 @@ export default function ReceiveManagePage() {
                       const totalQty = purchase.items.reduce((s, i) => s + i.received, 0)
                       return (
                         <React.Fragment key={purchase.id}>
-                          {/* 발주 그룹 헤더 (정보 표시만) */}
+                          {/* 발주 그룹 헤더 */}
                           <tr style={{ background:'#f1f5f9' }}>
                             <td colSpan={8} style={{ padding:'5px 10px' }}>
                               <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
@@ -898,6 +953,11 @@ export default function ReceiveManagePage() {
                                 <span style={{ fontSize:'10px', color:'#94a3b8' }}>
                                   {purchase.items.length}종 · 총 {totalQty}개
                                 </span>
+                                <button
+                                  onClick={() => setDeletePurchase(purchase)}
+                                  style={{ marginLeft:'auto', fontSize:'9px', fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'1px solid #fca5a5', borderRadius:4, padding:'2px 8px', cursor:'pointer', display:'flex', alignItems:'center', gap:3 }}>
+                                  <Trash2 size={9}/>전체 삭제
+                                </button>
                               </div>
                             </td>
                           </tr>
@@ -1055,7 +1115,8 @@ export default function ReceiveManagePage() {
       {deleteItem && (() => {
         const { purchase, itemIndex } = deleteItem
         const item = purchase.items[itemIndex]
-        const wasConfirmed = confirmedKeys.has(`${purchase.id}|${itemIndex}`)
+        const wasConfirmed = confirmedKeys.has(`${purchase.id}|${itemIndex}`) ||
+          purchase.status === 'completed' || purchase.status === 'partial'
         return (
           <Modal isOpen onClose={() => setDeleteItem(null)} title="입고 항목 삭제 확인" size="sm">
             <div style={{ textAlign:'center', padding:'16px 0' }}>
@@ -1066,7 +1127,7 @@ export default function ReceiveManagePage() {
               <p style={{ fontSize:'12px', color:'#64748b', marginBottom:4 }}>
                 입고수량 <strong>{item.received}개</strong>
               </p>
-              {wasConfirmed
+              {wasConfirmed && item.received > 0
                 ? <p style={{ fontSize:'11px', color:'#dc2626', background:'#fff1f2', padding:'6px 12px', borderRadius:7 }}>
                     ⚠️ 확정된 항목입니다. 삭제 시 재고에서 <strong>{item.received}개</strong>가 차감됩니다.
                   </p>
@@ -1078,6 +1139,39 @@ export default function ReceiveManagePage() {
               <Button onClick={handleItemDelete} disabled={saving}
                 style={{ background:'#dc2626', borderColor:'#dc2626', opacity: saving ? 0.6 : 1 }}>
                 <Trash2 size={13}/>{saving ? '삭제 중...' : '삭제'}
+              </Button>
+            </div>
+          </Modal>
+        )
+      })()}
+
+      {/* ── 발주 그룹 전체 삭제 확인 모달 ── */}
+      {deletePurchase && (() => {
+        const totalReceived = deletePurchase.items.reduce((s, i) => s + i.received, 0)
+        const isConfirmedBatch = deletePurchase.status === 'completed' || deletePurchase.status === 'partial'
+        return (
+          <Modal isOpen onClose={() => setDeletePurchase(null)} title="입고 목록 전체 삭제 확인" size="sm">
+            <div style={{ textAlign:'center', padding:'16px 0' }}>
+              <Trash2 size={36} style={{ color:'#dc2626', margin:'0 auto 12px' }}/>
+              <p style={{ fontSize:'14px', fontWeight:800, color:'#1e293b', marginBottom:4 }}>
+                {deletePurchase.supplier || '직접입고'}
+              </p>
+              <p style={{ fontSize:'12px', color:'#64748b', marginBottom:8 }}>
+                {deletePurchase.items.length}종 · 총 입고수량 <strong>{totalReceived}개</strong>
+              </p>
+              {isConfirmedBatch && totalReceived > 0
+                ? <p style={{ fontSize:'11px', color:'#dc2626', background:'#fff1f2', padding:'8px 14px', borderRadius:7, lineHeight:1.6 }}>
+                    ⚠️ 입고확정된 목록입니다.<br/>
+                    삭제 시 상품관리탭 입고수량에서 <strong>{totalReceived}개</strong>가 바코드 기준으로 즉시 차감됩니다.
+                  </p>
+                : <p style={{ fontSize:'11px', color:'#64748b' }}>미확정 목록 — 재고에는 영향이 없습니다.</p>
+              }
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+              <Button variant="outline" onClick={() => setDeletePurchase(null)}>취소</Button>
+              <Button onClick={handlePurchaseDelete} disabled={saving}
+                style={{ background:'#dc2626', borderColor:'#dc2626', opacity: saving ? 0.6 : 1 }}>
+                <Trash2 size={13}/>{saving ? '삭제 중...' : '전체 삭제'}
               </Button>
             </div>
           </Modal>
