@@ -126,6 +126,8 @@ export default function ReceiveManagePage() {
   const [deleteItem,     setDeleteItem]     = useState<{ purchase: Purchase; itemIndex: number } | null>(null)
   /* 발주 그룹 전체 삭제 */
   const [deletePurchase, setDeletePurchase] = useState<Purchase | null>(null)
+  /* 일별 전체 삭제 */
+  const [deleteAllDayOpen, setDeleteAllDayOpen] = useState(false)
 
   /* 미입고 선택 → 입고확정 */
   const [miSelected,    setMiSelected]    = useState<Set<string>>(new Set())
@@ -559,6 +561,55 @@ export default function ReceiveManagePage() {
     setSaving(false)
   }
 
+  /* ── 일별 입고 목록 전체 삭제: 해당 날짜 rcPurchases 모두 역산 후 삭제 ── */
+  const handleDeleteAllDay = async () => {
+    if (rcPurchases.length === 0) return
+    setSaving(true)
+    // 모든 발주의 수량 역산 델타를 한번에 수집
+    const allDeltas: SyncDelta[] = []
+    for (const purchase of rcPurchases) {
+      for (let i = 0; i < purchase.items.length; i++) {
+        const item = purchase.items[i]
+        if (item.received <= 0) continue
+        const isConfirmed = confirmedKeys.has(`${purchase.id}|${i}`) ||
+          purchase.status === 'completed' || purchase.status === 'partial'
+        if (!isConfirmed) continue
+        const bc = (item.barcode || '').trim()
+        let prodId = ''
+        if (bc) {
+          for (const prod of products) {
+            if (prod.options.find(o => (o.barcode || '').trim() === bc)) { prodId = prod.id; break }
+          }
+        }
+        if (!prodId) {
+          const prod = products.find(pr => pr.code === item.product_code)
+          prodId = prod?.id ?? ''
+        }
+        if (prodId) {
+          allDeltas.push({ prodId, optName: item.option_name, barcode: bc || undefined, orderedDelta: 0, receivedDelta: -item.received })
+        }
+      }
+    }
+    // 수량 역산 (한번에 처리)
+    if (allDeltas.length) await syncProductQty(products, allDeltas)
+    // 모든 발주 레코드 삭제
+    await Promise.all(rcPurchases.map(p => apiDeletePurchase(p.id)))
+    // confirmedKeys 정리
+    const purgeIds = new Set(rcPurchases.map(p => p.id))
+    const newCK = new Set([...confirmedKeys].filter(k => !purgeIds.has(k.split('|')[0])))
+    setConfirmedKeys(newCK)
+    try { localStorage.setItem(CONFIRMED_KEY, JSON.stringify([...newCK])) } catch { /* ignore */ }
+    localStorage.removeItem(CACHE_KEY)
+    try {
+      window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
+      localStorage.setItem('pm_products_mapping_signal', Date.now().toString())
+    } catch { /* ignore */ }
+    await loadPurchases()
+    await loadProducts(true)
+    setDeleteAllDayOpen(false)
+    setSaving(false)
+  }
+
   /* ── 파일 업로드 ──
      [패킹리스트(装箱单) 시트 우선]
        E열 29행~ = 상품 바코드, I열 29행~ = 입고수량
@@ -914,6 +965,13 @@ export default function ReceiveManagePage() {
             <span style={{ fontSize: '13px', fontWeight:800, color:'#0f172a' }}>일별 입고 목록</span>
             <DayNav day={day} setDay={setDay}/>
             <span style={{ fontSize: '11px', color:'#94a3b8', marginLeft:'auto' }}>{rcItems.length}건</span>
+            {rcPurchases.length > 0 && (
+              <button
+                onClick={() => setDeleteAllDayOpen(true)}
+                style={{ fontSize:'10px', fontWeight:800, color:'#dc2626', background:'#fff1f2', border:'1px solid #fca5a5', borderRadius:6, padding:'4px 10px', cursor:'pointer', display:'flex', alignItems:'center', gap:4, whiteSpace:'nowrap' }}>
+                <Trash2 size={11}/>일별 전체 삭제
+              </button>
+            )}
           </div>
 
           {/* 컨텐츠 */}
@@ -1170,6 +1228,41 @@ export default function ReceiveManagePage() {
             <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
               <Button variant="outline" onClick={() => setDeletePurchase(null)}>취소</Button>
               <Button onClick={handlePurchaseDelete} disabled={saving}
+                style={{ background:'#dc2626', borderColor:'#dc2626', opacity: saving ? 0.6 : 1 }}>
+                <Trash2 size={13}/>{saving ? '삭제 중...' : '전체 삭제'}
+              </Button>
+            </div>
+          </Modal>
+        )
+      })()}
+
+      {/* ── 일별 전체 삭제 확인 모달 ── */}
+      {deleteAllDayOpen && (() => {
+        const totalItems = rcPurchases.reduce((s, p) => s + p.items.length, 0)
+        const totalReceived = rcPurchases.reduce((s, p) => s + p.items.reduce((ss, i) => ss + i.received, 0), 0)
+        const hasConfirmed = rcPurchases.some(p => p.status === 'completed' || p.status === 'partial')
+        return (
+          <Modal isOpen onClose={() => setDeleteAllDayOpen(false)} title={`${fmtDayLabel(day)} 입고 목록 전체 삭제`} size="sm">
+            <div style={{ textAlign:'center', padding:'16px 0' }}>
+              <Trash2 size={40} style={{ color:'#dc2626', margin:'0 auto 14px' }}/>
+              <p style={{ fontSize:'14px', fontWeight:800, color:'#1e293b', marginBottom:6 }}>
+                {fmtDayLabel(day)}
+              </p>
+              <p style={{ fontSize:'12px', color:'#64748b', marginBottom:10 }}>
+                {rcPurchases.length}건 · {totalItems}종 · 총 입고수량 <strong>{totalReceived}개</strong>
+              </p>
+              {hasConfirmed && totalReceived > 0
+                ? <div style={{ fontSize:'11px', color:'#dc2626', background:'#fff1f2', padding:'10px 14px', borderRadius:8, lineHeight:1.7, textAlign:'left' }}>
+                    ⚠️ <strong>입고확정된 내역이 포함되어 있습니다.</strong><br/>
+                    삭제 시 상품관리탭 입고수량에서 <strong>총 {totalReceived}개</strong>가<br/>
+                    바코드 기준으로 즉시 차감되어 확정 이전 상태로 되돌아갑니다.
+                  </div>
+                : <p style={{ fontSize:'11px', color:'#64748b' }}>미확정 목록 — 재고에는 영향이 없습니다.</p>
+              }
+            </div>
+            <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:20 }}>
+              <Button variant="outline" onClick={() => setDeleteAllDayOpen(false)}>취소</Button>
+              <Button onClick={handleDeleteAllDay} disabled={saving}
                 style={{ background:'#dc2626', borderColor:'#dc2626', opacity: saving ? 0.6 : 1 }}>
                 <Trash2 size={13}/>{saving ? '삭제 중...' : '전체 삭제'}
               </Button>
