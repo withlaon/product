@@ -239,7 +239,6 @@ const ST_OPTIONS: { value: ProductStatus; label: string }[] = [
   { value:'upcoming',       label:'판매예정' },
   { value:'soldout',        label:'품절'     },
   { value:'pending_delete', label:'삭제예정' },
-  { value:'ready_to_ship',  label:'전송준비' },
 ]
 
 /* ─── 연동된 채널 목록 (쇼핑몰 관리 연동) ── */

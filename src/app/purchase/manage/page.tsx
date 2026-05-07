@@ -318,14 +318,13 @@ export default function PurchaseManagePage() {
 
   /* ── 발주 추천 목록 ──
      조건:
-       · 판매중(active) 또는 전송준비(ready_to_ship) 포함: 현재고 ≤ 3 또는 발주일 이후 출고 판매 > 0
-       · 판매예정(upcoming)은 발주 추천 목록에서 제외
+       · 판매중(active), 전송준비(ready_to_ship), 판매예정(upcoming) 포함: 현재고 ≤ 3 또는 발주일 이후 출고 판매 > 0
      정렬: 바코드 오름차순
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const result: QualOpt[] = []
     for (const prod of products) {
-      if (prod.status !== 'active' && prod.status !== 'ready_to_ship') continue
+      if (prod.status !== 'active' && prod.status !== 'ready_to_ship' && prod.status !== 'upcoming') continue
 
       for (const opt of prod.options) {
         const stock = opt.current_stock ?? 0
