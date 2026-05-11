@@ -150,8 +150,8 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
       <td><span style="${nameStyle}">${r.customer_name}</span></td>
       <td style="text-align:center;font-family:monospace">${r.loca}</td>
       <td contenteditable="true" style="color:#1e293b;font-weight:700;cursor:text">${r.color}</td>
-      <td contenteditable="true" style="color:#1e293b;font-weight:700;cursor:text">${r.size}</td>
       <td>${r.abbreviation}</td>
+      <td contenteditable="true" style="color:#1e293b;font-weight:700;cursor:text">${r.size}</td>
       <td style="${qtyStyle}">${r.quantity}</td>
     </tr>`
   }).join('')
@@ -179,8 +179,8 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     <th>수령인</th>
     <th style="width:70px">LOCA</th>
     <th style="width:64px">색상</th>
-    <th style="width:52px">사이즈</th>
     <th>상품약어</th>
+    <th style="width:52px">사이즈</th>
     <th style="width:46px">수량</th>
   </tr></thead>
   <tbody>${trRows}</tbody>
