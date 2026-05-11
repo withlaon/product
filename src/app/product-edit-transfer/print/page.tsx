@@ -10,7 +10,7 @@ import {
 import {
   loadInvoiceQueue, removeInvoiceQueueByIds,
   loadShippedOrders, upsertShippedOrders,
-  loadMappings, lookupMapping, extractColor,
+  loadMappings, lookupMapping, extractColor, extractSize,
 } from '@/lib/orders'
 import type { Order, ShippedOrder, MappingStore } from '@/lib/orders'
 
@@ -60,12 +60,13 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     shipping_address: string
     abbreviation: string
     color: string
+    size: string
     quantity: number
     loca: string
   }
 
   // 상품 캐시 로드 (바코드 → 색상명 자동 조회)
-  type CacheOpt  = { barcode: string; korean_name: string }
+  type CacheOpt  = { barcode: string; korean_name: string; size?: string }
   type CacheProd = { id: string; options?: CacheOpt[] }
   let productCache: CacheProd[] = []
   try {
@@ -81,14 +82,17 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     for (const item of order.items) {
       const m = lookupMapping(mappings, item.product_name, item.option)
 
-      // 색상: 바코드 기준 캐시 조회 → fallback: option 텍스트 추출
+      // 색상/사이즈: 바코드 기준 캐시 조회 → fallback: option 텍스트 추출
       let color = ''
+      let size  = ''
       if (m.product_id && m.barcode) {
         const prod = productCache.find(p => p.id === m.product_id)
         const opt  = prod?.options?.find(o => o.barcode === m.barcode)
         if (opt?.korean_name) color = opt.korean_name
+        if (opt?.size)        size  = opt.size
       }
       if (!color) color = extractColor(item.option ?? '')
+      if (!size)  size  = extractSize(item.option ?? '')
 
       rows.push({
         order_number:     order.order_number,
@@ -96,6 +100,7 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
         shipping_address: order.shipping_address,
         abbreviation:     m.abbreviation || item.product_name,
         color,
+        size,
         quantity: item.quantity,
         loca:     m.loca ?? '',
       })
@@ -145,6 +150,7 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
       <td><span style="${nameStyle}">${r.customer_name}</span></td>
       <td style="text-align:center;font-family:monospace">${r.loca}</td>
       <td contenteditable="true" style="color:#1e293b;font-weight:700;cursor:text">${r.color}</td>
+      <td contenteditable="true" style="color:#1e293b;font-weight:700;cursor:text">${r.size}</td>
       <td>${r.abbreviation}</td>
       <td style="${qtyStyle}">${r.quantity}</td>
     </tr>`
@@ -173,6 +179,7 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     <th>수령인</th>
     <th style="width:70px">LOCA</th>
     <th style="width:64px">색상</th>
+    <th style="width:52px">사이즈</th>
     <th>상품약어</th>
     <th style="width:46px">수량</th>
   </tr></thead>
@@ -181,7 +188,7 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
 <div style="margin-top:14px;font-size:10.5px;color:#64748b;line-height:1.8">
   ● 하늘배경: 합포장(동일 수령인·주소) — 수령인 이름 색상으로 그룹 구분<br>
   ● 노란배경: 수량 2개 이상(수량 빨간색) &nbsp; ● 진하늘배경: 합포장+2개이상<br>
-  ※ 색상 칸 클릭 → 직접 수정 가능 · 수정 후 인쇄 버튼 클릭
+  ※ 색상·사이즈 칸 클릭 → 직접 수정 가능 · 수정 후 인쇄 버튼 클릭
 </div>
 </body></html>`
 

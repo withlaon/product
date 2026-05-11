@@ -413,6 +413,32 @@ export function downloadExcel(rows: Record<string, unknown>[], filename: string)
   })
 }
 
+/* ─── 사이즈 추출 (옵션명에서 사이즈 추출) ──────────────── */
+export function extractSize(option: string): string {
+  if (!option) return ''
+  // "사이즈:XL", "사이즈=XL", "SIZE:XL" 등 명시적 키워드
+  const keywordMatch = option.match(/사이즈\s*[=:]\s*([^\s,/\]]+)/i)
+    ?? option.match(/size\s*[=:]\s*([^\s,/\]]+)/i)
+  if (keywordMatch) return keywordMatch[1].trim()
+
+  // 슬래시 구분 옵션 "블랙/XL" → 색상이 아닌 쪽 추출
+  if (option.includes('/')) {
+    const parts = option.split('/').map(s => s.trim())
+    for (const part of parts) {
+      if (/^(XS|S|M|L|XL|XXL|2XL|3XL|4XL|XXXL|FREE|프리|Free|free)$/i.test(part)) return part
+      if (/^\d{2,3}$/.test(part)) return part  // 95, 100, 105, 110 등
+    }
+  }
+
+  // 단독 사이즈 문자열 검색
+  const sizeMatch = option.match(/\b(XS|XL|XXL|2XL|3XL|4XL|XXXL|FREE|프리)\b/i)
+    ?? option.match(/(?<![a-zA-Z가-힣])(S|M|L)(?![a-zA-Z가-힣])/)
+    ?? option.match(/\b(9[05]|10[05]|11[05])\b/)
+  if (sizeMatch) return sizeMatch[1]
+
+  return ''
+}
+
 /* ─── 색상 추출 (옵션명에서 한글 색상 추출) ─────────────── */
 export function extractColor(option: string): string {
   if (!option) return ''
