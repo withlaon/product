@@ -234,20 +234,21 @@ function loadCachedProductsForPrice(): CachedProductPrice[] {
   return []
 }
 
-/* ─── 토스쇼핑 주문배송관리 양식 (2026~)
-   열(0부터, A=0): B=1 주문번호, F=5 택배사, G=6 송장번호, I=8 상품명, L=11 옵션명,
-   M=12 주문건수, P=15 구매자명, Q=16 구매자연락처, R=17 수령인명,
-   S=18 수령인연락처, T=19 배송지, V=21 주문요청사항, AB=27 주문금액.
-   파일 범위: A1:AD~ (dimension ref A1 시작)
+/* ─── 토스쇼핑 주문배송관리 양식 (2026-04~ 신양식)
+   열(0부터, A=0): B=1 주문번호, F=5 택배사, G=6 송장번호,
+   I=8 상품ID(신규), J=9 상품명, L=11 옵션ID(신규), M=12 옵션명,
+   N=13 주문건수, R=17 구매자명, S=18 구매자연락처, T=19 수령인명,
+   U=20 수령인연락처, V=21 배송지, X=23 주문요청사항, AD=29 주문금액.
+   파일 범위: A1:AF~ (dimension ref A1 시작)
      aoa[0]=Row1(안내문), aoa[1]=Row2(그룹헤더), aoa[2]=Row3(컬럼헤더),
      aoa[3]=Row4(수정안내), aoa[4~]=Row5~(데이터)
    → B열 '주문번호' 행 감지로 데이터 시작 인덱스 자동 결정 ── */
 const TOSS_COL = {
-  주문일시: 0, 주문번호: 1, 주문상품번호: 2, 주문건수: 12,
-  상품명: 8,   // I열 (상품명)
-  옵션명: 11,  // L열 (옵션명)
-  구매자명: 15, 구매자연락처: 16, 수령인명: 17,
-  수령인연락처: 18, 배송지: 19, 주문요청사항: 21, 주문금액: 27,
+  주문일시: 0, 주문번호: 1, 주문상품번호: 2, 주문건수: 13,
+  상품명: 9,   // J열 (상품명, I열은 상품ID)
+  옵션명: 12,  // M열 (옵션명, L열은 옵션ID)
+  구매자명: 17, 구매자연락처: 18, 수령인명: 19,
+  수령인연락처: 20, 배송지: 21, 주문요청사항: 23, 주문금액: 29,
   택배사: 5, 송장번호: 6,
 } as const
 
@@ -290,14 +291,14 @@ function parseTossShoppingAoaRow(row: unknown[], idx: number): RegOrder {
       import_source: '토스쇼핑',
       주문번호: orderNum,
       주문상품번호: String(row[TOSS_COL.주문상품번호] ?? ''),
-      토스_I_상품명: String(row[TOSS_COL.상품명] ?? ''),
-      토스_L_옵션명: cleanTossOption(row[TOSS_COL.옵션명]),
-      토스_P_구매자명: String(row[TOSS_COL.구매자명] ?? ''),
-      토스_Q_구매자연락처: String(row[TOSS_COL.구매자연락처] ?? ''),
-      토스_R_수령인명: String(row[TOSS_COL.수령인명] ?? ''),
-      토스_T_배송지: String(row[TOSS_COL.배송지] ?? ''),
-      토스_V_주문요청사항: String(row[TOSS_COL.주문요청사항] ?? ''),
-      토스_AA_주문금액: String(row[TOSS_COL.주문금액] ?? ''),
+      토스_J_상품명: String(row[TOSS_COL.상품명] ?? ''),
+      토스_M_옵션명: cleanTossOption(row[TOSS_COL.옵션명]),
+      토스_R_구매자명: String(row[TOSS_COL.구매자명] ?? ''),
+      토스_S_구매자연락처: String(row[TOSS_COL.구매자연락처] ?? ''),
+      토스_T_수령인명: String(row[TOSS_COL.수령인명] ?? ''),
+      토스_V_배송지: String(row[TOSS_COL.배송지] ?? ''),
+      토스_X_주문요청사항: String(row[TOSS_COL.주문요청사항] ?? ''),
+      토스_AD_주문금액: String(row[TOSS_COL.주문금액] ?? ''),
     },
   }
 }

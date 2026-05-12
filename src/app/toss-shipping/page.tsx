@@ -3,9 +3,9 @@ import { useState, useRef, useCallback } from 'react'
 import * as XLSX from 'xlsx'
 import { Upload, Download, Truck, X, CheckCircle2, Package } from 'lucide-react'
 
-/* ── 열 인덱스 (0-based, A=0)
-   B=1  F=5  G=6  I=8  L=11  Q=16  R=17  T=19  V=21 ── */
-const COL = { B:1, F:5, G:6, I:8, L:11, Q:16, R:17, T:19, V:21 } as const
+/* ── 열 인덱스 (0-based, A=0) — 2026-04~ 신양식
+   B=1  F=5  G=6  J=9  M=12  S=18  T=19  V=21  X=23 ── */
+const COL = { B:1, F:5, G:6, J:9, M:12, S:18, T:19, V:21, X:23 } as const
 
 /** 옵션명에서 FREE 제거: "블랙, free" → "블랙" */
 function cleanOption(raw: string): string {
@@ -19,12 +19,12 @@ function cleanOption(raw: string): string {
 interface TossOrder {
   excelR:      number  // XLSX encode_cell 용 0-indexed row (A1 기준)
   orderNum:    string  // B열: 주문번호
-  productName: string  // I열: 상품명
-  optionName:  string  // L열: 옵션명
-  phone:       string  // Q열: 전화번호
-  recipient:   string  // R열: 수취인명
-  address:     string  // T열: 주소
-  request:     string  // V열: 배송요청사항
+  productName: string  // J열: 상품명
+  optionName:  string  // M열: 옵션명
+  phone:       string  // S열: 전화번호
+  recipient:   string  // T열: 수취인명
+  address:     string  // V열: 주소
+  request:     string  // X열: 배송요청사항
 }
 
 export default function TossShippingPage() {
@@ -64,12 +64,12 @@ export default function TossShippingPage() {
           parsed.push({
             excelR:      r,               // encode_cell 전달용 0-indexed row
             orderNum,
-            productName: getCell(r, COL.I),                  // I열: 상품명
-            optionName:  cleanOption(getCell(r, COL.L)),   // L열: 옵션명 (FREE 제거)
-            phone:       getCell(r, COL.Q),  // Q열: 전화번호
-            recipient:   getCell(r, COL.R),  // R열: 수취인명
-            address:     getCell(r, COL.T),  // T열: 주소
-            request:     getCell(r, COL.V),  // V열: 배송요청사항
+            productName: getCell(r, COL.J),                  // J열: 상품명
+            optionName:  cleanOption(getCell(r, COL.M)),   // M열: 옵션명 (FREE 제거)
+            phone:       getCell(r, COL.S),  // S열: 전화번호
+            recipient:   getCell(r, COL.T),  // T열: 수취인명
+            address:     getCell(r, COL.V),  // V열: 주소
+            request:     getCell(r, COL.X),  // X열: 배송요청사항
           })
         }
 
