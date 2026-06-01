@@ -10,7 +10,7 @@ import {
   DEFAULT_EXCHANGE_RATE, unitToOrderKrw,
 } from './_shared'
 import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
-import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp, Truck, Trash2, Pencil, Check, X, Search } from 'lucide-react'
+import { ChevronLeft, ChevronRight, PackagePlus, ChevronDown, ChevronUp, Truck, Trash2, Pencil, Check, X, Search, PackageCheck } from 'lucide-react'
 
 type FP = PmProduct & { cost_price?: number; cost_currency?: string }
 
@@ -140,6 +140,12 @@ export default function PurchaseMainPage() {
   const [savingKeys,   setSavingKeys]   = useState<Set<string>>(new Set())
   const [deletingIds,  setDeletingIds]  = useState<Set<string>>(new Set())
   const [deletingItemKeys, setDeletingItemKeys] = useState<Set<string>>(new Set())
+
+  /* 입고처리 모달 */
+  const [receiveModal, setReceiveModal] = useState<Purchase | null>(null)
+  const [receiveQtys, setReceiveQtys] = useState<Record<number, string>>({})
+  const [receiveSaving, setReceiveSaving] = useState(false)
+  const receiveBdRef = useRef(false)
 
   /* 우측: 미입고 리스트 (전체·바코드순) */
 
@@ -376,6 +382,78 @@ export default function PurchaseMainPage() {
     }
   }
 
+  /* ── 입고처리 모달 오픈 ── */
+  const openReceiveModal = (p: Purchase) => {
+    const qtys: Record<number, string> = {}
+    p.items.forEach((item, i) => {
+      const remaining = Math.max(0, item.ordered - item.received)
+      qtys[i] = remaining > 0 ? String(remaining) : ''
+    })
+    setReceiveQtys(qtys)
+    setReceiveModal(p)
+  }
+
+  /* ── 입고처리 확정 ── */
+  const handleReceiveConfirm = async () => {
+    if (!receiveModal) return
+    const p = receiveModal
+
+    const deltas: { idx: number; delta: number }[] = []
+    p.items.forEach((item, i) => {
+      const qty = parseInt(receiveQtys[i] ?? '', 10)
+      if (!isNaN(qty) && qty > 0) deltas.push({ idx: i, delta: qty })
+    })
+    if (deltas.length === 0) { alert('입고할 수량을 입력하세요.'); return }
+
+    setReceiveSaving(true)
+    try {
+      const newItems = p.items.map((item, i) => {
+        const d = deltas.find(x => x.idx === i)
+        if (!d) return item
+        return { ...item, received: item.received + d.delta }
+      })
+      const allReceived = newItems.every(item => item.received >= item.ordered)
+      const newStatus = allReceived ? 'completed' : 'partial'
+      const now = new Date().toISOString()
+
+      const { error } = await apiUpdatePurchase(p.id, {
+        items: newItems,
+        status: newStatus,
+        received_at: now,
+      })
+      if (error) { alert(`입고처리 실패: ${error}`); return }
+
+      // 상품 재고 동기화
+      const syncRows: { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }[] = []
+      const patches: { productCode: string; barcode: string; optionName: string; orderedDelta: number; receivedDelta: number }[] = []
+      deltas.forEach(({ idx, delta }) => {
+        const item = p.items[idx]
+        const prod = resolveProductForItem(products as FP[], item)
+        if (!prod) return
+        const bcTrim = (item.barcode || '').trim()
+        syncRows.push({ prodId: prod.id, optName: item.option_name || '', barcode: bcTrim || undefined, orderedDelta: 0, receivedDelta: delta })
+        patches.push({ productCode: prod.code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: 0, receivedDelta: delta })
+      })
+      if (syncRows.length > 0) {
+        await syncProductQty(products, syncRows)
+        const updated = applyDeltaToCache(products as FP[], patches)
+        saveCachedProducts(updated)
+        setProducts(updated)
+        notifyProductsCacheSync()
+      }
+
+      setPurchases(prev => prev.map(x => x.id === p.id ? { ...x, items: newItems, status: newStatus, received_at: now } : x))
+      try { localStorage.setItem('pm_products_mapping_signal', String(Date.now())) } catch { /* ignore */ }
+      broadcastDashboardRefresh()
+      setReceiveModal(null)
+      alert(`입고처리 완료! (${deltas.reduce((s, d) => s + d.delta, 0)}개 입고)`)
+    } catch (e) {
+      alert(`입고처리 중 오류: ${String(e)}`)
+    } finally {
+      setReceiveSaving(false)
+    }
+  }
+
   /* ── 옵션 이미지 맵: 바코드(트림) → 이미지 — 상품관리탭과 동일 ── */
   const optImages = useMemo(() => {
     const map: Record<string, string> = {}
@@ -560,6 +638,7 @@ export default function PurchaseMainPage() {
                       <th style={thStyle()}>품목</th>
                       <th style={thStyle()}>발주수량</th>
                       <th style={thStyle()}>발주금액</th>
+                      <th style={{ ...thStyle(), width:72 }}>입고처리</th>
                       <th style={{ ...thStyle(), width:28 }}></th>
                       <th style={{ ...thStyle(), width:32 }}></th>
                     </tr>
@@ -590,6 +669,16 @@ export default function PurchaseMainPage() {
                             </td>
                             <td style={tdStyle()}>
                               {isOpen ? <ChevronUp size={13} color="#94a3b8"/> : <ChevronDown size={13} color="#94a3b8"/>}
+                            </td>
+                            {/* 입고처리 버튼 */}
+                            <td style={tdStyle()} onClick={e => e.stopPropagation()}>
+                              <button
+                                onClick={() => openReceiveModal(p)}
+                                disabled={isDeleting}
+                                title="입고처리"
+                                style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'3px 8px', background:'#ecfdf5', color:'#059669', border:'1px solid #bbf7d0', borderRadius:6, fontSize:'10px', fontWeight:800, cursor:isDeleting?'not-allowed':'pointer' }}>
+                                <PackageCheck size={11}/>입고
+                              </button>
                             </td>
                             {/* 삭제 버튼 */}
                             <td style={tdStyle()} onClick={e => e.stopPropagation()}>
@@ -797,6 +886,78 @@ export default function PurchaseMainPage() {
         </div>
 
       </div>
+
+      {/* ── 입고처리 모달 ── */}
+      {receiveModal && (
+        <div
+          onMouseDown={e => { receiveBdRef.current = e.target === e.currentTarget }}
+          onClick={e => { if (receiveBdRef.current && e.target === e.currentTarget) setReceiveModal(null) }}
+          style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1000, padding:20 }}>
+          <div className="pm-card" style={{ width:'100%', maxWidth:560, maxHeight:'80vh', overflow:'auto' }}>
+            <div style={{ padding:'16px 20px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:10 }}>
+              <div style={{ width:32, height:32, borderRadius:10, background:'#ecfdf5', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <PackageCheck size={16} color="#059669"/>
+              </div>
+              <div>
+                <p style={{ fontSize:'14px', fontWeight:900, color:'#0f172a' }}>입고처리</p>
+                <p style={{ fontSize:'11px', color:'#94a3b8' }}>
+                  {receiveModal.order_date} {receiveModal.supplier ? `· ${receiveModal.supplier}` : ''} — {receiveModal.items.length}개 품목
+                </p>
+              </div>
+              <div style={{ flex:1 }}/>
+              <button onClick={() => setReceiveModal(null)}
+                style={{ width:28, height:28, borderRadius:8, border:'none', background:'#f1f5f9', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                <X size={14} color="#64748b"/>
+              </button>
+            </div>
+            <div style={{ padding:'16px 20px' }}>
+              <table style={{ width:'100%', borderCollapse:'collapse', fontSize:'12px' }}>
+                <thead>
+                  <tr style={{ background:'#f8fafc' }}>
+                    {['상품코드','옵션명','바코드','발주','기입고','입고수량'].map(h => (
+                      <th key={h} style={{ padding:'6px 8px', fontWeight:800, color:'#64748b', fontSize:'10.5px', textAlign: h==='입고수량'?'center':'left', borderBottom:'1px solid #f1f5f9' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {receiveModal.items.map((item, i) => {
+                    const remaining = Math.max(0, item.ordered - item.received)
+                    return (
+                      <tr key={i} style={{ borderBottom:'1px solid #f8fafc' }}>
+                        <td style={{ padding:'7px 8px', fontFamily:'monospace', fontSize:'11px', color:'#059669', fontWeight:800 }}>{item.product_code}</td>
+                        <td style={{ padding:'7px 8px', fontSize:'11px', color:'#475569' }}>{item.option_name||'-'}</td>
+                        <td data-pm-barcode="1" style={{ padding:'7px 8px', fontFamily:'monospace', fontSize:'10px' }}>{item.barcode||'-'}</td>
+                        <td style={{ padding:'7px 8px', fontWeight:700, color:'#64748b', textAlign:'center' }}>{item.ordered}</td>
+                        <td style={{ padding:'7px 8px', fontWeight:700, color:'#059669', textAlign:'center' }}>{item.received}</td>
+                        <td style={{ padding:'7px 8px', textAlign:'center' }}>
+                          <input
+                            type="number" min="0" max={item.ordered}
+                            value={receiveQtys[i] ?? ''}
+                            onChange={e => setReceiveQtys(prev => ({ ...prev, [i]: e.target.value }))}
+                            placeholder={String(remaining)}
+                            style={{ width:64, height:28, textAlign:'center', fontSize:'12px', fontWeight:800, border:`1.5px solid ${remaining > 0 ? '#86efac' : '#e2e8f0'}`, borderRadius:7, outline:'none', color:'#059669' }}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+              <div style={{ display:'flex', justifyContent:'flex-end', gap:8, marginTop:16 }}>
+                <button onClick={() => setReceiveModal(null)}
+                  style={{ padding:'8px 18px', background:'#f1f5f9', color:'#475569', border:'none', borderRadius:9, fontSize:'13px', fontWeight:800, cursor:'pointer' }}>
+                  취소
+                </button>
+                <button onClick={handleReceiveConfirm} disabled={receiveSaving}
+                  style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 20px', background:'#059669', color:'white', border:'none', borderRadius:9, fontSize:'13px', fontWeight:800, cursor:receiveSaving?'not-allowed':'pointer', opacity:receiveSaving?0.7:1 }}>
+                  <PackageCheck size={14}/>
+                  {receiveSaving ? '처리 중...' : '입고확정'}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

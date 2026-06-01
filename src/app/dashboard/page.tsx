@@ -6,7 +6,7 @@ import { usePathname } from 'next/navigation'
 import {
   Package, ShoppingCart, AlertTriangle, TrendingUp,
   MessageSquare, RefreshCw, ChevronLeft, ChevronRight,
-  ClipboardList,
+  ClipboardList, CalendarDays, Plus, Trash2, Calendar,
 } from 'lucide-react'
 import {
   loadOrders, loadShippedOrders, loadInvoiceQueue,
@@ -62,6 +62,43 @@ function fmtMoney(v: number) {
   if (v >= 10000000) return `${Math.round(v/10000000)}천만`
   if (v >= 10000)    return `${Math.round(v/10000)}만`
   return `${Math.round(v).toLocaleString()}`
+}
+
+/* ── 한국 공휴일 · 주말 판별 ─────────────────────────────── */
+const FIXED_HOLIDAYS: Record<string, number[]> = {
+  '01': [1], '03': [1], '05': [5], '06': [6],
+  '08': [15], '10': [3, 9], '12': [25],
+}
+const VARIABLE_HOLIDAYS: Record<string, string[]> = {
+  '2025': ['01-28','01-29','01-30','05-05','10-05','10-06','10-07'],
+  '2026': ['02-17','02-18','02-19','05-24','09-24','09-25','09-26'],
+}
+function getSkipDays(ym: string): Set<number> {
+  const [y, m] = ym.split('-').map(Number)
+  const days = new Date(y, m, 0).getDate()
+  const skip = new Set<number>()
+  const mm = String(m).padStart(2, '0')
+  const yy = String(y)
+  FIXED_HOLIDAYS[mm]?.forEach(d => skip.add(d))
+  VARIABLE_HOLIDAYS[yy]?.forEach(ds => {
+    if (ds.startsWith(mm + '-')) skip.add(Number(ds.slice(3)))
+  })
+  for (let d = 1; d <= days; d++) {
+    const dow = new Date(y, m - 1, d).getDay()
+    if (dow === 0 || dow === 6) skip.add(d)
+  }
+  return skip
+}
+
+/* ── 달력 일정 ───────────────────────────────────────────── */
+const SCHED_KEY = 'pm_dashboard_schedules_v1'
+interface ScheduleItem { id: string; date: string; text: string; color: string }
+const SCHED_COLORS = ['#2563eb','#059669','#dc2626','#7c3aed','#d97706','#0891b2']
+function loadSchedules(): ScheduleItem[] {
+  try { return JSON.parse(localStorage.getItem(SCHED_KEY) ?? '[]') } catch { return [] }
+}
+function saveSchedules(list: ScheduleItem[]) {
+  try { localStorage.setItem(SCHED_KEY, JSON.stringify(list)) } catch {}
 }
 
 /* ── 선 그래프 ────────────────────────────────────────────── */
@@ -226,11 +263,12 @@ function selMonthLabel(day: number) {
 
 /* ── 단일 선 그래프 (가는 선, hover 툴팁) ────────────────── */
 interface SimplePoint { day: number; value: number }
-function SingleLineChart({ data, color, gradId, formatTip }: {
+function SingleLineChart({ data, color, gradId, formatTip, skipDays }: {
   data: SimplePoint[]
   color: string
   gradId: string
   formatTip: (v: number) => string
+  skipDays?: Set<number>
 }) {
   const [tipIdx, setTipIdx] = useState<number | null>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -252,15 +290,52 @@ function SingleLineChart({ data, color, gradId, formatTip }: {
   const cols = data.length
   const xPos = (i: number) => cols <= 1 ? padL + cW / 2 : padL + (i / (cols - 1)) * cW
   const yVal = (v: number) => padT + cH - (v / maxV) * cH
-  const linePath = data.map((d, i) => `${i===0?'M':'L'}${xPos(i).toFixed(1)},${yVal(d.value).toFixed(1)}`).join(' ')
-  const fillPath = cols > 0
-    ? linePath + ` L${xPos(cols-1).toFixed(1)},${(padT+cH).toFixed(1)} L${padL},${(padT+cH).toFixed(1)} Z`
-    : ''
+
+  // 주말·공휴일에서 선 끊기
+  const linePath = (() => {
+    if (!data.length) return ''
+    let path = ''; let lastSkip = true
+    for (let i = 0; i < data.length; i++) {
+      const d = data[i]
+      if (skipDays?.has(d.day)) { lastSkip = true; continue }
+      path += ` ${lastSkip ? 'M' : 'L'}${xPos(i).toFixed(1)},${yVal(d.value).toFixed(1)}`
+      lastSkip = false
+    }
+    return path.trim()
+  })()
+
+  const fillPath = (() => {
+    if (!data.length) return ''
+    let path = ''; let lastSkip = true; let firstX = padL; let firstI = -1
+    for (let i = 0; i < data.length; i++) {
+      const d = data[i]
+      if (skipDays?.has(d.day)) {
+        if (firstI >= 0 && !lastSkip) {
+          const prevI = i - 1
+          path += ` L${xPos(prevI).toFixed(1)},${(padT+cH).toFixed(1)} L${firstX.toFixed(1)},${(padT+cH).toFixed(1)} Z`
+          firstI = -1
+        }
+        lastSkip = true; continue
+      }
+      if (lastSkip) { firstX = xPos(i); firstI = i; path += ` M${xPos(i).toFixed(1)},${yVal(d.value).toFixed(1)}` }
+      else path += ` L${xPos(i).toFixed(1)},${yVal(d.value).toFixed(1)}`
+      lastSkip = false
+    }
+    if (firstI >= 0 && !lastSkip) {
+      const lastNonSkip = data.length - 1 - [...data].reverse().findIndex(d => !skipDays?.has(d.day))
+      path += ` L${xPos(lastNonSkip).toFixed(1)},${(padT+cH).toFixed(1)} L${firstX.toFixed(1)},${(padT+cH).toFixed(1)} Z`
+    }
+    return path.trim()
+  })()
+
   const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
     const rect = e.currentTarget.getBoundingClientRect()
     const mx = (e.clientX - rect.left) * (W / rect.width)
     let nearest = 0; let minDist = Infinity
-    data.forEach((_, i) => { const dx = Math.abs(xPos(i) - mx); if (dx < minDist) { minDist = dx; nearest = i } })
+    data.forEach((d, i) => {
+      if (skipDays?.has(d.day)) return
+      const dx = Math.abs(xPos(i) - mx); if (dx < minDist) { minDist = dx; nearest = i }
+    })
     setTipIdx(nearest)
   }
   const tip = tipIdx !== null ? data[tipIdx] : null
@@ -280,14 +355,15 @@ function SingleLineChart({ data, color, gradId, formatTip }: {
         <line x1={padL} y1={padT+cH} x2={W-padR} y2={padT+cH} stroke="#f1f5f9" strokeWidth={0.8}/>
         {fillPath && <path d={fillPath} fill={`url(#${gradId})`}/>}
         {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth={1} strokeLinejoin="round" strokeLinecap="round"/>}
-        {tipIdx !== null && (data[tipIdx]?.value ?? 0) > 0 && (
+        {tipIdx !== null && (data[tipIdx]?.value ?? 0) > 0 && !skipDays?.has(data[tipIdx].day) && (
           <circle cx={xPos(tipIdx)} cy={yVal(data[tipIdx].value)} r={2.8} fill={color} stroke="#fff" strokeWidth={1.5}/>
         )}
-        {tipIdx !== null && (
+        {tipIdx !== null && !skipDays?.has(data[tipIdx ?? 0]?.day) && (
           <line x1={tipX} y1={padT} x2={tipX} y2={padT+cH} stroke="#94a3b8" strokeWidth={0.7} strokeDasharray="3 2" opacity={0.5}/>
         )}
         {data.map((d, i) => (d.day === 1 || d.day % 5 === 0) && (
-          <text key={i} x={xPos(i)} y={H-1} textAnchor="middle" fontSize={7.5} fill="#cbd5e1">{d.day}</text>
+          <text key={i} x={xPos(i)} y={H-1} textAnchor="middle" fontSize={7.5}
+            fill={skipDays?.has(d.day) ? '#f1d0d0' : '#cbd5e1'}>{d.day}</text>
         ))}
       </svg>
       {tip && tipIdx !== null && (
@@ -468,6 +544,169 @@ function MonthlySales3YChart({ data }: { data: MonthlyAmtPoint[] }) {
           <p style={{ fontSize: '13px', color: '#c4b5fd', fontWeight: 800 }}>₩{Math.round(tip.amount).toLocaleString()}</p>
         </div>
       )}
+    </div>
+  )
+}
+
+/* ── 달력 + 일정 패널 ────────────────────────────────────── */
+function CalendarPanel() {
+  const [calMonth, setCalMonth] = useState(getCurYM())
+  const [schedules, setSchedules] = useState<ScheduleItem[]>([])
+  const [selDay, setSelDay] = useState<number | null>(null)
+  const [newText, setNewText] = useState('')
+  const [colorIdx, setColorIdx] = useState(0)
+  const curYM = getCurYM()
+  const today = getToday()
+  const todayDay = today.slice(0, 7) === calMonth ? Number(today.slice(8)) : null
+
+  useEffect(() => { setSchedules(loadSchedules()) }, [])
+
+  const mutate = (list: ScheduleItem[]) => { setSchedules(list); saveSchedules(list) }
+
+  const addSched = () => {
+    if (!selDay || !newText.trim()) return
+    const date = `${calMonth}-${String(selDay).padStart(2, '0')}`
+    mutate([...schedules, { id: String(Date.now()), date, text: newText.trim(), color: SCHED_COLORS[colorIdx % SCHED_COLORS.length] }])
+    setNewText('')
+  }
+
+  const [y, m] = calMonth.split('-').map(Number)
+  const firstDow = new Date(y, m - 1, 1).getDay()
+  const days = daysInMonth(calMonth)
+  const cells: (number | null)[] = []
+  for (let i = 0; i < firstDow; i++) cells.push(null)
+  for (let d = 1; d <= days; d++) cells.push(d)
+  while (cells.length % 7 !== 0) cells.push(null)
+
+  const schByDay: Record<number, ScheduleItem[]> = {}
+  schedules.filter(s => s.date.startsWith(calMonth + '-')).forEach(s => {
+    const d = Number(s.date.slice(8))
+    if (!schByDay[d]) schByDay[d] = []
+    schByDay[d].push(s)
+  })
+
+  const selDayScheds = selDay ? (schByDay[selDay] ?? []) : []
+
+  return (
+    <div className="pm-card" style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden', padding:0 }}>
+      {/* 헤더 */}
+      <div style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 12px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+        <Calendar size={13} color="#2563eb" />
+        <span style={{ fontSize:'12px', fontWeight:800, color:'#0f172a' }}>달력 · 일정</span>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:3 }}>
+          <button onClick={() => setCalMonth(m => shiftMonth(m,-1))}
+            style={{ width:20, height:20, borderRadius:5, border:'1px solid #e2e8f0', background:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <ChevronLeft size={10}/>
+          </button>
+          <span style={{ fontSize:'11px', fontWeight:800, color:'#0f172a', minWidth:56, textAlign:'center' }}>
+            {calMonth.replace('-','년 ')}월
+          </span>
+          <button onClick={() => setCalMonth(m => shiftMonth(m,1))} disabled={calMonth >= curYM}
+            style={{ width:20, height:20, borderRadius:5, border:'1px solid #e2e8f0', background:'#fff', cursor:calMonth>=curYM?'not-allowed':'pointer', opacity:calMonth>=curYM?0.4:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <ChevronRight size={10}/>
+          </button>
+        </div>
+      </div>
+
+      {/* 달력 그리드 */}
+      <div style={{ padding:'6px 8px', flexShrink:0 }}>
+        {/* 요일 헤더 */}
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:1, marginBottom:2 }}>
+          {['일','월','화','수','목','금','토'].map((d,i) => (
+            <div key={d} style={{ textAlign:'center', fontSize:'9px', fontWeight:800,
+              color: i===0?'#ef4444':i===6?'#3b82f6':'#94a3b8', padding:'1px 0' }}>{d}</div>
+          ))}
+        </div>
+        {/* 날짜 셀 */}
+        {Array.from({ length: cells.length / 7 }, (_, r) => (
+          <div key={r} style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:1, marginBottom:1 }}>
+            {cells.slice(r*7, r*7+7).map((d, ci) => {
+              const dow = ci % 7
+              const isWeekend = dow === 0 || dow === 6
+              const isHolidayDay = d ? getSkipDays(calMonth).has(d) && !isWeekend : false
+              const isSel = d === selDay
+              const isToday = d === todayDay
+              const hasScheds = d && (schByDay[d]?.length ?? 0) > 0
+              return (
+                <div key={ci} onClick={() => d && setSelDay(d === selDay ? null : d)}
+                  style={{
+                    minHeight:28, borderRadius:5, cursor:d?'pointer':'default',
+                    background: isSel ? '#2563eb' : isToday ? '#eff6ff' : 'transparent',
+                    border: isToday && !isSel ? '1px solid #bfdbfe' : '1px solid transparent',
+                    display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-start',
+                    padding:'2px 0',
+                  }}>
+                  {d && (
+                    <>
+                      <span style={{
+                        fontSize:'10px', fontWeight: isToday ? 900 : 700, lineHeight:1.3,
+                        color: isSel ? '#fff' : isWeekend ? (dow===0?'#ef4444':'#3b82f6') : isHolidayDay ? '#ef4444' : '#1e293b',
+                      }}>{d}</span>
+                      {hasScheds && (
+                        <div style={{ display:'flex', gap:1, flexWrap:'wrap', justifyContent:'center' }}>
+                          {(schByDay[d] ?? []).slice(0,3).map(s => (
+                            <div key={s.id} style={{ width:4, height:4, borderRadius:'50%', background: isSel ? '#fff' : s.color }} />
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        ))}
+      </div>
+
+      {/* 선택 날짜 일정 */}
+      <div style={{ flex:1, minHeight:0, overflowY:'auto', borderTop:'1px solid #f1f5f9', padding:'8px 10px' }}>
+        {selDay ? (
+          <>
+            <p style={{ fontSize:'11px', fontWeight:800, color:'#0f172a', marginBottom:6 }}>
+              {calMonth.replace('-','년 ')}월 {selDay}일 일정
+            </p>
+            {/* 일정 목록 */}
+            {selDayScheds.length === 0
+              ? <p style={{ fontSize:'10.5px', color:'#cbd5e1', fontWeight:600, marginBottom:8 }}>일정 없음</p>
+              : selDayScheds.map(s => (
+                <div key={s.id} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5, padding:'4px 7px', background:'#f8fafc', borderRadius:7, borderLeft:`3px solid ${s.color}` }}>
+                  <span style={{ flex:1, fontSize:'11px', fontWeight:700, color:'#1e293b', wordBreak:'break-all' }}>{s.text}</span>
+                  <button onClick={() => mutate(schedules.filter(x => x.id !== s.id))}
+                    style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', flexShrink:0 }}>
+                    <Trash2 size={10}/>
+                  </button>
+                </div>
+              ))
+            }
+            {/* 일정 추가 */}
+            <div style={{ display:'flex', gap:4, marginTop:4 }}>
+              <div style={{ display:'flex', gap:2 }}>
+                {SCHED_COLORS.map((c,i) => (
+                  <div key={c} onClick={() => setColorIdx(i)}
+                    style={{ width:14, height:14, borderRadius:'50%', background:c, cursor:'pointer',
+                      border: colorIdx===i ? '2px solid #0f172a' : '2px solid transparent' }}/>
+                ))}
+              </div>
+            </div>
+            <div style={{ display:'flex', gap:4, marginTop:4 }}>
+              <input value={newText} onChange={e => setNewText(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addSched()}
+                placeholder="일정 입력 후 Enter 또는 + 버튼"
+                style={{ flex:1, fontSize:'11.5px', border:'1.5px solid #e2e8f0', borderRadius:7, padding:'5px 8px', outline:'none', color:'#1e293b' }}
+              />
+              <button onClick={addSched}
+                style={{ width:28, height:28, background:'#2563eb', color:'#fff', border:'none', borderRadius:7, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                <Plus size={12}/>
+              </button>
+            </div>
+          </>
+        ) : (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:6, opacity:0.45 }}>
+            <CalendarDays size={22} color="#94a3b8"/>
+            <p style={{ fontSize:'10.5px', color:'#94a3b8', fontWeight:600 }}>날짜를 클릭하면 일정을 확인하고 추가할 수 있습니다</p>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -660,6 +899,7 @@ export default function DashboardPage() {
 
   const monthTotal  = useMemo(() => chartData.reduce((s,d) => s+d.count, 0), [chartData])
   const monthRevSel = useMemo(() => chartData.reduce((s,d) => s+d.amount, 0), [chartData])
+  const chartSkipDays = useMemo(() => getSkipDays(selMonth), [selMonth])
 
   /** 최근 36개월(3년) 월별 판매금액 — 당월(curYM)까지 */
   const monthlySales3y = useMemo((): MonthlyAmtPoint[] => {
@@ -857,6 +1097,7 @@ export default function DashboardPage() {
                     data={chartData.map(d => ({ day:d.day, value:d.amount }))}
                     color="#7c3aed" gradId="dash-amt"
                     formatTip={v => `₩${Math.round(v).toLocaleString()}`}
+                    skipDays={chartSkipDays}
                   />
               }
             </div>
@@ -879,6 +1120,7 @@ export default function DashboardPage() {
                     data={chartData.map(d => ({ day:d.day, value:d.count }))}
                     color="#2563eb" gradId="dash-cnt"
                     formatTip={v => `${v}건`}
+                    skipDays={chartSkipDays}
                   />
               }
             </div>
@@ -923,78 +1165,8 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* 우측: 재고부족 + 품절 + CS (균등 배분) */}
-        <div style={{ display:'flex', flexDirection:'column', gap:7, minHeight:0, overflow:'hidden' }}>
-
-          {/* 재고 부족 */}
-          <div className="pm-card" style={{ overflow:'hidden', flex:1, minHeight:0 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <AlertTriangle size={14} color="#d97706" />
-                <span style={{ fontSize: '13.5px',fontWeight:900,color:'#0f172a' }}>재고 부족</span>
-                <span style={{ background:lowStock.length>0?'#fef3c7':'#f1f5f9', color:lowStock.length>0?'#d97706':'#94a3b8', fontSize: '11px',fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{lowStock.length}</span>
-              </div>
-              <Link href="/inventory" style={{ fontSize: '11px',fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
-            </div>
-            <div style={{ overflow:'hidden' }}>
-              {lowStock.length === 0
-                ? <p style={{ padding:'8px 16px',fontSize: '12px',color:'#94a3b8',fontWeight:600 }}>재고 부족 없음</p>
-                : lowStock.slice(0,4).map((item,i) => (
-                  <div key={i} style={{ display:'flex',alignItems:'center',justifyContent:'space-between',padding:'7px 16px',borderBottom:'1px solid #f8fafc' }}>
-                    <div style={{ overflow:'hidden',minWidth:0 }}>
-                      <p style={{ fontSize: '12.5px',fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
-                      <p style={{ fontSize: '11px',color:'#94a3b8' }}>{item.oName}</p>
-                    </div>
-                    <span style={{ fontSize: '20px',fontWeight:900,color:item.stock<=1?'#dc2626':'#d97706',flexShrink:0,marginLeft:10 }}>{item.stock}</span>
-                  </div>
-                ))}
-            </div>
-          </div>
-
-          {/* 품절 */}
-          <div className="pm-card" style={{ overflow:'hidden', flex:1, minHeight:0 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <Package size={14} color="#dc2626" />
-                <span style={{ fontSize: '13.5px',fontWeight:900,color:'#0f172a' }}>품절</span>
-                <span style={{ background:soldOut.length>0?'#fee2e2':'#f1f5f9', color:soldOut.length>0?'#dc2626':'#94a3b8', fontSize: '11px',fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{soldOut.length}</span>
-              </div>
-              <Link href="/inventory" style={{ fontSize: '11px',fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
-            </div>
-            <div style={{ overflow:'hidden' }}>
-              {soldOut.length === 0
-                ? <p style={{ padding:'8px 16px',fontSize: '12px',color:'#94a3b8',fontWeight:600 }}>품절 없음</p>
-                : soldOut.slice(0,4).map((item,i) => (
-                  <div key={i} style={{ padding:'7px 16px',borderBottom:'1px solid #f8fafc' }}>
-                    <p style={{ fontSize: '12.5px',fontWeight:700,color:'#0f172a',whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis' }}>{item.pName}</p>
-                    <p style={{ fontSize: '11px',color:'#94a3b8' }}>{item.oName}</p>
-                  </div>
-                ))}
-            </div>
-          </div>
-
-          {/* 미처리 CS */}
-          <div className="pm-card" style={{ overflow:'hidden', flex:1, minHeight:0 }}>
-            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 16px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-              <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                <MessageSquare size={14} color="#be123c" />
-                <span style={{ fontSize: '13.5px',fontWeight:900,color:'#0f172a' }}>미처리 CS</span>
-                <span style={{ background:openCsRowCount>0?'#fee2e2':'#f1f5f9', color:openCsRowCount>0?'#dc2626':'#94a3b8', fontSize: '11px',fontWeight:800,padding:'1px 8px',borderRadius:99 }}>{openCsRowCount}</span>
-              </div>
-              <Link href="/cs-management" style={{ fontSize: '11px',fontWeight:700,color:'#2563eb',textDecoration:'none' }}>보기→</Link>
-            </div>
-            <div style={{ overflow:'hidden' }}>
-              {openCs.length === 0
-                ? <p style={{ padding:'8px 16px',fontSize: '12px',color:'#94a3b8',fontWeight:600 }}>처리할 CS 없음</p>
-                : openCs.slice(0,4).map((c,i) => (
-                  <div key={i} style={{ padding:'7px 16px',borderBottom:'1px solid #f8fafc' }}>
-                    <p style={{ fontSize: '12.5px',fontWeight:700,color:'#0f172a' }}>{String(c['customer_name']??c['title']??`CS #${i+1}`)}</p>
-                    <p style={{ fontSize: '10.5px',color:'#94a3b8' }}>{c.created_at?.slice(0,10)??''}</p>
-                  </div>
-                ))}
-            </div>
-          </div>
-        </div>
+        {/* 우측: 달력 + 일정 */}
+        <CalendarPanel />
       </div>
 
       <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>

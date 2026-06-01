@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect } from 'react'
 import * as XLSX from 'xlsx'
-import { Plus, Trash2, Save, CheckCircle2, KeyRound, Globe, User, Lock, FileSpreadsheet } from 'lucide-react'
+import { Plus, Trash2, Save, CheckCircle2, KeyRound, Globe, User, Lock, FileSpreadsheet, GripVertical, ChevronUp, ChevronDown } from 'lucide-react'
 
 const LS_KEY = 'pm_site_accounts_v1'
 const EXCEL_DOWNLOAD_LABEL = '\uC5D1\uC140\uD30C\uC77C\uB2E4\uC6B4'
@@ -62,6 +62,24 @@ export default function SettingsPage() {
   const handleChange = (id: string, field: keyof SiteAccount, value: string) =>
     setAccounts(prev => prev.map(a => a.id === id ? { ...a, [field]: value } : a))
 
+  const handleMoveUp = (idx: number) => {
+    if (idx === 0) return
+    setAccounts(prev => {
+      const next = [...prev]
+      ;[next[idx - 1], next[idx]] = [next[idx], next[idx - 1]]
+      return next
+    })
+  }
+
+  const handleMoveDown = (idx: number) => {
+    setAccounts(prev => {
+      if (idx >= prev.length - 1) return prev
+      const next = [...prev]
+      ;[next[idx], next[idx + 1]] = [next[idx + 1], next[idx]]
+      return next
+    })
+  }
+
   return (
     <div className="pm-page" style={{ maxWidth:700, margin:'0 auto' }}>
 
@@ -94,7 +112,8 @@ export default function SettingsPage() {
       </div>
 
       {/* 컬럼 헤더 */}
-      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1.2fr 44px', gap:8, padding:'0 4px', marginBottom:6 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 1fr 1.2fr 44px 44px', gap:8, padding:'0 4px', marginBottom:6 }}>
+        <div/>
         {[
           { icon: Globe,  label: '사이트명' },
           { icon: User,   label: '아이디' },
@@ -106,14 +125,20 @@ export default function SettingsPage() {
             <span style={{ fontSize: '11px', fontWeight:800, color:'#94a3b8' }}>{label}</span>
           </div>
         ))}
+        <div style={{ fontSize:'11px', fontWeight:800, color:'#94a3b8', textAlign:'center' }}>순서</div>
         <div/>
       </div>
 
       {/* 계정 목록 */}
       <div style={{ display:'flex', flexDirection:'column', gap:8 }}>
-        {accounts.map(acc => (
+        {accounts.map((acc, idx) => (
           <div key={acc.id} className="pm-card"
-            style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1.2fr 44px', gap:8, padding:'12px 14px', alignItems:'center' }}>
+            style={{ display:'grid', gridTemplateColumns:'24px 1fr 1fr 1fr 1.2fr 44px 44px', gap:8, padding:'12px 14px', alignItems:'center' }}>
+
+            {/* 순서 핸들 */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'center', color:'#94a3b8' }}>
+              <GripVertical size={14}/>
+            </div>
 
             {/* 사이트명 */}
             <input
@@ -155,6 +180,18 @@ export default function SettingsPage() {
               onFocus={e => e.currentTarget.style.borderColor='#2563eb'}
               onBlur={e => e.currentTarget.style.borderColor='#e2e8f0'}
             />
+
+            {/* 위/아래 이동 */}
+            <div style={{ display:'flex', flexDirection:'column', gap:2 }}>
+              <button onClick={() => handleMoveUp(idx)} disabled={idx === 0}
+                style={{ width:36, height:17, display:'flex', alignItems:'center', justifyContent:'center', background:'#f1f5f9', color:'#64748b', border:'none', borderRadius:'6px 6px 0 0', cursor:idx===0?'not-allowed':'pointer', opacity:idx===0?0.3:1 }}>
+                <ChevronUp size={11}/>
+              </button>
+              <button onClick={() => handleMoveDown(idx)} disabled={idx === accounts.length - 1}
+                style={{ width:36, height:17, display:'flex', alignItems:'center', justifyContent:'center', background:'#f1f5f9', color:'#64748b', border:'none', borderRadius:'0 0 6px 6px', cursor:idx===accounts.length-1?'not-allowed':'pointer', opacity:idx===accounts.length-1?0.3:1 }}>
+                <ChevronDown size={11}/>
+              </button>
+            </div>
 
             {/* 삭제 */}
             <button

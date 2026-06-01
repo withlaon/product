@@ -889,6 +889,8 @@ function mergeImgCache(images: Record<string, string[]>) {
   if (typeof window === 'undefined') return
   try {
     localStorage.setItem(IMG_CACHE_KEY, JSON.stringify({ data: _imgMem, ts: Date.now() }))
+    // 다른 탭의 이미지 캐시 즉시 갱신 트리거
+    window.dispatchEvent(new CustomEvent('pm_products_cache_sync'))
   } catch {}
 }
 
@@ -3433,8 +3435,15 @@ export default function ProductsPage() {
                     {/* 삭제 */}
                     <div style={{ paddingBottom:1 }}>
                       {editForm.options.length > 1 && (
-                        <button onClick={() => setEditForm(f => f ? ({ ...f, options: f.options.filter((_,j)=>j!==i) }) : f)}
-                          style={{ width:36, height:36, display:'flex', alignItems:'center', justifyContent:'center', background:'#fff1f2', color:'#dc2626', border:'none', borderRadius:8, cursor:'pointer', marginTop:21 }}>
+                        <button
+                          onClick={() => {
+                            if (opt.image) {
+                              if (!confirm('이 옵션에 등록된 이미지가 있습니다.\n이미지 보호를 위해 삭제 전 이미지를 먼저 교체하거나, 계속 삭제하시겠습니까?')) return
+                            }
+                            setEditForm(f => f ? ({ ...f, options: f.options.filter((_,j)=>j!==i) }) : f)
+                          }}
+                          title={opt.image ? '이미지가 등록된 옵션 — 삭제 시 이미지도 함께 삭제됩니다' : '옵션 삭제'}
+                          style={{ width:36, height:36, display:'flex', alignItems:'center', justifyContent:'center', background: opt.image ? '#fff7ed' : '#fff1f2', color: opt.image ? '#d97706' : '#dc2626', border:`1px solid ${opt.image ? '#fed7aa' : 'transparent'}`, borderRadius:8, cursor:'pointer', marginTop:21 }}>
                           <X size={13}/>
                         </button>
                       )}
