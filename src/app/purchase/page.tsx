@@ -141,11 +141,17 @@ export default function PurchaseMainPage() {
   const [deletingIds,  setDeletingIds]  = useState<Set<string>>(new Set())
   const [deletingItemKeys, setDeletingItemKeys] = useState<Set<string>>(new Set())
 
-  /* 입고처리 모달 */
+  /* 입고처리 모달 (발주 전체) */
   const [receiveModal, setReceiveModal] = useState<Purchase | null>(null)
   const [receiveQtys, setReceiveQtys] = useState<Record<number, string>>({})
   const [receiveSaving, setReceiveSaving] = useState(false)
   const receiveBdRef = useRef(false)
+
+  /* 품목별 바로 입고처리 모달 */
+  const [receiveItemModal, setReceiveItemModal] = useState<{ purchase: Purchase; itemIdx: number } | null>(null)
+  const [receiveItemQty, setReceiveItemQty] = useState('')
+  const [receiveItemSaving, setReceiveItemSaving] = useState(false)
+  const receiveItemBdRef = useRef(false)
 
   /* 우측: 미입고 리스트 (전체·바코드순) */
 
@@ -454,6 +460,53 @@ export default function PurchaseMainPage() {
     }
   }
 
+  /* ── 품목별 바로 입고처리 ── */
+  const openReceiveForItem = (p: Purchase, itemIdx: number) => {
+    const item = p.items[itemIdx]
+    const remaining = Math.max(0, item.ordered - item.received)
+    setReceiveItemQty(remaining > 0 ? String(remaining) : '')
+    setReceiveItemModal({ purchase: p, itemIdx })
+  }
+
+  const handleReceiveItemConfirm = async () => {
+    if (!receiveItemModal) return
+    const { purchase: p, itemIdx: i } = receiveItemModal
+    const item = p.items[i]
+    const qty = parseInt(receiveItemQty, 10)
+    if (isNaN(qty) || qty <= 0) { alert('입고 수량을 입력하세요.'); return }
+
+    setReceiveItemSaving(true)
+    try {
+      const newItems = p.items.map((it, idx) =>
+        idx === i ? { ...it, received: it.received + qty } : it
+      )
+      const allReceived = newItems.every(it => it.received >= it.ordered)
+      const newStatus = allReceived ? 'completed' : 'partial'
+      const now = new Date().toISOString()
+
+      const { error } = await apiUpdatePurchase(p.id, { items: newItems, status: newStatus, received_at: now })
+      if (error) { alert(`입고처리 실패: ${error}`); return }
+
+      const prod = resolveProductForItem(products as FP[], item)
+      if (prod) {
+        const bcTrim = (item.barcode || '').trim()
+        await syncProductQty(products, [{ prodId: prod.id, optName: item.option_name || '', barcode: bcTrim || undefined, orderedDelta: 0, receivedDelta: qty }])
+        const updated = applyDeltaToCache(products as FP[], [{ productCode: prod.code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: 0, receivedDelta: qty }])
+        saveCachedProducts(updated)
+        setProducts(updated)
+        notifyProductsCacheSync()
+      }
+
+      await loadPurchases()
+      setReceiveItemModal(null)
+      alert(`입고 완료! ${item.option_name || item.product_code} ${qty}개 입고`)
+    } catch (e) {
+      alert(`입고처리 중 오류: ${String(e)}`)
+    } finally {
+      setReceiveItemSaving(false)
+    }
+  }
+
   /* ── 옵션 이미지 맵: 바코드(트림) → 이미지 — 상품관리탭과 동일 ── */
   const optImages = useMemo(() => {
     const map: Record<string, string> = {}
@@ -696,12 +749,12 @@ export default function PurchaseMainPage() {
                           </tr>
                           {isOpen && (
                             <tr key={`${p.id}-detail`}>
-                              <td colSpan={7} style={{ padding:0, background:'#f0f9ff' }}>
+                              <td colSpan={8} style={{ padding:0, background:'#f0f9ff' }}>
                                 <table style={{ width:'100%', borderCollapse:'collapse', fontSize: '11px' }}>
                                   <thead>
                                     <tr style={{ background:'#dbeafe' }}>
-                                      {['','상품코드','옵션명','바코드','발주수량','편집','삭제'].map((h, hi) => (
-                                        <th key={hi} style={{ padding:'4px 8px', fontWeight:800, color:'#1d4ed8', textAlign: hi === 4 ? 'center' : 'left', fontSize: '10px' }}>{h}</th>
+                                      {['','상품코드','옵션명','바코드','발주수량','입고','편집','삭제'].map((h, hi) => (
+                                        <th key={hi} style={{ padding:'4px 8px', fontWeight:800, color:'#1d4ed8', textAlign: hi === 4 || hi === 5 ? 'center' : 'left', fontSize: '10px' }}>{h}</th>
                                       ))}
                                     </tr>
                                   </thead>
@@ -742,6 +795,25 @@ export default function PurchaseMainPage() {
                                             ) : (
                                               <span style={{ fontWeight:800, color:'#1d4ed8' }}>{item.ordered}</span>
                                             )}
+                                          </td>
+                                          {/* 품목별 바로 입고 버튼 */}
+                                          <td style={{ padding:'4px 8px', textAlign:'center' }}>
+                                            <button
+                                              type="button"
+                                              onClick={() => openReceiveForItem(p, i)}
+                                              disabled={isEditing || isSaving || isItemDel || isDeleting || item.received >= item.ordered}
+                                              title={item.received >= item.ordered ? '이미 완전입고됨' : '이 품목만 입고처리'}
+                                              style={{
+                                                display:'inline-flex', alignItems:'center', gap:2,
+                                                padding:'3px 7px', borderRadius:5,
+                                                border:'1px solid #bbf7d0', background:'#ecfdf5',
+                                                color:'#059669', fontSize:'9.5px', fontWeight:800,
+                                                cursor: (isEditing || isSaving || isItemDel || isDeleting || item.received >= item.ordered) ? 'not-allowed' : 'pointer',
+                                                opacity: (isEditing || isSaving || isItemDel || isDeleting || item.received >= item.ordered) ? 0.4 : 1,
+                                              }}
+                                            >
+                                              <PackageCheck size={9}/>입고
+                                            </button>
                                           </td>
                                           {/* 편집/저장/취소 버튼 */}
                                           <td style={{ padding:'4px 8px', textAlign:'center', whiteSpace:'nowrap' }}>
@@ -958,6 +1030,81 @@ export default function PurchaseMainPage() {
           </div>
         </div>
       )}
+
+      {/* ── 품목별 바로 입고처리 모달 ── */}
+      {receiveItemModal && (() => {
+        const { purchase: p, itemIdx: i } = receiveItemModal
+        const item = p.items[i]
+        const remaining = Math.max(0, item.ordered - item.received)
+        return (
+          <div
+            onMouseDown={e => { receiveItemBdRef.current = e.target === e.currentTarget }}
+            onClick={e => { if (receiveItemBdRef.current && e.target === e.currentTarget) setReceiveItemModal(null) }}
+            style={{ position:'fixed', inset:0, background:'rgba(15,23,42,0.5)', display:'flex', alignItems:'center', justifyContent:'center', zIndex:1100, padding:20 }}>
+            <div className="pm-card" style={{ width:'100%', maxWidth:400 }}>
+              <div style={{ padding:'14px 18px', borderBottom:'1px solid #f1f5f9', display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ width:30, height:30, borderRadius:9, background:'#ecfdf5', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <PackageCheck size={15} color="#059669"/>
+                </div>
+                <div>
+                  <p style={{ fontSize:'13px', fontWeight:900, color:'#0f172a' }}>품목 입고처리</p>
+                  <p style={{ fontSize:'10.5px', color:'#94a3b8' }}>
+                    {p.order_date}{p.supplier ? ` · ${p.supplier}` : ''}
+                  </p>
+                </div>
+                <div style={{ flex:1 }}/>
+                <button onClick={() => setReceiveItemModal(null)}
+                  style={{ width:26, height:26, borderRadius:7, border:'none', background:'#f1f5f9', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <X size={13} color="#64748b"/>
+                </button>
+              </div>
+              <div style={{ padding:'16px 18px' }}>
+                {/* 품목 정보 */}
+                <div style={{ background:'#f8fafc', borderRadius:8, padding:'10px 14px', marginBottom:14 }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'auto 1fr', gap:'4px 12px' }}>
+                    <span style={{ fontSize:'10px', color:'#94a3b8', fontWeight:700 }}>상품코드</span>
+                    <span style={{ fontSize:'11px', fontWeight:800, color:'#059669', fontFamily:'monospace' }}>{item.product_code}</span>
+                    <span style={{ fontSize:'10px', color:'#94a3b8', fontWeight:700 }}>옵션명</span>
+                    <span style={{ fontSize:'11px', color:'#334155', fontWeight:700 }}>{item.option_name || '-'}</span>
+                    <span style={{ fontSize:'10px', color:'#94a3b8', fontWeight:700 }}>바코드</span>
+                    <span style={{ fontSize:'11px', color:'#475569', fontFamily:'monospace' }}>{item.barcode || '-'}</span>
+                    <span style={{ fontSize:'10px', color:'#94a3b8', fontWeight:700 }}>발주/기입고</span>
+                    <span style={{ fontSize:'11px', fontWeight:800, color:'#1e293b' }}>
+                      {item.ordered}개 / {item.received}개 입고됨
+                      {remaining > 0 && <span style={{ color:'#d97706', marginLeft:6 }}>({remaining}개 미입고)</span>}
+                    </span>
+                  </div>
+                </div>
+                {/* 입고 수량 입력 */}
+                <div style={{ marginBottom:16 }}>
+                  <p style={{ fontSize:'11px', fontWeight:800, color:'#0f172a', marginBottom:7 }}>입고 수량</p>
+                  <input
+                    type="number" min="1" max={item.ordered}
+                    value={receiveItemQty}
+                    onChange={e => setReceiveItemQty(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && void handleReceiveItemConfirm()}
+                    placeholder={String(remaining)}
+                    autoFocus
+                    style={{ width:'100%', height:40, textAlign:'center', fontSize:'18px', fontWeight:900, border:`2px solid #86efac`, borderRadius:8, outline:'none', color:'#059669', boxSizing:'border-box' }}
+                  />
+                </div>
+                {/* 버튼 */}
+                <div style={{ display:'flex', gap:8 }}>
+                  <button onClick={() => setReceiveItemModal(null)} disabled={receiveItemSaving}
+                    style={{ flex:1, padding:'9px 0', borderRadius:8, border:'1px solid #e2e8f0', background:'#f8fafc', color:'#64748b', fontSize:'12px', fontWeight:800, cursor:'pointer' }}>
+                    취소
+                  </button>
+                  <button onClick={() => void handleReceiveItemConfirm()} disabled={receiveItemSaving}
+                    style={{ flex:2, padding:'9px 0', borderRadius:8, border:'none', background: receiveItemSaving ? '#bbf7d0' : '#059669', color:'#fff', fontSize:'13px', fontWeight:900, cursor: receiveItemSaving ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:6 }}>
+                    <PackageCheck size={14}/>
+                    {receiveItemSaving ? '처리 중...' : '입고 확정'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

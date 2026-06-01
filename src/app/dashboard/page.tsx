@@ -92,14 +92,20 @@ function getSkipDays(ym: string): Set<number> {
 
 /* ── 달력 일정 ───────────────────────────────────────────── */
 const SCHED_KEY = 'pm_dashboard_schedules_v1'
-interface ScheduleItem { id: string; date: string; text: string; color: string }
-const SCHED_COLORS = ['#2563eb','#059669','#dc2626','#7c3aed','#d97706','#0891b2']
+interface ScheduleItem { id: string; date: string; endDate?: string; text: string; color: string }
+const SCHED_COLORS = ['#2563eb','#059669','#dc2626','#7c3aed','#d97706','#0891b2','#be185d','#0f766e']
 function loadSchedules(): ScheduleItem[] {
   try { return JSON.parse(localStorage.getItem(SCHED_KEY) ?? '[]') } catch { return [] }
 }
 function saveSchedules(list: ScheduleItem[]) {
   try { localStorage.setItem(SCHED_KEY, JSON.stringify(list)) } catch {}
 }
+function addOneDayStr(dateStr: string): string {
+  const [y, m, d] = dateStr.split('-').map(Number)
+  const dt = new Date(y, m - 1, d + 1)
+  return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`
+}
+interface WeekBar { colStart: number; colEnd: number; schedule: ScheduleItem; isStart: boolean; isEnd: boolean }
 
 /* ── 선 그래프 ────────────────────────────────────────────── */
 interface ChartPoint { day: number; count: number; amount: number }
@@ -555,18 +561,36 @@ function CalendarPanel() {
   const [selDay, setSelDay] = useState<number | null>(null)
   const [newText, setNewText] = useState('')
   const [colorIdx, setColorIdx] = useState(0)
+  const [rangeMode, setRangeMode] = useState(false)
+  const [rangeStart, setRangeStart] = useState('')
+  const [rangeEnd, setRangeEnd] = useState('')
   const curYM = getCurYM()
   const today = getToday()
   const todayDay = today.slice(0, 7) === calMonth ? Number(today.slice(8)) : null
 
   useEffect(() => { setSchedules(loadSchedules()) }, [])
 
+  // 날짜 선택 시 기간 시작일 자동 채움
+  useEffect(() => {
+    if (selDay && rangeMode) {
+      const d = `${calMonth}-${String(selDay).padStart(2,'0')}`
+      setRangeStart(d)
+      setRangeEnd(addOneDayStr(d))
+    }
+  }, [selDay, rangeMode, calMonth])
+
   const mutate = (list: ScheduleItem[]) => { setSchedules(list); saveSchedules(list) }
 
   const addSched = () => {
-    if (!selDay || !newText.trim()) return
-    const date = `${calMonth}-${String(selDay).padStart(2, '0')}`
-    mutate([...schedules, { id: String(Date.now()), date, text: newText.trim(), color: SCHED_COLORS[colorIdx % SCHED_COLORS.length] }])
+    if (!newText.trim()) return
+    if (rangeMode) {
+      if (!rangeStart || !rangeEnd || rangeEnd < rangeStart) { alert('기간을 올바르게 입력하세요.'); return }
+      mutate([...schedules, { id: String(Date.now()), date: rangeStart, endDate: rangeEnd, text: newText.trim(), color: SCHED_COLORS[colorIdx % SCHED_COLORS.length] }])
+    } else {
+      if (!selDay) return
+      const date = `${calMonth}-${String(selDay).padStart(2,'0')}`
+      mutate([...schedules, { id: String(Date.now()), date, text: newText.trim(), color: SCHED_COLORS[colorIdx % SCHED_COLORS.length] }])
+    }
     setNewText('')
   }
 
@@ -578,99 +602,189 @@ function CalendarPanel() {
   for (let d = 1; d <= days; d++) cells.push(d)
   while (cells.length % 7 !== 0) cells.push(null)
 
+  // 단일 날짜 일정: 해당 날에 점 표시
   const schByDay: Record<number, ScheduleItem[]> = {}
-  schedules.filter(s => s.date.startsWith(calMonth + '-')).forEach(s => {
+  schedules.filter(s => !s.endDate && s.date.startsWith(calMonth + '-')).forEach(s => {
     const d = Number(s.date.slice(8))
     if (!schByDay[d]) schByDay[d] = []
     schByDay[d].push(s)
   })
 
-  const selDayScheds = selDay ? (schByDay[selDay] ?? []) : []
+  // 기간 일정: 각 주 행에서의 바(bar) 계산
+  const getWeekBars = (rowIdx: number): WeekBar[] => {
+    const rowCells = cells.slice(rowIdx * 7, rowIdx * 7 + 7)
+    const bars: WeekBar[] = []
+    for (const s of schedules) {
+      if (!s.endDate) continue
+      // 현재 월과 겹치는 기간 계산
+      const monthFirst = `${calMonth}-01`
+      const monthLast = `${calMonth}-${String(days).padStart(2,'0')}`
+      const clampedStart = s.date > monthLast ? null : s.date < monthFirst ? monthFirst : s.date
+      const clampedEnd = s.endDate < monthFirst ? null : s.endDate > monthLast ? monthLast : s.endDate
+      if (!clampedStart || !clampedEnd) continue
+
+      const startD = Number(clampedStart.slice(8))
+      const endD = Number(clampedEnd.slice(8))
+      const isOrigStart = s.date.startsWith(calMonth) && Number(s.date.slice(8)) === startD
+      const isOrigEnd = s.endDate.startsWith(calMonth) && Number(s.endDate.slice(8)) === endD
+
+      let barStart = -1, barEnd = -1, barIsStart = false, barIsEnd = false
+      for (let ci = 0; ci < 7; ci++) {
+        const d = rowCells[ci]
+        if (d === null) continue
+        if (d >= startD && d <= endD) {
+          if (barStart === -1) { barStart = ci; barIsStart = isOrigStart && d === startD }
+          barEnd = ci
+          barIsEnd = isOrigEnd && d === endD
+        }
+      }
+      if (barStart !== -1) bars.push({ colStart: barStart, colEnd: barEnd, schedule: s, isStart: barIsStart, isEnd: barIsEnd })
+    }
+    return bars
+  }
+
+  // 선택한 날의 일정 (단일+기간 모두)
+  const selDayScheds = selDay ? (() => {
+    const dateStr = `${calMonth}-${String(selDay).padStart(2,'0')}`
+    const singles = schByDay[selDay] ?? []
+    const ranges = schedules.filter(s => s.endDate && dateStr >= s.date && dateStr <= s.endDate)
+    return [...singles, ...ranges]
+  })() : []
 
   return (
     <div className="pm-card" style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden', padding:0 }}>
       {/* 헤더 */}
-      <div style={{ display:'flex', alignItems:'center', gap:6, padding:'7px 12px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
-        <Calendar size={13} color="#2563eb" />
-        <span style={{ fontSize:'12px', fontWeight:800, color:'#0f172a' }}>달력 · 일정</span>
-        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:3 }}>
+      <div style={{ display:'flex', alignItems:'center', gap:6, padding:'8px 14px', borderBottom:'1px solid #f1f5f9', flexShrink:0 }}>
+        <Calendar size={14} color="#2563eb" />
+        <span style={{ fontSize:'13px', fontWeight:800, color:'#0f172a' }}>달력 · 일정</span>
+        <div style={{ marginLeft:'auto', display:'flex', alignItems:'center', gap:4 }}>
           <button onClick={() => setCalMonth(m => shiftMonth(m,-1))}
-            style={{ width:20, height:20, borderRadius:5, border:'1px solid #e2e8f0', background:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <ChevronLeft size={10}/>
+            style={{ width:22, height:22, borderRadius:6, border:'1px solid #e2e8f0', background:'#fff', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <ChevronLeft size={11}/>
           </button>
-          <span style={{ fontSize:'11px', fontWeight:800, color:'#0f172a', minWidth:56, textAlign:'center' }}>
+          <span style={{ fontSize:'12px', fontWeight:800, color:'#0f172a', minWidth:64, textAlign:'center' }}>
             {calMonth.replace('-','년 ')}월
           </span>
           <button onClick={() => setCalMonth(m => shiftMonth(m,1))} disabled={calMonth >= curYM}
-            style={{ width:20, height:20, borderRadius:5, border:'1px solid #e2e8f0', background:'#fff', cursor:calMonth>=curYM?'not-allowed':'pointer', opacity:calMonth>=curYM?0.4:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
-            <ChevronRight size={10}/>
+            style={{ width:22, height:22, borderRadius:6, border:'1px solid #e2e8f0', background:'#fff', cursor:calMonth>=curYM?'not-allowed':'pointer', opacity:calMonth>=curYM?0.4:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+            <ChevronRight size={11}/>
           </button>
         </div>
       </div>
 
       {/* 달력 그리드 */}
-      <div style={{ padding:'6px 8px', flexShrink:0 }}>
+      <div style={{ padding:'8px 10px', flexShrink:0 }}>
         {/* 요일 헤더 */}
-        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:1, marginBottom:2 }}>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2, marginBottom:3 }}>
           {['일','월','화','수','목','금','토'].map((d,i) => (
-            <div key={d} style={{ textAlign:'center', fontSize:'9px', fontWeight:800,
-              color: i===0?'#ef4444':i===6?'#3b82f6':'#94a3b8', padding:'1px 0' }}>{d}</div>
+            <div key={d} style={{ textAlign:'center', fontSize:'10px', fontWeight:800,
+              color: i===0?'#ef4444':i===6?'#3b82f6':'#94a3b8', padding:'2px 0' }}>{d}</div>
           ))}
         </div>
-        {/* 날짜 셀 */}
-        {Array.from({ length: cells.length / 7 }, (_, r) => (
-          <div key={r} style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:1, marginBottom:1 }}>
-            {cells.slice(r*7, r*7+7).map((d, ci) => {
-              const dow = ci % 7
-              const isWeekend = dow === 0 || dow === 6
-              const isHolidayDay = d ? getSkipDays(calMonth).has(d) && !isWeekend : false
-              const isSel = d === selDay
-              const isToday = d === todayDay
-              const hasScheds = d && (schByDay[d]?.length ?? 0) > 0
-              return (
-                <div key={ci} onClick={() => d && setSelDay(d === selDay ? null : d)}
-                  style={{
-                    minHeight:28, borderRadius:5, cursor:d?'pointer':'default',
-                    background: isSel ? '#2563eb' : isToday ? '#eff6ff' : 'transparent',
-                    border: isToday && !isSel ? '1px solid #bfdbfe' : '1px solid transparent',
-                    display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-start',
-                    padding:'2px 0',
-                  }}>
-                  {d && (
-                    <>
-                      <span style={{
-                        fontSize:'10px', fontWeight: isToday ? 900 : 700, lineHeight:1.3,
-                        color: isSel ? '#fff' : isWeekend ? (dow===0?'#ef4444':'#3b82f6') : isHolidayDay ? '#ef4444' : '#1e293b',
-                      }}>{d}</span>
-                      {hasScheds && (
-                        <div style={{ display:'flex', gap:1, flexWrap:'wrap', justifyContent:'center' }}>
-                          {(schByDay[d] ?? []).slice(0,3).map(s => (
-                            <div key={s.id} style={{ width:4, height:4, borderRadius:'50%', background: isSel ? '#fff' : s.color }} />
-                          ))}
-                        </div>
+        {/* 날짜 행: 바(bar) 오버레이 포함 */}
+        {Array.from({ length: cells.length / 7 }, (_, r) => {
+          const weekBars = getWeekBars(r)
+          return (
+            <div key={r} style={{ position:'relative', marginBottom:2 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2 }}>
+                {cells.slice(r*7, r*7+7).map((d, ci) => {
+                  const dow = ci % 7
+                  const isWeekend = dow === 0 || dow === 6
+                  const isHolidayDay = d ? getSkipDays(calMonth).has(d) && !isWeekend : false
+                  const isSel = d === selDay
+                  const isToday = d === todayDay
+                  const hasDot = d && (schByDay[d]?.length ?? 0) > 0
+                  // 기간 일정이 덮고 있는지 확인 (배경 표시용)
+                  const dateStr = d ? `${calMonth}-${String(d).padStart(2,'0')}` : ''
+                  const isInRange = d ? schedules.some(s => s.endDate && dateStr >= s.date && dateStr <= s.endDate) : false
+                  return (
+                    <div key={ci} onClick={() => d && setSelDay(d === selDay ? null : d)}
+                      style={{
+                        minHeight:36, borderRadius:6, cursor:d?'pointer':'default',
+                        background: isSel ? '#2563eb' : isToday ? '#eff6ff' : isInRange ? 'rgba(37,99,235,0.04)' : 'transparent',
+                        border: isToday && !isSel ? '1.5px solid #bfdbfe' : '1.5px solid transparent',
+                        display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-start',
+                        padding:'3px 1px 8px',
+                        transition:'background 100ms',
+                      }}>
+                      {d && (
+                        <>
+                          <span style={{
+                            fontSize:'11px', fontWeight: isToday ? 900 : 700, lineHeight:1.3,
+                            color: isSel ? '#fff' : isWeekend ? (dow===0?'#ef4444':'#3b82f6') : isHolidayDay ? '#ef4444' : '#1e293b',
+                          }}>{d}</span>
+                          {hasDot && (
+                            <div style={{ display:'flex', gap:2, flexWrap:'wrap', justifyContent:'center', marginTop:1 }}>
+                              {(schByDay[d] ?? []).slice(0,3).map(s => (
+                                <div key={s.id} style={{ width:4, height:4, borderRadius:'50%', background: isSel ? '#fff' : s.color }} />
+                              ))}
+                            </div>
+                          )}
+                        </>
                       )}
-                    </>
+                    </div>
+                  )
+                })}
+              </div>
+              {/* 기간 일정 바(bar) 오버레이 */}
+              {weekBars.map((bar, bi) => (
+                <div key={`${bar.schedule.id}-${bi}`} style={{
+                  position:'absolute',
+                  bottom: 2,
+                  left: `calc(${(bar.colStart / 7) * 100}% + ${bar.isStart ? 3 : 0}px)`,
+                  right: `calc(${((6 - bar.colEnd) / 7) * 100}% + ${bar.isEnd ? 3 : 0}px)`,
+                  height: 5,
+                  background: bar.schedule.color,
+                  borderRadius: `${bar.isStart ? 3 : 0}px ${bar.isEnd ? 3 : 0}px ${bar.isEnd ? 3 : 0}px ${bar.isStart ? 3 : 0}px`,
+                  opacity: 0.82,
+                  zIndex: 1,
+                  pointerEvents:'none',
+                }}>
+                  {bar.isStart && (
+                    <span style={{
+                      position:'absolute', left:4, top:'50%', transform:'translateY(-50%)',
+                      fontSize:'7px', fontWeight:800, color:'#fff', whiteSpace:'nowrap',
+                      overflow:'hidden', maxWidth:'90%', textOverflow:'ellipsis',
+                    }}>{bar.schedule.text}</span>
                   )}
                 </div>
-              )
-            })}
-          </div>
-        ))}
+              ))}
+            </div>
+          )
+        })}
       </div>
 
-      {/* 선택 날짜 일정 */}
-      <div style={{ flex:1, minHeight:0, overflowY:'auto', borderTop:'1px solid #f1f5f9', padding:'8px 10px' }}>
-        {selDay ? (
-          <>
-            <p style={{ fontSize:'11px', fontWeight:800, color:'#0f172a', marginBottom:6 }}>
+      {/* 일정 목록 + 입력 */}
+      <div style={{ flex:1, minHeight:0, overflowY:'auto', borderTop:'1px solid #f1f5f9', padding:'8px 12px' }}>
+        {/* 모드 전환 탭 */}
+        <div style={{ display:'flex', gap:4, marginBottom:8 }}>
+          {(['단일','기간'] as const).map(mode => (
+            <button key={mode} onClick={() => setRangeMode(mode === '기간')}
+              style={{ flex:1, padding:'4px 0', fontSize:'11px', fontWeight:800, border:'none', borderRadius:6, cursor:'pointer',
+                background: (mode==='기간') === rangeMode ? '#2563eb' : '#f1f5f9',
+                color: (mode==='기간') === rangeMode ? '#fff' : '#64748b',
+              }}>{mode} 날짜</button>
+          ))}
+        </div>
+
+        {/* 선택한 날의 일정 목록 */}
+        {selDay && (
+          <div style={{ marginBottom:8 }}>
+            <p style={{ fontSize:'11px', fontWeight:800, color:'#0f172a', marginBottom:5 }}>
               {calMonth.replace('-','년 ')}월 {selDay}일 일정
             </p>
-            {/* 일정 목록 */}
             {selDayScheds.length === 0
-              ? <p style={{ fontSize:'10.5px', color:'#cbd5e1', fontWeight:600, marginBottom:8 }}>일정 없음</p>
+              ? <p style={{ fontSize:'10.5px', color:'#cbd5e1', fontWeight:600, marginBottom:4 }}>일정 없음</p>
               : selDayScheds.map(s => (
-                <div key={s.id} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5, padding:'4px 7px', background:'#f8fafc', borderRadius:7, borderLeft:`3px solid ${s.color}` }}>
-                  <span style={{ flex:1, fontSize:'11px', fontWeight:700, color:'#1e293b', wordBreak:'break-all' }}>{s.text}</span>
+                <div key={s.id} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5, padding:'5px 8px', background:'#f8fafc', borderRadius:8, borderLeft:`3px solid ${s.color}` }}>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <span style={{ fontSize:'11.5px', fontWeight:700, color:'#1e293b', wordBreak:'break-all', display:'block' }}>{s.text}</span>
+                    {s.endDate && (
+                      <span style={{ fontSize:'9.5px', color:'#94a3b8', fontWeight:600 }}>
+                        {s.date.slice(5).replace('-','/')} ~ {s.endDate.slice(5).replace('-','/')}
+                      </span>
+                    )}
+                  </div>
                   <button onClick={() => mutate(schedules.filter(x => x.id !== s.id))}
                     style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', flexShrink:0 }}>
                     <Trash2 size={10}/>
@@ -678,32 +792,57 @@ function CalendarPanel() {
                 </div>
               ))
             }
-            {/* 일정 추가 */}
-            <div style={{ display:'flex', gap:4, marginTop:4 }}>
-              <div style={{ display:'flex', gap:2 }}>
-                {SCHED_COLORS.map((c,i) => (
-                  <div key={c} onClick={() => setColorIdx(i)}
-                    style={{ width:14, height:14, borderRadius:'50%', background:c, cursor:'pointer',
-                      border: colorIdx===i ? '2px solid #0f172a' : '2px solid transparent' }}/>
-                ))}
+          </div>
+        )}
+
+        {/* 일정 추가 폼 */}
+        <div style={{ borderTop: selDay ? '1px solid #f1f5f9' : 'none', paddingTop: selDay ? 8 : 0 }}>
+          <p style={{ fontSize:'10.5px', fontWeight:800, color:'#64748b', marginBottom:6 }}>
+            {rangeMode ? '기간 일정 등록' : '일정 추가'}
+          </p>
+          {/* 색상 선택 */}
+          <div style={{ display:'flex', gap:4, marginBottom:6 }}>
+            {SCHED_COLORS.map((c,i) => (
+              <div key={c} onClick={() => setColorIdx(i)}
+                style={{ width:16, height:16, borderRadius:'50%', background:c, cursor:'pointer',
+                  border: colorIdx===i ? '2px solid #0f172a' : '2px solid transparent',
+                  transition:'transform 80ms', transform: colorIdx===i ? 'scale(1.2)' : 'scale(1)' }}/>
+            ))}
+          </div>
+          {/* 기간 입력 */}
+          {rangeMode && (
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4, marginBottom:6 }}>
+              <div>
+                <p style={{ fontSize:'9.5px', color:'#94a3b8', fontWeight:700, marginBottom:2 }}>시작일</p>
+                <input type="date" value={rangeStart} onChange={e => setRangeStart(e.target.value)}
+                  style={{ width:'100%', fontSize:'11.5px', border:'1.5px solid #e2e8f0', borderRadius:7, padding:'4px 7px', outline:'none', color:'#1e293b', boxSizing:'border-box' }}/>
+              </div>
+              <div>
+                <p style={{ fontSize:'9.5px', color:'#94a3b8', fontWeight:700, marginBottom:2 }}>종료일</p>
+                <input type="date" value={rangeEnd} onChange={e => setRangeEnd(e.target.value)}
+                  style={{ width:'100%', fontSize:'11.5px', border:'1.5px solid #e2e8f0', borderRadius:7, padding:'4px 7px', outline:'none', color:'#1e293b', boxSizing:'border-box' }}/>
               </div>
             </div>
-            <div style={{ display:'flex', gap:4, marginTop:4 }}>
-              <input value={newText} onChange={e => setNewText(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && addSched()}
-                placeholder="일정 입력 후 Enter 또는 + 버튼"
-                style={{ flex:1, fontSize:'11.5px', border:'1.5px solid #e2e8f0', borderRadius:7, padding:'5px 8px', outline:'none', color:'#1e293b' }}
-              />
-              <button onClick={addSched}
-                style={{ width:28, height:28, background:'#2563eb', color:'#fff', border:'none', borderRadius:7, cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                <Plus size={12}/>
-              </button>
-            </div>
-          </>
-        ) : (
-          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', height:'100%', gap:6, opacity:0.45 }}>
-            <CalendarDays size={22} color="#94a3b8"/>
-            <p style={{ fontSize:'10.5px', color:'#94a3b8', fontWeight:600 }}>날짜를 클릭하면 일정을 확인하고 추가할 수 있습니다</p>
+          )}
+          {/* 일정 텍스트 */}
+          <div style={{ display:'flex', gap:4 }}>
+            <input value={newText} onChange={e => setNewText(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && addSched()}
+              placeholder={rangeMode ? '기간 일정 내용 입력' : (selDay ? '일정 입력 후 Enter' : '날짜를 먼저 선택하세요')}
+              disabled={!rangeMode && !selDay}
+              style={{ flex:1, fontSize:'11.5px', border:'1.5px solid #e2e8f0', borderRadius:7, padding:'5px 8px', outline:'none', color:'#1e293b', opacity: (!rangeMode && !selDay) ? 0.5 : 1 }}
+            />
+            <button onClick={addSched} disabled={!rangeMode && !selDay}
+              style={{ width:30, height:30, background: (!rangeMode && !selDay) ? '#e2e8f0' : '#2563eb', color:'#fff', border:'none', borderRadius:7, cursor: (!rangeMode && !selDay) ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+              <Plus size={13}/>
+            </button>
+          </div>
+        </div>
+
+        {!selDay && !rangeMode && (
+          <div style={{ display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', marginTop:12, gap:5, opacity:0.4 }}>
+            <CalendarDays size={20} color="#94a3b8"/>
+            <p style={{ fontSize:'10px', color:'#94a3b8', fontWeight:600, textAlign:'center' }}>날짜를 클릭해 일정 확인 · 추가</p>
           </div>
         )}
       </div>
@@ -1034,7 +1173,7 @@ export default function DashboardPage() {
       </div>
 
       {/* ── 중단: 차트(넓게) + 우측 패널 ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'5fr 2fr', gap:10, flex:'1 1 0', minHeight:0 }}>
+      <div style={{ display:'grid', gridTemplateColumns:'5fr 3fr', gap:10, flex:'1 1 0', minHeight:0 }}>
 
         {/* 월별 주문 현황 (4줄) */}
         <div className="pm-card" style={{ display:'flex', flexDirection:'column', overflow:'hidden', padding:0 }}>
