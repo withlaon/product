@@ -196,7 +196,7 @@ export default function PurchaseMainPage() {
   /* ── 발주 목록: 해당 월의 ordered 상태 발주 ── */
   const poList = useMemo(() =>
     purchases
-      .filter(p => p.status === 'ordered' && p.order_date.startsWith(poMonth))
+      .filter(p => p.order_date.startsWith(poMonth))
       .sort((a, b) => a.order_date.localeCompare(b.order_date))
   , [purchases, poMonth])
 
@@ -624,12 +624,12 @@ export default function PurchaseMainPage() {
           <div className="pm-card" style={{ padding:'10px 14px', flexShrink:0 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
               <span style={{ fontSize: '14px', fontWeight:900, color:'#0f172a' }}>📦 발주 목록</span>
-              <span style={{ fontSize: '11px', color:'#94a3b8' }}>발주확정 {poList.length}건</span>
+              <span style={{ fontSize: '11px', color:'#94a3b8' }}>전체 {poList.length}건</span>
             </div>
             <MonthNav month={poMonth} setMonth={v => { setPoMonth(v); setExpandedPoId(null) }}/>
             <div style={{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:6, marginTop:10 }}>
               <div style={{ background:'#eff6ff', borderRadius:8, padding:'6px 10px' }}>
-                <p style={{ fontSize: '9.5px', fontWeight:800, color:'#94a3b8' }}>발주확정 건수</p>
+                <p style={{ fontSize: '9.5px', fontWeight:800, color:'#94a3b8' }}>총 발주건수</p>
                 <p style={{ fontSize: '18px', fontWeight:900, color:'#2563eb', lineHeight:1 }}>{poList.length}</p>
               </div>
               <div style={{ background:'#f8fafc', borderRadius:8, padding:'6px 10px' }}>
@@ -706,9 +706,9 @@ export default function PurchaseMainPage() {
                         <>
                           <tr key={p.id}
                             onClick={() => { if (!isDeleting) setExpandedPoId(isOpen ? null : p.id) }}
-                            style={{ borderBottom:'1px solid #f8fafc', cursor: isDeleting ? 'not-allowed' : 'pointer', background: isDeleting ? '#fef2f2' : isOpen ? '#eff6ff' : undefined, opacity: isDeleting ? 0.6 : 1 }}
+                            style={{ borderBottom:'1px solid #f8fafc', cursor: isDeleting ? 'not-allowed' : 'pointer', background: isDeleting ? '#fef2f2' : isOpen ? '#eff6ff' : p.status === 'completed' ? '#f0fdf4' : p.status === 'partial' ? '#fffbeb' : undefined, opacity: isDeleting ? 0.6 : 1 }}
                             onMouseEnter={e => { if (!isOpen && !isDeleting) e.currentTarget.style.background='#f8fafc' }}
-                            onMouseLeave={e => { if (!isOpen && !isDeleting) e.currentTarget.style.background='' }}
+                            onMouseLeave={e => { if (!isOpen && !isDeleting) e.currentTarget.style.background = p.status === 'completed' ? '#f0fdf4' : p.status === 'partial' ? '#fffbeb' : '' }}
                           >
                             <td style={tdStyle('left')}>
                               <span style={{ fontSize: '11.5px', fontWeight:700, color:'#334155' }}>{fmtDateShort(p.order_date)}</span>
@@ -725,13 +725,25 @@ export default function PurchaseMainPage() {
                             </td>
                             {/* 입고처리 버튼 */}
                             <td style={tdStyle()} onClick={e => e.stopPropagation()}>
-                              <button
-                                onClick={() => openReceiveModal(p)}
-                                disabled={isDeleting}
-                                title="입고처리"
-                                style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'3px 8px', background:'#ecfdf5', color:'#059669', border:'1px solid #bbf7d0', borderRadius:6, fontSize:'10px', fontWeight:800, cursor:isDeleting?'not-allowed':'pointer' }}>
-                                <PackageCheck size={11}/>입고
-                              </button>
+                              {p.status === 'completed' ? (
+                                <span style={{ fontSize:'9.5px', fontWeight:800, color:'#059669', background:'#dcfce7', padding:'3px 7px', borderRadius:5, whiteSpace:'nowrap' }}>입고완료</span>
+                              ) : p.status === 'partial' ? (
+                                <button
+                                  onClick={() => openReceiveModal(p)}
+                                  disabled={isDeleting}
+                                  title="추가 입고처리"
+                                  style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'3px 8px', background:'#fff7ed', color:'#d97706', border:'1px solid #fed7aa', borderRadius:6, fontSize:'10px', fontWeight:800, cursor:isDeleting?'not-allowed':'pointer' }}>
+                                  <PackageCheck size={11}/>부분입고
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => openReceiveModal(p)}
+                                  disabled={isDeleting}
+                                  title="입고처리"
+                                  style={{ display:'inline-flex', alignItems:'center', gap:3, padding:'3px 8px', background:'#ecfdf5', color:'#059669', border:'1px solid #bbf7d0', borderRadius:6, fontSize:'10px', fontWeight:800, cursor:isDeleting?'not-allowed':'pointer' }}>
+                                  <PackageCheck size={11}/>입고
+                                </button>
+                              )}
                             </td>
                             {/* 삭제 버튼 */}
                             <td style={tdStyle()} onClick={e => e.stopPropagation()}>

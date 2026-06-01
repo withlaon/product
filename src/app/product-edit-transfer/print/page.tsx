@@ -211,7 +211,6 @@ export default function InvoicePrintPage() {
   const bulkFileRef = useRef<HTMLInputElement>(null)
   const [dateFilter, setDateFilter] = useState(getToday())
   const [showAllDates, setShowAllDates] = useState(false)
-  const [showList, setShowList]         = useState(false)
 
   useEffect(() => {
     setOrders(loadInvoiceQueue())
@@ -466,43 +465,8 @@ export default function InvoicePrintPage() {
   return (
     <div style={{ maxWidth: 1120, margin: '0 auto' }}>
 
-      {/* KPI */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,1fr)', gap: 12, marginBottom: 20 }}>
-        {[
-          { label: '송장출력/등록 대기', value: orders.length,   color: '#dc2626', bg: '#fef2f2' },
-          { label: '현재 필터 건수',     value: filtered.length, color: '#2563eb', bg: '#eff6ff' },
-        ].map(k => (
-          <div key={k.label} className="pm-card" style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 40, height: 40, borderRadius: 12, background: k.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-              <Truck size={18} style={{ color: k.color }} />
-            </div>
-            <div style={{ flex: 1 }}>
-              <p style={{ fontSize: '24px', fontWeight: 900, color: '#0f172a', lineHeight: 1 }}>{k.value}</p>
-              <p style={{ fontSize: '11.5px', color: k.color, fontWeight: 800, marginTop: 3 }}>{k.label}</p>
-            </div>
-            {k.label === '송장출력/등록 대기' && orders.length > 0 && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-                <button onClick={() => setShowList(v => !v)}
-                  style={{ padding: '5px 11px', borderRadius: 7, background: showList ? '#1e293b' : '#eff6ff', color: showList ? '#fff' : '#2563eb', border: 'none', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}>
-                  {showList ? '목록 접기' : '목록 보기'}
-                </button>
-                <button onClick={() => {
-                  if (!confirm(`대기 중인 ${orders.length}건을 모두 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) return
-                  removeInvoiceQueueByIds(orders.map(o => o.id))
-                  setOrders([])
-                  setShowList(false)
-                }}
-                  style={{ padding: '5px 11px', borderRadius: 7, background: '#fef2f2', color: '#dc2626', border: '1.5px solid #fecaca', fontSize: '11.5px', fontWeight: 800, cursor: 'pointer' }}>
-                  전체 삭제
-                </button>
-              </div>
-            )}
-          </div>
-        ))}
-      </div>
-
       {/* 검색 + 날짜 네비게이션 + 액션 바 */}
-      {showList && <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+      <div className="pm-card" style={{ padding: '10px 16px', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
         <Search size={14} style={{ color: '#94a3b8', flexShrink: 0 }} />
         <input
           value={search}
@@ -572,10 +536,10 @@ export default function InvoicePrintPage() {
           style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 13px', background: '#059669', color: 'white', borderRadius: 9, fontSize: '12px', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
           <Save size={13} />일괄 저장
         </button>
-      </div>}
+      </div>
 
       {/* 목록 */}
-      {showList && <div className="pm-card" style={{ overflow: 'hidden' }}>
+      <div className="pm-card" style={{ overflow: 'hidden' }}>
         <div style={{ padding: '12px 20px', borderBottom: '1px solid #f1f5f9', display: 'flex', alignItems: 'center', gap: 8 }}>
           <Truck size={15} style={{ color: '#64748b' }} />
           <span style={{ fontSize: '13.5px', fontWeight: 800, color: '#0f172a' }}>송장출력/등록 대기 주문</span>
@@ -675,7 +639,7 @@ export default function InvoicePrintPage() {
             })}
           </div>
         )}
-      </div>}
+      </div>
     </div>
   )
 }

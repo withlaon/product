@@ -297,40 +297,25 @@ function SingleLineChart({ data, color, gradId, formatTip, skipDays }: {
   const xPos = (i: number) => cols <= 1 ? padL + cW / 2 : padL + (i / (cols - 1)) * cW
   const yVal = (v: number) => padT + cH - (v / maxV) * cH
 
-  // 주말·공휴일에서 선 끊기
+  // 선은 끊기지 않게 모든 점 연결 (주말·공휴일 포함)
   const linePath = (() => {
     if (!data.length) return ''
-    let path = ''; let lastSkip = true
+    let path = ''
     for (let i = 0; i < data.length; i++) {
       const d = data[i]
-      if (skipDays?.has(d.day)) { lastSkip = true; continue }
-      path += ` ${lastSkip ? 'M' : 'L'}${xPos(i).toFixed(1)},${yVal(d.value).toFixed(1)}`
-      lastSkip = false
+      path += ` ${i === 0 ? 'M' : 'L'}${xPos(i).toFixed(1)},${yVal(d.value).toFixed(1)}`
     }
     return path.trim()
   })()
 
   const fillPath = (() => {
     if (!data.length) return ''
-    let path = ''; let lastSkip = true; let firstX = padL; let firstI = -1
-    for (let i = 0; i < data.length; i++) {
-      const d = data[i]
-      if (skipDays?.has(d.day)) {
-        if (firstI >= 0 && !lastSkip) {
-          const prevI = i - 1
-          path += ` L${xPos(prevI).toFixed(1)},${(padT+cH).toFixed(1)} L${firstX.toFixed(1)},${(padT+cH).toFixed(1)} Z`
-          firstI = -1
-        }
-        lastSkip = true; continue
-      }
-      if (lastSkip) { firstX = xPos(i); firstI = i; path += ` M${xPos(i).toFixed(1)},${yVal(d.value).toFixed(1)}` }
-      else path += ` L${xPos(i).toFixed(1)},${yVal(d.value).toFixed(1)}`
-      lastSkip = false
+    let path = `M${xPos(0).toFixed(1)},${yVal(data[0].value).toFixed(1)}`
+    for (let i = 1; i < data.length; i++) {
+      path += ` L${xPos(i).toFixed(1)},${yVal(data[i].value).toFixed(1)}`
     }
-    if (firstI >= 0 && !lastSkip) {
-      const lastNonSkip = data.length - 1 - [...data].reverse().findIndex(d => !skipDays?.has(d.day))
-      path += ` L${xPos(lastNonSkip).toFixed(1)},${(padT+cH).toFixed(1)} L${firstX.toFixed(1)},${(padT+cH).toFixed(1)} Z`
-    }
+    const lastI = data.length - 1
+    path += ` L${xPos(lastI).toFixed(1)},${(padT+cH).toFixed(1)} L${xPos(0).toFixed(1)},${(padT+cH).toFixed(1)} Z`
     return path.trim()
   })()
 
@@ -339,7 +324,6 @@ function SingleLineChart({ data, color, gradId, formatTip, skipDays }: {
     const mx = (e.clientX - rect.left) * (W / rect.width)
     let nearest = 0; let minDist = Infinity
     data.forEach((d, i) => {
-      if (skipDays?.has(d.day)) return
       const dx = Math.abs(xPos(i) - mx); if (dx < minDist) { minDist = dx; nearest = i }
     })
     setTipIdx(nearest)
@@ -361,15 +345,15 @@ function SingleLineChart({ data, color, gradId, formatTip, skipDays }: {
         <line x1={padL} y1={padT+cH} x2={W-padR} y2={padT+cH} stroke="#f1f5f9" strokeWidth={0.8}/>
         {fillPath && <path d={fillPath} fill={`url(#${gradId})`}/>}
         {linePath && <path d={linePath} fill="none" stroke={color} strokeWidth={1} strokeLinejoin="round" strokeLinecap="round"/>}
-        {tipIdx !== null && (data[tipIdx]?.value ?? 0) > 0 && !skipDays?.has(data[tipIdx].day) && (
+        {tipIdx !== null && (data[tipIdx]?.value ?? 0) > 0 && (
           <circle cx={xPos(tipIdx)} cy={yVal(data[tipIdx].value)} r={2.8} fill={color} stroke="#fff" strokeWidth={1.5}/>
         )}
-        {tipIdx !== null && !skipDays?.has(data[tipIdx ?? 0]?.day) && (
+        {tipIdx !== null && (
           <line x1={tipX} y1={padT} x2={tipX} y2={padT+cH} stroke="#94a3b8" strokeWidth={0.7} strokeDasharray="3 2" opacity={0.5}/>
         )}
-        {data.map((d, i) => (d.day === 1 || d.day % 5 === 0) && (
+        {data.map((d, i) => (d.day === 1 || d.day % 5 === 0) && !skipDays?.has(d.day) && (
           <text key={i} x={xPos(i)} y={H-1} textAnchor="middle" fontSize={7.5}
-            fill={skipDays?.has(d.day) ? '#f1d0d0' : '#cbd5e1'}>{d.day}</text>
+            fill="#cbd5e1">{d.day}</text>
         ))}
       </svg>
       {tip && tipIdx !== null && (
