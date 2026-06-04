@@ -1,12 +1,10 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef, useCallback } from 'react'
-import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import {
-  Package, ShoppingCart, AlertTriangle, TrendingUp,
-  MessageSquare, RefreshCw, ChevronLeft, ChevronRight,
-  ClipboardList, CalendarDays, Plus, Trash2, Calendar,
+  ShoppingCart, MessageSquare, RefreshCw, ChevronLeft, ChevronRight,
+  CalendarDays, Plus, Trash2, Calendar, Pencil,
 } from 'lucide-react'
 import {
   loadOrders, loadShippedOrders, loadInvoiceQueue,
@@ -105,7 +103,7 @@ function addOneDayStr(dateStr: string): string {
   const dt = new Date(y, m - 1, d + 1)
   return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`
 }
-interface WeekBar { colStart: number; colEnd: number; schedule: ScheduleItem; isStart: boolean; isEnd: boolean }
+interface WeekBar { colStart: number; colEnd: number; schedule: ScheduleItem; isStart: boolean; isEnd: boolean; lane: number }
 
 /* ── 선 그래프 ────────────────────────────────────────────── */
 interface ChartPoint { day: number; count: number; amount: number }
@@ -548,6 +546,9 @@ function CalendarPanel() {
   const [rangeMode, setRangeMode] = useState(false)
   const [rangeStart, setRangeStart] = useState('')
   const [rangeEnd, setRangeEnd] = useState('')
+  const [editId, setEditId] = useState<string | null>(null)
+  const [editText, setEditText] = useState('')
+  const [editColorIdx, setEditColorIdx] = useState(0)
   const curYM = getCurYM()
   const today = getToday()
   const todayDay = today.slice(0, 7) === calMonth ? Number(today.slice(8)) : null
@@ -578,6 +579,18 @@ function CalendarPanel() {
     setNewText('')
   }
 
+  const startEdit = (s: ScheduleItem) => {
+    setEditId(s.id)
+    setEditText(s.text)
+    setEditColorIdx(SCHED_COLORS.indexOf(s.color) >= 0 ? SCHED_COLORS.indexOf(s.color) : 0)
+  }
+
+  const saveEdit = (s: ScheduleItem) => {
+    if (!editText.trim()) return
+    mutate(schedules.map(x => x.id === s.id ? { ...x, text: editText.trim(), color: SCHED_COLORS[editColorIdx % SCHED_COLORS.length] } : x))
+    setEditId(null)
+  }
+
   const [y, m] = calMonth.split('-').map(Number)
   const firstDow = new Date(y, m - 1, 1).getDay()
   const days = daysInMonth(calMonth)
@@ -594,13 +607,12 @@ function CalendarPanel() {
     schByDay[d].push(s)
   })
 
-  // 기간 일정: 각 주 행에서의 바(bar) 계산
+  // 기간 일정: 각 주 행에서의 바(bar) 계산 (레인 할당으로 겹침 방지)
   const getWeekBars = (rowIdx: number): WeekBar[] => {
     const rowCells = cells.slice(rowIdx * 7, rowIdx * 7 + 7)
-    const bars: WeekBar[] = []
+    const bars: Omit<WeekBar, 'lane'>[] = []
     for (const s of schedules) {
       if (!s.endDate) continue
-      // 현재 월과 겹치는 기간 계산
       const monthFirst = `${calMonth}-01`
       const monthLast = `${calMonth}-${String(days).padStart(2,'0')}`
       const clampedStart = s.date > monthLast ? null : s.date < monthFirst ? monthFirst : s.date
@@ -624,7 +636,17 @@ function CalendarPanel() {
       }
       if (barStart !== -1) bars.push({ colStart: barStart, colEnd: barEnd, schedule: s, isStart: barIsStart, isEnd: barIsEnd })
     }
-    return bars
+    // 겹침 방지: colStart 순으로 정렬 후 레인 할당
+    bars.sort((a, b) => a.colStart - b.colStart)
+    const laneEnds: number[] = []
+    const result: WeekBar[] = []
+    for (const bar of bars) {
+      let lane = laneEnds.findIndex(end => end < bar.colStart)
+      if (lane === -1) lane = laneEnds.length
+      laneEnds[lane] = bar.colEnd
+      result.push({ ...bar, lane })
+    }
+    return result
   }
 
   // 선택한 날의 일정 (단일+기간 모두)
@@ -668,6 +690,8 @@ function CalendarPanel() {
         {/* 날짜 행: 바(bar) 오버레이 포함 */}
         {Array.from({ length: cells.length / 7 }, (_, r) => {
           const weekBars = getWeekBars(r)
+          const maxLane = weekBars.length > 0 ? Math.max(...weekBars.map(b => b.lane)) : 0
+          const extraHeight = maxLane * 7
           return (
             <div key={r} style={{ position:'relative', marginBottom:2 }}>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2 }}>
@@ -678,17 +702,16 @@ function CalendarPanel() {
                   const isSel = d === selDay
                   const isToday = d === todayDay
                   const hasDot = d && (schByDay[d]?.length ?? 0) > 0
-                  // 기간 일정이 덮고 있는지 확인 (배경 표시용)
                   const dateStr = d ? `${calMonth}-${String(d).padStart(2,'0')}` : ''
                   const isInRange = d ? schedules.some(s => s.endDate && dateStr >= s.date && dateStr <= s.endDate) : false
                   return (
                     <div key={ci} onClick={() => d && setSelDay(d === selDay ? null : d)}
                       style={{
-                        minHeight:36, borderRadius:6, cursor:d?'pointer':'default',
+                        minHeight: 36 + extraHeight, borderRadius:6, cursor:d?'pointer':'default',
                         background: isSel ? '#2563eb' : isToday ? '#eff6ff' : isInRange ? 'rgba(37,99,235,0.04)' : 'transparent',
                         border: isToday && !isSel ? '1.5px solid #bfdbfe' : '1.5px solid transparent',
                         display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-start',
-                        padding:'3px 1px 8px',
+                        padding: `3px 1px ${8 + extraHeight}px`,
                         transition:'background 100ms',
                       }}>
                       {d && (
@@ -710,17 +733,17 @@ function CalendarPanel() {
                   )
                 })}
               </div>
-              {/* 기간 일정 바(bar) 오버레이 */}
+              {/* 기간 일정 바(bar) 오버레이 - 레인별 분리 */}
               {weekBars.map((bar, bi) => (
                 <div key={`${bar.schedule.id}-${bi}`} style={{
                   position:'absolute',
-                  bottom: 2,
+                  bottom: 2 + bar.lane * 7,
                   left: `calc(${(bar.colStart / 7) * 100}% + ${bar.isStart ? 3 : 0}px)`,
                   right: `calc(${((6 - bar.colEnd) / 7) * 100}% + ${bar.isEnd ? 3 : 0}px)`,
                   height: 5,
                   background: bar.schedule.color,
                   borderRadius: `${bar.isStart ? 3 : 0}px ${bar.isEnd ? 3 : 0}px ${bar.isEnd ? 3 : 0}px ${bar.isStart ? 3 : 0}px`,
-                  opacity: 0.82,
+                  opacity: 0.85,
                   zIndex: 1,
                   pointerEvents:'none',
                 }}>
@@ -760,19 +783,48 @@ function CalendarPanel() {
             {selDayScheds.length === 0
               ? <p style={{ fontSize:'10.5px', color:'#cbd5e1', fontWeight:600, marginBottom:4 }}>일정 없음</p>
               : selDayScheds.map(s => (
-                <div key={s.id} style={{ display:'flex', alignItems:'center', gap:6, marginBottom:5, padding:'5px 8px', background:'#f8fafc', borderRadius:8, borderLeft:`3px solid ${s.color}` }}>
-                  <div style={{ flex:1, minWidth:0 }}>
-                    <span style={{ fontSize:'11.5px', fontWeight:700, color:'#1e293b', wordBreak:'break-all', display:'block' }}>{s.text}</span>
-                    {s.endDate && (
-                      <span style={{ fontSize:'9.5px', color:'#94a3b8', fontWeight:600 }}>
-                        {s.date.slice(5).replace('-','/')} ~ {s.endDate.slice(5).replace('-','/')}
-                      </span>
-                    )}
-                  </div>
-                  <button onClick={() => mutate(schedules.filter(x => x.id !== s.id))}
-                    style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', flexShrink:0 }}>
-                    <Trash2 size={10}/>
-                  </button>
+                <div key={s.id} style={{ marginBottom:5, padding:'5px 8px', background:'#f8fafc', borderRadius:8, borderLeft:`3px solid ${editId===s.id ? SCHED_COLORS[editColorIdx] : s.color}` }}>
+                  {editId === s.id ? (
+                    <>
+                      <div style={{ display:'flex', gap:3, marginBottom:5 }}>
+                        {SCHED_COLORS.map((c,i) => (
+                          <div key={c} onClick={() => setEditColorIdx(i)}
+                            style={{ width:14, height:14, borderRadius:'50%', background:c, cursor:'pointer', flexShrink:0,
+                              border: editColorIdx===i ? '2px solid #0f172a' : '2px solid transparent',
+                              transform: editColorIdx===i ? 'scale(1.2)' : 'scale(1)', transition:'transform 80ms' }}/>
+                        ))}
+                      </div>
+                      <div style={{ display:'flex', gap:4 }}>
+                        <input value={editText} onChange={e => setEditText(e.target.value)}
+                          onKeyDown={e => { if (e.key==='Enter') saveEdit(s); if (e.key==='Escape') setEditId(null) }}
+                          autoFocus
+                          style={{ flex:1, fontSize:'11px', border:'1.5px solid #2563eb', borderRadius:5, padding:'3px 6px', outline:'none', color:'#1e293b' }}/>
+                        <button onClick={() => saveEdit(s)}
+                          style={{ padding:'3px 8px', fontSize:'10px', fontWeight:700, background:'#2563eb', color:'#fff', border:'none', borderRadius:5, cursor:'pointer' }}>저장</button>
+                        <button onClick={() => setEditId(null)}
+                          style={{ padding:'3px 8px', fontSize:'10px', fontWeight:700, background:'#f1f5f9', color:'#64748b', border:'none', borderRadius:5, cursor:'pointer' }}>취소</button>
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                      <div style={{ flex:1, minWidth:0 }}>
+                        <span style={{ fontSize:'11.5px', fontWeight:700, color:'#1e293b', wordBreak:'break-all', display:'block' }}>{s.text}</span>
+                        {s.endDate && (
+                          <span style={{ fontSize:'9.5px', color:'#94a3b8', fontWeight:600 }}>
+                            {s.date.slice(5).replace('-','/')} ~ {s.endDate.slice(5).replace('-','/')}
+                          </span>
+                        )}
+                      </div>
+                      <button onClick={() => startEdit(s)}
+                        style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', flexShrink:0 }}>
+                        <Pencil size={10}/>
+                      </button>
+                      <button onClick={() => mutate(schedules.filter(x => x.id !== s.id))}
+                        style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', flexShrink:0 }}>
+                        <Trash2 size={10}/>
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))
             }
@@ -1114,46 +1166,22 @@ export default function DashboardPage() {
   return (
     <div style={{ display:'flex', flexDirection:'column', gap:10, height:'100%', overflow:'hidden' }}>
 
-      {/* ── KPI (5열) ── */}
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(5,1fr)', gap:8, flexShrink:0 }}>
+      {/* ── 재무 요약 (4열) ── */}
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:8, flexShrink:0 }}>
         {[
-          { title:'전체 상품',   value: products.length?`${products.length}개`:'0',       sub:`재고부족 ${lowStock.length} · 품절 ${soldOut.length}`,                                                                      icon:Package,       bg:'#eff6ff', ic:'#2563eb', href:'/products',          fs:18 },
-          { title:'오늘 주문',   value: todayOrders.length?`${todayOrders.length}건`:'0',  sub: todayOrders.length?`미처리 ${todayOrders.filter(o=>o.status==='pending'||o.status==='confirmed').length}건`:'주문없음',    icon:ShoppingCart,  bg:'#ecfdf5', ic:'#059669', href:'/product-transfer',  fs:18 },
-          { title:'재고 부족',   value: lowStock.length?`${lowStock.length}개`:'0',         sub: lowStock.length?'3개 이하 옵션':'재고 정상',                                                                                icon:AlertTriangle, bg:'#fffbeb', ic:'#d97706', href:'/inventory',         fs:18 },
-          { title:'이번달 매출', value: monthRevenue>0?`₩${Math.round(monthRevenue).toLocaleString()}`:'₩0', sub:`${curYM.replace('-','년 ')}월`,                                                                                      icon:TrendingUp,    bg:'#f5f3ff', ic:'#7c3aed', href:'/product-transfer',  fs:21 },
-        ].map(s => (
-          <Link key={s.title} href={s.href} style={{ textDecoration:'none' }}>
-            <div className="pm-card" style={{ padding:'9px 12px', cursor:'pointer', display:'flex', alignItems:'center', gap:9 }}>
-              <div style={{ width:34,height:34,borderRadius:10,background:s.bg,display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-                <s.icon size={16} color={s.ic} strokeWidth={2} />
-              </div>
-              <div style={{ minWidth:0 }}>
-                <p style={{ fontSize: '9.5px',fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em' }}>{s.title}</p>
-                <p style={{ fontSize:s.fs,fontWeight:900,color:'#0f172a',lineHeight:1.2,wordBreak:'break-all' }}>{s.value}</p>
-                <p style={{ fontSize: '9.5px',color:'#94a3b8',fontWeight:600 }}>{s.sub}</p>
-              </div>
-            </div>
-          </Link>
-        ))}
-        {/* 발주 현황 카드 */}
-        <Link href="/purchase" style={{ textDecoration:'none' }}>
-          <div className="pm-card" style={{ padding:'9px 12px', cursor:'pointer', display:'flex', alignItems:'center', gap:9 }}>
-            <div style={{ width:34,height:34,borderRadius:10,background:'#f0f9ff',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0 }}>
-              <ClipboardList size={16} color="#0369a1" strokeWidth={2} />
-            </div>
-            <div style={{ minWidth:0 }}>
-              <p style={{ fontSize: '9.5px',fontWeight:800,color:'#94a3b8',textTransform:'uppercase',letterSpacing:'0.04em' }}>발주 현황</p>
-              <p style={{ fontSize: '18px',fontWeight:900,color:'#0f172a',lineHeight:1.1 }}>{purchaseStats.ordered}<span style={{ fontSize: '11px',fontWeight:700,marginLeft:1 }}>개</span></p>
-              <div style={{ display:'flex', gap:6, alignItems:'center', marginTop:1 }}>
-                <span style={{ fontSize: '9px',color:'#0369a1',fontWeight:700 }}>입고 {purchaseStats.received}</span>
-                <span style={{ color:'#e2e8f0',fontSize: '10px' }}>|</span>
-                <span style={{ fontSize: '9px',color:purchaseStats.unresolved>0?'#dc2626':'#94a3b8',fontWeight:700 }}>
-                  미입고 {purchaseStats.unresolved}
-                </span>
-              </div>
-            </div>
+          { label:'매출액', value:monthRevSel,       color:'#7c3aed', bg:'#f5f3ff', border:'#e9d5ff' },
+          { label:'매입액', value:monthPurchaseCost, color:'#2563eb', bg:'#eff6ff', border:'#bfdbfe' },
+          { label:'택배비', value:monthShippingFee,  color:'#059669', bg:'#f0fdf4', border:'#bbf7d0' },
+          { label:'순이익', value:monthProfit, color: monthProfit >= 0 ? '#059669' : '#dc2626', bg: monthProfit >= 0 ? '#f0fdf4' : '#fff1f2', border: monthProfit >= 0 ? '#bbf7d0' : '#fecdd3' },
+        ].map(b => (
+          <div key={b.label} className="pm-card" style={{ padding:'11px 14px', background:b.bg, border:`1px solid ${b.border}` }}>
+            <p style={{ fontSize:'10px', fontWeight:800, color:'#94a3b8', letterSpacing:'0.04em', marginBottom:4 }}>{b.label}</p>
+            <p style={{ fontSize:'20px', fontWeight:900, color:b.color, lineHeight:1, wordBreak:'break-all' }}>
+              ₩{Math.round(b.value).toLocaleString()}
+            </p>
+            <p style={{ fontSize:'9.5px', color:'#94a3b8', fontWeight:600, marginTop:3 }}>{selMonth.replace('-','년 ')}월</p>
           </div>
-        </Link>
+        ))}
       </div>
 
       {/* ── 중단: 차트(넓게) + 우측 패널 ── */}
@@ -1249,26 +1277,7 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ─ 3줄: 당월 재무 요약 ─ */}
-          <div style={{ flexShrink:0, borderBottom:'1px solid #f8fafc', padding:'6px 14px' }}>
-            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6 }}>
-              {[
-                { label:'매출액',   value:monthRevSel,       color:'#7c3aed', bg:'#f5f3ff', prefix:'₩' },
-                { label:'매입액',   value:monthPurchaseCost, color:'#2563eb', bg:'#eff6ff', prefix:'₩' },
-                { label:'택배비',   value:monthShippingFee,  color:'#059669', bg:'#f0fdf4', prefix:'₩' },
-                { label:'순이익',   value:monthProfit,       color: monthProfit >= 0 ? '#059669' : '#dc2626', bg: monthProfit >= 0 ? '#f0fdf4' : '#fff1f2', prefix:'₩' },
-              ].map(b => (
-                <div key={b.label} style={{ background:b.bg, borderRadius:8, padding:'8px 11px' }}>
-                  <p style={{ fontSize: '13.5px', fontWeight:800, color:'#94a3b8', marginBottom:1 }}>{b.label}</p>
-                  <p style={{ fontSize: '18px', fontWeight:900, color:b.color, lineHeight:1, wordBreak:'break-all' }}>
-                    {b.prefix}{Math.round(b.value).toLocaleString()}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* ─ 4줄: 쇼핑몰별 판매수량 ─ */}
+          {/* ─ 3줄: 쇼핑몰별 판매수량 ─ */}
           <div style={{ flexShrink:0, padding:'5px 14px 6px' }}>
             <p style={{ fontSize: '9.5px', fontWeight:800, color:'#94a3b8', marginBottom:5 }}>쇼핑몰별 판매수량</p>
             {mallSales.length === 0
