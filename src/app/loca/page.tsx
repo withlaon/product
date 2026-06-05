@@ -153,11 +153,30 @@ export default function LocaPage() {
     fetchFresh()
     setCustomLocas(loadCustomLocas())
 
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === CATS_STORAGE_KEY) refreshCats()
-      if (e.key === PRODUCTS_CACHE_KEY) loadCache()
+    const applyLatest = () => {
+      const cached = loadCachedProducts()
+      if (cached.length > 0) setProducts(cached)
+      else fetchFresh()
     }
-    const onSync = () => loadCache()
+
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === CATS_STORAGE_KEY) {
+        refreshCats()
+      }
+      if (e.key === PRODUCTS_CACHE_KEY) {
+        // 캐시가 업데이트됐으면 즉시 반영, 삭제(null)됐으면 Supabase 재조회
+        if (e.newValue) loadCache()
+        else fetchFresh()
+      }
+      if (e.key === PM_PRODUCTS_CACHE_SYNC_KEY) {
+        // 다른 탭의 broadcastPmProductsCacheSync() 호출 → 최신 캐시 적용
+        applyLatest()
+      }
+    }
+
+    // 같은 탭 내 custom event (상품관리 탭 저장/삭제 시)
+    const onSync = () => applyLatest()
+
     window.addEventListener('storage', onStorage)
     window.addEventListener(PM_PRODUCTS_CACHE_SYNC_KEY, onSync)
     return () => {
