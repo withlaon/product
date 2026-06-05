@@ -1,7 +1,7 @@
 'use client'
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { Printer, RefreshCw, Plus, ChevronDown, ChevronRight } from 'lucide-react'
+import { Printer, RefreshCw, Plus, ChevronDown, ChevronRight, Search, X } from 'lucide-react'
 
 /* ── 상수 ── */
 const CATS_STORAGE_KEY           = 'pm_categories_v1'
@@ -38,6 +38,14 @@ interface Product {
 interface LocaGroup { prefix: string; items: string[] }
 
 /* ── 헬퍼 ── */
+/**
+ * loca 정규화: trim → 대문자 → 끝 숫자 단독 자리수 제로패딩
+ * 예) " 1j-2 " → "1J-02",  "1J-02" → "1J-02",  "box" → "BOX"
+ */
+function normalizeLoca(raw: string): string {
+  return raw.trim().toUpperCase().replace(/-(\d)$/, '-0$1')
+}
+
 function loadCats(): string[] {
   if (typeof window === 'undefined') return INIT_EXTRA_CATS
   try {
@@ -81,19 +89,15 @@ function chunk<T>(arr: T[], n: number): T[][] {
 /* ── 로케이션 그룹 생성 ── */
 function buildPresetGroups(): LocaGroup[] {
   const groups: LocaGroup[] = []
-  // Zone A-F: [A-F][A-D]-01~05
-  for (const f of ['A','B','C','D','E','F']) {
+  for (const f of ['A','B','C','D','E','F'])
     for (const s of ['A','B','C','D']) {
       const prefix = `${f}${s}`
       groups.push({ prefix, items: Array.from({ length: 5 }, (_, i) => `${prefix}-${String(i+1).padStart(2,'0')}`) })
     }
-  }
-  // Zone 1: 1[A-K]-01~06
   for (const s of ['A','B','C','D','E','F','G','H','I','J','K']) {
     const prefix = `1${s}`
     groups.push({ prefix, items: Array.from({ length: 6 }, (_, i) => `${prefix}-${String(i+1).padStart(2,'0')}`) })
   }
-  // Zone 2: 2[A-E]-01~07
   for (const s of ['A','B','C','D','E']) {
     const prefix = `2${s}`
     groups.push({ prefix, items: Array.from({ length: 7 }, (_, i) => `${prefix}-${String(i+1).padStart(2,'0')}`) })
@@ -101,7 +105,7 @@ function buildPresetGroups(): LocaGroup[] {
   return groups
 }
 
-const PRESET_GROUPS = buildPresetGroups()
+const PRESET_GROUPS     = buildPresetGroups()
 const ALL_PRESET_LOCA_SET = new Set(PRESET_GROUPS.flatMap(g => g.items))
 
 /* ── 메인 컴포넌트 ── */
@@ -113,9 +117,10 @@ export default function LocaPage() {
   const [customLocas, setCustomLocas]   = useState<string[]>([])
   const [showAddForm, setShowAddForm]   = useState(false)
   const [newLocaInput, setNewLocaInput] = useState('')
+  const [locaSearch, setLocaSearch]     = useState('')
   const [expanded, setExpanded]         = useState<Record<string, boolean>>({
     'A': true, 'B': false, 'C': false, 'D': false, 'E': false, 'F': false,
-    '1': true, '2': true, 'custom': true,
+    '1': true, '2': true, 'box': true, 'custom': true, 'unmatched': false,
   })
   const printAreaRef = useRef<HTMLDivElement>(null)
 
@@ -168,22 +173,40 @@ export default function LocaPage() {
       .sort((a, b) => a.code.localeCompare(b.code))
   , [products, selectedCat])
 
-  /* ── 로케이션별 상품코드 맵 (전체 상품 기준) ── */
+  /* ── LOCA 검색 필터 (화면 표시용, 인쇄는 filtered 사용) ── */
+  const displayProducts = useMemo(() => {
+    if (!locaSearch.trim()) return filtered
+    const q = normalizeLoca(locaSearch)
+    return filtered.filter(p => normalizeLoca(p.loca ?? '').includes(q))
+  }, [filtered, locaSearch])
+
+  /* ── 로케이션별 상품코드 맵 (정규화 키, 전체 상품 기준) ── */
   const locaMap = useMemo(() => {
     const map: Record<string, string[]> = {}
     for (const p of products) {
-      const loca = p.loca?.trim()
-      if (!loca) continue
-      if (!map[loca]) map[loca] = []
-      map[loca].push(p.code)
+      const key = normalizeLoca(p.loca ?? '')
+      if (!key) continue
+      if (!map[key]) map[key] = []
+      map[key].push(p.code)
     }
     return map
   }, [products])
 
-  /* ── 미분류 상품 (loca가 있지만 정의된 로케이션이 아닌 경우) ── */
+  /* ── BOX 상품 (loca 정규화값이 BOX 또는 BOX-로 시작) ── */
+  const boxProducts = useMemo(() =>
+    products.filter(p => normalizeLoca(p.loca ?? '').match(/^BOX(-|$)/))
+  , [products])
+
+  /* ── 미분류 상품 (BOX 포함 모든 인식 로케이션에서 제외된 경우) ── */
   const unmatchedProducts = useMemo(() => {
-    const allLocas = new Set([...ALL_PRESET_LOCA_SET, ...customLocas])
-    return products.filter(p => p.loca?.trim() && !allLocas.has(p.loca.trim()))
+    const allNorm = new Set([
+      ...Array.from(ALL_PRESET_LOCA_SET),
+      ...customLocas.map(normalizeLoca),
+    ])
+    return products.filter(p => {
+      const n = normalizeLoca(p.loca ?? '')
+      return n && !allNorm.has(n) && !n.match(/^BOX(-|$)/)
+    })
   }, [products, customLocas])
 
   const printTitle = selectedCat ? `${selectedCat}_LOCA` : 'LOCA'
@@ -221,9 +244,9 @@ export default function LocaPage() {
 
   /* ── 커스텀 로케이션 추가/삭제 ── */
   const addCustomLoca = () => {
-    const v = newLocaInput.trim().toUpperCase()
+    const v = normalizeLoca(newLocaInput)
     if (!v) return
-    const allExisting = [...ALL_PRESET_LOCA_SET, ...customLocas]
+    const allExisting = [...Array.from(ALL_PRESET_LOCA_SET), ...customLocas.map(normalizeLoca)]
     if (allExisting.includes(v)) { alert('이미 존재하는 로케이션입니다.'); return }
     const next = [...customLocas, v]
     setCustomLocas(next)
@@ -243,8 +266,8 @@ export default function LocaPage() {
 
   /* ── 왼쪽: 테이블 행 렌더 ── */
   const ROW_H = 54
-  const renderRows = () =>
-    filtered.map(p => {
+  const renderRows = (list: Product[]) =>
+    list.map(p => {
       const opts     = p.options ?? []
       const firstImg = opts[0]?.image ?? ''
       const optNames = opts.map(o => o.name || o.korean_name || '').filter(Boolean)
@@ -275,7 +298,7 @@ export default function LocaPage() {
       )
     })
 
-  /* ── 인쇄용 행 렌더 ── */
+  /* ── 인쇄용 행 렌더 (항상 filtered 전체 사용) ── */
   const ROW_H_PT = '40pt'
   const renderPrintRows = () =>
     filtered.map(p => {
@@ -301,11 +324,10 @@ export default function LocaPage() {
 
   const COL_HEADERS = ['상품코드', '이미지', '옵션명', 'LOCA', '상품약어', '상품명']
 
-  /* ── 오른쪽: 로케이션 그룹 렌더 ── */
+  /* ── 오른쪽: 로케이션 행 렌더 ── */
   const renderLocaRows = (groups: LocaGroup[], isCustom = false) =>
     groups.map(group => (
       <div key={group.prefix} style={{ display: 'flex', alignItems: 'flex-start', marginBottom: 3, gap: 4 }}>
-        {/* 행 레이블 */}
         <div style={{
           width: 36, minWidth: 36, height: 36, display: 'flex', alignItems: 'center', justifyContent: 'center',
           background: isCustom ? '#fef3c7' : '#f0f9ff',
@@ -313,11 +335,11 @@ export default function LocaPage() {
           borderRadius: 5, fontSize: 9.5, fontWeight: 800,
           color: isCustom ? '#92400e' : '#1e40af', flexShrink: 0,
         }}>{group.prefix}</div>
-        {/* 로케이션 셀 */}
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 3, flex: 1 }}>
           {group.items.map(loca => {
-            const codes = locaMap[loca] ?? []
-            const has = codes.length > 0
+            const key   = normalizeLoca(loca)
+            const codes = locaMap[key] ?? []
+            const has   = codes.length > 0
             return (
               <div key={loca} style={{
                 minWidth: 58, flex: '1 0 58px',
@@ -349,15 +371,15 @@ export default function LocaPage() {
       </div>
     ))
 
-  /* ── 존 섹션 렌더 ── */
+  /* ── 존 섹션 컴포넌트 ── */
   const ZoneSection = ({
     zoneKey, label, labelColor, headerBg, groups, isCustom = false,
   }: {
     zoneKey: string; label: string; labelColor: string; headerBg: string;
     groups: LocaGroup[]; isCustom?: boolean
   }) => {
-    const isOpen = expanded[zoneKey] ?? false
-    const activeCnt = groups.flatMap(g => g.items).filter(l => (locaMap[l]?.length ?? 0) > 0).length
+    const isOpen    = expanded[zoneKey] ?? false
+    const activeCnt = groups.flatMap(g => g.items).filter(l => (locaMap[normalizeLoca(l)]?.length ?? 0) > 0).length
     return (
       <div style={{ marginBottom: 6 }}>
         <button onClick={() => toggleZone(zoneKey)} style={{
@@ -387,7 +409,7 @@ export default function LocaPage() {
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0, height: '100%', paddingRight: 10 }}>
 
         {/* 카테고리 탭 */}
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 10, flexShrink: 0 }}>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8, flexShrink: 0 }}>
           {cats.map(cat => (
             <button key={cat} onClick={() => setSelectedCat(cat)} style={{
               padding: '5px 14px', borderRadius: 20, fontSize: 12.5, fontWeight: 700,
@@ -399,10 +421,44 @@ export default function LocaPage() {
           ))}
         </div>
 
+        {/* LOCA 검색 칸 */}
+        <div style={{ position: 'relative', marginBottom: 8, flexShrink: 0 }}>
+          <Search size={13} style={{ position: 'absolute', left: 9, top: '50%', transform: 'translateY(-50%)', color: '#94a3b8', pointerEvents: 'none' }}/>
+          <input
+            value={locaSearch}
+            onChange={e => setLocaSearch(e.target.value)}
+            placeholder="LOCA 검색 (예: 1A, AA-01)"
+            style={{
+              width: '100%', boxSizing: 'border-box',
+              paddingLeft: 28, paddingRight: locaSearch ? 28 : 10,
+              paddingTop: 6, paddingBottom: 6,
+              fontSize: 12.5, border: '1.5px solid #e2e8f0', borderRadius: 8,
+              outline: 'none', color: '#1e293b', background: '#f8fafc',
+              transition: 'border-color 150ms',
+            }}
+            onFocus={e => (e.target.style.borderColor = '#93c5fd')}
+            onBlur={e => (e.target.style.borderColor = '#e2e8f0')}
+          />
+          {locaSearch && (
+            <button onClick={() => setLocaSearch('')} style={{
+              position: 'absolute', right: 7, top: '50%', transform: 'translateY(-50%)',
+              background: 'none', border: 'none', cursor: 'pointer', padding: 2, display: 'flex', alignItems: 'center',
+            }}>
+              <X size={12} color="#94a3b8"/>
+            </button>
+          )}
+        </div>
+
         {/* 액션 바 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, flexShrink: 0 }}>
-          <span style={{ fontSize: 14, fontWeight: 800, color: '#1e293b' }}>{printTitle}</span>
-          {filtered.length > 0 && <span style={{ color: '#94a3b8', fontSize: 12, fontWeight: 600 }}>{filtered.length}개 상품</span>}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexShrink: 0 }}>
+          <span style={{ fontSize: 13, fontWeight: 800, color: '#1e293b' }}>{printTitle}</span>
+          {filtered.length > 0 && (
+            <span style={{ color: '#94a3b8', fontSize: 11.5, fontWeight: 600 }}>
+              {locaSearch
+                ? `${displayProducts.length} / ${filtered.length}개`
+                : `${filtered.length}개 상품`}
+            </span>
+          )}
           <div style={{ flex: 1 }}/>
           <button onClick={() => { loadCache(); fetchFresh() }}
             style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 12px', border: '1px solid #e2e8f0', borderRadius: 7, background: '#f8fafc', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: '#475569' }}>
@@ -422,6 +478,11 @@ export default function LocaPage() {
             <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>카테고리를 선택하세요.</div>
           ) : filtered.length === 0 ? (
             <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>해당 카테고리에 등록된 상품이 없습니다.</div>
+          ) : displayProducts.length === 0 ? (
+            <div style={{ padding: 40, textAlign: 'center', color: '#94a3b8', fontSize: 14 }}>
+              <Search size={20} style={{ margin: '0 auto 8px', display: 'block', opacity: 0.3 }}/>
+              <span style={{ fontWeight: 600 }}>"{locaSearch}" 로케이션 결과 없음</span>
+            </div>
           ) : (
             <div style={{ border: '1px solid #bfdbfe', borderRadius: 10, background: '#fff' }}>
               <table style={{ borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed', minWidth: 460 }}>
@@ -432,7 +493,7 @@ export default function LocaPage() {
                 <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                   <tr>
                     <td colSpan={6} style={{ border: '1px solid #bfdbfe', padding: '5px 8px', fontSize: 13, fontWeight: 800, background: '#f0f9ff', color: '#1e3a5f' }}>
-                      {printTitle}
+                      {printTitle}{locaSearch && <span style={{ fontSize: 11, color: '#2563eb', marginLeft: 8 }}>LOCA: {locaSearch.toUpperCase()}</span>}
                     </td>
                   </tr>
                   <tr>
@@ -441,7 +502,7 @@ export default function LocaPage() {
                     ))}
                   </tr>
                 </thead>
-                <tbody>{renderRows()}</tbody>
+                <tbody>{renderRows(displayProducts)}</tbody>
               </table>
             </div>
           )}
@@ -523,6 +584,51 @@ export default function LocaPage() {
             headerBg="#f0fdf4"
             groups={PRESET_GROUPS.filter(g => g.prefix[0] === '2')}
           />
+
+          {/* ── BOX 로케이션 ── */}
+          <div style={{ marginBottom: 6 }}>
+            <button onClick={() => toggleZone('box')} style={{
+              display: 'flex', alignItems: 'center', gap: 5, width: '100%',
+              background: '#fdf4ff', border: 'none', borderRadius: 6,
+              padding: '4px 10px', cursor: 'pointer', marginBottom: (expanded['box'] ?? true) ? 5 : 0,
+            }}>
+              {(expanded['box'] ?? true) ? <ChevronDown size={11} color="#6b21a8"/> : <ChevronRight size={11} color="#6b21a8"/>}
+              <span style={{ fontSize: 11, fontWeight: 800, color: '#6b21a8' }}>BOX 로케이션</span>
+              {boxProducts.length > 0 && (
+                <span style={{ fontSize: 9.5, fontWeight: 700, color: '#7c3aed', background: '#ede9fe', borderRadius: 10, padding: '0 6px' }}>
+                  {boxProducts.length}개 상품 보관 중
+                </span>
+              )}
+            </button>
+            {(expanded['box'] ?? true) && (
+              <div style={{ paddingLeft: 2 }}>
+                <div style={{
+                  border: `2px dashed ${boxProducts.length > 0 ? '#c4b5fd' : '#e2e8f0'}`,
+                  borderRadius: 8, padding: '8px 10px',
+                  background: boxProducts.length > 0 ? '#faf5ff' : '#fafafa',
+                  minHeight: 60,
+                }}>
+                  {boxProducts.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '10px 0', color: '#d1d5db', fontSize: 11, fontWeight: 600 }}>
+                      BOX 보관 상품 없음
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+                      {boxProducts.map(p => (
+                        <div key={p.id} style={{
+                          background: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: 6,
+                          padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 1,
+                        }}>
+                          <span style={{ fontSize: 9.5, fontWeight: 800, color: '#5b21b6' }}>{p.code}</span>
+                          <span style={{ fontSize: 8, color: '#7c3aed', fontWeight: 600 }}>{p.loca}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* 추가 로케이션 */}
           {customLocas.length > 0 && (
