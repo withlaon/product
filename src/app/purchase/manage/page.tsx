@@ -1,5 +1,5 @@
 'use client'
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import * as XLSX from 'xlsx'
 import { supabase } from '@/lib/supabase'
 import { Button } from '@/components/ui/button'
@@ -90,6 +90,9 @@ export default function PurchaseManagePage() {
     try { return Number(localStorage.getItem('pm_exchange_rate') || String(DEFAULT_EXCHANGE_RATE)) || DEFAULT_EXCHANGE_RATE } catch { return DEFAULT_EXCHANGE_RATE }
   })
 
+  /* 발주 확정 목록 스크롤 ref */
+  const confirmListRef = useRef<HTMLDivElement>(null)
+
   /* 발주 이력 영역 */
   const [showHistory, setShowHistory] = useState(false)
   const [mode,  setMode]  = useState<DateMode>('month')
@@ -102,6 +105,15 @@ export default function PurchaseManagePage() {
   const [editFormData,  setEditFormData]  = useState<Purchase | null>(null)
   const [deleteTarget,  setDeleteTarget]  = useState<Purchase | null>(null)
   const [showAddModal,  setShowAddModal]  = useState(false)
+
+  /* 발주 확정 목록에 항목 추가 시 스크롤 맨 아래로 */
+  const prevSelectedLen = useRef(0)
+  useEffect(() => {
+    if (selectedOpts.length > prevSelectedLen.current && confirmListRef.current) {
+      confirmListRef.current.scrollTop = confirmListRef.current.scrollHeight
+    }
+    prevSelectedLen.current = selectedOpts.length
+  }, [selectedOpts.length])
 
   /* ── 데이터 로드 ── */
   const loadPurchases = useCallback(async () => {
@@ -906,7 +918,7 @@ export default function PurchaseManagePage() {
               </div>
 
               {/* 선택 상품 목록 */}
-              <div style={{ flex: 1, overflowY: 'auto', padding: '8px 14px' }}>
+              <div ref={confirmListRef} style={{ flex: 1, overflowY: 'auto', padding: '8px 14px' }}>
                 {selectedOptsSorted.map(s => {
                   const img = resolveQualImage(s.barcode, s.image)
                   type FP = PmProduct & { cost_price?: number; cost_currency?: string }
