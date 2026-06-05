@@ -322,12 +322,6 @@ export default function LocaPage() {
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }))
 
   /* ── 상품 LOCA 표시 문자열 (옵션별 다른 경우 모두 표시) ── */
-  const getLocaDisplay = useCallback((p: Product): string => {
-    const effLocas = getEffectiveLocas(p).filter(Boolean)
-    const unique = [...new Set(effLocas)]
-    return unique.length > 0 ? unique.join(' / ') : (p.loca || '')
-  }, [getEffectiveLocas])
-
   /* ── 왼쪽: 테이블 행 렌더 ── */
   const ROW_H = 54
   const renderRows = (list: Product[]) =>
@@ -338,9 +332,11 @@ export default function LocaPage() {
       const pairs      = chunk(optNames, 2)
       const abbr       = koreanOnly(p.abbr || '')
       const isDel      = p.status === 'pending_delete'
-      const locaDisplay = getLocaDisplay(p)
-      const cell: React.CSSProperties = { border: '1px solid #e2e8f0', padding: 0, height: ROW_H }
-      const inner: React.CSSProperties = { height: ROW_H, overflow: 'hidden', display: 'flex', alignItems: 'center' }
+      const locaLines  = [...new Set(getEffectiveLocas(p).filter(Boolean))]
+      if (locaLines.length === 0 && p.loca) locaLines.push(p.loca)
+      const cellH = Math.max(ROW_H, locaLines.length * 18 + 12)
+      const cell: React.CSSProperties = { border: '1px solid #e2e8f0', padding: 0, height: cellH }
+      const inner: React.CSSProperties = { height: cellH, overflow: 'hidden', display: 'flex', alignItems: 'center' }
       return (
         <tr key={p.id}>
           <td style={cell}><div style={{ ...inner, padding: '0 6px', fontSize: 12, color: isDel ? '#dc2626' : undefined }}>{p.code}</div></td>
@@ -357,8 +353,10 @@ export default function LocaPage() {
             </div>
           </td>
           <td style={cell}>
-            <div style={{ ...inner, justifyContent: 'center', fontSize: 12, fontWeight: 800, color: '#0f172a', padding: '0 4px', textAlign: 'center', wordBreak: 'break-all' }}>
-              {locaDisplay}
+            <div style={{ ...inner, flexDirection: 'column', justifyContent: 'center', alignItems: 'center', padding: '2px 4px', gap: 1 }}>
+              {locaLines.map((l, i) => (
+                <span key={i} style={{ fontSize: 12, fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap', lineHeight: '18px' }}>{l}</span>
+              ))}
             </div>
           </td>
           <td style={cell}><div style={{ ...inner, padding: '0 6px', fontSize: 12 }}>{abbr}</div></td>
