@@ -17,6 +17,7 @@ interface ProductOption {
   korean_name?: string
   image?: string
   barcode?: string
+  loca?: string          // 옵션별 LOCA (비어 있으면 상품 LOCA 사용)
   ordered?: number
   received?: number
   sold?: number
@@ -199,34 +200,71 @@ export default function LocaPage() {
     return filtered.filter(p => normalizeLoca(p.loca ?? '').includes(q))
   }, [filtered, locaSearch])
 
-  /* ── 로케이션별 상품코드 맵 (정규화 키, 전체 상품 기준) ── */
+  /* ── 상품의 유효 LOCA 목록 (옵션별 loca 우선, 없으면 상품 loca) ── */
+  const getEffectiveLocas = useCallback((p: Product): string[] => {
+    const opts = p.options ?? []
+    if (opts.length === 0) return [normalizeLoca(p.loca ?? '')].filter(Boolean)
+    return opts.map(o => normalizeLoca(o.loca || p.loca || ''))
+  }, [])
+
+  /* ── 로케이션별 표시 레이블 맵 (정규화 키, 전체 상품 기준) ── */
   const locaMap = useMemo(() => {
     const map: Record<string, string[]> = {}
     for (const p of products) {
-      const key = normalizeLoca(p.loca ?? '')
-      if (!key) continue
-      if (!map[key]) map[key] = []
-      map[key].push(p.code)
+      const opts = p.options ?? []
+      const effLocas = getEffectiveLocas(p)
+      const uniqueLocas = new Set(effLocas.filter(Boolean))
+
+      if (uniqueLocas.size <= 1) {
+        // 모든 옵션 LOCA 동일 → 상품코드만 표시
+        const key = effLocas.find(Boolean)
+        if (key) { if (!map[key]) map[key] = []; map[key].push(p.code) }
+      } else {
+        // 옵션별 다른 LOCA → "상품코드 옵션명" 형태
+        for (let i = 0; i < opts.length; i++) {
+          const key = effLocas[i]
+          if (!key) continue
+          if (!map[key]) map[key] = []
+          const label = opts[i].name ? `${p.code} ${opts[i].name}` : p.code
+          map[key].push(label)
+        }
+      }
     }
     return map
-  }, [products])
+  }, [products, getEffectiveLocas])
 
-  /* ── BOX 상품 (loca 정규화값이 BOX 또는 BOX-로 시작) ── */
-  const boxProducts = useMemo(() =>
-    products.filter(p => normalizeLoca(p.loca ?? '').match(/^BOX(-|$)/))
-  , [products])
+  /* ── BOX 상품 (옵션별 유효 LOCA 중 BOX 포함) ── */
+  const boxProducts = useMemo(() => {
+    const result: { code: string; loca: string; optName?: string }[] = []
+    for (const p of products) {
+      const opts = p.options ?? []
+      const effLocas = getEffectiveLocas(p)
+      const uniqueLocas = new Set(effLocas.filter(Boolean))
 
-  /* ── 미분류 상품 (BOX 포함 모든 인식 로케이션에서 제외된 경우) ── */
+      if (uniqueLocas.size <= 1) {
+        const loca = effLocas.find(Boolean) ?? ''
+        if (loca.match(/^BOX(-|$)/)) result.push({ code: p.code, loca })
+      } else {
+        for (let i = 0; i < opts.length; i++) {
+          if (effLocas[i]?.match(/^BOX(-|$)/))
+            result.push({ code: p.code, loca: effLocas[i], optName: opts[i].name || undefined })
+        }
+      }
+    }
+    return result
+  }, [products, getEffectiveLocas])
+
+  /* ── 미분류 상품 (옵션별 유효 LOCA 기준) ── */
   const unmatchedProducts = useMemo(() => {
     const allNorm = new Set([
       ...Array.from(ALL_PRESET_LOCA_SET),
       ...customLocas.map(normalizeLoca),
     ])
     return products.filter(p => {
-      const n = normalizeLoca(p.loca ?? '')
-      return n && !allNorm.has(n) && !n.match(/^BOX(-|$)/)
+      const effLocas = getEffectiveLocas(p)
+      return effLocas.some(n => n && !allNorm.has(n) && !n.match(/^BOX(-|$)/))
     })
-  }, [products, customLocas])
+  }, [products, customLocas, getEffectiveLocas])
 
   const printTitle = selectedCat ? `${selectedCat}_LOCA` : 'LOCA'
 
@@ -283,16 +321,25 @@ export default function LocaPage() {
   const toggleZone = (key: string) =>
     setExpanded(prev => ({ ...prev, [key]: !prev[key] }))
 
+  /* ── 상품 LOCA 표시 문자열 (옵션별 다른 경우 모두 표시) ── */
+  const getLocaDisplay = useCallback((p: Product): string => {
+    const effLocas = getEffectiveLocas(p).filter(Boolean)
+    const unique = [...new Set(effLocas)]
+    return unique.length > 0 ? unique.join(' / ') : (p.loca || '')
+  }, [getEffectiveLocas])
+
   /* ── 왼쪽: 테이블 행 렌더 ── */
   const ROW_H = 54
   const renderRows = (list: Product[]) =>
     list.map(p => {
-      const opts     = p.options ?? []
-      const firstImg = opts[0]?.image ?? ''
-      const optNames = opts.map(o => o.name || o.korean_name || '').filter(Boolean)
-      const pairs    = chunk(optNames, 2)
-      const abbr     = koreanOnly(p.abbr || '')
-      const isDel    = p.status === 'pending_delete'
+      const opts       = p.options ?? []
+      const firstImg   = opts[0]?.image ?? ''
+      const optNames   = opts.map(o => o.name || o.korean_name || '').filter(Boolean)
+      const pairs      = chunk(optNames, 2)
+      const abbr       = koreanOnly(p.abbr || '')
+      const isDel      = p.status === 'pending_delete'
+      const locaDisplay = getLocaDisplay(p)
+      const hasMulti   = (new Set(getEffectiveLocas(p).filter(Boolean))).size > 1
       const cell: React.CSSProperties = { border: '1px solid #e2e8f0', padding: 0, height: ROW_H }
       const inner: React.CSSProperties = { height: ROW_H, overflow: 'hidden', display: 'flex', alignItems: 'center' }
       return (
@@ -310,7 +357,16 @@ export default function LocaPage() {
               {pairs.map((pair, i) => <div key={i} style={{ fontSize: 12, lineHeight: '1.6', whiteSpace: 'nowrap' }}>{pair.join(', ')}</div>)}
             </div>
           </td>
-          <td style={cell}><div style={{ ...inner, justifyContent: 'center', fontSize: 12, fontWeight: 800 }}>{p.loca}</div></td>
+          <td style={cell}>
+            <div style={{ ...inner, flexDirection: 'column', justifyContent: 'center', padding: '0 4px', gap: 1 }}>
+              {hasMulti
+                ? getEffectiveLocas(p).filter(Boolean).map((loca, i) => (
+                    <div key={i} style={{ fontSize: 10, fontWeight: 700, color: '#1d4ed8', background: '#eff6ff', borderRadius: 3, padding: '1px 4px', whiteSpace: 'nowrap' }}>{loca}</div>
+                  ))
+                : <span style={{ fontSize: 12, fontWeight: 800, color: '#0f172a' }}>{locaDisplay}</span>
+              }
+            </div>
+          </td>
           <td style={cell}><div style={{ ...inner, padding: '0 6px', fontSize: 12 }}>{abbr}</div></td>
           <td style={cell}><div style={{ ...inner, padding: '0 6px', fontSize: 12, whiteSpace: 'nowrap' }}>{p.name}</div></td>
         </tr>
@@ -633,13 +689,15 @@ export default function LocaPage() {
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
-                      {boxProducts.map(p => (
-                        <div key={p.id} style={{
+                      {boxProducts.map((item, idx) => (
+                        <div key={idx} style={{
                           background: '#ede9fe', border: '1px solid #c4b5fd', borderRadius: 6,
                           padding: '4px 8px', display: 'flex', flexDirection: 'column', gap: 1,
                         }}>
-                          <span style={{ fontSize: 9.5, fontWeight: 800, color: '#5b21b6' }}>{p.code}</span>
-                          <span style={{ fontSize: 8, color: '#7c3aed', fontWeight: 600 }}>{p.loca}</span>
+                          <span style={{ fontSize: 9.5, fontWeight: 800, color: '#5b21b6' }}>
+                            {item.code}{item.optName ? ` ${item.optName}` : ''}
+                          </span>
+                          <span style={{ fontSize: 8, color: '#7c3aed', fontWeight: 600 }}>{item.loca}</span>
                         </div>
                       ))}
                     </div>

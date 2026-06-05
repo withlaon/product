@@ -37,6 +37,7 @@ interface ProductOption {
   korean_name: string    // 한글 색상명 (자동입력)
   chinese_name: string   // 중국명
   barcode: string
+  loca?: string          // 옵션별 LOCA (비어 있으면 상품 LOCA 사용)
   image: string
   ordered: number
   received: number
@@ -655,7 +656,7 @@ function MallMappingModal({
 const genBarcode = (code: string, opt: string) =>
   code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
 
-const INIT_OPT  = { name:'', size:'FREE', korean_name:'', chinese_name:'', barcode:'', image:'' }
+const INIT_OPT  = { name:'', size:'FREE', korean_name:'', chinese_name:'', barcode:'', loca:'', image:'' }
 const INIT_MALL_CAT = { channel:'', category:'', category_code:'' }
 const PRICE_CHANNELS = ['쿠팡', '네이버 스마트스토어', '11번가', '마켓플러스', '토스쇼핑', 'G마켓', '지에스샵', '올웨이즈']
 
@@ -1023,7 +1024,7 @@ export default function ProductsPage() {
   }
 
   // 수정 폼 상태
-  type EditOptRow = { name:string; size:string; korean_name:string; chinese_name:string; barcode:string; image:string; ordered:number; received:number; sold:number; current_stock?:number; defective?:number }
+  type EditOptRow = { name:string; size:string; korean_name:string; chinese_name:string; barcode:string; loca?:string; image:string; ordered:number; received:number; sold:number; current_stock?:number; defective?:number }
   type EditFormState = {
     code:string; name:string; abbr:string; category:string; newCat:string; supplier:string; loca:string
     cost_price:string; cost_currency:CostCurrency; status:ProductStatus; options:EditOptRow[]
@@ -1394,7 +1395,7 @@ export default function ProductsPage() {
       name: o.name, size: o.size ?? 'FREE',
       korean_name: o.korean_name || getKoreanColor(o.name),
       chinese_name: o.chinese_name || '',
-      barcode: o.barcode, image: imgOverride?.[i] || (o.image ?? ''),
+      barcode: o.barcode, loca: o.loca || '', image: imgOverride?.[i] || (o.image ?? ''),
       ordered: o.ordered, received: o.received, sold: o.sold,
       current_stock: o.current_stock, defective: o.defective,
     }))
@@ -1448,6 +1449,7 @@ export default function ProductsPage() {
         korean_name: o.korean_name || getKoreanColor(o.name),
         chinese_name: o.chinese_name,
         barcode: o.barcode || genBarcode(editForm.code, o.name),
+        loca: o.loca || '',
         image: o.image,
         ordered: Number(o.ordered) || 0,
         received: Number(o.received) || 0,
@@ -1638,6 +1640,7 @@ export default function ProductsPage() {
         korean_name: o.korean_name || getKoreanColor(o.name),
         chinese_name: o.chinese_name,
         barcode: o.barcode || genBarcode(form.code, o.name),
+        loca: (o as typeof o & { loca?: string }).loca || '',
         image: o.image,
         ordered: 0, received: 0, sold: 0,
       }))
@@ -3051,8 +3054,8 @@ export default function ProductsPage() {
             <p style={{ fontSize:12, fontWeight:800, color:'#2563eb', paddingBottom:6, borderBottom:'1px solid #eff6ff', marginBottom:10 }}>🏷️ 옵션</p>
             {form.options.map((opt, i) => (
               <div key={i} style={{ border:'1px solid rgba(15,23,42,0.07)', borderRadius:12, padding:12, marginBottom:10, background:'#fafbfc' }}>
-                {/* Row 1: 이미지 + 이름/중국명 + 바코드(자동) + 삭제 */}
-                <div style={{ display:'grid', gridTemplateColumns:'52px 2fr 1.5fr auto', gap:8, marginBottom:8, alignItems:'flex-end' }}>
+                {/* Row 1: 이미지 + 이름/중국명 + 바코드(자동) + LOCA + 삭제 */}
+                <div style={{ display:'grid', gridTemplateColumns:'52px 2fr 1.5fr 110px auto', gap:8, marginBottom:8, alignItems:'flex-end' }}>
                   {/* 이미지 업로드 */}
                   <div>
                     <Label>이미지</Label>
@@ -3076,7 +3079,6 @@ export default function ProductsPage() {
                           const val = e.target.value
                           const auto = getKoreanColor(val)
                           const o=[...form.options]
-                          // 바코드가 이전 자동생성값과 같으면 새 코드로 재생성, 아니면 수동수정 유지
                           const prevAuto = genBarcode(form.code, o[i].name)
                           const keepBarcode = o[i].barcode && o[i].barcode !== prevAuto
                           o[i]={...o[i], name:val, korean_name: auto || o[i].korean_name, barcode: keepBarcode ? o[i].barcode : genBarcode(form.code,val)}
@@ -3116,6 +3118,15 @@ export default function ProductsPage() {
                       placeholder={genBarcode(form.code, opt.name)}
                       style={{ fontFamily:'monospace', fontSize:12 }}
                       onChange={e => { const o=[...form.options];o[i]={...o[i],barcode:e.target.value};setForm(f=>({...f,options:o}))}}
+                    />
+                  </div>
+                  <div>
+                    <Label>LOCA</Label>
+                    <Input
+                      value={(opt as typeof opt & { loca?: string }).loca || ''}
+                      placeholder={form.loca || 'AA-01'}
+                      style={{ background: (opt as typeof opt & { loca?: string }).loca ? '#f0f9ff' : '#fafbfc', fontWeight: 700 }}
+                      onChange={e => { const o=[...form.options];(o[i] as typeof o[0] & { loca?: string }).loca=e.target.value.toUpperCase();setForm(f=>({...f,options:o}))}}
                     />
                   </div>
                   <div style={{ paddingBottom:1 }}>
@@ -3351,7 +3362,7 @@ export default function ProductsPage() {
               </p>
               {editForm.options.map((opt, i) => (
                 <div key={i} style={{ border:'1px solid rgba(15,23,42,0.07)', borderRadius:12, padding:12, marginBottom:10, background:'#fafbfc' }}>
-                  <div style={{ display:'grid', gridTemplateColumns:'52px 2fr 1.5fr auto', gap:8, alignItems:'flex-end' }}>
+                  <div style={{ display:'grid', gridTemplateColumns:'52px 2fr 1.5fr 110px auto', gap:8, alignItems:'flex-end' }}>
                     {/* 이미지 */}
                     <div>
                       <Label>이미지</Label>
@@ -3430,6 +3441,16 @@ export default function ProductsPage() {
                         placeholder={genBarcode(editForm.code, opt.name)}
                         style={{ fontFamily:'monospace', fontSize:12 }}
                         onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, barcode:e.target.value} : o) }) : f)}
+                      />
+                    </div>
+                    {/* 옵션별 LOCA */}
+                    <div>
+                      <Label>LOCA</Label>
+                      <Input
+                        value={opt.loca || ''}
+                        placeholder={editForm.loca || 'AA-01'}
+                        style={{ background: opt.loca ? '#f0f9ff' : '#fafbfc', fontWeight: 700 }}
+                        onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, loca:e.target.value.toUpperCase()} : o) }) : f)}
                       />
                     </div>
                     {/* 삭제 */}
