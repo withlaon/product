@@ -5,13 +5,16 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 export const DEFAULT_EXCHANGE_RATE = 210
 /** 원가 → 발주금액 환산: 외화기준 단가 × 환율 × 관부가세(1.18) × 마진(1.25) */
 export const PRICE_FACTOR = 1.18 * 1.25  // = 1.475
-/** 단가 → 발주금액 단가
- *  - 원화(원/KRW): 그대로 (관부가세·마진 미적용)
- *  - 외화(CNY 등): 환율 환산 후 PRICE_FACTOR 적용
+/** 단가 → 매입 원가
+ *  - 원화(원/KRW): 원가 + 500원
+ *  - 위안(CNY/위안): 원가 × 210 × 1.18 × 1.25 (고정환율)
+ *  - 기타 외화: 환율 환산 후 PRICE_FACTOR 적용
  */
 export function unitToOrderKrw(costPrice: number, currency: string, exchangeRate: number): number {
   const isKrw = currency === '원' || currency === 'KRW'
-  if (isKrw) return costPrice
+  if (isKrw) return costPrice + 500
+  const isCny = currency === '위안' || currency === 'CNY'
+  if (isCny) return costPrice * 210 * PRICE_FACTOR
   return costPrice * exchangeRate * PRICE_FACTOR
 }
 

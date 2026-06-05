@@ -1128,7 +1128,7 @@ export default function DashboardPage() {
     const logisticsCost = logisticsFees
       .filter(f => f.date?.slice(0, 7) === selMonth)
       .reduce((s, f) => s + (f.amount || 0), 0)
-    return uniq.size * 2800 + logisticsCost
+    return uniq.size * 2400 + logisticsCost
   }, [shipped, selMonth, logisticsFees])
 
   /* ── 당월 순이익 ── */
