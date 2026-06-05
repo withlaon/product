@@ -3124,7 +3124,7 @@ export default function ProductsPage() {
                     <Label>LOCA</Label>
                     <Input
                       value={(opt as typeof opt & { loca?: string }).loca || ''}
-                      placeholder={form.loca || 'AA-01'}
+                      placeholder=""
                       style={{ background: (opt as typeof opt & { loca?: string }).loca ? '#f0f9ff' : '#fafbfc', fontWeight: 700 }}
                       onChange={e => { const o=[...form.options];(o[i] as typeof o[0] & { loca?: string }).loca=e.target.value.toUpperCase();setForm(f=>({...f,options:o}))}}
                     />
