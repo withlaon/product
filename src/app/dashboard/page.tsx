@@ -1095,7 +1095,7 @@ export default function DashboardPage() {
     return keys.map(ym => ({ ym, amount: byMonth[ym] ?? 0 }))
   }, [allOrdersMerged, shippedById, curYM, retention])
 
-  /* ── 선택 월 매입액: 입고관리 입고 수량 기준 + 물류비 ── */
+  /* ── 선택 월 매입액: 입고관리 입고 수량 기준 ── */
   const monthPurchaseCost = useMemo(() => {
     let exchangeRate = DEFAULT_EXCHANGE_RATE
     try {
@@ -1115,22 +1115,21 @@ export default function DashboardPage() {
         const unitKrw = unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate)
         return is + unitKrw * item.received
       }, 0), 0)
-    // 물류비
-    const logisticsCost = logisticsFees
-      .filter(f => f.date?.slice(0, 7) === selMonth)
-      .reduce((s, f) => s + (f.amount || 0), 0)
-    return receivedCost + logisticsCost + (retention.purchaseByMonth[selMonth] ?? 0)
-  }, [purchases, products, selMonth, logisticsFees, lastUpdate, retention])
+    return receivedCost + (retention.purchaseByMonth[selMonth] ?? 0)
+  }, [purchases, products, selMonth, lastUpdate, retention])
 
-  /* ── 당월 택배비 (고유 운송장번호 × 2800원) ── */
+  /* ── 당월 택배비/물류비 (고유 운송장번호 × 2800원 + 등록된 물류비) ── */
   const monthShippingFee = useMemo(() => {
     const uniq = new Set(
       shipped
         .filter(o => (o.shipped_at ?? o.order_date)?.slice(0,7) === selMonth && o.tracking_number)
         .map(o => o.tracking_number!)
     )
-    return uniq.size * 2800
-  }, [shipped, selMonth])
+    const logisticsCost = logisticsFees
+      .filter(f => f.date?.slice(0, 7) === selMonth)
+      .reduce((s, f) => s + (f.amount || 0), 0)
+    return uniq.size * 2800 + logisticsCost
+  }, [shipped, selMonth, logisticsFees])
 
   /* ── 당월 순이익 ── */
   const monthProfit = useMemo(
@@ -1171,7 +1170,7 @@ export default function DashboardPage() {
         {[
           { label:'매출액', value:monthRevSel,       color:'#7c3aed', bg:'#f5f3ff', border:'#e9d5ff' },
           { label:'매입액', value:monthPurchaseCost, color:'#2563eb', bg:'#eff6ff', border:'#bfdbfe' },
-          { label:'택배비', value:monthShippingFee,  color:'#059669', bg:'#f0fdf4', border:'#bbf7d0' },
+          { label:'택배비/물류비', value:monthShippingFee,  color:'#059669', bg:'#f0fdf4', border:'#bbf7d0' },
           { label:'순이익', value:monthProfit, color: monthProfit >= 0 ? '#059669' : '#dc2626', bg: monthProfit >= 0 ? '#f0fdf4' : '#fff1f2', border: monthProfit >= 0 ? '#bbf7d0' : '#fecdd3' },
         ].map(b => (
           <div key={b.label} className="pm-card" style={{ padding:'11px 14px', background:b.bg, border:`1px solid ${b.border}` }}>
