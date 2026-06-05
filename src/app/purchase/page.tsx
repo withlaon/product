@@ -623,7 +623,7 @@ export default function PurchaseMainPage() {
           {/* KPI 카드 */}
           <div className="pm-card" style={{ padding:'10px 14px', flexShrink:0 }}>
             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:10 }}>
-              <span style={{ fontSize: '14px', fontWeight:900, color:'#0f172a' }}>📦 발주 목록</span>
+              <span style={{ fontSize: '14px', fontWeight:900, color:'#0f172a' }}>📦 발주/입고 목록</span>
               <span style={{ fontSize: '11px', color:'#94a3b8' }}>전체 {poList.length}건</span>
             </div>
             <MonthNav month={poMonth} setMonth={v => { setPoMonth(v); setExpandedPoId(null) }}/>
