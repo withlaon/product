@@ -949,6 +949,7 @@ export default function ProductsPage() {
   const [catEditInput, setCatEditInput]   = useState('')
   const [catDeleteTarget, setCatDeleteTarget] = useState<string | null>(null)
   const [deletedCats, setDeletedCats]     = useState<string[]>([])
+  const [catDragOver, setCatDragOver]     = useState<string | null>(null)
 
   const [form, setForm] = useState(INIT_FORM)
   const [addErrors, setAddErrors] = useState<Set<string>>(new Set())
@@ -1329,6 +1330,51 @@ export default function ProductsPage() {
     })()
     return () => { cancelled = true }
   }, [products])
+
+  /* ── "의류" → "의류-상의" 1회 DB 마이그레이션 ── */
+  useEffect(() => {
+    const MIGRATED_KEY = 'pm_cat_migrated_cloth_v1'
+    if (typeof window === 'undefined') return
+    if (localStorage.getItem(MIGRATED_KEY)) return
+    const hasOld = products.some(p => p.category === '의류')
+    if (!hasOld) { localStorage.setItem(MIGRATED_KEY, '1'); return }
+    setProducts(prev => prev.map(p => p.category === '의류' ? { ...p, category: '의류-상의' } : p))
+    pmPatchByCategory('의류', '의류-상의')
+    setExtraCats(prev => {
+      const updated = migrateCats(prev)
+      saveCats(updated)
+      return updated
+    })
+    localStorage.setItem(MIGRATED_KEY, '1')
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products.length])
+
+  /* ── 카테고리 드래그 순서 변경 ── */
+  const handleCatDragStart = (e: React.DragEvent, cat: string) => {
+    e.dataTransfer.setData('text/plain', cat)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+  const handleCatDragOver = (e: React.DragEvent, cat: string) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+    setCatDragOver(cat)
+  }
+  const handleCatDrop = (e: React.DragEvent, targetCat: string) => {
+    e.preventDefault()
+    const srcCat = e.dataTransfer.getData('text/plain')
+    if (!srcCat || srcCat === targetCat) { setCatDragOver(null); return }
+    setExtraCats(prev => {
+      const arr = [...prev]
+      const fromIdx = arr.indexOf(srcCat)
+      const toIdx   = arr.indexOf(targetCat)
+      if (fromIdx === -1 || toIdx === -1) return prev
+      arr.splice(fromIdx, 1)
+      arr.splice(toIdx, 0, srcCat)
+      saveCats(arr)
+      return arr
+    })
+    setCatDragOver(null)
+  }
 
   /* ── 카테고리 추가 ── */
   const handleCatAdd = () => {
@@ -2306,7 +2352,16 @@ export default function ProductsPage() {
       <div className="pm-card overflow-hidden">
         <div style={{ display:'flex', alignItems:'center', borderBottom:'1px solid rgba(15,23,42,0.07)', padding:'0 4px', gap:2, overflowX:'auto' }} className="scrollbar-hide">
           {allCats.map(cat => (
-            <div key={cat} style={{ flexShrink:0, position:'relative', display:'flex', alignItems:'center' }}>
+            <div key={cat}
+              style={{ flexShrink:0, position:'relative', display:'flex', alignItems:'center',
+                outline: catDragOver === cat && cat !== '전체' ? '2px dashed #3b82f6' : 'none',
+                borderRadius: 6, transition: 'outline 100ms' }}
+              draggable={cat !== '전체'}
+              onDragStart={cat !== '전체' ? e => handleCatDragStart(e, cat) : undefined}
+              onDragOver={cat !== '전체' ? e => handleCatDragOver(e, cat) : undefined}
+              onDragLeave={() => setCatDragOver(null)}
+              onDrop={cat !== '전체' ? e => handleCatDrop(e, cat) : undefined}
+            >
               {/* 이름 변경 인라인 입력 */}
               {catEditTarget === cat ? (
                 <div style={{ display:'flex', alignItems:'center', gap:4, padding:'6px 8px' }}>
