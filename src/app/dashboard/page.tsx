@@ -540,7 +540,7 @@ function MonthlySales3YChart({ data }: { data: MonthlyAmtPoint[] }) {
 function CalendarPanel() {
   const [calMonth, setCalMonth] = useState(getCurYM())
   const [schedules, setSchedules] = useState<ScheduleItem[]>([])
-  const [selDay, setSelDay] = useState<number | null>(null)
+  const [selDay, setSelDay] = useState<number | null>(() => Number(getToday().slice(8)))
   const [newText, setNewText] = useState('')
   const [colorIdx, setColorIdx] = useState(0)
   const [rangeMode, setRangeMode] = useState(false)

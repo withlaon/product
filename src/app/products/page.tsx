@@ -130,7 +130,7 @@ function saveSpecialNotes(data: Record<string, SpecialNote>) {
 
 const CNY_TO_KRW = 210
 const DEFAULT_CATS = ['전체'] // '전체' 탭은 항상 고정, 나머지는 extraCats로 관리
-const INIT_EXTRA_CATS = ['가방', '의류', '잡화'] // 앱 최초 실행 시 기본 카테고리
+const INIT_EXTRA_CATS = ['가방', '의류-상의', '의류-하의', '잡화'] // 앱 최초 실행 시 기본 카테고리
 const CATS_STORAGE_KEY = 'pm_categories_v1'
 
 // 캐시 상수를 컴포넌트 바깥에 두어 useState 초기화 함수에서도 참조 가능
@@ -208,6 +208,16 @@ function loadSavedCats(): string[] | null {
 }
 function saveCats(cats: string[]) {
   try { localStorage.setItem(CATS_STORAGE_KEY, JSON.stringify(cats)) } catch {}
+}
+/** "의류" 카테고리를 "의류-상의", "의류-하의"로 마이그레이션 */
+function migrateCats(cats: string[]): string[] {
+  if (!cats.includes('의류')) return cats
+  const result: string[] = []
+  for (const c of cats) {
+    if (c === '의류') { result.push('의류-상의', '의류-하의') }
+    else result.push(c)
+  }
+  return [...new Set(result)]
 }
 
 /* ─── 옵션 영문 코드 → 한글 색상명 매핑표 ─────────────────────── */
@@ -1099,7 +1109,7 @@ export default function ProductsPage() {
         const dbCats = loaded.map((p: Product) => p.category).filter((c: string) => c && c !== '전체')
         setExtraCats(prev => {
           const base = saved && saved.length > 0 ? saved : INIT_EXTRA_CATS
-          const merged = [...new Set([...base, ...dbCats])]
+          const merged = migrateCats([...new Set([...base, ...dbCats])])
           saveCats(merged); return merged
         })
       } else {
