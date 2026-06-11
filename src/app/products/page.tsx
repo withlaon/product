@@ -664,8 +664,13 @@ function MallMappingModal({
 }
 
 /* ─── 폼 초기값 ─────────────────────────────────────────────── */
-const genBarcode = (code: string, opt: string) =>
-  code && opt ? `${code.trim()} ${opt.trim().toUpperCase()}FFF` : ''
+const genBarcode = (code: string, opt: string, size?: string) => {
+  if (!code || !opt) return ''
+  const sizeCode = (!size || size.trim().toUpperCase() === 'FREE' || size.trim() === '')
+    ? 'FFF'
+    : size.trim().toUpperCase()
+  return `${code.trim()} ${opt.trim().toUpperCase()}${sizeCode}`
+}
 
 const INIT_OPT  = { name:'', size:'FREE', korean_name:'', chinese_name:'', barcode:'', loca:'', image:'' }
 const INIT_MALL_CAT = { channel:'', category:'', category_code:'' }
@@ -3147,43 +3152,50 @@ export default function ProductsPage() {
                           const val = e.target.value
                           const auto = getKoreanColor(val)
                           const o=[...form.options]
-                          const prevAuto = genBarcode(form.code, o[i].name)
+                          const prevAuto = genBarcode(form.code, o[i].name, o[i].size)
                           const keepBarcode = o[i].barcode && o[i].barcode !== prevAuto
-                          o[i]={...o[i], name:val, korean_name: auto || o[i].korean_name, barcode: keepBarcode ? o[i].barcode : genBarcode(form.code,val)}
+                          o[i]={...o[i], name:val, korean_name: auto || o[i].korean_name, barcode: keepBarcode ? o[i].barcode : genBarcode(form.code, val, o[i].size)}
                           setForm(f=>({...f,options:o}))
                         }}
                       />
                     </div>
-                    <div>
-                      <Label>사이즈</Label>
-                      <Input placeholder="FREE" value={opt.size ?? 'FREE'}
-                        style={{ background: (opt.size && opt.size !== 'FREE') ? '#fef9c3' : '#fafbfc' }}
-                        onChange={e => { const o=[...form.options];o[i]={...o[i],size:e.target.value};setForm(f=>({...f,options:o}))}}
-                      />
+                      <div>
+                        <Label>사이즈</Label>
+                        <Input placeholder="FREE" value={opt.size ?? 'FREE'}
+                          style={{ background: (opt.size && opt.size !== 'FREE') ? '#fef9c3' : '#fafbfc' }}
+                          onChange={e => {
+                            const val = e.target.value
+                            const o = [...form.options]
+                            const prevAuto = genBarcode(form.code, o[i].name, o[i].size)
+                            const keepBarcode = o[i].barcode && o[i].barcode !== prevAuto
+                            o[i] = { ...o[i], size: val, barcode: keepBarcode ? o[i].barcode : genBarcode(form.code, o[i].name, val) }
+                            setForm(f => ({ ...f, options: o }))
+                          }}
+                        />
+                      </div>
+                      <div>
+                        <Label>한글명 (자동입력)</Label>
+                        <Input placeholder="베이지" value={opt.korean_name}
+                          style={{ background: opt.korean_name ? '#f0fdf4' : '#fafbfc' }}
+                          onChange={e => { const o=[...form.options];o[i]={...o[i],korean_name:e.target.value};setForm(f=>({...f,options:o}))}}
+                        />
+                      </div>
+                      <div>
+                        <Label>중국명</Label>
+                        <Input placeholder="黑色/M" value={opt.chinese_name}
+                          onChange={e => {
+                            const o=[...form.options];o[i]={...o[i],chinese_name:e.target.value}
+                            setForm(f=>({...f,options:o}))
+                          }}
+                        />
+                      </div>
                     </div>
                     <div>
-                      <Label>한글명 (자동입력)</Label>
-                      <Input placeholder="베이지" value={opt.korean_name}
-                        style={{ background: opt.korean_name ? '#f0fdf4' : '#fafbfc' }}
-                        onChange={e => { const o=[...form.options];o[i]={...o[i],korean_name:e.target.value};setForm(f=>({...f,options:o}))}}
-                      />
-                    </div>
-                    <div>
-                      <Label>중국명</Label>
-                      <Input placeholder="黑色/M" value={opt.chinese_name}
-                        onChange={e => {
-                          const o=[...form.options];o[i]={...o[i],chinese_name:e.target.value}
-                          setForm(f=>({...f,options:o}))
-                        }}
-                      />
-                    </div>
-                  </div>
-                  <div>
                     <Label>바코드 (자동생성, 직접 수정 가능)</Label>
                     <Input
                       data-pm-barcode="1"
-                      value={opt.barcode || genBarcode(form.code, opt.name)}
-                      placeholder={genBarcode(form.code, opt.name)}
+                      value={opt.barcode || genBarcode(form.code, opt.name, opt.size)}
+                      placeholder={genBarcode(form.code, opt.name, opt.size)}
                       style={{ fontFamily:'monospace', fontSize:12 }}
                       onChange={e => { const o=[...form.options];o[i]={...o[i],barcode:e.target.value};setForm(f=>({...f,options:o}))}}
                     />
@@ -3471,9 +3483,9 @@ export default function ProductsPage() {
                               if (!f) return f
                               return { ...f, options: f.options.map((o, j) => {
                                 if (j !== i) return o
-                                const prevAuto = genBarcode(f.code, o.name)
+                                const prevAuto = genBarcode(f.code, o.name, o.size)
                                 const keepBarcode = o.barcode && o.barcode !== prevAuto
-                                return { ...o, name: nm, korean_name: auto || o.korean_name, barcode: keepBarcode ? o.barcode : genBarcode(f.code, nm) }
+                                return { ...o, name: nm, korean_name: auto || o.korean_name, barcode: keepBarcode ? o.barcode : genBarcode(f.code, nm, o.size) }
                               }) }
                             })
                           }}
@@ -3483,7 +3495,18 @@ export default function ProductsPage() {
                         <Label>사이즈</Label>
                         <Input placeholder="FREE" value={opt.size ?? 'FREE'}
                           style={{ background: (opt.size && opt.size !== 'FREE') ? '#fef9c3' : '#fafbfc' }}
-                          onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, size:e.target.value} : o) }) : f)}
+                          onChange={e => {
+                            const val = e.target.value
+                            setEditForm(f => {
+                              if (!f) return f
+                              return { ...f, options: f.options.map((o, j) => {
+                                if (j !== i) return o
+                                const prevAuto = genBarcode(f.code, o.name, o.size)
+                                const keepBarcode = o.barcode && o.barcode !== prevAuto
+                                return { ...o, size: val, barcode: keepBarcode ? o.barcode : genBarcode(f.code, o.name, val) }
+                              }) }
+                            })
+                          }}
                         />
                       </div>
                       <div>
@@ -3505,8 +3528,8 @@ export default function ProductsPage() {
                       <Label>바코드 (자동생성, 직접 수정 가능)</Label>
                       <Input
                         data-pm-barcode="1"
-                        value={opt.barcode || genBarcode(editForm.code, opt.name)}
-                        placeholder={genBarcode(editForm.code, opt.name)}
+                        value={opt.barcode || genBarcode(editForm.code, opt.name, opt.size)}
+                        placeholder={genBarcode(editForm.code, opt.name, opt.size)}
                         style={{ fontFamily:'monospace', fontSize:12 }}
                         onChange={e => setEditForm(f => f ? ({ ...f, options: f.options.map((o, j) => j===i ? {...o, barcode:e.target.value} : o) }) : f)}
                       />
