@@ -21,6 +21,7 @@ const DOWNLOAD_MALLS = [
   { id: 'gsshop',       label: '지에스샵',   color: '#059669', bg: '#ecfdf5' },
   { id: 'always',       label: '올웨이즈',   color: '#d97706', bg: '#fffbeb' },
   { id: 'jasondeal',    label: '제이슨딜',   color: '#0284c7', bg: '#f0f9ff' },
+  { id: 'ohouse',       label: '오늘의집',   color: '#059669', bg: '#f0fdf4' },
   { id: 'direct',       label: '직접등록',   color: '#7c3aed', bg: '#f5f3ff' },
 ] as const
 

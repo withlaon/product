@@ -187,7 +187,7 @@ export function dashboardOrderAmount(o: Order | ShippedOrder): number {
 
   const ch = normalizeMallForNetRev(o.channel)
   if (ch === '에이블리' || ch === '스마트스토어' || ch === '토스쇼핑' || ch === '카페24') return list * 0.9
-  if (ch === '옥션' || ch === 'G마켓' || ch === '쿠팡' || ch === '11번가' || ch === '롯데ON' || ch === '롯데온') return list * 0.87
+  if (ch === '옥션' || ch === 'G마켓' || ch === '쿠팡' || ch === '11번가' || ch === '롯데ON' || ch === '롯데온' || ch === '오늘의집') return list * 0.87
   if (ch === 'SSG종합몰' || ch === 'SSG' || ch === '지에스샵' || ch === '패션플러스' || ch === '하프클럽') return list * 0.75
   return base
 }

@@ -300,6 +300,7 @@ const MALL_COLORS: Record<string, { color: string; bg: string }> = {
   '카페24':     { color: '#7c3aed', bg: '#f5f3ff' },
   '쿠팡':       { color: '#f97316', bg: '#fff7ed' },
   '옥션':       { color: '#0284c7', bg: '#f0f9ff' },
+  '오늘의집':   { color: '#059669', bg: '#f0fdf4' },
 }
 function mallStyle(channel: string) {
   return MALL_COLORS[channel] ?? { color: '#64748b', bg: '#f8fafc' }
