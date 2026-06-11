@@ -664,11 +664,12 @@ function MallMappingModal({
 }
 
 /* ─── 폼 초기값 ─────────────────────────────────────────────── */
-const genBarcode = (code: string, opt: string, size?: string) => {
+const genBarcode = (code: string, opt: string, size?: string | number) => {
   if (!code || !opt) return ''
-  const sizeCode = (!size || size.trim().toUpperCase() === 'FREE' || size.trim() === '')
+  const sizeStr = size != null ? String(size).trim() : ''
+  const sizeCode = (!sizeStr || sizeStr.toUpperCase() === 'FREE')
     ? 'FFF'
-    : size.trim().toUpperCase()
+    : sizeStr.toUpperCase()
   return `${code.trim()} ${opt.trim().toUpperCase()}${sizeCode}`
 }
 
@@ -768,7 +769,7 @@ function rowToProduct(row: any): Product {
     supplier: row.supplier ?? '',
     options: ((row.options ?? []) as ProductOption[]).map(o => ({
       ...o,
-      size: o.size ?? 'FREE',
+      size: o.size != null ? String(o.size) : 'FREE',
       korean_name: o.korean_name || getKoreanColor(o.name),
     })),
     channel_prices: (row.channel_prices ?? []) as ChannelPrice[],
