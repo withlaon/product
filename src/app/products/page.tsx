@@ -342,7 +342,8 @@ function loadConnectedChannels(): { name: string; bg: string; color: string }[] 
     'SSG종합몰': { bg:'#fff7ed', color:'#c2410c' },
     'SSG':     { bg:'#fff7ed', color:'#c2410c' },
     'SSG닷컴': { bg:'#fff7ed', color:'#c2410c' },
-    'SSG.COM': { bg:'#fff7ed', color:'#c2410c' },
+    'SSG.COM':  { bg:'#fff7ed', color:'#c2410c' },
+    '오늘의집': { bg:'#f0fdf4', color:'#059669' },
   }
   try {
     const raw = localStorage.getItem('pm_mall_channels_v5')
@@ -2807,6 +2808,7 @@ export default function ProductsPage() {
                             '지에스샵':'지에스',
                             '롯데ON':  '롯데',
                             'SSG종합몰':'SSG',
+                            '오늘의집':'오늘',
                           }
                           const abbr = abbrMap[mallName] ?? mallName.replace(/\s/g,'').slice(0,2)
                           const colors: Record<string,{bg:string;color:string}> = {
@@ -2821,6 +2823,7 @@ export default function ProductsPage() {
                             '지에스샵':{ bg:'#ecfdf5', color:'#059669' },
                             '롯데ON':  { bg:'#fef2f2', color:'#dc2626' },
                             'SSG종합몰': { bg:'#fff7ed', color:'#c2410c' },
+                            '오늘의집': { bg:'#f0fdf4', color:'#059669' },
                           }
                           const cs = colors[mallName] ?? { bg:'#f1f5f9', color:'#475569' }
                           const badgeKey = `${p.id}-${mi}`

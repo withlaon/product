@@ -37,6 +37,7 @@ export const MARKETPLACE_LIST = [
   { key: 'halfclub',     name: '하프클럽',       auth: ['api_key', 'trader_code'] },
   { key: 'fashionplus',  name: '패션플러스',     auth: ['api_key', 'login_id', 'login_pw'] },
   { key: 'gsshop',       name: '지에스샵',       auth: ['api_key', 'seller_id'] },
+  { key: 'ohouse',       name: '오늘의집',       auth: ['api_key'] },
 ] as const
 
 export type MarketplaceKey = typeof MARKETPLACE_LIST[number]['key']
@@ -64,6 +65,7 @@ const CONNECTOR_MAP: Record<string, ConnectorConstructor> = {
   halfclub    : HalfclubConnector,
   fashionplus : FashionplusConnector,
   gsshop      : GsshopConnector,
+  ohouse      : GsshopConnector,  // 오늘의집 (커넥터 미구현, 임시 폴백)
 }
 
 /**

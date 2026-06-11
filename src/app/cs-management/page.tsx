@@ -292,6 +292,7 @@ const MALL_COLORS: Record<string, { color: string; bg: string }> = {
   '지에스샵':    { color: '#059669', bg: '#ecfdf5' },
   'GS SHOP':     { color: '#059669', bg: '#ecfdf5' },
   'GS샵':        { color: '#059669', bg: '#ecfdf5' },
+  '오늘의집':    { color: '#059669', bg: '#f0fdf4' },
 }
 const mallStyle = (mall: string) => MALL_COLORS[mall] ?? { color: '#64748b', bg: '#f8fafc' }
 
@@ -1173,7 +1174,7 @@ export default function CsManagementPage() {
                     <label style={labelStyle}>쇼핑몰 <Req /></label>
                     <select value={form.mall} onChange={e => setF('mall', e.target.value)} className="pm-input pm-select" style={{ fontSize: '13px' }}>
                       <option value="">쇼핑몰 선택</option>
-                      {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데ON', 'SSG종합몰', '패션플러스', '하프클럽', '지에스샵', '기타'].map(m => (
+                      {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데ON', 'SSG종합몰', '패션플러스', '하프클럽', '지에스샵', '오늘의집', '기타'].map(m => (
                         <option key={m} value={m}>{m}</option>
                       ))}
                     </select>
@@ -1456,7 +1457,7 @@ export default function CsManagementPage() {
                   <label style={labelStyle}>쇼핑몰</label>
                   <select value={editDraft.mall} onChange={e => setEditDraft(d => d ? { ...d, mall: e.target.value } : d)} className="pm-input pm-select" style={{ fontSize: '13px' }}>
                     <option value="">쇼핑몰 선택</option>
-                    {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데ON', 'SSG종합몰', '패션플러스', '하프클럽', '지에스샵', '기타'].map(m => (
+                    {['스마트스토어', '쿠팡', '11번가', 'G마켓', '옥션', '카페24', '지그재그', '에이블리', '올웨이즈', '토스쇼핑', '롯데ON', 'SSG종합몰', '패션플러스', '하프클럽', '지에스샵', '오늘의집', '기타'].map(m => (
                       <option key={m} value={m}>{m}</option>
                     ))}
                   </select>
