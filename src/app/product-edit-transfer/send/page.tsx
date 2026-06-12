@@ -172,69 +172,75 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
     trackingMap[o.order_number] = { carrier: o.carrier ?? '', tracking: digitsOnly(o.tracking_number) }
   })
 
-  /* 토스쇼핑: 주문서등록에서 저장한 주문배송관리 시트 원본 유지
-     원본 Excel 구조: 1행=빈행, 2행=그룹헤더, 3행=컬럼헤더, 4행=수정안내, 5행~=데이터
-     sheet_to_json(header:1)로 저장된 AOA는 A2 범위 시작이므로:
-       index 0 = Excel 2행(그룹헤더), 1 = 3행(컬럼헤더), 2 = 4행(수정안내), 3~ = 데이터
-     다운로드시 index 0 앞에 빈 행 삽입 → Excel 1행=빈행 재현 */
+  /* 토스쇼핑: 주문서등록에서 저장한 주문배송관리 시트 원본 유지.
+     헤더행을 동적으로 감지하여 파일 포맷 변경에 대응.
+     H열(택배사)=CJ대한통운, I열(송장번호)=송장번호 입력 후 파일 생성. */
   if (mallId === 'tossshopping') {
-    const COL_B = 1
-    const COL_D = 3  // D열: 주문상태 → 배송중
-    const COL_F = 5
-    const COL_G = 6
     let headerBlock: unknown[][] | null = null
     const outDataRows: unknown[][] = []
     let sheetName = '주문내역'
+    let colON = -1, colOS = -1, colTC = -1, colTN = -1  // 주문번호, 주문상태, 택배사, 송장번호
+
     for (const dayData of allDayData) {
       const aoa = dayData.toss_raw_aoa
-      if (!aoa || aoa.length < 4) continue
+      if (!aoa || aoa.length < 2) continue
 
-      /* 파일 양식 자동 감지:
-         신양식(A1 시작): aoa[0]=안내문, aoa[1]=그룹헤더, aoa[2]=컬럼헤더, aoa[3]=수정안내, aoa[4~]=데이터
-         구양식(A2 시작): aoa[0]=그룹헤더, aoa[1]=컬럼헤더, aoa[2]=수정안내, aoa[3~]=데이터
-         → B열(index=1)에 '주문번호'가 있는 행을 찾아 헤더/데이터 오프셋 결정 */
-      const colHdrIdx = aoa.findIndex(r => String((r as unknown[])[COL_B] ?? '').trim() === '주문번호')
-      const dataStart = colHdrIdx >= 0 ? colHdrIdx + 2 : 4  // 수정안내 행 다음부터 데이터
+      /* 헤더행 자동 감지: '주문번호' 셀이 포함된 행 (열 위치 무관) */
+      const colHdrIdx = aoa.findIndex(r =>
+        (r as unknown[]).some(cell => String(cell ?? '').trim() === '주문번호')
+      )
+      if (colHdrIdx < 0) continue
 
+      const headerRow = aoa[colHdrIdx] as unknown[]
+      const findCol = (names: string[]) => {
+        for (const n of names) {
+          const i = headerRow.findIndex(h => String(h ?? '').trim() === n)
+          if (i >= 0) return i
+        }
+        return -1
+      }
+
+      /* 컬럼 인덱스 (최초 1회만 설정) */
+      if (colON < 0) {
+        colON = findCol(['주문번호'])
+        colOS = findCol(['주문상태'])
+        colTC = findCol(['택배사'])
+        colTN = findCol(['송장번호'])
+      }
+
+      /* 헤더 블록: 그룹헤더(있으면) + 컬럼헤더 + 수정안내 행 */
       if (!headerBlock) {
-        const hdrStart = colHdrIdx > 0 ? colHdrIdx - 1 : 0  // 그룹헤더 행 index
-        headerBlock = aoa.slice(hdrStart, hdrStart + 3).map(r => [...(r as unknown[])])
+        const hdrStart = colHdrIdx > 0 ? colHdrIdx - 1 : colHdrIdx
+        const hdrEnd   = colHdrIdx + 2  // 수정안내 행까지 포함
+        headerBlock = aoa.slice(hdrStart, hdrEnd).map(r => [...(r as unknown[])])
         sheetName = dayData.toss_sheet_name || sheetName
       }
 
+      const dataStart = colHdrIdx + 2
       for (let r = dataStart; r < aoa.length; r++) {
         const src = (aoa[r] as unknown[]) || []
-        const orderNum = String(src[COL_B] ?? '').trim()
-        // 주문번호: 숫자 4자리 이상인 행만 데이터로 인식 (헤더·안내 행 제외)
+        const orderNum = String(colON >= 0 ? src[colON] : '').trim()
         if (!orderNum || !/^\d{4,}/.test(orderNum)) continue
         const tInfo = trackingMap[orderNum]
         if (tInfo) {
           const row = [...src]
-          row[COL_D] = '배송중'
-          row[COL_F] = 'CJ대한통운'
-          row[COL_G] = tInfo.tracking
+          if (colOS >= 0) row[colOS] = '배송중'
+          if (colTC >= 0) row[colTC] = 'CJ대한통운'
+          if (colTN >= 0) row[colTN] = tInfo.tracking
           outDataRows.push(row)
         }
       }
     }
+
     if (headerBlock && outDataRows.length > 0) {
-      /* 1행=안내문(A1 병합셀), 2행=그룹헤더, 3행=컬럼헤더, 4행=수정안내, 5행~=데이터 */
+      /* 1행=안내문(빈행 또는 병합셀), 이후 헤더 블록, 이후 데이터 */
       const emptyFirstRow: unknown[] = []
       const out = [emptyFirstRow, ...headerBlock, ...outDataRows]
       const ws = XLSX.utils.aoa_to_sheet(out)
 
-      /* A1:AF1 안내문 + 토스쇼핑 양식 병합셀 복원 (2026-04~ 신양식) */
+      /* A1 안내문 텍스트 복원 */
       const row1Val = allDayData.find(d => d.toss_row1_value)?.toss_row1_value ?? ''
       if (row1Val) ws['A1'] = { t: 's', v: row1Val }
-      ws['!merges'] = [
-        { s: { r: 0, c:  0 }, e: { r: 0, c: 31 } }, // A1:AF1  (1행 전체 안내문)
-        { s: { r: 1, c:  1 }, e: { r: 1, c:  4 } }, // B2:E2   (주문 정보)
-        { s: { r: 1, c:  5 }, e: { r: 1, c:  7 } }, // F2:H2   (배송 정보)
-        { s: { r: 1, c:  8 }, e: { r: 1, c: 16 } }, // I2:Q2   (상품 정보)
-        { s: { r: 1, c: 17 }, e: { r: 1, c: 23 } }, // R2:X2   (구매자/수령인 정보)
-        { s: { r: 1, c: 24 }, e: { r: 1, c: 28 } }, // Y2:AC2  (배송 정보2)
-        { s: { r: 1, c: 29 }, e: { r: 1, c: 31 } }, // AD2:AF2 (금액 정보)
-      ]
 
       const wb = XLSX.utils.book_new()
       XLSX.utils.book_append_sheet(wb, ws, sheetName)
@@ -250,7 +256,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
     }
     alert(
       '토스쇼핑 송장 파일을 만들 수 없습니다.\n' +
-        '주문서등록 탭에서 「주문배송관리」 엑셀을 업로드해 저장한 뒤, 배송처리된 주문번호가 파일의 주문번호(B열)와 같은지 확인해 주세요.'
+        '주문서등록 탭에서 「주문배송관리」 엑셀을 업로드해 저장한 뒤, 배송처리된 주문번호가 있는지 확인해 주세요.'
     )
     return
   }
