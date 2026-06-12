@@ -235,23 +235,47 @@ function loadCachedProductsForPrice(): CachedProductPrice[] {
   return []
 }
 
-/* ─── 토스쇼핑 주문배송관리 양식 (2026-04~ 신양식)
-   열(0부터, A=0): B=1 주문번호, F=5 택배사, G=6 송장번호,
-   I=8 상품ID(신규), J=9 상품명, L=11 옵션ID(신규), M=12 옵션명,
-   N=13 주문건수, R=17 구매자명, S=18 구매자연락처, T=19 수령인명,
-   U=20 수령인연락처, V=21 배송지, X=23 주문요청사항, AD=29 주문금액.
-   파일 범위: A1:AF~ (dimension ref A1 시작)
-     aoa[0]=Row1(안내문), aoa[1]=Row2(그룹헤더), aoa[2]=Row3(컬럼헤더),
-     aoa[3]=Row4(수정안내), aoa[4~]=Row5~(데이터)
-   → B열 '주문번호' 행 감지로 데이터 시작 인덱스 자동 결정 ── */
-const TOSS_COL = {
-  주문일시: 0, 주문번호: 1, 주문상품번호: 2, 주문건수: 13,
-  상품명: 9,   // J열 (상품명, I열은 상품ID)
-  옵션명: 12,  // M열 (옵션명, L열은 옵션ID)
-  구매자명: 17, 구매자연락처: 18, 수령인명: 19,
-  수령인연락처: 20, 배송지: 21, 주문요청사항: 23, 주문금액: 29,
-  택배사: 5, 송장번호: 6,
-} as const
+/* ─── 토스쇼핑 주문배송관리 양식 (동적 컬럼 감지)
+   헤더행에서 '주문번호' 셀을 찾아 컬럼 인덱스를 자동으로 결정.
+   파일 포맷이 변경되어도 헤더명 기준으로 정확히 매핑됨.
+   데이터 시작 = 헤더행 + 2 (헤더행 + 수정안내행 스킵) ── */
+
+interface TossColMap {
+  주문번호: number; 주문상품번호: number; 주문상태: number; 주문건수: number
+  상품명: number; 옵션명: number
+  구매자명: number; 구매자연락처: number
+  수령인명: number; 수령인연락처: number
+  배송지: number; 주문요청사항: number; 주문금액: number
+  택배사: number; 송장번호: number
+}
+
+/** 헤더 행 배열에서 컬럼명 기준으로 인덱스 맵 생성 */
+function buildTossColMap(headerRow: unknown[]): TossColMap {
+  const idx = (names: string[]) => {
+    for (const n of names) {
+      const i = headerRow.findIndex(h => String(h ?? '').trim() === n)
+      if (i >= 0) return i
+    }
+    return -1
+  }
+  return {
+    주문번호:       idx(['주문번호']),
+    주문상품번호:   idx(['주문상품번호']),
+    주문상태:       idx(['주문상태']),
+    주문건수:       idx(['주문건수']),
+    상품명:         idx(['상품명']),
+    옵션명:         idx(['옵션명']),
+    구매자명:       idx(['구매자명']),
+    구매자연락처:   idx(['구매자 연락처', '구매자연락처']),
+    수령인명:       idx(['수령인명']),
+    수령인연락처:   idx(['수령인 연락처', '수령인연락처']),
+    배송지:         idx(['배송지']),
+    주문요청사항:   idx(['주문요청사항']),
+    주문금액:       idx(['주문금액']),
+    택배사:         idx(['택배사']),
+    송장번호:       idx(['송장번호']),
+  }
+}
 
 /** 토스쇼핑 옵션명에서 FREE 제거: "블랙, free" → "블랙" */
 function cleanTossOption(raw: unknown): string {
@@ -261,45 +285,46 @@ function cleanTossOption(raw: unknown): string {
     .trim()
 }
 
-function parseTossShoppingAoaRow(row: unknown[], idx: number): RegOrder {
-  const orderNum = String(row[TOSS_COL.주문번호] ?? '').trim()
-  const amountRaw = row[TOSS_COL.주문금액]
+function parseTossShoppingAoaRow(row: unknown[], idx: number, col: TossColMap): RegOrder {
+  const get = (i: number) => (i >= 0 ? row[i] : undefined)
+  const orderNum = String(get(col.주문번호) ?? '').trim()
+  const amountRaw = get(col.주문금액)
   const amount =
     typeof amountRaw === 'number'
       ? amountRaw
       : parseFloat(String(amountRaw ?? '0').replace(/,/g, '')) || 0
-  const qty = Number(row[TOSS_COL.주문건수] ?? 1) || 1
+  const qty = Number(get(col.주문건수) ?? 1) || 1
   const unitPrice = qty > 0 ? amount / qty : amount
 
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
     order_number: orderNum,
     customer_name:
-      String(row[TOSS_COL.수령인명] ?? row[TOSS_COL.구매자명] ?? '-'),
-    customer_phone: String(row[TOSS_COL.수령인연락처] ?? row[TOSS_COL.구매자연락처] ?? ''),
-    shipping_address: String(row[TOSS_COL.배송지] ?? ''),
+      String(get(col.수령인명) ?? get(col.구매자명) ?? '-'),
+    customer_phone: String(get(col.수령인연락처) ?? get(col.구매자연락처) ?? ''),
+    shipping_address: String(get(col.배송지) ?? ''),
     items: [{
-      product_name: String(row[TOSS_COL.상품명] ?? '-'),
-      sku:          String(row[TOSS_COL.주문상품번호] ?? ''),
+      product_name: String(get(col.상품명) ?? '-'),
+      sku:          String(get(col.주문상품번호) ?? ''),
       quantity:     qty,
       unit_price:   unitPrice,
-      option:       cleanTossOption(row[TOSS_COL.옵션명]),  // FREE 제거
+      option:       cleanTossOption(get(col.옵션명)),
     }],
     total_amount: amount,
     status: 'pending',
-    memo: String(row[TOSS_COL.주문요청사항] ?? ''),
+    memo: String(get(col.주문요청사항) ?? ''),
     extra_data: {
       import_source: '토스쇼핑',
       주문번호: orderNum,
-      주문상품번호: String(row[TOSS_COL.주문상품번호] ?? ''),
-      토스_J_상품명: String(row[TOSS_COL.상품명] ?? ''),
-      토스_M_옵션명: cleanTossOption(row[TOSS_COL.옵션명]),
-      토스_R_구매자명: String(row[TOSS_COL.구매자명] ?? ''),
-      토스_S_구매자연락처: String(row[TOSS_COL.구매자연락처] ?? ''),
-      토스_T_수령인명: String(row[TOSS_COL.수령인명] ?? ''),
-      토스_V_배송지: String(row[TOSS_COL.배송지] ?? ''),
-      토스_X_주문요청사항: String(row[TOSS_COL.주문요청사항] ?? ''),
-      토스_AD_주문금액: String(row[TOSS_COL.주문금액] ?? ''),
+      주문상품번호: String(get(col.주문상품번호) ?? ''),
+      토스_상품명: String(get(col.상품명) ?? ''),
+      토스_옵션명: cleanTossOption(get(col.옵션명)),
+      토스_구매자명: String(get(col.구매자명) ?? ''),
+      토스_구매자연락처: String(get(col.구매자연락처) ?? ''),
+      토스_수령인명: String(get(col.수령인명) ?? ''),
+      토스_배송지: String(get(col.배송지) ?? ''),
+      토스_주문요청사항: String(get(col.주문요청사항) ?? ''),
+      토스_주문금액: String(get(col.주문금액) ?? ''),
     },
   }
 }
@@ -703,7 +728,7 @@ export default function OrderRegistrationPage() {
           tossRawAoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][]
           // A1:AD1 병합셀의 안내문 텍스트 별도 보존
           tossRow1Value = String(ws['A1']?.v ?? '')
-          if (tossRawAoa.length < 4) {
+          if (tossRawAoa.length < 2) {
             setImportMsg({ text: '토스쇼핑 주문배송관리 양식: 헤더 행이 없습니다. 올바른 주문배송관리 엑셀 파일인지 확인해주세요.', ok: false })
             setImporting(false)
             if (fileRef.current) fileRef.current.value = ''
@@ -728,34 +753,47 @@ export default function OrderRegistrationPage() {
         let tossSyntheticRaw: Record<string, unknown>[] = []
 
         if (isTossShopping && tossRawAoa) {
-          /* 파일 양식 자동 감지:
-             신양식(A1 시작): aoa[0]=안내문, aoa[1]=그룹헤더, aoa[2]=컬럼헤더, aoa[3]=수정안내, aoa[4~]=데이터
-             구양식(A2 시작): aoa[0]=그룹헤더, aoa[1]=컬럼헤더, aoa[2]=수정안내, aoa[3~]=데이터
-             → B열(index=1)에 '주문번호'가 있는 행 다음 다음 행부터 데이터 */
-          const tossColHdrIdx = tossRawAoa.findIndex(r => String((r as unknown[])[TOSS_COL.주문번호] ?? '').trim() === '주문번호')
-          const tossDataStart = tossColHdrIdx >= 0 ? tossColHdrIdx + 2 : 4
+          /* 헤더행 자동 감지: '주문번호' 셀이 포함된 행을 열 위치 무관하게 탐색.
+             데이터 시작 = 헤더행 + 2 (헤더행 + 수정안내행 스킵).
+             주문상태 == '상품준비중'인 행만 처리. */
+          const tossColHdrIdx = tossRawAoa.findIndex(r =>
+            (r as unknown[]).some(cell => String(cell ?? '').trim() === '주문번호')
+          )
+          if (tossColHdrIdx < 0) {
+            setImportMsg({ text: '토스쇼핑: 주문번호 헤더를 찾을 수 없습니다. 올바른 주문배송관리 파일인지 확인해주세요.', ok: false })
+            setImporting(false)
+            if (fileRef.current) fileRef.current.value = ''
+            return
+          }
+          const tossColMap = buildTossColMap(tossRawAoa[tossColHdrIdx] as unknown[])
+          const tossDataStart = tossColHdrIdx + 2
           for (let i = tossDataStart; i < tossRawAoa.length; i++) {
             const line = tossRawAoa[i] as unknown[]
             if (!line?.length) continue
-            const orderNum = String(line[TOSS_COL.주문번호] ?? '').trim()
+            const orderNum = String(tossColMap.주문번호 >= 0 ? line[tossColMap.주문번호] : '').trim()
             // 주문번호: 숫자 4자리 이상인 행만 데이터로 인식 (헤더·안내 행 제외)
             if (!orderNum || !/^\d{4,}/.test(orderNum)) continue
-            orders.push(parseTossShoppingAoaRow(line, i))
+            // 주문상태 필터: 상품준비중만 처리 (취소·발송완료 등 제외)
+            if (tossColMap.주문상태 >= 0) {
+              const status = String(line[tossColMap.주문상태] ?? '').trim()
+              if (status && status !== '상품준비중') continue
+            }
+            orders.push(parseTossShoppingAoaRow(line, i, tossColMap))
             tossSyntheticRaw.push({
-              주문번호: line[TOSS_COL.주문번호],
-              주문상품번호: line[TOSS_COL.주문상품번호],
-              상품명: line[TOSS_COL.상품명],
-              옵션명: line[TOSS_COL.옵션명],
-              구매자명: line[TOSS_COL.구매자명],
-              '구매자 연락처': line[TOSS_COL.구매자연락처],
-              수령인명: line[TOSS_COL.수령인명],
-              배송지: line[TOSS_COL.배송지],
-              주문요청사항: line[TOSS_COL.주문요청사항],
-              주문금액: line[TOSS_COL.주문금액],
+              주문번호: tossColMap.주문번호 >= 0 ? line[tossColMap.주문번호] : '',
+              주문상품번호: tossColMap.주문상품번호 >= 0 ? line[tossColMap.주문상품번호] : '',
+              상품명: tossColMap.상품명 >= 0 ? line[tossColMap.상품명] : '',
+              옵션명: tossColMap.옵션명 >= 0 ? line[tossColMap.옵션명] : '',
+              구매자명: tossColMap.구매자명 >= 0 ? line[tossColMap.구매자명] : '',
+              '구매자 연락처': tossColMap.구매자연락처 >= 0 ? line[tossColMap.구매자연락처] : '',
+              수령인명: tossColMap.수령인명 >= 0 ? line[tossColMap.수령인명] : '',
+              배송지: tossColMap.배송지 >= 0 ? line[tossColMap.배송지] : '',
+              주문요청사항: tossColMap.주문요청사항 >= 0 ? line[tossColMap.주문요청사항] : '',
+              주문금액: tossColMap.주문금액 >= 0 ? line[tossColMap.주문금액] : '',
             })
           }
           if (orders.length === 0) {
-            setImportMsg({ text: '토스쇼핑: 유효한 주문번호(B열)가 있는 데이터 행이 없습니다.', ok: false })
+            setImportMsg({ text: '토스쇼핑: 상품준비중 상태의 유효한 주문이 없습니다.', ok: false })
             setImporting(false)
             if (fileRef.current) fileRef.current.value = ''
             return
