@@ -167,25 +167,38 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
     return
   }
   const allDayData = loadAllDayData(mallId)
-  const trackingMap: Record<string, { carrier: string; tracking: string }> = {}
-  mallOrders.forEach(o => {
-    trackingMap[o.order_number] = { carrier: o.carrier ?? '', tracking: digitsOnly(o.tracking_number) }
-  })
 
-  /* 토스쇼핑: 주문서등록에서 저장한 주문배송관리 시트 원본 유지.
-     헤더행을 동적으로 감지하여 파일 포맷 변경에 대응.
-     H열(택배사)=CJ대한통운, I열(송장번호)=송장번호 입력 후 파일 생성. */
+  /* 토스쇼핑: 주문배송관리 원본 AOA 기반으로 H(택배사)/I(송장번호) 입력 후 파일 생성.
+     - 이전 버그로 저장된 주문은 order_number 가 주문상품번호일 수 있으므로,
+       trackingMap 에 extra_data 의 주문번호·주문상품번호도 함께 등록해 매칭률을 높임.
+     - 출력 구조: [안내문행], [컬럼헤더행], [수정안내행], [데이터행...] (중복 행 없음).
+     - raw AOA 가 없거나 매칭 실패 시 raw_rows 기반 폴백 → 기본 폴백 순으로 진행. */
   if (mallId === 'tossshopping') {
+    /* ── 1. 강화된 trackingMap 구성 (주문번호·주문상품번호 모두 키로 등록) ── */
+    const robustMap: Record<string, { carrier: string; tracking: string }> = {}
+    mallOrders.forEach(o => {
+      const entry = { carrier: o.carrier ?? '', tracking: digitsOnly(o.tracking_number) }
+      robustMap[o.order_number] = entry
+      const ed = o.extra_data as Record<string, unknown> | undefined
+      ;['주문번호', '주문상품번호'].forEach(k => {
+        const v = String(ed?.[k] ?? '').trim()
+        if (v && !robustMap[v]) robustMap[v] = entry
+      })
+    })
+
+    /* ── 2. raw AOA 기반 파일 재조합 ── */
+    let guideRow: unknown[]  = []
     let headerBlock: unknown[][] | null = null
     const outDataRows: unknown[][] = []
+    const addedNums = new Set<string>()
     let sheetName = '주문내역'
-    let colON = -1, colOS = -1, colTC = -1, colTN = -1  // 주문번호, 주문상태, 택배사, 송장번호
+    let colON = -1, colSON = -1, colOS = -1, colTC = -1, colTN = -1
 
     for (const dayData of allDayData) {
       const aoa = dayData.toss_raw_aoa
       if (!aoa || aoa.length < 2) continue
 
-      /* 헤더행 자동 감지: '주문번호' 셀이 포함된 행 (열 위치 무관) */
+      /* 헤더행 자동 감지 */
       const colHdrIdx = aoa.findIndex(r =>
         (r as unknown[]).some(cell => String(cell ?? '').trim() === '주문번호')
       )
@@ -200,29 +213,33 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
         return -1
       }
 
-      /* 컬럼 인덱스 (최초 1회만 설정) */
       if (colON < 0) {
-        colON = findCol(['주문번호'])
-        colOS = findCol(['주문상태'])
-        colTC = findCol(['택배사'])
-        colTN = findCol(['송장번호'])
+        colON  = findCol(['주문번호'])
+        colSON = findCol(['주문상품번호'])
+        colOS  = findCol(['주문상태'])
+        colTC  = findCol(['택배사'])
+        colTN  = findCol(['송장번호'])
       }
 
-      /* 헤더 블록: 그룹헤더(있으면) + 컬럼헤더 + 수정안내 행 */
       if (!headerBlock) {
-        const hdrStart = colHdrIdx > 0 ? colHdrIdx - 1 : colHdrIdx
-        const hdrEnd   = colHdrIdx + 2  // 수정안내 행까지 포함
-        headerBlock = aoa.slice(hdrStart, hdrEnd).map(r => [...(r as unknown[])])
-        sheetName = dayData.toss_sheet_name || sheetName
+        /* 안내문 행(헤더 직전 행) + 컬럼헤더 행 + 수정안내 행(2행) 분리 보존 */
+        guideRow    = colHdrIdx > 0 ? [...(aoa[colHdrIdx - 1] as unknown[])] : []
+        headerBlock = aoa.slice(colHdrIdx, colHdrIdx + 2).map(r => [...(r as unknown[])])
+        sheetName   = dayData.toss_sheet_name || sheetName
       }
 
       const dataStart = colHdrIdx + 2
       for (let r = dataStart; r < aoa.length; r++) {
-        const src = (aoa[r] as unknown[]) || []
-        const orderNum = String(colON >= 0 ? src[colON] : '').trim()
-        if (!orderNum || !/^\d{4,}/.test(orderNum)) continue
-        const tInfo = trackingMap[orderNum]
+        const src      = (aoa[r] as unknown[]) || []
+        const orderNum = String(colON  >= 0 ? src[colON]  : '').trim()
+        const altNum   = String(colSON >= 0 ? src[colSON] : '').trim()
+        const hasNum   = (orderNum && /^\d{4,}/.test(orderNum)) || (altNum && /^\d{4,}/.test(altNum))
+        if (!hasNum) continue
+        const dedupeKey = orderNum || altNum
+        if (addedNums.has(dedupeKey)) continue
+        const tInfo = robustMap[orderNum] || robustMap[altNum]
         if (tInfo) {
+          addedNums.add(dedupeKey)
           const row = [...src]
           if (colOS >= 0) row[colOS] = '배송중'
           if (colTC >= 0) row[colTC] = 'CJ대한통운'
@@ -233,12 +250,14 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
     }
 
     if (headerBlock && outDataRows.length > 0) {
-      /* 1행=안내문(빈행 또는 병합셀), 이후 헤더 블록, 이후 데이터 */
-      const emptyFirstRow: unknown[] = []
-      const out = [emptyFirstRow, ...headerBlock, ...outDataRows]
+      /* 출력 구조: [안내문행?], [컬럼헤더행], [수정안내행], [데이터행...] */
+      const out: unknown[][] = [
+        ...(guideRow.length ? [guideRow] : []),
+        ...headerBlock,
+        ...outDataRows,
+      ]
       const ws = XLSX.utils.aoa_to_sheet(out)
-
-      /* A1 안내문 텍스트 복원 */
+      /* 안내문 텍스트 확실히 복원 (병합셀 원본 값) */
       const row1Val = allDayData.find(d => d.toss_row1_value)?.toss_row1_value ?? ''
       if (row1Val) ws['A1'] = { t: 's', v: row1Val }
 
@@ -254,12 +273,53 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
       URL.revokeObjectURL(url)
       return
     }
+
+    /* ── 3. 폴백: raw_rows(합성 데이터) 기반 Excel 생성 ── */
+    const fbRows: Record<string, unknown>[] = []
+    const fbUsed = new Set<string>()
+    for (const dayData of allDayData) {
+      for (const raw of dayData.raw_rows ?? []) {
+        const on  = String(raw['주문번호']     ?? '').trim()
+        const son = String(raw['주문상품번호'] ?? '').trim()
+        const key = on || son
+        if (!key || fbUsed.has(key)) continue
+        const tInfo = robustMap[on] || robustMap[son]
+        if (tInfo) {
+          fbUsed.add(key)
+          fbRows.push({ ...raw, '주문상태': '배송중', '택배사': 'CJ대한통운', '송장번호': tInfo.tracking })
+        }
+      }
+    }
+    if (fbRows.length > 0) {
+      triggerExcelDownload(fbRows, `${mallLabel}_송장_${todayStr()}.xlsx`)
+      return
+    }
+
+    /* ── 4. 최종 폴백: 배송처리된 주문 기본 정보로 Excel 생성 ── */
+    if (mallOrders.length > 0) {
+      const basicRows = mallOrders.map(o => ({
+        '주문번호': o.order_number,
+        '주문상태': '배송중',
+        '택배사': 'CJ대한통운',
+        '송장번호': digitsOnly(o.tracking_number),
+        '수취인': o.customer_name,
+      }))
+      triggerExcelDownload(basicRows, `${mallLabel}_송장_${todayStr()}.xlsx`)
+      return
+    }
+
     alert(
       '토스쇼핑 송장 파일을 만들 수 없습니다.\n' +
         '주문서등록 탭에서 「주문배송관리」 엑셀을 업로드해 저장한 뒤, 배송처리된 주문번호가 있는지 확인해 주세요.'
     )
     return
   }
+
+  /* 일반 쇼핑몰용 trackingMap */
+  const trackingMap: Record<string, { carrier: string; tracking: string }> = {}
+  mallOrders.forEach(o => {
+    trackingMap[o.order_number] = { carrier: o.carrier ?? '', tracking: digitsOnly(o.tracking_number) }
+  })
 
   const rows: Record<string, unknown>[] = []
   let usedRaw = false
