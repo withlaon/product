@@ -14,6 +14,26 @@ import {
 import type { ShippedOrder } from '@/lib/orders'
 import { loadAllDayData } from '@/app/order-registration/page'
 
+/* ─── 토스쇼핑 송장 파일 가이드 텍스트 (고정 양식) ─────── */
+const TOSS_GUIDE_A1 =
+  "📍 다운로드 받은 파일로 '엑셀 일괄발송' 처리하는 방법\r\n\r\n" +
+  "1. 엑셀 파일에서 아래 네 가지 항목을 입력해주세요. (일괄발송 처리 시 아래 4개 열이 반드시 포함되어 있어야 합니다.)\r\n" +
+  "주문상품번호 / 주문상태 / 택배사 / 송장번호\r\n\r\n" +
+  "2. 주문상태를 '배송중' 상태로 변경해주세요.\r\n" +
+  "발송 처리할 데이터가 있는 행 이름을 '배송중' 으로 저장해주세요.\r\n\r\n" +
+  "3. 토스쇼핑파트너스에 파일을 업로드해주세요.\r\n" +
+  "배송중 페이지에서 '엑셀 업로드' 버튼을 클릭한 후, 작성한 파일을 업로드하면 발송 처리가 진행됩니다."
+
+const TOSS_GUIDE_G1 =
+  "📍 입력 및 수정 가능 항목\r\n\r\n" +
+  "1. 노란색 셀(주문상태, 택배사, 송장번호)은 직접 입력하거나 수정할 수 있어요.\r\n\r\n" +
+  "2. 주문상태 변경 가능 범위\r\n" +
+  "주문상태는 결제완료 / 상품준비중 / 배송중 상태로만 변경할 수 있습니다.\r\n" +
+  "※ 배송완료 및 발송지연 상태는 엑셀로 변경할 수 없습니다.\r\n" +
+  "※ 발송지연 처리가 필요한 경우 토쇼파에서 직접 처리해 주세요.\r\n\r\n" +
+  "3. 송장번호가 바뀐경우 수정 방법\r\n" +
+  "배송중 상태에서 송장번호가 바뀐 경우, 기존 송장번호를 변경된 송장번호로 수정한 뒤 배송중 탭에 다시 업로드해 주세요."
+
 /* ─── 쇼핑몰별 다운로드 설정 ────────────────────────────── */
 const DOWNLOAD_MALLS = [
   { id: 'marketplus',   label: '마켓플러스', color: '#e11d48', bg: '#fff1f2' },
@@ -168,11 +188,11 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
   }
   const allDayData = loadAllDayData(mallId)
 
-  /* 토스쇼핑: 원본 주문배송관리 파일 구조 그대로 유지하고
-     C열(주문상태)→배송중, H열(택배사)→CJ대한통운, I열(송장번호)→운송장번호 입력.
-     - 가장 최근 업로드된 raw AOA 를 템플릿으로 사용
-     - 매칭된 행만 C/H/I 수정, 나머지 행은 원본 그대로 보존
-     - 주문번호·주문상품번호 양쪽으로 매칭 시도 (이전 버그 저장 주문 포함) */
+  /* 토스쇼핑: 「토스쇼핑_송장」 양식으로 파일 생성.
+     출력 구조: [가이드행(병합)], [컬럼헤더행], [수정안내행], [데이터행...]
+     가이드행: A1:F1 = TOSS_GUIDE_A1, G1:AE1 = TOSS_GUIDE_G1 (고정 텍스트)
+     데이터: 가장 최근 업로드된 raw AOA 에서 전체 행을 가져오고,
+             배송처리된 주문만 C=배송중, H=CJ대한통운, I=송장번호 입력 */
   if (mallId === 'tossshopping') {
     /* ── 1. 강화된 trackingMap: order_number + extra_data 두 식별자 모두 등록 ── */
     const robustMap: Record<string, { tracking: string }> = {}
@@ -214,11 +234,21 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
         const colTC  = fc(['택배사'])
         const colTN  = fc(['송장번호'])
 
-        /* 전체 AOA 복사 후 매칭된 데이터 행만 C/H/I 수정 */
-        const outAoa: unknown[][] = aoa.map((rawRow, ri) => {
-          const row = [...(rawRow as unknown[])]
-          if (ri < hdrIdx + 2) return row  // 헤더·안내 행은 그대로
+        const numCols = Math.max(headerRow.length, 31)
 
+        /* 가이드 텍스트 행: A1:F1 + G1:AE1 병합 구조 */
+        const guideRow: unknown[] = Array(numCols).fill('')
+        guideRow[0] = TOSS_GUIDE_A1
+        guideRow[6] = TOSS_GUIDE_G1
+
+        /* 컬럼헤더 행 + 수정안내 행 */
+        const editRow = hdrIdx + 1 < aoa.length ? [...(aoa[hdrIdx + 1] as unknown[])] : []
+
+        /* 데이터 행: 원본 전체 보존, 매칭된 행만 C/H/I 수정 */
+        const dataStart = hdrIdx + 2
+        const dataRows: unknown[][] = []
+        for (let r = dataStart; r < aoa.length; r++) {
+          const row = [...(aoa[r] as unknown[])]
           const on  = String(colON  >= 0 ? row[colON]  : '').trim()
           const son = String(colSON >= 0 ? row[colSON] : '').trim()
           const tInfo = robustMap[on] || robustMap[son]
@@ -227,13 +257,24 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
             if (colTC >= 0) row[colTC] = 'CJ대한통운'
             if (colTN >= 0) row[colTN] = tInfo.tracking
           }
-          return row
-        })
+          dataRows.push(row)
+        }
+
+        /* 출력: [가이드행, 헤더행, 수정안내행, ...데이터행] */
+        const outAoa: unknown[][] = [
+          guideRow,
+          [...headerRow],
+          editRow,
+          ...dataRows,
+        ]
 
         const ws = XLSX.utils.aoa_to_sheet(outAoa)
-        /* A1 안내문 텍스트 복원 (병합셀 원본) */
-        const row1Val = allDayData.find(d => d.toss_row1_value)?.toss_row1_value ?? ''
-        if (row1Val && hdrIdx > 0) ws['A1'] = { t: 's', v: row1Val }
+
+        /* 병합셀 정의: A1:F1 + G1:AE1 */
+        ws['!merges'] = [
+          { s: { c: 0, r: 0 }, e: { c: 5,           r: 0 } },
+          { s: { c: 6, r: 0 }, e: { c: numCols - 1, r: 0 } },
+        ]
 
         const sheetName = tmpl.toss_sheet_name || '주문내역'
         const wb = XLSX.utils.book_new()
