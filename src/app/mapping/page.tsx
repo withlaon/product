@@ -278,6 +278,32 @@ export default function MappingPage() {
     return null
   }
 
+  /* ── 쇼핑몰 매핑 목록 엑셀 다운로드 ── */
+  const handleDownloadMallExcel = (mallKey: string, mallName: string) => {
+    const mallRows = mappings[mallKey] || []
+    if (mallRows.length === 0) {
+      alert(`${mallName}의 매핑 데이터가 없습니다.`)
+      return
+    }
+    const today = new Date().toISOString().slice(0, 10)
+    const excelRows = mallRows.map(row => {
+      const prod = products.find(p => p.id === row.matched_product_id)
+      const cp = (prod?.channel_prices ?? []).find(c => c.channel === mallName) as { channel: string; price: number; tag_price?: number } | undefined
+      return {
+        '쇼핑몰 상품ID':   row.mall_product_id,
+        '상품코드':        row.matched_product_code || '',
+        '상품명':          row.mall_product_name,
+        'TAG가':           cp?.tag_price ?? '',
+        '판매가':          row.mall_price ?? '',
+      }
+    })
+    const wb = XLSX.utils.book_new()
+    const ws = XLSX.utils.json_to_sheet(excelRows)
+    ws['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 32 }, { wch: 12 }, { wch: 12 }]
+    XLSX.utils.book_append_sheet(wb, ws, mallName.slice(0, 30))
+    XLSX.writeFile(wb, `${mallName}_매핑목록_${today}.xlsx`)
+  }
+
   const handleDownloadTemplate = () => {
     const wb = XLSX.utils.book_new()
     const ws = XLSX.utils.aoa_to_sheet([
@@ -525,55 +551,75 @@ export default function MappingPage() {
                   ? 'complete'
                   : 'partial'
               return (
-                <button
-                  key={m.key}
-                  onClick={() => { setSelectedMall(m.key); setSearchQuery(''); setStatusFilter('all') }}
-                  style={{
-                    width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
-                    borderRadius: 10, padding: '9px 10px', marginBottom: 3,
-                    background: isActive ? 'linear-gradient(135deg,#eff6ff,#dbeafe)' : 'transparent',
-                    transition: 'background 150ms',
-                  }}
-                  onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f8fafc' }}
-                  onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
-                >
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
-                    <img
-                      src={`https://www.google.com/s2/favicons?domain=${m.key}&sz=16`}
-                      alt={m.name}
-                      style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0 }}
-                      onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                    />
-                    <span style={{ fontSize: '12.5px', fontWeight: isActive ? 900 : 700, color: isActive ? '#1d4ed8' : '#334155', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {m.name}
-                    </span>
-                    {mappingStatus === 'complete' && (
-                      <span style={{ fontSize: '9px', fontWeight: 900, background: '#ecfdf5', color: '#059669', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        매핑완료
+                <div key={m.key} style={{ position: 'relative', marginBottom: 3 }}>
+                  <button
+                    onClick={() => { setSelectedMall(m.key); setSearchQuery(''); setStatusFilter('all') }}
+                    style={{
+                      width: '100%', textAlign: 'left', border: 'none', cursor: 'pointer',
+                      borderRadius: 10, padding: '9px 10px 9px 10px', paddingRight: 36,
+                      background: isActive ? 'linear-gradient(135deg,#eff6ff,#dbeafe)' : 'transparent',
+                      transition: 'background 150ms',
+                    }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = '#f8fafc' }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
+                      <img
+                        src={`https://www.google.com/s2/favicons?domain=${m.key}&sz=16`}
+                        alt={m.name}
+                        style={{ width: 14, height: 14, borderRadius: 3, flexShrink: 0 }}
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                      <span style={{ fontSize: '12.5px', fontWeight: isActive ? 900 : 700, color: isActive ? '#1d4ed8' : '#334155', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {m.name}
                       </span>
-                    )}
-                    {mappingStatus === 'partial' && (
-                      <span style={{ fontSize: '9px', fontWeight: 900, background: '#fffbeb', color: '#b45309', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
-                        매핑중
+                      {mappingStatus === 'complete' && (
+                        <span style={{ fontSize: '9px', fontWeight: 900, background: '#ecfdf5', color: '#059669', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          매핑완료
+                        </span>
+                      )}
+                      {mappingStatus === 'partial' && (
+                        <span style={{ fontSize: '9px', fontWeight: 900, background: '#fffbeb', color: '#b45309', padding: '2px 6px', borderRadius: 10, whiteSpace: 'nowrap', flexShrink: 0 }}>
+                          매핑중
+                        </span>
+                      )}
+                    </div>
+                    <div style={{ display: 'flex', gap: 4 }}>
+                      <span style={{ fontSize: '10px', fontWeight: 800, background: isActive ? '#dbeafe' : '#f1f5f9', color: isActive ? '#1d4ed8' : '#64748b', padding: '1px 6px', borderRadius: 4 }}>
+                        전체 {s.total}
                       </span>
-                    )}
-                  </div>
-                  <div style={{ display: 'flex', gap: 4 }}>
-                    <span style={{ fontSize: '10px', fontWeight: 800, background: isActive ? '#dbeafe' : '#f1f5f9', color: isActive ? '#1d4ed8' : '#64748b', padding: '1px 6px', borderRadius: 4 }}>
-                      전체 {s.total}
-                    </span>
-                    {s.matched > 0 && (
-                      <span style={{ fontSize: '10px', fontWeight: 800, background: '#ecfdf5', color: '#059669', padding: '1px 6px', borderRadius: 4 }}>
-                        매핑 {s.matched}
-                      </span>
-                    )}
-                    {s.unmatched > 0 && (
-                      <span style={{ fontSize: '10px', fontWeight: 800, background: '#fff1f2', color: '#be123c', padding: '1px 6px', borderRadius: 4 }}>
-                        미매핑 {s.unmatched}
-                      </span>
-                    )}
-                  </div>
-                </button>
+                      {s.matched > 0 && (
+                        <span style={{ fontSize: '10px', fontWeight: 800, background: '#ecfdf5', color: '#059669', padding: '1px 6px', borderRadius: 4 }}>
+                          매핑 {s.matched}
+                        </span>
+                      )}
+                      {s.unmatched > 0 && (
+                        <span style={{ fontSize: '10px', fontWeight: 800, background: '#fff1f2', color: '#be123c', padding: '1px 6px', borderRadius: 4 }}>
+                          미매핑 {s.unmatched}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                  {/* 쇼핑몰별 엑셀 다운로드 버튼 */}
+                  {s.total > 0 && (
+                    <button
+                      onClick={e => { e.stopPropagation(); handleDownloadMallExcel(m.key, m.name) }}
+                      title={`${m.name} 매핑목록 엑셀 다운로드`}
+                      style={{
+                        position: 'absolute', top: 8, right: 6,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        width: 24, height: 24, borderRadius: 6, border: 'none', cursor: 'pointer',
+                        background: isActive ? '#dbeafe' : '#f1f5f9',
+                        color: isActive ? '#1d4ed8' : '#64748b',
+                        transition: 'background 150ms',
+                      }}
+                      onMouseEnter={e => { e.currentTarget.style.background = '#bbf7d0'; e.currentTarget.style.color = '#059669' }}
+                      onMouseLeave={e => { e.currentTarget.style.background = isActive ? '#dbeafe' : '#f1f5f9'; e.currentTarget.style.color = isActive ? '#1d4ed8' : '#64748b' }}
+                    >
+                      <Download size={12} />
+                    </button>
+                  )}
+                </div>
               )
             })}
           </nav>
@@ -636,6 +682,16 @@ export default function MappingPage() {
                 </div>
 
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFileChange} />
+                {/* 현재 쇼핑몰 매핑목록 엑셀 다운로드 */}
+                {rows.length > 0 && (
+                  <button
+                    onClick={() => handleDownloadMallExcel(selectedMall, selectedMallName)}
+                    style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f0fdf4', color: '#15803d', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '7px 13px', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
+                    title={`${selectedMallName} 매핑목록 엑셀 다운로드`}
+                  >
+                    <FileSpreadsheet size={13} />매핑목록 다운로드
+                  </button>
+                )}
                 <button
                   onClick={handleDownloadTemplate}
                   style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'white', color: '#059669', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '7px 13px', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
