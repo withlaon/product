@@ -122,7 +122,7 @@ export default function LocaPage() {
   const [newLocaInput, setNewLocaInput] = useState('')
   const [locaSearch, setLocaSearch]     = useState('')
   const [expanded, setExpanded]         = useState<Record<string, boolean>>({
-    'A': true, 'B': false, 'C': false, 'D': false, 'E': false, 'F': false,
+    'A': true, 'B': true, 'C': true, 'D': true, 'E': true, 'F': true,
     '1': true, '2': true, 'box': true, 'custom': true, 'unmatched': false,
   })
   const printAreaRef = useRef<HTMLDivElement>(null)
@@ -369,17 +369,47 @@ export default function LocaPage() {
 
   /* ── 인쇄용 행 렌더 (항상 filtered 전체 사용) ── */
   const ROW_H_PT = '40pt'
-  const renderPrintRows = () =>
-    filtered.map(p => {
+
+  /* 코드 끝의 숫자 추출 (예: WA5AC081 → 81) */
+  const getCodeNum = (code: string) => {
+    const m = code.match(/(\d+)$/)
+    return m ? parseInt(m[1], 10) : -1
+  }
+  const getCodePrefix = (code: string) => code.replace(/\d+$/, '')
+
+  const renderPrintRows = () => {
+    const rows: React.ReactNode[] = []
+    const cell: React.CSSProperties = { border: '1px solid #000', padding: 0, height: ROW_H_PT, overflow: 'hidden' }
+    const inner: React.CSSProperties = { height: ROW_H_PT, overflow: 'hidden', display: 'flex', alignItems: 'center' }
+
+    filtered.forEach((p, idx) => {
+      /* 이전 상품과 코드 번호 갭이 있으면 빈 행 삽입 */
+      if (idx > 0) {
+        const prev = filtered[idx - 1]
+        const prevPrefix = getCodePrefix(prev.code)
+        const currPrefix = getCodePrefix(p.code)
+        const prevNum    = getCodeNum(prev.code)
+        const currNum    = getCodeNum(p.code)
+        if (
+          prevPrefix === currPrefix &&
+          prevNum >= 0 && currNum >= 0 &&
+          currNum - prevNum > 1
+        ) {
+          rows.push(
+            <tr key={`gap-${idx}`}>
+              {[0,1,2,3,4,5].map(c => <td key={c} style={cell}><div style={inner}/></td>)}
+            </tr>
+          )
+        }
+      }
+
       const opts     = p.options ?? []
       const firstImg = opts[0]?.image ?? ''
       const optNames = opts.map(o => o.name || o.korean_name || '').filter(Boolean)
       const pairs    = chunk(optNames, 2)
       const abbr     = koreanOnly(p.abbr || '')
       const isDel    = p.status === 'pending_delete'
-      const cell: React.CSSProperties = { border: '1px solid #000', padding: 0, height: ROW_H_PT, overflow: 'hidden' }
-      const inner: React.CSSProperties = { height: ROW_H_PT, overflow: 'hidden', display: 'flex', alignItems: 'center' }
-      return (
+      rows.push(
         <tr key={p.id}>
           <td style={cell}><div style={{ ...inner, padding: '0 4pt', fontSize: '9pt', color: isDel ? '#dc2626' : undefined }}>{p.code}</div></td>
           <td style={cell}><div style={{ ...inner, justifyContent: 'center' }}>{firstImg && <img src={firstImg} alt="" style={{ width: 34, height: 34, objectFit: 'cover', display: 'block', margin: 'auto' }}/>}</div></td>
@@ -390,6 +420,8 @@ export default function LocaPage() {
         </tr>
       )
     })
+    return rows
+  }
 
   const COL_HEADERS = ['상품코드', '이미지', '옵션명', 'LOCA', '상품약어', '상품명']
 
