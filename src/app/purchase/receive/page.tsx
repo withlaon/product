@@ -707,34 +707,51 @@ export default function ReceiveManagePage() {
         )
 
         if (packingSheetName) {
-          /* ── 패킹리스트(装箱单): E열=바코드(款号/품번), I열=입고수량 ── */
+          /* ── 패킹리스트(装箱单): 헤더명으로 컬럼 동적 탐색
+             - 바코드: '款号' 또는 '품번'이 포함된 열
+             - 수량:   '수량' 또는 '数量'이 포함된 열 ── */
           const ws  = wb.Sheets[packingSheetName]
-          const raw = XLSX.utils.sheet_to_json<Record<string, unknown>>(ws, { defval: '', header: 'A' })
-          // E열에 '款号' 또는 '품번' 포함하는 헤더 행 동적 탐색 → 없으면 28(29행) 폴백
-          const hIdx = raw.findIndex(row =>
-            String(row['E'] || '').includes('款号') ||
-            String(row['E'] || '').includes('품번')
+          const aoa = XLSX.utils.sheet_to_json<unknown[]>(ws, { header: 1, defval: '' })
+
+          /* 헤더 행 탐색: 어느 열이든 '款号' 또는 '품번' 포함 셀 있는 행 */
+          const hIdx = aoa.findIndex(row =>
+            (row as unknown[]).some(cell =>
+              String(cell).includes('款号') || String(cell).includes('품번')
+            )
           )
-          const startIdx = hIdx >= 0 ? hIdx + 1 : 28
-          // E열 바코드가 있는 행만 포함
-          const dataRows = raw.slice(startIdx).filter(row =>
-            String(row['E'] || '').trim()
-          )
-          parsedItems = dataRows.map(row => {
-            const barcode = String(row['E'] || '').trim()
-            const qty     = String(row['I'] || '').trim()
-            let product_code = ''
-            let option_name  = ''
-            for (const prod of products) {
-              const opt = prod.options.find(o => o.barcode === barcode)
-              if (opt) {
-                product_code = prod.code
-                option_name  = opt.name || ''
-                break
-              }
+          if (hIdx >= 0) {
+            const headerRow = aoa[hIdx] as unknown[]
+            /* 바코드·수량 열 인덱스를 헤더명으로 동적 결정 */
+            const barcodeCol = headerRow.findIndex(c =>
+              String(c).includes('款号') || String(c).includes('품번')
+            )
+            const qtyCol = headerRow.findIndex(c =>
+              String(c).includes('수량') || String(c).includes('数量')
+            )
+            if (barcodeCol >= 0 && qtyCol >= 0) {
+              /* 데이터 행: 바코드 열에 영문+숫자 값이 있는 행만 처리 */
+              const dataRows = aoa.slice(hIdx + 1).filter(row => {
+                const bc = String((row as unknown[])[barcodeCol] || '').trim()
+                return bc && /^[A-Za-z0-9]/.test(bc) && !bc.includes('합계') && !bc.includes('총')
+              })
+              parsedItems = dataRows.map(row => {
+                const r = row as unknown[]
+                const barcode = String(r[barcodeCol] || '').trim()
+                const qty     = String(r[qtyCol] || '').trim()
+                let product_code = ''
+                let option_name  = ''
+                for (const prod of products) {
+                  const opt = prod.options.find(o => o.barcode === barcode)
+                  if (opt) {
+                    product_code = prod.code
+                    option_name  = opt.name || ''
+                    break
+                  }
+                }
+                return { product_code, option_name, barcode, qty }
+              }).filter(i => i.barcode && Number(i.qty) > 0)
             }
-            return { product_code, option_name, barcode, qty }
-          }).filter(i => i.barcode)
+          }
         } else {
           /* ── 폴백: 첫 번째 시트 기존 로직 ── */
           const ws  = wb.Sheets[wb.SheetNames[0]]
