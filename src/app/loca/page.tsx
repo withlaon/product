@@ -93,7 +93,9 @@ function buildPresetGroups(): LocaGroup[] {
   for (const f of ['A','B','C','D','E','F'])
     for (const s of ['A','B','C','D']) {
       const prefix = `${f}${s}`
-      groups.push({ prefix, items: Array.from({ length: 5 }, (_, i) => `${prefix}-${String(i+1).padStart(2,'0')}`) })
+      const items = Array.from({ length: 5 }, (_, i) => `${prefix}-${String(i+1).padStart(2,'0')}`)
+        .filter(loc => loc !== 'AB-05')
+      groups.push({ prefix, items })
     }
   for (const s of ['A','B','C','D','E','F','G','H','I','J','K']) {
     const prefix = `1${s}`
