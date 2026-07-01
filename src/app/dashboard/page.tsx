@@ -1396,6 +1396,33 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          {/* ─ 일별 주문 현황 (판매금액 기준, 호버 시 수량+금액) ─ */}
+          <div style={{ flexShrink:0, borderBottom:'1px solid #f8fafc', padding:'5px 14px 4px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:3 }}>
+              <p style={{ fontSize:'10px', fontWeight:800, color:'#64748b', letterSpacing:'0.02em' }}>
+                일별 주문 현황
+              </p>
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginLeft:'auto' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+                  <svg width="14" height="6"><line x1="0" y1="3" x2="14" y2="3" stroke="#a78bfa" strokeWidth={1.5} strokeDasharray="3 2"/></svg>
+                  <span style={{ fontSize:'8.5px', color:'#a78bfa', fontWeight:700 }}>판매금액</span>
+                </div>
+                <div style={{ display:'flex', alignItems:'center', gap:3 }}>
+                  <svg width="14" height="6"><line x1="0" y1="3" x2="14" y2="3" stroke="#3b82f6" strokeWidth={1.5}/></svg>
+                  <span style={{ fontSize:'8.5px', color:'#3b82f6', fontWeight:700 }}>판매수량</span>
+                </div>
+              </div>
+            </div>
+            <div style={{ height:110 }}>
+              {chartData.every(d => d.count === 0)
+                ? <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                    <span style={{ fontSize:'10px', color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
+                  </div>
+                : <LineChart data={chartData} />
+              }
+            </div>
+          </div>
+
           {/* ─ 판매금액 + 판매수량 통합 ─ */}
           <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'6px 14px 4px', display:'flex', flexDirection:'column' }}>
             {/* 상단: 판매금액 | 판매수량 나란히 */}
