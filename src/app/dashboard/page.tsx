@@ -1396,45 +1396,44 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* 최근 3년 월별 판매금액 (선 그래프) — 선택 월 일별 그래프 위 */}
-          <div style={{ flexShrink: 0, borderBottom: '1px solid #f8fafc', padding: '8px 14px 10px' }}>
-            <p style={{ fontSize: '11px', fontWeight: 800, color: '#64748b', letterSpacing: '0.02em', marginBottom: 6 }}>
-              최근 3년간 월별 판매금액
-            </p>
-            <div style={{ height: 132, width: '100%' }}>
-              <MonthlySales3YChart data={monthlySales3y} />
+          {/* ─ 판매금액 + 판매수량 통합 ─ */}
+          <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'6px 14px 4px', display:'flex', flexDirection:'column' }}>
+            {/* 상단: 판매금액 | 판매수량 나란히 */}
+            <div style={{ display:'flex', alignItems:'stretch', gap:8, flexShrink:0, marginBottom:6 }}>
+              {/* 판매금액 카드 */}
+              <div style={{ flex:1, background:'#f5f3ff', border:'1px solid #e9d5ff', borderRadius:8, padding:'6px 10px' }}>
+                <p style={{ fontSize:'9px', fontWeight:800, color:'#7c3aed', letterSpacing:'0.04em', marginBottom:3 }}>판매금액</p>
+                <p style={{ fontSize:'15px', fontWeight:900, color:'#7c3aed', lineHeight:1 }}>
+                  ₩{Math.round(monthRevSel).toLocaleString()}
+                </p>
+                <p style={{ fontSize:'8.5px', color:'#a78bfa', fontWeight:600, marginTop:2 }}>{selMonth.replace('-','년 ')}월 합계</p>
+              </div>
+              {/* 판매수량 카드 */}
+              <div style={{ flex:1, background:'#eff6ff', border:'1px solid #bfdbfe', borderRadius:8, padding:'6px 10px' }}>
+                <p style={{ fontSize:'9px', fontWeight:800, color:'#2563eb', letterSpacing:'0.04em', marginBottom:3 }}>판매수량</p>
+                <p style={{ fontSize:'15px', fontWeight:900, color:'#2563eb', lineHeight:1 }}>
+                  {monthTotal}<span style={{ fontSize:'11px', fontWeight:700, marginLeft:2 }}>건</span>
+                </p>
+                <p style={{ fontSize:'8.5px', color:'#60a5fa', fontWeight:600, marginTop:2 }}>{selMonth.replace('-','년 ')}월 합계</p>
+              </div>
             </div>
-          </div>
-
-          {/* ─ 판매금액 + 판매수량 통합 (누적 비교 그래프) ─ */}
-          <div style={{ flex:'2 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
-            {/* 범례 헤더 */}
+            {/* 범례 */}
             <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0, flexWrap:'wrap', marginBottom:2 }}>
-              {/* 당월 실선 */}
+              <p style={{ fontSize:'9px', fontWeight:800, color:'#94a3b8', marginRight:2 }}>일별 누적 판매금액</p>
               <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                <svg width="20" height="8" style={{ flexShrink:0 }}>
-                  <line x1="0" y1="4" x2="20" y2="4" stroke="#7c3aed" strokeWidth={2}/>
+                <svg width="18" height="7" style={{ flexShrink:0 }}>
+                  <line x1="0" y1="3.5" x2="18" y2="3.5" stroke="#7c3aed" strokeWidth={2}/>
                 </svg>
-                <span style={{ fontSize:'11px', fontWeight:800, color:'#7c3aed' }}>
-                  {selMonth.replace('-','년 ')}월 ₩{Math.round(monthRevSel).toLocaleString()}
-                </span>
+                <span style={{ fontSize:'10px', fontWeight:700, color:'#7c3aed' }}>{selMonth.replace('-','년 ')}월</span>
               </div>
-              {/* 전월 점선 */}
               <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                <svg width="20" height="8" style={{ flexShrink:0 }}>
-                  <line x1="0" y1="4" x2="20" y2="4" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 3"/>
+                <svg width="18" height="7" style={{ flexShrink:0 }}>
+                  <line x1="0" y1="3.5" x2="18" y2="3.5" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 3"/>
                 </svg>
-                <span style={{ fontSize:'11px', fontWeight:700, color:'#94a3b8' }}>
-                  {prevMonth.replace('-','년 ')}월
-                </span>
-              </div>
-              {/* 판매수량 */}
-              <div style={{ display:'flex', alignItems:'center', gap:4, marginLeft:'auto' }}>
-                <span style={{ fontSize:'11px', fontWeight:800, color:'#2563eb' }}>● 판매수량</span>
-                <span style={{ fontSize:'11px', color:'#94a3b8', fontWeight:600 }}>{monthTotal}건</span>
+                <span style={{ fontSize:'10px', fontWeight:600, color:'#94a3b8' }}>{prevMonth.replace('-','년 ')}월</span>
               </div>
             </div>
-            {/* 차트 영역 */}
+            {/* 누적 비교 차트 */}
             <div style={{ flex:1, minHeight:0 }}>
               {monthTotal === 0 && prevChartData.every(d => d.amount === 0)
                 ? <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
@@ -1449,23 +1448,24 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ─ 쇼핑몰별 판매수량 + 금액 ─ */}
-          <div style={{ flexShrink:0, padding:'5px 14px 6px' }}>
-            <p style={{ fontSize: '9.5px', fontWeight:800, color:'#94a3b8', marginBottom:5 }}>쇼핑몰별 판매수량</p>
+          {/* ─ 쇼핑몰별 판매수량 + 누적금액 ─ */}
+          <div style={{ flexShrink:0, padding:'5px 14px 7px' }}>
+            <p style={{ fontSize: '9.5px', fontWeight:800, color:'#94a3b8', marginBottom:5 }}>쇼핑몰별 판매현황</p>
             {mallSales.length === 0
               ? <span style={{ fontSize: '10px', color:'#e2e8f0' }}>-</span>
-              : <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+              : <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
                   {mallSales.map(([ch, cnt, amt], i) => (
-                    <div key={ch} style={{ display:'flex', alignItems:'center', gap:4, borderRadius:6, padding:'4px 8px',
-                      background: i === 0 ? '#fef9c3' : i === 1 ? '#f1f5f9' : '#f8fafc',
-                      border: `1px solid ${i===0?'#fde047':i===1?'#e2e8f0':'#f1f5f9'}` }}>
-                      <span style={{ fontSize: '9px' }}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':''}</span>
-                      <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
-                        <div style={{ display:'flex', alignItems:'baseline', gap:3 }}>
-                          <span style={{ fontSize:'10px', fontWeight:700, color:'#475569' }}>{ch}</span>
-                          <span style={{ fontSize:'11px', fontWeight:900, color: i<3?'#0f172a':'#64748b' }}>{cnt}건</span>
-                        </div>
-                        <span style={{ fontSize:'9px', fontWeight:700, color:'#64748b' }}>₩{amt.toLocaleString()}</span>
+                    <div key={ch} style={{
+                      display:'flex', alignItems:'center', gap:5, borderRadius:7, padding:'5px 9px',
+                      background: i === 0 ? '#fefce8' : i === 1 ? '#f0f9ff' : i === 2 ? '#f0fdf4' : '#f8fafc',
+                      border: `1px solid ${i===0?'#fde047':i===1?'#bae6fd':i===2?'#86efac':'#e2e8f0'}`,
+                      minWidth: 80,
+                    }}>
+                      <span style={{ fontSize: '10px', lineHeight:1 }}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':'📦'}</span>
+                      <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+                        <span style={{ fontSize:'10px', fontWeight:800, color: i===0?'#92400e':i===1?'#0369a1':i===2?'#166534':'#475569' }}>{ch}</span>
+                        <span style={{ fontSize:'12px', fontWeight:900, color:'#0f172a', lineHeight:1 }}>{cnt}<span style={{ fontSize:'9px', fontWeight:700, marginLeft:1 }}>건</span></span>
+                        <span style={{ fontSize:'9px', fontWeight:700, color: i===0?'#a16207':i===1?'#0284c7':i===2?'#15803d':'#64748b' }}>₩{amt.toLocaleString()}</span>
                       </div>
                     </div>
                   ))}
