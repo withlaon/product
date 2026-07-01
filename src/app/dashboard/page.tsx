@@ -260,9 +260,153 @@ function LineChart({ data }: { data: ChartPoint[] }) {
 
 // chart 내부에서 쓰기 위한 전역 ref (월 표시용)
 let _selMonthForChart = ''
+let _prevMonthForChart = ''
 function selMonthLabel(day: number) {
   const [y, m] = _selMonthForChart.split('-')
   return `${y}.${m}.${String(day).padStart(2,'0')}`
+}
+function prevMonthLabel(day: number) {
+  const [y, m] = _prevMonthForChart.split('-')
+  return `${y}.${m}.${String(day).padStart(2,'0')}`
+}
+
+/* ── 당월(실선) + 전월(점선) 누적 판매금액 비교 차트 ────── */
+function DualCumulativeChart({ curData, prevData, skipDays }: {
+  curData: SimplePoint[]
+  prevData: SimplePoint[]
+  skipDays?: Set<number>
+}) {
+  const [tipDay, setTipDay] = useState<number | null>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState({ w: 400, h: 80 })
+
+  useEffect(() => {
+    const el = containerRef.current
+    if (!el) return
+    const obs = new ResizeObserver(entries => {
+      const { width, height } = entries[0].contentRect
+      if (width > 10 && height > 10) setSize({ w: Math.round(width), h: Math.round(height) })
+    })
+    obs.observe(el)
+    return () => obs.disconnect()
+  }, [])
+
+  const W = size.w; const H = size.h
+  const padL = 4; const padR = 4; const padT = 4; const padB = 14
+  const cW = W - padL - padR; const cH = H - padT - padB
+
+  const maxDays = Math.max(
+    curData.length > 0 ? curData[curData.length - 1].day : 0,
+    prevData.length > 0 ? prevData[prevData.length - 1].day : 0,
+    1
+  )
+  const maxV = Math.max(...curData.map(d => d.value), ...prevData.map(d => d.value), 1)
+
+  const xPos = (day: number) => maxDays <= 1 ? padL + cW / 2 : padL + ((day - 1) / (maxDays - 1)) * cW
+  const yVal = (v: number) => padT + cH - (v / maxV) * cH
+
+  const buildPath = (data: SimplePoint[]) =>
+    data.length === 0 ? '' :
+    data.map((d, i) => `${i === 0 ? 'M' : 'L'}${xPos(d.day).toFixed(1)},${yVal(d.value).toFixed(1)}`).join(' ')
+
+  const curPath  = buildPath(curData)
+  const prevPath = buildPath(prevData)
+
+  const curFillPath = (() => {
+    if (!curData.length) return ''
+    let fp = `M${xPos(curData[0].day).toFixed(1)},${yVal(curData[0].value).toFixed(1)}`
+    for (let i = 1; i < curData.length; i++)
+      fp += ` L${xPos(curData[i].day).toFixed(1)},${yVal(curData[i].value).toFixed(1)}`
+    const last = curData[curData.length - 1]
+    fp += ` L${xPos(last.day).toFixed(1)},${(padT + cH).toFixed(1)} L${xPos(curData[0].day).toFixed(1)},${(padT + cH).toFixed(1)} Z`
+    return fp
+  })()
+
+  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect()
+    const mx = (e.clientX - rect.left) * (W / rect.width)
+    let nearest = 1; let minDist = Infinity
+    for (let d = 1; d <= maxDays; d++) {
+      const dx = Math.abs(xPos(d) - mx)
+      if (dx < minDist) { minDist = dx; nearest = d }
+    }
+    setTipDay(nearest)
+  }
+
+  const curTipPt  = tipDay !== null ? curData.find(d => d.day === tipDay) : undefined
+  const prevTipPt = tipDay !== null ? prevData.find(d => d.day === tipDay) : undefined
+  const tipXPx    = tipDay !== null ? xPos(tipDay) : 0
+  const tipXPct   = W > 0 ? (tipXPx / W) * 100 : 0
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', width: '100%', height: '100%' }}>
+      <svg viewBox={`0 0 ${W} ${H}`} width="100%" height="100%"
+        style={{ display: 'block', overflow: 'visible', cursor: 'crosshair' }}
+        onMouseMove={handleMouseMove} onMouseLeave={() => setTipDay(null)}>
+        <defs>
+          <linearGradient id="dcur-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#7c3aed" stopOpacity={0.14}/>
+            <stop offset="100%" stopColor="#7c3aed" stopOpacity={0}/>
+          </linearGradient>
+        </defs>
+        <line x1={padL} y1={padT+cH} x2={W-padR} y2={padT+cH} stroke="#f1f5f9" strokeWidth={0.8}/>
+        {prevPath && (
+          <path d={prevPath} fill="none" stroke="#94a3b8" strokeWidth={1.2}
+            strokeDasharray="4 3" strokeLinejoin="round" strokeLinecap="round" opacity={0.65}/>
+        )}
+        {curFillPath && <path d={curFillPath} fill="url(#dcur-grad)"/>}
+        {curPath && (
+          <path d={curPath} fill="none" stroke="#7c3aed" strokeWidth={1.6}
+            strokeLinejoin="round" strokeLinecap="round"/>
+        )}
+        {tipDay !== null && (
+          <line x1={tipXPx} y1={padT} x2={tipXPx} y2={padT+cH}
+            stroke="#94a3b8" strokeWidth={0.7} strokeDasharray="3 2" opacity={0.5}/>
+        )}
+        {tipDay !== null && curTipPt && (
+          <circle cx={tipXPx} cy={yVal(curTipPt.value)} r={2.8} fill="#7c3aed" stroke="#fff" strokeWidth={1.5}/>
+        )}
+        {tipDay !== null && prevTipPt && (
+          <circle cx={tipXPx} cy={yVal(prevTipPt.value)} r={2.5} fill="#94a3b8" stroke="#fff" strokeWidth={1.4} opacity={0.85}/>
+        )}
+        {Array.from({ length: maxDays }, (_, i) => i + 1).map(d =>
+          (d === 1 || d % 5 === 0) && !skipDays?.has(d) && (
+            <text key={d} x={xPos(d)} y={H - 1} textAnchor="middle" fontSize={7.5} fill="#cbd5e1">{d}</text>
+          )
+        )}
+      </svg>
+      {tipDay !== null && (curTipPt || prevTipPt) && (
+        <div style={{
+          position: 'absolute', top: '5%', pointerEvents: 'none', zIndex: 20,
+          left: `${tipXPct > 70 ? tipXPct - 14 : tipXPct + 1}%`,
+          transform: tipXPct > 70 ? 'translateX(-100%)' : 'none',
+          background: 'rgba(15,23,42,0.92)', borderRadius: 7, padding: '5px 9px',
+          boxShadow: '0 2px 12px rgba(0,0,0,0.22)',
+        }}>
+          {curTipPt && (
+            <>
+              <p style={{ fontSize: '9px', color: '#c4b5fd', fontWeight: 700, marginBottom: 1 }}>
+                {selMonthLabel(tipDay)} 누적
+              </p>
+              <p style={{ fontSize: '12px', color: '#fff', fontWeight: 800, marginBottom: curTipPt && prevTipPt ? 4 : 0 }}>
+                ₩{Math.round(curTipPt.value).toLocaleString()}
+              </p>
+            </>
+          )}
+          {prevTipPt && (
+            <>
+              <p style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, marginBottom: 1 }}>
+                {prevMonthLabel(tipDay)} 누적
+              </p>
+              <p style={{ fontSize: '11px', color: '#a1b4c8', fontWeight: 700 }}>
+                ₩{Math.round(prevTipPt.value).toLocaleString()}
+              </p>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  )
 }
 
 /* ── 단일 선 그래프 (가는 선, hover 툴팁) ────────────────── */
@@ -906,6 +1050,7 @@ export default function DashboardPage() {
   const [retention,     setRetention]     = useState<DashboardRetention>({ salesByDay: {}, purchaseByMonth: {} })
 
   _selMonthForChart = selMonth
+  _prevMonthForChart = shiftMonth(selMonth, -1)
 
   /* ── localStorage 데이터 즉시 갱신 ── */
   const refreshLocal = useCallback(() => {
@@ -1076,6 +1221,33 @@ export default function DashboardPage() {
   const monthRevSel = useMemo(() => chartData.reduce((s,d) => s+d.amount, 0), [chartData])
   const chartSkipDays = useMemo(() => getSkipDays(selMonth), [selMonth])
 
+  /* ── 지난달 일별 데이터 & 누적 ── */
+  const prevMonth = useMemo(() => shiftMonth(selMonth, -1), [selMonth])
+
+  const prevChartData = useMemo(() => {
+    const days = daysInMonth(prevMonth)
+    const mo = allOrdersMerged.filter(
+      o => o.order_date?.slice(0,7) === prevMonth && o.status !== 'cancelled'
+    )
+    return Array.from({ length: days }, (_, i) => {
+      const day  = i + 1
+      const date = `${prevMonth}-${String(day).padStart(2,'0')}`
+      const dayO = mo.filter(o => o.order_date === date)
+      const live = dayO.reduce((s, o) => s + dashboardAmountForMergedRow(o, shippedById), 0)
+      return { day, count: dayO.length, amount: live + (retention.salesByDay[date] ?? 0) }
+    })
+  }, [allOrdersMerged, shippedById, prevMonth, retention])
+
+  const curCumulative = useMemo(() => {
+    let sum = 0
+    return chartData.map(d => ({ day: d.day, value: (sum += d.amount) }))
+  }, [chartData])
+
+  const prevCumulative = useMemo(() => {
+    let sum = 0
+    return prevChartData.map(d => ({ day: d.day, value: (sum += d.amount) }))
+  }, [prevChartData])
+
   /** 최근 36개월(3년) 월별 판매금액 — 당월(curYM)까지 */
   const monthlySales3y = useMemo((): MonthlyAmtPoint[] => {
     const keys: string[] = []
@@ -1137,19 +1309,23 @@ export default function DashboardPage() {
     [monthRevSel, monthPurchaseCost, monthShippingFee]
   )
 
-  /* ── 쇼핑몰별 판매건수 ── */
+  /* ── 쇼핑몰별 판매건수 + 누적 금액 ── */
   const mallSales = useMemo(() => {
-    const map: Record<string, number> = {}
+    const cntMap: Record<string, number> = {}
+    const amtMap: Record<string, number> = {}
     allOrdersMerged
       .filter(o => o.order_date?.slice(0,7) === selMonth && o.status !== 'cancelled')
       .forEach(o => {
         const ch = (o as unknown as { channel?: string; import_source?: string }).channel
                || (o as unknown as { import_source?: string }).import_source
                || '기타'
-        map[ch] = (map[ch] || 0) + 1
+        cntMap[ch] = (cntMap[ch] || 0) + 1
+        amtMap[ch] = (amtMap[ch] || 0) + dashboardAmountForMergedRow(o, shippedById)
       })
-    return Object.entries(map).sort((a, b) => b[1] - a[1])
-  }, [allOrdersMerged, selMonth])
+    return Object.entries(cntMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([ch, cnt]) => [ch, cnt, Math.round(amtMap[ch] || 0)] as [string, number, number])
+  }, [allOrdersMerged, selMonth, shippedById])
 
   /* ── CS ── */
   const openCs = useMemo(() => csItems.filter(c => isCsItemPending(c)), [csItems])
@@ -1230,65 +1406,67 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ─ 1줄: 판매금액 선그래프 ─ */}
-          <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-              <span style={{ fontSize: '12px', fontWeight:800, color:'#7c3aed' }}>● 판매금액</span>
-              <span style={{ fontSize: '11px', color:'#94a3b8' }}>
-                {selMonth.replace('-','년 ')}월 합계 ₩{Math.round(monthRevSel).toLocaleString()}
-              </span>
+          {/* ─ 판매금액 + 판매수량 통합 (누적 비교 그래프) ─ */}
+          <div style={{ flex:'2 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
+            {/* 범례 헤더 */}
+            <div style={{ display:'flex', alignItems:'center', gap:10, flexShrink:0, flexWrap:'wrap', marginBottom:2 }}>
+              {/* 당월 실선 */}
+              <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <svg width="20" height="8" style={{ flexShrink:0 }}>
+                  <line x1="0" y1="4" x2="20" y2="4" stroke="#7c3aed" strokeWidth={2}/>
+                </svg>
+                <span style={{ fontSize:'11px', fontWeight:800, color:'#7c3aed' }}>
+                  {selMonth.replace('-','년 ')}월 ₩{Math.round(monthRevSel).toLocaleString()}
+                </span>
+              </div>
+              {/* 전월 점선 */}
+              <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                <svg width="20" height="8" style={{ flexShrink:0 }}>
+                  <line x1="0" y1="4" x2="20" y2="4" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 3"/>
+                </svg>
+                <span style={{ fontSize:'11px', fontWeight:700, color:'#94a3b8' }}>
+                  {prevMonth.replace('-','년 ')}월
+                </span>
+              </div>
+              {/* 판매수량 */}
+              <div style={{ display:'flex', alignItems:'center', gap:4, marginLeft:'auto' }}>
+                <span style={{ fontSize:'11px', fontWeight:800, color:'#2563eb' }}>● 판매수량</span>
+                <span style={{ fontSize:'11px', color:'#94a3b8', fontWeight:600 }}>{monthTotal}건</span>
+              </div>
             </div>
+            {/* 차트 영역 */}
             <div style={{ flex:1, minHeight:0 }}>
-              {monthTotal === 0
+              {monthTotal === 0 && prevChartData.every(d => d.amount === 0)
                 ? <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <span style={{ fontSize: '10px', color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
+                    <span style={{ fontSize:'10px', color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
                   </div>
-                : <SingleLineChart
-                    data={chartData.map(d => ({ day:d.day, value:d.amount }))}
-                    color="#7c3aed" gradId="dash-amt"
-                    formatTip={v => `₩${Math.round(v).toLocaleString()}`}
+                : <DualCumulativeChart
+                    curData={curCumulative}
+                    prevData={prevCumulative}
                     skipDays={chartSkipDays}
                   />
               }
             </div>
           </div>
 
-          {/* ─ 2줄: 판매수량 선그래프 ─ */}
-          <div style={{ flex:'1 1 0', minHeight:0, borderBottom:'1px solid #f8fafc', padding:'4px 14px 2px', display:'flex', flexDirection:'column' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:6, flexShrink:0 }}>
-              <span style={{ fontSize: '12px', fontWeight:800, color:'#2563eb' }}>● 판매수량</span>
-              <span style={{ fontSize: '11px', color:'#94a3b8' }}>
-                {selMonth.replace('-','년 ')}월 합계 {monthTotal}건
-              </span>
-            </div>
-            <div style={{ flex:1, minHeight:0 }}>
-              {monthTotal === 0
-                ? <div style={{ height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}>
-                    <span style={{ fontSize: '10px', color:'#e2e8f0', fontWeight:600 }}>데이터 없음</span>
-                  </div>
-                : <SingleLineChart
-                    data={chartData.map(d => ({ day:d.day, value:d.count }))}
-                    color="#2563eb" gradId="dash-cnt"
-                    formatTip={v => `${v}건`}
-                    skipDays={chartSkipDays}
-                  />
-              }
-            </div>
-          </div>
-
-          {/* ─ 3줄: 쇼핑몰별 판매수량 ─ */}
+          {/* ─ 쇼핑몰별 판매수량 + 금액 ─ */}
           <div style={{ flexShrink:0, padding:'5px 14px 6px' }}>
             <p style={{ fontSize: '9.5px', fontWeight:800, color:'#94a3b8', marginBottom:5 }}>쇼핑몰별 판매수량</p>
             {mallSales.length === 0
               ? <span style={{ fontSize: '10px', color:'#e2e8f0' }}>-</span>
               : <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
-                  {mallSales.map(([ch, cnt], i) => (
-                    <div key={ch} style={{ display:'flex', alignItems:'center', gap:3, borderRadius:6, padding:'3px 8px',
+                  {mallSales.map(([ch, cnt, amt], i) => (
+                    <div key={ch} style={{ display:'flex', alignItems:'center', gap:4, borderRadius:6, padding:'4px 8px',
                       background: i === 0 ? '#fef9c3' : i === 1 ? '#f1f5f9' : '#f8fafc',
                       border: `1px solid ${i===0?'#fde047':i===1?'#e2e8f0':'#f1f5f9'}` }}>
-                      <span style={{ fontSize: '8.5px' }}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':''}</span>
-                      <span style={{ fontSize: '10px', fontWeight:700, color:'#475569' }}>{ch}</span>
-                      <span style={{ fontSize: '11px', fontWeight:900, color: i<3?'#0f172a':'#64748b' }}>{cnt}건</span>
+                      <span style={{ fontSize: '9px' }}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':''}</span>
+                      <div style={{ display:'flex', flexDirection:'column', gap:0 }}>
+                        <div style={{ display:'flex', alignItems:'baseline', gap:3 }}>
+                          <span style={{ fontSize:'10px', fontWeight:700, color:'#475569' }}>{ch}</span>
+                          <span style={{ fontSize:'11px', fontWeight:900, color: i<3?'#0f172a':'#64748b' }}>{cnt}건</span>
+                        </div>
+                        <span style={{ fontSize:'9px', fontWeight:700, color:'#64748b' }}>₩{amt.toLocaleString()}</span>
+                      </div>
                     </div>
                   ))}
                 </div>
