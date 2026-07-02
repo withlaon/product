@@ -1213,7 +1213,12 @@ export default function DashboardPage() {
       const date = `${selMonth}-${String(day).padStart(2,'0')}`
       const dayO = mo.filter(o => o.order_date === date)
       const live = dayO.reduce((s, o) => s + dashboardAmountForMergedRow(o, shippedById), 0)
-      return { day, count: dayO.length, amount: live + (retention.salesByDay[date] ?? 0) }
+      const returnCnt = retention.returnsCountByDay?.[date] ?? 0
+      return {
+        day,
+        count: Math.max(0, dayO.length - returnCnt),
+        amount: live + (retention.salesByDay[date] ?? 0),
+      }
     })
   }, [allOrdersMerged, shippedById, selMonth, retention])
 
@@ -1309,7 +1314,7 @@ export default function DashboardPage() {
     [monthRevSel, monthPurchaseCost, monthShippingFee]
   )
 
-  /* ── 쇼핑몰별 판매건수 + 누적 금액 ── */
+  /* ── 쇼핑몰별 판매건수 + 누적 금액 (반품 차감 반영) ── */
   const mallSales = useMemo(() => {
     const cntMap: Record<string, number> = {}
     const amtMap: Record<string, number> = {}
@@ -1322,10 +1327,17 @@ export default function DashboardPage() {
         cntMap[ch] = (cntMap[ch] || 0) + 1
         amtMap[ch] = (amtMap[ch] || 0) + dashboardAmountForMergedRow(o, shippedById)
       })
+    /* 반품 차감 */
+    const mallReturns = retention.returnsByMall?.[selMonth] ?? {}
+    for (const [mall, { count, amount }] of Object.entries(mallReturns)) {
+      cntMap[mall] = Math.max(0, (cntMap[mall] ?? 0) - count)
+      amtMap[mall] = (amtMap[mall] ?? 0) - amount
+    }
     return Object.entries(cntMap)
+      .filter(([, cnt]) => cnt > 0)
       .sort((a, b) => b[1] - a[1])
       .map(([ch, cnt]) => [ch, cnt, Math.round(amtMap[ch] || 0)] as [string, number, number])
-  }, [allOrdersMerged, selMonth, shippedById])
+  }, [allOrdersMerged, selMonth, shippedById, retention])
 
   /* ── CS ── */
   const openCs = useMemo(() => csItems.filter(c => isCsItemPending(c)), [csItems])
@@ -1475,28 +1487,39 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* ─ 쇼핑몰별 판매수량 + 누적금액 ─ */}
+          {/* ─ 쇼핑몰별 판매수량 + 누적금액 + 비율 ─ */}
           <div style={{ flexShrink:0, padding:'5px 14px 7px' }}>
             <p style={{ fontSize: '9.5px', fontWeight:800, color:'#94a3b8', marginBottom:5 }}>쇼핑몰별 판매현황</p>
             {mallSales.length === 0
               ? <span style={{ fontSize: '10px', color:'#e2e8f0' }}>-</span>
-              : <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
-                  {mallSales.map(([ch, cnt, amt], i) => (
-                    <div key={ch} style={{
-                      display:'flex', alignItems:'center', gap:5, borderRadius:7, padding:'5px 9px',
-                      background: i === 0 ? '#fefce8' : i === 1 ? '#f0f9ff' : i === 2 ? '#f0fdf4' : '#f8fafc',
-                      border: `1px solid ${i===0?'#fde047':i===1?'#bae6fd':i===2?'#86efac':'#e2e8f0'}`,
-                      minWidth: 80,
-                    }}>
-                      <span style={{ fontSize: '10px', lineHeight:1 }}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':'📦'}</span>
-                      <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
-                        <span style={{ fontSize:'10px', fontWeight:800, color: i===0?'#92400e':i===1?'#0369a1':i===2?'#166534':'#475569' }}>{ch}</span>
-                        <span style={{ fontSize:'12px', fontWeight:900, color:'#0f172a', lineHeight:1 }}>{cnt}<span style={{ fontSize:'9px', fontWeight:700, marginLeft:1 }}>건</span></span>
-                        <span style={{ fontSize:'9px', fontWeight:700, color: i===0?'#a16207':i===1?'#0284c7':i===2?'#15803d':'#64748b' }}>₩{amt.toLocaleString()}</span>
-                      </div>
+              : (() => {
+                  const totalCnt = mallSales.reduce((s, [, c]) => s + c, 0)
+                  return (
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+                      {mallSales.map(([ch, cnt, amt], i) => {
+                        const pct = totalCnt > 0 ? Math.round(cnt / totalCnt * 100) : 0
+                        return (
+                          <div key={ch} style={{
+                            display:'flex', alignItems:'center', gap:5, borderRadius:7, padding:'5px 9px',
+                            background: i === 0 ? '#fefce8' : i === 1 ? '#f0f9ff' : i === 2 ? '#f0fdf4' : '#f8fafc',
+                            border: `1px solid ${i===0?'#fde047':i===1?'#bae6fd':i===2?'#86efac':'#e2e8f0'}`,
+                            minWidth: 86,
+                          }}>
+                            <span style={{ fontSize: '10px', lineHeight:1 }}>{i===0?'🥇':i===1?'🥈':i===2?'🥉':'📦'}</span>
+                            <div style={{ display:'flex', flexDirection:'column', gap:1 }}>
+                              <div style={{ display:'flex', alignItems:'baseline', gap:4 }}>
+                                <span style={{ fontSize:'10px', fontWeight:800, color: i===0?'#92400e':i===1?'#0369a1':i===2?'#166534':'#475569' }}>{ch}</span>
+                                <span style={{ fontSize:'9px', fontWeight:700, color: i===0?'#ca8a04':i===1?'#0284c7':i===2?'#16a34a':'#94a3b8', background: i===0?'#fef9c3':i===1?'#e0f2fe':i===2?'#dcfce7':'#f1f5f9', borderRadius:4, padding:'0 4px' }}>{pct}%</span>
+                              </div>
+                              <span style={{ fontSize:'12px', fontWeight:900, color:'#0f172a', lineHeight:1 }}>{cnt}<span style={{ fontSize:'9px', fontWeight:700, marginLeft:1 }}>건</span></span>
+                              <span style={{ fontSize:'9px', fontWeight:700, color: i===0?'#a16207':i===1?'#0284c7':i===2?'#15803d':'#64748b' }}>₩{amt.toLocaleString()}</span>
+                            </div>
+                          </div>
+                        )
+                      })}
                     </div>
-                  ))}
-                </div>
+                  )
+                })()
             }
           </div>
         </div>

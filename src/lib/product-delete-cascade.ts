@@ -23,22 +23,44 @@ export const DASHBOARD_RETENTION_KEY = 'pm_dashboard_retention_v1'
 export interface DashboardRetention {
   salesByDay: Record<string, number>
   purchaseByMonth: Record<string, number>
+  /** 반품 처리완료 날짜별 차감 수량 (양수 = 차감) */
+  returnsCountByDay: Record<string, number>
+  /** 반품 처리완료: "YYYY-MM" → 쇼핑몰 → { count, amount } */
+  returnsByMall: Record<string, Record<string, { count: number; amount: number }>>
 }
 
 export function loadDashboardRetention(): DashboardRetention {
-  if (typeof window === 'undefined') return { salesByDay: {}, purchaseByMonth: {} }
+  if (typeof window === 'undefined') return { salesByDay: {}, purchaseByMonth: {}, returnsCountByDay: {}, returnsByMall: {} }
   try {
     const raw = localStorage.getItem(DASHBOARD_RETENTION_KEY)
-    if (!raw) return { salesByDay: {}, purchaseByMonth: {} }
+    if (!raw) return { salesByDay: {}, purchaseByMonth: {}, returnsCountByDay: {}, returnsByMall: {} }
     const p = JSON.parse(raw) as Partial<DashboardRetention>
     return {
       salesByDay: p.salesByDay && typeof p.salesByDay === 'object' ? { ...p.salesByDay } : {},
-      purchaseByMonth:
-        p.purchaseByMonth && typeof p.purchaseByMonth === 'object' ? { ...p.purchaseByMonth } : {},
+      purchaseByMonth: p.purchaseByMonth && typeof p.purchaseByMonth === 'object' ? { ...p.purchaseByMonth } : {},
+      returnsCountByDay: p.returnsCountByDay && typeof p.returnsCountByDay === 'object' ? { ...p.returnsCountByDay } : {},
+      returnsByMall: p.returnsByMall && typeof p.returnsByMall === 'object' ? { ...(p.returnsByMall as Record<string, Record<string, { count: number; amount: number }>>) } : {},
     }
   } catch {
-    return { salesByDay: {}, purchaseByMonth: {} }
+    return { salesByDay: {}, purchaseByMonth: {}, returnsCountByDay: {}, returnsByMall: {} }
   }
+}
+
+/** 반품 처리완료 시: 날짜·쇼핑몰별 차감을 retention에 누적 */
+export function mergeReturnDeduction(date: string, mall: string, qty: number, amount: number) {
+  if (typeof window === 'undefined') return
+  const cur = loadDashboardRetention()
+  const ym = date.slice(0, 7)
+  // salesByDay에 음수로 차감
+  cur.salesByDay[date] = (cur.salesByDay[date] ?? 0) - amount
+  // 날짜별 차감 건수
+  cur.returnsCountByDay[date] = (cur.returnsCountByDay[date] ?? 0) + qty
+  // 쇼핑몰·월별 차감
+  if (!cur.returnsByMall[ym]) cur.returnsByMall[ym] = {}
+  const prev = cur.returnsByMall[ym][mall] ?? { count: 0, amount: 0 }
+  cur.returnsByMall[ym][mall] = { count: prev.count + qty, amount: prev.amount + amount }
+  saveDashboardRetention(cur)
+  broadcastDashboardRefresh()
 }
 
 function saveDashboardRetention(r: DashboardRetention) {

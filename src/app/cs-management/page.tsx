@@ -10,6 +10,7 @@ import {
 import { loadShippedOrders, loadMappings, lookupMapping } from '@/lib/orders'
 import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
 import { isCsItemPending as isCsItemPendingShared } from '@/lib/cs-pending'
+import { mergeReturnDeduction } from '@/lib/product-delete-cascade'
 
 /* ─── 타입 ──────────────────────────────────────────────────────── */
 type CsType   = 'return' | 'exchange'
@@ -123,7 +124,10 @@ type CachedOption = {
   image?: string; current_stock?: number; defective?: number
   [k: string]: unknown
 }
-type CachedProduct = { id: string; abbr?: string; options: CachedOption[] }
+type CachedProduct = {
+  id: string; abbr?: string; options: CachedOption[]
+  channel_prices?: { channel: string; price: number }[]
+}
 
 const PM_IMG_CACHE_KEY = 'pm_product_images_v1'
 
@@ -759,10 +763,13 @@ export default function CsManagementPage() {
           }),
         }))
         if (!found) {
+          /* 바코드 미매칭: 상태만 업데이트 + 대시보드 차감 */
           const updated = items.map(i =>
             i.id === item.id ? { ...i, status: 'processed' as CsStatus, processed_at: ts } : i
           )
           saveCs(updated); setItems(updated)
+          /* 반품 → 대시보드 판매 차감 (금액 0으로 처리) */
+          mergeReturnDeduction(ts.slice(0, 10), item.mall, qty, 0)
           return
         }
       }
@@ -798,6 +805,14 @@ export default function CsManagementPage() {
         }
       } else {
         patch = { status: 'processed', processed_at: ts }
+
+        /* ── 반품 처리완료: 대시보드 판매수량·금액 차감 ── */
+        const allProds = loadCachedProducts()
+        const matchedProd = allProds.find(p =>
+          p.options.some(o => (o.barcode ?? '').trim() === item.barcode.trim())
+        )
+        const chPrice = matchedProd?.channel_prices?.find(cp => cp.channel === item.mall)?.price ?? 0
+        mergeReturnDeduction(ts.slice(0, 10), item.mall, qty, chPrice * qty)
       }
 
       const updated = items.map(i => {
