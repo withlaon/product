@@ -1047,7 +1047,7 @@ export default function DashboardPage() {
   const [selMonth,      setSelMonth]      = useState(curYM)
   const [lastUpdate,    setLastUpdate]    = useState<Date | null>(null)
   const [refreshing,    setRefreshing]    = useState(false)
-  const [retention,     setRetention]     = useState<DashboardRetention>({ salesByDay: {}, purchaseByMonth: {} })
+  const [retention,     setRetention]     = useState<DashboardRetention>({ salesByDay: {}, purchaseByMonth: {}, returnsCountByDay: {}, returnsByMall: {} })
 
   _selMonthForChart = selMonth
   _prevMonthForChart = shiftMonth(selMonth, -1)
