@@ -260,9 +260,9 @@ function buildTossColMap(headerRow: unknown[]): TossColMap {
     return -1
   }
   return {
-    주문번호:       idx(['주문번호']),
-    주문상품번호:   idx(['주문상품번호']),
-    주문상태:       idx(['주문상태']),
+    주문번호:       idx(['주문번호', '주문 번호']),
+    주문상품번호:   idx(['주문상품번호', '주문 상품번호']),
+    주문상태:       idx(['주문상태', '주문 상태', '상태']),
     주문건수:       idx(['주문건수']),
     상품명:         idx(['상품명']),
     옵션명:         idx(['옵션명']),
@@ -839,33 +839,53 @@ export default function OrderRegistrationPage() {
 
         let orders: RegOrder[] = []
         let tossSyntheticRaw: Record<string, unknown>[] = []
+        let tossFallbackNote = ''
 
         if (isTossShopping && tossRawAoa) {
-          /* 헤더행 자동 감지: '주문번호' 셀이 포함된 행을 열 위치 무관하게 탐색.
-             데이터 시작 = 헤더행 + 2 (헤더행 + 수정안내행 스킵).
-             주문상태 == '상품준비중'인 행만 처리. */
-          const tossColHdrIdx = tossRawAoa.findIndex(r =>
-            (r as unknown[]).some(cell => String(cell ?? '').trim() === '주문번호')
+          /* 헤더행 자동 감지: '주문번호' 계열 셀이 포함된 행을 열 위치 무관하게 탐색.
+             정확히 일치하는 행이 없으면 "포함" 검사로 재시도 (양식 변형 대비). */
+          const HEADER_CANDIDATES = ['주문번호', '주문 번호']
+          let tossColHdrIdx = tossRawAoa.findIndex(r =>
+            (r as unknown[]).some(cell => HEADER_CANDIDATES.includes(String(cell ?? '').trim()))
           )
           if (tossColHdrIdx < 0) {
+            // 완전 일치 실패 시: '주문번호'를 포함하는 셀로 재탐색 (예: '주문번호(필수)')
+            tossColHdrIdx = tossRawAoa.findIndex(r =>
+              (r as unknown[]).some(cell => String(cell ?? '').trim().includes('주문번호'))
+            )
+          }
+          if (tossColHdrIdx < 0) {
             setImportMsg({ text: '토스쇼핑: 주문번호 헤더를 찾을 수 없습니다. 올바른 주문배송관리 파일인지 확인해주세요.', ok: false })
+            alert('토스쇼핑 업로드 실패\n\n"주문번호" 헤더를 파일에서 찾을 수 없습니다.\n올바른 토스쇼핑 주문배송관리 엑셀 파일인지 확인 후 다시 시도해주세요.')
             setImporting(false)
             if (fileRef.current) fileRef.current.value = ''
             return
           }
           const tossColMap = buildTossColMap(tossRawAoa[tossColHdrIdx] as unknown[])
           const tossDataStart = tossColHdrIdx + 2
+          const statusSeen = new Set<string>()
+          const strictRows: { line: unknown[]; i: number }[] = []
+          const anyValidRows: { line: unknown[]; i: number }[] = []
           for (let i = tossDataStart; i < tossRawAoa.length; i++) {
             const line = tossRawAoa[i] as unknown[]
             if (!line?.length) continue
             const orderNum = String(tossColMap.주문번호 >= 0 ? line[tossColMap.주문번호] : '').trim()
             // 주문번호: 숫자 4자리 이상인 행만 데이터로 인식 (헤더·안내 행 제외)
             if (!orderNum || !/^\d{4,}/.test(orderNum)) continue
-            // 주문상태 필터: 상품준비중만 처리 (취소·발송완료 등 제외)
+            anyValidRows.push({ line, i })
             if (tossColMap.주문상태 >= 0) {
               const status = String(line[tossColMap.주문상태] ?? '').trim()
-              if (status && status !== '상품준비중') continue
+              if (status) statusSeen.add(status)
+              if (!status || status === '상품준비중') strictRows.push({ line, i })
+            } else {
+              strictRows.push({ line, i })
             }
+          }
+          // 1차: '상품준비중' 상태만. 하나도 없으면 상태 필터 없이 전체 유효 행으로 폴백
+          // (상태 텍스트 표기가 다른 양식이어도 데이터 누락 없이 업로드되도록 보장)
+          const rowsToUse = strictRows.length > 0 ? strictRows : anyValidRows
+          const usedFallback = strictRows.length === 0 && anyValidRows.length > 0
+          for (const { line, i } of rowsToUse) {
             orders.push(parseTossShoppingAoaRow(line, i, tossColMap))
             tossSyntheticRaw.push({
               주문번호: tossColMap.주문번호 >= 0 ? line[tossColMap.주문번호] : '',
@@ -881,10 +901,16 @@ export default function OrderRegistrationPage() {
             })
           }
           if (orders.length === 0) {
-            setImportMsg({ text: '토스쇼핑: 상품준비중 상태의 유효한 주문이 없습니다.', ok: false })
+            const statusInfo = statusSeen.size > 0 ? ` (발견된 상태값: ${[...statusSeen].join(', ')})` : ''
+            const msg = `토스쇼핑: 유효한 주문 행을 찾을 수 없습니다.${statusInfo} 파일 형식을 확인해주세요.`
+            setImportMsg({ text: msg, ok: false })
+            alert('토스쇼핑 업로드 실패\n\n' + msg)
             setImporting(false)
             if (fileRef.current) fileRef.current.value = ''
             return
+          }
+          if (usedFallback) {
+            tossFallbackNote = ` ⚠️ "상품준비중" 상태 행이 없어 전체 유효 주문을 업로드함 (발견된 상태값: ${[...statusSeen].join(', ') || '없음'})`
           }
         } else {
           orders = rows.map((row, idx) => {
@@ -1007,11 +1033,16 @@ export default function OrderRegistrationPage() {
 
         const totalInStore = finalOrders.length
         setImportMsg({
-          text: `${syncOrders.length}건 등록 완료${isMarketPlus ? ` (매핑 ${Object.keys(autoMappingUpdates).length}건 자동 업데이트)` : ''} · 주문관리 전체 ${totalInStore}건`,
+          text: `${syncOrders.length}건 등록 완료${isMarketPlus ? ` (매핑 ${Object.keys(autoMappingUpdates).length}건 자동 업데이트)` : ''} · 주문관리 전체 ${totalInStore}건${tossFallbackNote}`,
           ok: true,
         })
+        if (tossFallbackNote) {
+          alert(`토스쇼핑 업로드 완료 (주의)\n\n${syncOrders.length}건 등록됨.${tossFallbackNote}`)
+        }
       } catch (err) {
-        setImportMsg({ text: '파일 파싱 오류: ' + String(err), ok: false })
+        const msg = '파일 파싱 오류: ' + String(err)
+        setImportMsg({ text: msg, ok: false })
+        alert('업로드 실패\n\n' + msg)
       }
       setImporting(false)
       if (fileRef.current) fileRef.current.value = ''
