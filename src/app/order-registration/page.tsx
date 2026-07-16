@@ -13,6 +13,7 @@ import {
   loadMappings, saveMappings, makeMappingKey, mpToChannel, lookupMapping,
 } from '@/lib/orders'
 import type { Order } from '@/lib/orders'
+import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
 
 /* ─── 쇼핑몰 정의 (지그재그 제외) ──────────────────────── */
 const MALLS = [
@@ -919,24 +920,28 @@ export default function OrderRegistrationPage() {
           extra_data:       o.extra_data,
         }))
 
-        const existingMain = loadOrders()
-        // 같은 import_source+날짜의 이전 업로드를 제거 (당일 재업로드 허용)
-        const importSrc = isMarketPlus ? 'marketplus' : mallLabel
-        const toRemoveIds = new Set(
-          existingMain
-            .filter(o => o.extra_data?.['import_source'] === importSrc && o.order_date === today)
-            .map(o => o.id)
+        /* ── pm_orders_v1 원자적 동기화 ──
+           removeOrdersByIds + upsertOrders 를 단일 localStorage 쓰기로 합쳐
+           중간 상태(이벤트로 인한 잘못된 읽기)를 원천 차단 */
+        const importSrc   = isMarketPlus ? 'marketplus' : mallLabel
+        const existingAll = loadOrders()
+        // 같은 소스+오늘 날짜의 이전 업로드 제거 (당일 재업로드 허용)
+        const filtered    = existingAll.filter(
+          o => !(o.extra_data?.['import_source'] === importSrc && o.order_date === today)
         )
-        removeOrdersByIds([...toRemoveIds])
+        // 다른 쇼핑몰 데이터는 그대로 유지하고 새 주문만 추가
+        const finalOrders = [...filtered, ...syncOrders]
+        try {
+          localStorage.setItem('pm_orders_v1', JSON.stringify(finalOrders))
+        } catch { /* ignore */ }
 
-        // 쇼핑몰간 주문번호 충돌 방지를 위해 remainingNums 체크 없이 전체 추가
-        // (같은 소스+날짜는 toRemoveIds로 이미 제거됨)
-        upsertOrders(syncOrders)
-        // 주문관리 탭이 같은 창에 마운트되어 있을 때 즉시 갱신
+        // 주문관리 탭 즉시 갱신 (같은 창 + 다른 탭)
+        broadcastDashboardRefresh()
         try { window.dispatchEvent(new CustomEvent('pm_orders_updated')) } catch { /* ignore */ }
 
+        const totalInStore = finalOrders.length
         setImportMsg({
-          text: `${syncOrders.length}건 등록 완료${isMarketPlus ? ` (매핑 ${Object.keys(autoMappingUpdates).length}건 자동 업데이트)` : ''} · 주문관리 동기화됨`,
+          text: `${syncOrders.length}건 등록 완료${isMarketPlus ? ` (매핑 ${Object.keys(autoMappingUpdates).length}건 자동 업데이트)` : ''} · 주문관리 전체 ${totalInStore}건`,
           ok: true,
         })
       } catch (err) {
