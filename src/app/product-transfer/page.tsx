@@ -421,7 +421,10 @@ export default function OrdersPage() {
      pm_dashboard_refresh: upsertOrders 호출 시 자동 발생
      pm_orders_updated: 주문서등록탭에서 업로드 완료 시 명시적 발생 */
   useEffect(() => {
-    const reload = () => { setOrders(loadOrders()) }
+    const reload = () => {
+      setOrders(loadOrders())
+      setSelectedDate(getToday())
+    }
     window.addEventListener('pm_dashboard_refresh', reload)
     window.addEventListener('pm_orders_updated', reload)
     return () => {
@@ -430,9 +433,14 @@ export default function OrdersPage() {
     }
   }, [])
 
-  /* 브라우저 탭 전환 후 복귀 시 최신 주문 재로드 */
+  /* 브라우저 탭 전환 후 복귀 시 최신 주문 재로드 + 날짜 동기화 */
   useEffect(() => {
-    const onVisible = () => { if (!document.hidden) setOrders(loadOrders()) }
+    const onVisible = () => {
+      if (!document.hidden) {
+        setOrders(loadOrders())
+        setSelectedDate(getToday())
+      }
+    }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
