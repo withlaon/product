@@ -330,43 +330,78 @@ function parseTossShoppingAoaRow(row: unknown[], idx: number, col: TossColMap): 
 }
 
 /* ─── 지에스샵 전용 파싱 ─────────────────────────────────── */
+/* 구형(출하지시번호·수취인·협력사지급금액…) + 신형 파일접수상세내역(운송장번호·배달부·판매합계…) 동시 지원 */
 function parseGSShopRow(row: Record<string, unknown>, idx: number): RegOrder {
-  const orderNum = String(row['출하지시번호'] ?? `AUTO-GS-${Date.now()}-${idx}`)
   const cell = (key: string) => {
     const v = row[key]
     if (v === undefined || v === null) return ''
     return String(v).trim()
   }
-  /* GSSHOP order xlsx: N-column phone, else O-column receiver phone, else legacy handset column. */
+  const num = (key: string) => {
+    const v = row[key]
+    if (v === undefined || v === null || v === '') return 0
+    return typeof v === 'number' ? v : parseFloat(String(v).replace(/,/g, '')) || 0
+  }
+
+  // 주문번호: 구형 '출하지시번호' → 신형 '판매주문번호' → '운송장번호' → AUTO
+  const orderNum =
+    cell('출하지시번호') ||
+    cell('판매주문번호') ||
+    cell('운송장번호') ||
+    `AUTO-GS-${Date.now()}-${idx}`
+
+  // 수취인: 구형 '수취인' → 신형 '배달부'
+  const customer_name = cell('수취인') || cell('배달부') || '-'
+
+  // 전화번호: 구형 여러 컬럼 → 신형 '배달부연락처'
   const customer_phone =
-    cell('\uBC1B\uC740\uBD84 \uC804\uD654\uBC88\uD638') ||
-    cell('\uBC1B\uC740\uBD84\uC804\uD654\uBC88\uD638') ||
-    cell('\uC218\uCDE8\uC778\uC804\uD654\uBC88\uD638') ||
-    cell('\uC218\uCDE8\uC778 \uC804\uD654\uBC88\uD638') ||
-    cell('\uC218\uCDE8\uC778\uD578\uB4DC\uD3F0')
+    cell('받은분 전화번호') || cell('받은분전화번호') ||
+    cell('수취인전화번호') || cell('수취인 전화번호') ||
+    cell('수취인핸드폰') || cell('배달부연락처') || ''
+
+  // 주소: 구형 '수취인주소' → 신형 '배달부주소'
+  const shipping_address = cell('수취인주소') || cell('배달부주소') || ''
+
+  // 우편번호
+  const zipCode = cell('우편번호') || cell('배달부우편번호') || ''
+
+  // 상품명: 구형 '상품명(송장)' / '상품명(인터넷)' → 신형 '상품명' / '접수항목'
+  const product_name =
+    cell('상품명(송장)') || cell('상품명(인터넷)') ||
+    cell('상품명') || cell('접수항목') || '-'
+
+  // 상품코드
+  const sku = cell('협력사상품코드') || cell('상품상세코드') || cell('상품코드') || ''
+
+  // 수량: '수량' 또는 '상품수량'
+  const quantity = Math.max(1, Math.round(num('수량') || num('상품수량') || 1))
+
+  // 금액: 구형 '협력사지급금액' → 신형 '판매합계' / '기본가격'
+  const unit_price = num('협력사지급금액') || num('판매합계') || num('기본가격') || 0
+
+  // 옵션
+  const option = cell('주문옵션') || ''
+
+  // 배송 메시지
+  const memo = cell('배송메세지') || cell('배송메시지') || ''
+
   return {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
     order_number: orderNum,
-    customer_name:    String(row['수취인'] ?? '-'),
+    customer_name,
     customer_phone,
-    shipping_address: String(row['수취인주소'] ?? ''),
-    items: [{
-      product_name: String(row['상품명(송장)'] ?? row['상품명(인터넷)'] ?? '-'),
-      sku:          String(row['협력사상품코드'] ?? ''),
-      quantity:     Number(row['수량'] ?? 1),
-      unit_price:   Number(row['협력사지급금액'] ?? 0),
-      option:       String(row['주문옵션'] ?? ''),
-    }],
-    total_amount: Number(row['협력사지급금액'] ?? 0),
+    shipping_address,
+    items: [{ product_name, sku, quantity, unit_price, option }],
+    total_amount: unit_price * quantity,
     status: 'pending',
-    memo: String(row['배송메세지'] ?? ''),
+    memo,
     extra_data: {
       import_source:   '지에스샵',
       출하지시번호:    orderNum,
-      우편번호:        String(row['우편번호'] ?? ''),
-      상품상세코드:    String(row['상품상세코드'] ?? ''),
-      상품명_인터넷:   String(row['상품명(인터넷)'] ?? ''),
-      협력사지급금액:  String(row['협력사지급금액'] ?? ''),
+      우편번호:        zipCode,
+      상품상세코드:    sku,
+      상품명_인터넷:   cell('상품명(인터넷)') || cell('접수항목') || cell('상품명'),
+      협력사지급금액:  String(unit_price),
     },
   }
 }
