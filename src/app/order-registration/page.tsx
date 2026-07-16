@@ -508,6 +508,50 @@ function parseGenericRow(row: Record<string, unknown>, idx: number, today: strin
   }
 }
 
+/* ─── 오늘 등록된 모든 쇼핑몰 요약 읽기 ─────────────────── */
+function loadTodaySummary(today: string): { mall: string; label: string; count: number }[] {
+  const prefix = 'order_reg_v1_'
+  const suffix = '_' + today
+  const result: { mall: string; label: string; count: number }[] = []
+  try {
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (!key || !key.startsWith(prefix) || !key.endsWith(suffix)) continue
+      const raw = localStorage.getItem(key)
+      if (!raw) continue
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const d = JSON.parse(raw) as { mall: string; orders: any[] }
+      if (!Array.isArray(d.orders) || d.orders.length === 0) continue
+      const mallId = d.mall ?? ''
+      const label  = MALLS.find(m => m.id === mallId)?.label ?? mallId
+      result.push({ mall: mallId, label, count: d.orders.length })
+    }
+  } catch { /* ignore */ }
+  return result
+}
+
+/* ─── 오늘 데이터 전체 삭제 ─────────────────────────────── */
+function clearTodayData(today: string) {
+  try {
+    const keysToRemove: string[] = []
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i)
+      if (key && key.startsWith('order_reg_v1_') && key.endsWith('_' + today)) {
+        keysToRemove.push(key)
+      }
+    }
+    keysToRemove.forEach(k => localStorage.removeItem(k))
+    // pm_orders_v1에서 오늘 주문 제거
+    const raw = localStorage.getItem('pm_orders_v1')
+    if (raw) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const all: any[] = JSON.parse(raw)
+      const filtered = all.filter((o: { order_date?: string }) => o.order_date !== today)
+      localStorage.setItem('pm_orders_v1', JSON.stringify(filtered))
+    }
+  } catch { /* ignore */ }
+}
+
 /* ─── 페이지 컴포넌트 ─────────────────────────────────────── */
 export default function OrderRegistrationPage() {
   const today = getToday()
@@ -519,6 +563,7 @@ export default function OrderRegistrationPage() {
   const [importMsg, setImportMsg]       = useState<{ text: string; ok: boolean } | null>(null)
   const [selectedOrder, setSelectedOrder] = useState<RegOrder | null>(null)
   const [checkedIds, setCheckedIds]     = useState<Set<string>>(new Set())
+  const [todaySummary, setTodaySummary] = useState<{ mall: string; label: string; count: number }[]>([])
   const fileRef = useRef<HTMLInputElement>(null)
 
   /* 직접등록 */
@@ -530,6 +575,11 @@ export default function OrderRegistrationPage() {
 
   const isToday   = currentDate === today
   const canGoNext = currentDate < today
+
+  /* 마운트 시 오늘 현황 로드 */
+  useEffect(() => {
+    setTodaySummary(loadTodaySummary(today))
+  }, [today])
 
   useEffect(() => {
     if (!selectedMall) return
@@ -939,6 +989,9 @@ export default function OrderRegistrationPage() {
         broadcastDashboardRefresh()
         try { window.dispatchEvent(new CustomEvent('pm_orders_updated')) } catch { /* ignore */ }
 
+        // 오늘 등록 현황 갱신
+        setTodaySummary(loadTodaySummary(today))
+
         const totalInStore = finalOrders.length
         setImportMsg({
           text: `${syncOrders.length}건 등록 완료${isMarketPlus ? ` (매핑 ${Object.keys(autoMappingUpdates).length}건 자동 업데이트)` : ''} · 주문관리 전체 ${totalInStore}건`,
@@ -1005,6 +1058,39 @@ export default function OrderRegistrationPage() {
 
         {/* 구분선 */}
         <div style={{ height: 1, background: '#f1f5f9', margin: '8px 2px' }} />
+
+        {/* 오늘 등록 현황 */}
+        {todaySummary.length > 0 && (
+          <div style={{ padding: '8px 10px', background: '#f0fdf4', borderRadius: 8, border: '1px solid #bbf7d0' }}>
+            <p style={{ fontSize: '9.5px', fontWeight: 900, color: '#15803d', marginBottom: 4 }}>📋 오늘 등록 현황</p>
+            {todaySummary.map(s => (
+              <div key={s.mall} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '9.5px', color: '#166534', fontWeight: 700, marginBottom: 2 }}>
+                <span>{s.label}</span>
+                <span style={{ background: '#dcfce7', padding: '0 5px', borderRadius: 4 }}>{s.count}건</span>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* 오늘 데이터 초기화 버튼 */}
+        {isToday && (
+          <button
+            onClick={() => {
+              if (!confirm('오늘 등록한 모든 주문 데이터를 삭제할까요?')) return
+              clearTodayData(today)
+              setDayData(null)
+              setTodaySummary([])
+              setImportMsg(null)
+              try { window.dispatchEvent(new CustomEvent('pm_orders_updated')) } catch { /* ignore */ }
+            }}
+            style={{ width: '100%', padding: '7px 10px', borderRadius: 8, border: '1px solid #fecaca', background: '#fff5f5', color: '#dc2626', fontSize: '10px', fontWeight: 700, cursor: 'pointer', marginTop: 4 }}
+          >
+            🗑 오늘 데이터 초기화
+          </button>
+        )}
+
+        {/* 구분선 */}
+        <div style={{ height: 1, background: '#f1f5f9', margin: '4px 2px' }} />
 
         {/* 직접등록 버튼 */}
         <button
