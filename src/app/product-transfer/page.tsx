@@ -229,17 +229,18 @@ function loadOrdersFromPerMallStorage(date: string): Order[] {
 }
 
 /**
- * 오늘 주문은 per-mall 저장소에서 직접 읽고, 과거 주문은 pm_orders_v1에서 읽어 합산.
- * 업로드 즉시 per-mall 저장소에 반영되므로 동기화 지연이 없다.
+ * per-mall 저장소(오늘) + pm_orders_v1(모든 날짜) 합산.
+ * per-mall이 실패해도 pm_orders_v1이 항상 fallback이므로 데이터 손실 없음.
+ * ID 기준 중복 제거: per-mall 우선.
  */
 function loadAllOrders(): Order[] {
-  const today       = getToday()
-  const todayOrders = loadOrdersFromPerMallStorage(today)
-  const mainOrders  = loadOrders()
-  const pastOrders  = mainOrders.filter(o => o.order_date !== today)
-  const seen        = new Set<string>(todayOrders.map(o => o.id))
-  const dedupPast   = pastOrders.filter(o => !seen.has(o.id))
-  return [...todayOrders, ...dedupPast]
+  const today        = getToday()
+  const perMallToday = loadOrdersFromPerMallStorage(today)
+  const mainOrders   = loadOrders()
+  // per-mall에 없는 pm_orders_v1 주문을 fallback으로 추가 (날짜 무관)
+  const seen         = new Set<string>(perMallToday.map(o => o.id))
+  const mainExtra    = mainOrders.filter(o => !seen.has(o.id))
+  return [...perMallToday, ...mainExtra]
 }
 
 function addDays(d: string, n: number) {
