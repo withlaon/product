@@ -229,18 +229,54 @@ export function loadOrders(): Order[] {
   } catch { return [] }
 }
 
+/**
+ * localStorage 쓰기 실패(용량초과 등) 시 조용히 삼키지 않고,
+ * order_reg_v1_* (오늘 제외) 오래된 항목부터 정리 후 재시도.
+ * 여러 쇼핑몰을 연속 업로드할 때 두 번째 이후 몰의 주문이 저장 공간 부족으로
+ * "조용히" 사라지는 문제의 근본 원인을 차단한다.
+ */
+function safeSetOrders(key: string, value: string): boolean {
+  try {
+    localStorage.setItem(key, value)
+    return true
+  } catch {
+    try {
+      const today = (() => {
+        const d = new Date()
+        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+      })()
+      const candidates: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (k && k.startsWith('order_reg_v1_') && !k.endsWith('_' + today)) candidates.push(k)
+      }
+      candidates.sort()
+      for (const k of candidates) {
+        localStorage.removeItem(k)
+        try {
+          localStorage.setItem(key, value)
+          return true
+        } catch { /* 계속 정리 */ }
+      }
+    } catch { /* ignore */ }
+    return false
+  }
+}
+
 /** 주문 저장소: id 기준 병합만. 삭제·큐 이동 등은 removeOrdersByIds. */
 export function upsertOrders(updates: Order[]) {
   if (updates.length === 0) return
-  try {
-    const prev = loadOrders()
-    const upd  = new Map(updates.map(o => [o.id, o]))
-    const next: Order[] = prev.map(o => upd.get(o.id) ?? o)
-    for (const o of updates) {
-      if (!prev.some(p => p.id === o.id)) next.push(o)
-    }
-    localStorage.setItem(ORDERS_KEY, JSON.stringify(next))
-  } catch {}
+  const prev = loadOrders()
+  const upd  = new Map(updates.map(o => [o.id, o]))
+  const next: Order[] = prev.map(o => upd.get(o.id) ?? o)
+  for (const o of updates) {
+    if (!prev.some(p => p.id === o.id)) next.push(o)
+  }
+  const ok = safeSetOrders(ORDERS_KEY, JSON.stringify(next))
+  if (!ok && typeof window !== 'undefined') {
+    // eslint-disable-next-line no-console
+    console.error('[orders] upsertOrders: localStorage 저장 실패 (용량 초과)')
+  }
   broadcastDashboardRefresh()
 }
 

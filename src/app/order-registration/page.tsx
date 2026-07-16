@@ -106,10 +106,49 @@ function loadDayData(mall: string, date: string): DayData | null {
   } catch { return null }
 }
 
-function saveDayData(data: DayData) {
+/**
+ * localStorage 용량 초과(QuotaExceededError) 등으로 쓰기가 실패하면
+ * 이전 세션의 raw_rows/toss_raw_aoa 등 부피가 큰 오래된 order_reg_v1_* 항목부터
+ * 정리한 뒤 재시도. 그래도 실패하면 false 반환 (호출부에서 사용자에게 알림 표시).
+ * 기존처럼 실패를 조용히 삼키지 않는다 — 이게 "두번째 몰 데이터 소실"의 근본 원인이었음.
+ */
+function safeSetItem(key: string, value: string): boolean {
   try {
-    localStorage.setItem(storageKey(data.mall, data.date), JSON.stringify(data))
-  } catch {}
+    localStorage.setItem(key, value)
+    return true
+  } catch {
+    // 오늘 날짜를 제외한 order_reg_v1_* 키를 오래된 것부터 제거해 공간 확보 후 재시도
+    try {
+      const today = getToday()
+      const candidates: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i)
+        if (k && k.startsWith('order_reg_v1_') && !k.endsWith('_' + today)) candidates.push(k)
+      }
+      // 날짜 문자열이 키 끝에 있으므로 정렬하면 오래된 날짜가 먼저 옴
+      candidates.sort()
+      for (const k of candidates) {
+        localStorage.removeItem(k)
+        try {
+          localStorage.setItem(key, value)
+          return true
+        } catch { /* 계속 정리 */ }
+      }
+    } catch { /* ignore */ }
+    return false
+  }
+}
+
+function saveDayData(data: DayData): boolean {
+  const ok = safeSetItem(storageKey(data.mall, data.date), JSON.stringify(data))
+  if (!ok) {
+    alert(
+      '저장 실패: 브라우저 저장공간(localStorage)이 가득 찼습니다.\n\n' +
+      '오래된 주문 데이터를 정리했지만 여전히 공간이 부족합니다.\n' +
+      '브라우저 설정에서 사이트 데이터를 정리하거나 관리자에게 문의해주세요.'
+    )
+  }
+  return ok
 }
 
 /* ─── 모든 날짜의 DayData 조회 (다운로드용) ─────────────── */
@@ -576,6 +615,25 @@ export default function OrderRegistrationPage() {
   const isToday   = currentDate === today
   const canGoNext = currentDate < today
 
+  /* 마운트 시 90일 이상 지난 order_reg_v1_* 항목 자동 정리
+     (raw_rows/toss_raw_aoa 원본 백업까지 포함해 부피가 크므로, 누적되면
+     localStorage 용량 초과로 "두번째 몰 업로드부터 조용히 실패"하는 문제를 예방) */
+  useEffect(() => {
+    try {
+      const cutoff = new Date()
+      cutoff.setDate(cutoff.getDate() - 90)
+      const cutoffStr = `${cutoff.getFullYear()}-${String(cutoff.getMonth() + 1).padStart(2, '0')}-${String(cutoff.getDate()).padStart(2, '0')}`
+      const toRemove: string[] = []
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i)
+        if (!key || !key.startsWith('order_reg_v1_')) continue
+        const datePart = key.slice(key.lastIndexOf('_') + 1)
+        if (/^\d{4}-\d{2}-\d{2}$/.test(datePart) && datePart < cutoffStr) toRemove.push(key)
+      }
+      toRemove.forEach(k => localStorage.removeItem(k))
+    } catch { /* ignore */ }
+  }, [])
+
   /* 마운트 시 오늘 현황 로드 */
   useEffect(() => {
     setTodaySummary(loadTodaySummary(today))
@@ -1020,9 +1078,13 @@ export default function OrderRegistrationPage() {
         })
         // 다른 쇼핑몰 데이터는 그대로 유지하고 새 주문만 추가
         const finalOrders = [...filtered, ...syncOrders]
-        try {
-          localStorage.setItem('pm_orders_v1', JSON.stringify(finalOrders))
-        } catch { /* ignore */ }
+        const pmWriteOk = safeSetItem('pm_orders_v1', JSON.stringify(finalOrders))
+        if (!pmWriteOk) {
+          alert(
+            `주문관리 동기화 실패!\n\n${mallLabel} 주문이 브라우저 저장공간 부족으로 주문관리 탭에 반영되지 못했습니다.\n` +
+            '오래된 데이터를 정리했지만 여전히 공간이 부족합니다.\n브라우저 설정 → 사이트 데이터 삭제 후 다시 시도해주세요.'
+          )
+        }
 
         // 주문관리 탭 즉시 갱신 (같은 창 + 다른 탭)
         broadcastDashboardRefresh()
