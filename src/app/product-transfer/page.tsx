@@ -577,6 +577,16 @@ export default function OrdersPage() {
 
   const displayOrders = viewMode === 'daily' ? dailyOrders : monthOrders
 
+  /* 오늘 날짜 기준 쇼핑몰(채널)별 건수 — 특정 몰이 누락되는지 즉시 확인 가능 */
+  const todayChannelCounts = useMemo(() => {
+    const g: Record<string, number> = {}
+    orders.filter(o => o.order_date === today).forEach(o => {
+      const ch = o.channel || '기타'
+      g[ch] = (g[ch] ?? 0) + 1
+    })
+    return Object.entries(g).sort((a, b) => b[1] - a[1])
+  }, [orders, today])
+
   /* 매핑 모달용 - useMemo로 렌더 분리 */
   const mappingAllEntries = useMemo(() => Object.entries(draftMappings), [draftMappings])
   const mappingMappedCount = useMemo(() => mappingAllEntries.filter(([, m]) => !!m.product_id).length, [mappingAllEntries])
@@ -1112,8 +1122,17 @@ export default function OrdersPage() {
         ))}
       </div>
 
-      {/* 새로고침 버튼 – 독립 행으로 분리하여 항상 클릭 가능 */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+      {/* 새로고침 버튼 + 오늘 쇼핑몰별 건수 (누락 즉시 확인용) – 독립 행으로 분리하여 항상 클릭 가능 */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+        {todayChannelCounts.length > 0 ? (
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+            {todayChannelCounts.map(([ch, cnt]) => (
+              <span key={ch} style={{ fontSize: '11.5px', fontWeight: 800, color: '#334155', background: '#f1f5f9', padding: '5px 10px', borderRadius: 8 }}>
+                {ch} <span style={{ color: '#2563eb' }}>{cnt}</span>
+              </span>
+            ))}
+          </div>
+        ) : <span />}
         <button
           onClick={handleRefresh}
           disabled={refreshing}

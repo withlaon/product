@@ -905,6 +905,12 @@ export default function OrderRegistrationPage() {
           })
         }
 
+        // 모든 주문에 캡처된 쇼핑몰 ID를 명시적으로 태깅 (import_source 라벨 불일치로 인한
+        // 동기화 오류를 원천 차단 — 이 값만으로 안전하게 "같은 쇼핑몰의 이전 업로드"를 식별)
+        orders.forEach(o => {
+          o.extra_data = { ...(o.extra_data ?? {}), __mall_id: capturedMall }
+        })
+
         // 판매가 = 0 인 항목: 상품관리 캐시에서 채널 판매가 보정
         const cachedProds = loadCachedProductsForPrice()
         if (cachedProds.length > 0) {
@@ -972,13 +978,20 @@ export default function OrderRegistrationPage() {
 
         /* ── pm_orders_v1 원자적 동기화 ──
            removeOrdersByIds + upsertOrders 를 단일 localStorage 쓰기로 합쳐
-           중간 상태(이벤트로 인한 잘못된 읽기)를 원천 차단 */
-        const importSrc   = isMarketPlus ? 'marketplus' : mallLabel
-        const existingAll = loadOrders()
-        // 같은 소스+오늘 날짜의 이전 업로드 제거 (당일 재업로드 허용)
-        const filtered    = existingAll.filter(
-          o => !(o.extra_data?.['import_source'] === importSrc && o.order_date === today)
-        )
+           중간 상태(이벤트로 인한 잘못된 읽기)를 원천 차단.
+           __mall_id(캡처된 영문 쇼핑몰 ID)로만 판별 — 라벨 문자열 불일치 가능성 제거 */
+        const existingAll  = loadOrders()
+        // 같은 쇼핑몰(__mall_id)+오늘 날짜의 이전 업로드만 제거 (당일 재업로드 허용).
+        // __mall_id가 없는 구버전 데이터는 import_source 라벨로 하위호환 판별.
+        const legacyImportSrc = isMarketPlus ? 'marketplus' : mallLabel
+        const filtered = existingAll.filter(o => {
+          if (o.order_date !== today) return true
+          const mallId = o.extra_data?.['__mall_id']
+          const isSameMall = mallId
+            ? mallId === capturedMall
+            : o.extra_data?.['import_source'] === legacyImportSrc
+          return !isSameMall
+        })
         // 다른 쇼핑몰 데이터는 그대로 유지하고 새 주문만 추가
         const finalOrders = [...filtered, ...syncOrders]
         try {
