@@ -700,6 +700,8 @@ export default function OrderRegistrationPage() {
   const handleFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !selectedMall) return
+    // 파일 읽기 중 탭 전환으로 인한 stale closure 방지: 현재 쇼핑몰을 즉시 캡처
+    const capturedMall = selectedMall
     setImporting(true)
     setImportMsg(null)
 
@@ -708,12 +710,12 @@ export default function OrderRegistrationPage() {
       try {
         const wb   = XLSX.read(ev.target?.result, { type: 'array', cellDates: true })
         const ws   = wb.Sheets[wb.SheetNames[0]]
-        const mallLabel      = MALLS.find(m => m.id === selectedMall)!.label
-        const isMarketPlus   = selectedMall === 'marketplus'
-        const isTossShopping = selectedMall === 'tossshopping'
-        const isAlways       = selectedMall === 'always'
-        const isGSShop       = selectedMall === 'gsshop'
-        const isJasonDeal    = selectedMall === 'jasondeal'
+        const mallLabel      = MALLS.find(m => m.id === capturedMall)!.label
+        const isMarketPlus   = capturedMall === 'marketplus'
+        const isTossShopping = capturedMall === 'tossshopping'
+        const isAlways       = capturedMall === 'always'
+        const isGSShop       = capturedMall === 'gsshop'
+        const isJasonDeal    = capturedMall === 'jasondeal'
         const alwaysAoa = isAlways
           ? (XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][])
           : null
@@ -847,7 +849,7 @@ export default function OrderRegistrationPage() {
         }
 
         const newData: DayData = {
-          mall: selectedMall,
+          mall: capturedMall,
           date: today,
           orders,
           raw_rows: isTossShopping ? tossSyntheticRaw : rows,
@@ -892,13 +894,18 @@ export default function OrderRegistrationPage() {
         )
         removeOrdersByIds([...toRemoveIds])
 
-        // 제거 후 남아 있는 주문의 order_number 집합 → 중복 제거
+        // 동일 소스(같은 쇼핑몰) 내에서만 order_number 중복 체크
+        // → 다른 쇼핑몰 간 주문번호가 같아도 서로 차단하지 않음
         const remainingNums = new Set(
-          existingMain.filter(o => !toRemoveIds.has(o.id)).map(o => o.order_number)
+          existingMain
+            .filter(o => !toRemoveIds.has(o.id) && o.extra_data?.['import_source'] === importSrc)
+            .map(o => o.order_number)
         )
         const newOrders  = syncOrders.filter(o => !remainingNums.has(o.order_number))
         const skipCount  = syncOrders.length - newOrders.length
         upsertOrders(newOrders)
+        // 주문관리 탭이 같은 창에 마운트되어 있을 때 즉시 갱신
+        try { window.dispatchEvent(new CustomEvent('pm_orders_updated')) } catch { /* ignore */ }
 
         const skipNote = skipCount > 0 ? ` (중복 ${skipCount}건 제외)` : ''
         setImportMsg({

@@ -6,7 +6,7 @@ import {
   ShoppingCart, Calendar, Package, Map, Printer,
   Truck, X, Save, ChevronLeft, ChevronRight,
   BarChart2, ListFilter, CheckSquare, Square,
-  ChevronDown, Link2, Link2Off, Search, AlertCircle, Trash2,
+  ChevronDown, Link2, Link2Off, Search, AlertCircle, Trash2, RefreshCw,
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import {
@@ -410,13 +410,31 @@ export default function OrdersPage() {
     preFetch()
   }, [])
 
-  /* 스토리지 변경 이벤트 수신 (같은 탭 내 주문서등록 동기화) */
+  /* 스토리지 변경 이벤트 수신 (다른 브라우저 탭에서의 주문서등록 동기화) */
   useEffect(() => {
-    const onStorage = () => {
-      setOrders(loadOrders())
-    }
+    const onStorage = () => { setOrders(loadOrders()) }
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
+  }, [])
+
+  /* 같은 탭 내 주문서등록 → 주문관리 실시간 동기화
+     pm_dashboard_refresh: upsertOrders 호출 시 자동 발생
+     pm_orders_updated: 주문서등록탭에서 업로드 완료 시 명시적 발생 */
+  useEffect(() => {
+    const reload = () => { setOrders(loadOrders()) }
+    window.addEventListener('pm_dashboard_refresh', reload)
+    window.addEventListener('pm_orders_updated', reload)
+    return () => {
+      window.removeEventListener('pm_dashboard_refresh', reload)
+      window.removeEventListener('pm_orders_updated', reload)
+    }
+  }, [])
+
+  /* 브라우저 탭 전환 후 복귀 시 최신 주문 재로드 */
+  useEffect(() => {
+    const onVisible = () => { if (!document.hidden) setOrders(loadOrders()) }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
   /* 출고내역/타 탭에서 매핑 저장 시 같은 탭 주문관리 화면 동기화 */
@@ -1077,6 +1095,15 @@ export default function OrdersPage() {
           {/* CJ 송장출력 파일 다운로드 */}
           <button onClick={handleCJInvoiceDownload} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#7c3aed', color: 'white', borderRadius: 9, fontSize: '12.5px', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
             <Truck size={13} />CJ송장출력 파일
+          </button>
+
+          {/* 새로고침 – 여러 쇼핑몰 주문 등록 후 목록 갱신 */}
+          <button
+            onClick={() => setOrders(loadOrders())}
+            title="주문서등록탭에서 등록한 모든 쇼핑몰 주문을 다시 불러옵니다"
+            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#f8fafc', color: '#64748b', borderRadius: 9, fontSize: '12px', fontWeight: 800, border: '1px solid #e2e8f0', cursor: 'pointer' }}
+          >
+            <RefreshCw size={12} />새로고침
           </button>
         </div>
       </div>
