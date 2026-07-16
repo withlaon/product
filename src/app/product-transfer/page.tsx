@@ -186,14 +186,26 @@ function mallIdToLabel(mallId: string): string {
 /**
  * per-mall 개별 저장소(order_reg_v1_{mall}_{date})에서 해당 날짜의
  * 모든 쇼핑몰 주문을 직접 읽어서 Order[] 형태로 반환.
- * pm_orders_v1 동기화가 실패해도 항상 최신 데이터를 가져온다.
+ * 각 키마다 독립적으로 try/catch 처리하여 일부 키 오류 시에도 계속 진행.
  */
 function loadOrdersFromPerMallStorage(date: string): Order[] {
   const result: Order[] = []
-  try {
-    for (let i = 0; i < localStorage.length; i++) {
+  let length = 0
+  try { length = localStorage.length } catch { return result }
+
+  // 먼저 대상 키 목록 수집 (반복 중 localStorage 변경 방지)
+  const targetKeys: string[] = []
+  for (let i = 0; i < length; i++) {
+    try {
       const key = localStorage.key(i)
-      if (!key || !key.startsWith('order_reg_v1_') || !key.endsWith('_' + date)) continue
+      if (key && key.startsWith('order_reg_v1_') && key.endsWith('_' + date)) {
+        targetKeys.push(key)
+      }
+    } catch { /* ignore */ }
+  }
+
+  for (const key of targetKeys) {
+    try {
       const raw = localStorage.getItem(key)
       if (!raw) continue
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -201,46 +213,51 @@ function loadOrdersFromPerMallStorage(date: string): Order[] {
       if (!Array.isArray(dayData.orders)) continue
       const mallLabel = mallIdToLabel(dayData.mall ?? '')
       for (const o of dayData.orders) {
-        const importSrc = String(o.extra_data?.import_source ?? '')
-        const channel = importSrc === 'marketplus'
-          ? mpToChannel(String(o.extra_data?.['매출경로'] ?? mallLabel))
-          : mallLabel
-        result.push({
-          id:               o.id,
-          order_date:       date,
-          order_number:     o.order_number ?? '',
-          channel,
-          customer_name:    o.customer_name ?? '-',
-          customer_phone:   o.customer_phone ?? '',
-          shipping_address: o.shipping_address ?? '',
-          items:            Array.isArray(o.items) ? o.items : [],
-          total_amount:     o.total_amount ?? 0,
-          status:           o.status ?? 'pending',
-          tracking_number:  undefined,
-          carrier:          undefined,
-          memo:             o.memo ?? '',
-          uploaded_at:      dayData.uploaded_at ?? '',
-          extra_data:       o.extra_data ?? {},
-        })
+        try {
+          const importSrc = String(o.extra_data?.import_source ?? '')
+          const channel = importSrc === 'marketplus'
+            ? mpToChannel(String(o.extra_data?.['매출경로'] ?? mallLabel))
+            : mallLabel
+          result.push({
+            id:               String(o.id ?? `${Date.now()}-${Math.random()}`),
+            order_date:       date,
+            order_number:     o.order_number ?? '',
+            channel,
+            customer_name:    o.customer_name ?? '-',
+            customer_phone:   o.customer_phone ?? '',
+            shipping_address: o.shipping_address ?? '',
+            items:            Array.isArray(o.items) ? o.items : [],
+            total_amount:     Number(o.total_amount ?? 0),
+            status:           o.status ?? 'pending',
+            tracking_number:  undefined,
+            carrier:          undefined,
+            memo:             o.memo ?? '',
+            uploaded_at:      dayData.uploaded_at ?? '',
+            extra_data:       o.extra_data ?? {},
+          })
+        } catch { /* skip individual order parse error */ }
       }
-    }
-  } catch { /* ignore */ }
+    } catch { /* skip key parse error, continue to next key */ }
+  }
   return result
 }
 
 /**
- * per-mall 저장소(오늘) + pm_orders_v1(모든 날짜) 합산.
- * per-mall이 실패해도 pm_orders_v1이 항상 fallback이므로 데이터 손실 없음.
- * ID 기준 중복 제거: per-mall 우선.
+ * pm_orders_v1(모든 날짜) + per-mall 저장소(오늘) 합산.
+ * pm_orders_v1을 1차 소스로, per-mall 저장소를 보조 소스로 사용.
+ * ID 기준 중복 제거.
  */
 function loadAllOrders(): Order[] {
   const today        = getToday()
-  const perMallToday = loadOrdersFromPerMallStorage(today)
-  const mainOrders   = loadOrders()
-  // per-mall에 없는 pm_orders_v1 주문을 fallback으로 추가 (날짜 무관)
-  const seen         = new Set<string>(perMallToday.map(o => o.id))
-  const mainExtra    = mainOrders.filter(o => !seen.has(o.id))
-  return [...perMallToday, ...mainExtra]
+  const mainOrders   = loadOrders()              // pm_orders_v1 - 1차 소스
+  const perMallToday = loadOrdersFromPerMallStorage(today)  // per-mall - 보조 소스
+
+  // pm_orders_v1에 있는 ID 집합
+  const seenInMain = new Set<string>(mainOrders.map(o => o.id))
+  // per-mall에만 있는 오늘 주문 (pm_orders_v1에 아직 반영 안 된 것)
+  const perMallOnly = perMallToday.filter(o => !seenInMain.has(o.id))
+
+  return [...mainOrders, ...perMallOnly]
 }
 
 function addDays(d: string, n: number) {
@@ -448,6 +465,16 @@ export default function OrdersPage() {
   const [mappingFilter, setMappingFilter]     = useState<'all' | 'unmapped'>('all')
   const [mappingSearch, setMappingSearch]     = useState('')
   const [autoMapResult, setAutoMapResult]     = useState<{ mapped: number; skipped: number; total: number } | null>(null)
+  const [refreshing, setRefreshing]           = useState(false)
+
+  /* 새로고침 핸들러 – 명시적 함수로 분리하여 버튼에서 안정적으로 호출 */
+  function handleRefresh() {
+    setRefreshing(true)
+    const latest = loadAllOrders()
+    setOrders(latest)
+    setSelectedDate(getToday())
+    setTimeout(() => setRefreshing(false), 600)
+  }
 
   useEffect(() => {
     setOrders(loadAllOrders())
@@ -480,13 +507,6 @@ export default function OrdersPage() {
     preFetch()
   }, [])
 
-  /* 스토리지 변경 이벤트 수신 (다른 브라우저 탭에서의 주문서등록 동기화) */
-  useEffect(() => {
-    const onStorage = () => { setOrders(loadAllOrders()) }
-    window.addEventListener('storage', onStorage)
-    return () => window.removeEventListener('storage', onStorage)
-  }, [])
-
   /* 같은 탭 내 주문서등록 → 주문관리 실시간 동기화
      pm_dashboard_refresh: upsertOrders 호출 시 자동 발생
      pm_orders_updated: 주문서등록탭에서 업로드 완료 시 명시적 발생 */
@@ -497,9 +517,11 @@ export default function OrdersPage() {
     }
     window.addEventListener('pm_dashboard_refresh', reload)
     window.addEventListener('pm_orders_updated', reload)
+    window.addEventListener('storage', reload)
     return () => {
       window.removeEventListener('pm_dashboard_refresh', reload)
       window.removeEventListener('pm_orders_updated', reload)
+      window.removeEventListener('storage', reload)
     }
   }, [])
 
@@ -1090,8 +1112,27 @@ export default function OrdersPage() {
         ))}
       </div>
 
+      {/* 새로고침 버튼 – 독립 행으로 분리하여 항상 클릭 가능 */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '8px 18px', background: refreshing ? '#93c5fd' : '#2563eb',
+            color: 'white', borderRadius: 10, fontSize: '13px', fontWeight: 800,
+            border: 'none', cursor: refreshing ? 'default' : 'pointer',
+            boxShadow: '0 2px 8px rgba(37,99,235,0.3)',
+            transition: 'background 200ms',
+          }}
+        >
+          <RefreshCw size={14} style={{ animation: refreshing ? 'spin 0.6s linear infinite' : 'none' }} />
+          {refreshing ? '로딩 중...' : '주문 새로고침'}
+        </button>
+      </div>
+
       {/* 툴바 */}
-      <div className="pm-card" style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+      <div className="pm-card" style={{ padding: '10px 16px', display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', overflowX: 'auto' }}>
 
         {/* 뷰 모드 토글 */}
         <div style={{ display: 'flex', borderRadius: 10, overflow: 'hidden', border: '1px solid #e2e8f0' }}>
@@ -1173,15 +1214,6 @@ export default function OrdersPage() {
           {/* CJ 송장출력 파일 다운로드 */}
           <button onClick={handleCJInvoiceDownload} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '7px 14px', background: '#7c3aed', color: 'white', borderRadius: 9, fontSize: '12.5px', fontWeight: 800, border: 'none', cursor: 'pointer' }}>
             <Truck size={13} />CJ송장출력 파일
-          </button>
-
-          {/* 새로고침 – 여러 쇼핑몰 주문 등록 후 목록 갱신 */}
-          <button
-            onClick={() => { setOrders(loadAllOrders()); setSelectedDate(getToday()) }}
-            title="주문서등록탭에서 등록한 모든 쇼핑몰 주문을 다시 불러옵니다"
-            style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '7px 12px', background: '#3b82f6', color: 'white', borderRadius: 9, fontSize: '12px', fontWeight: 800, border: 'none', cursor: 'pointer' }}
-          >
-            <RefreshCw size={12} />새로고침
           </button>
         </div>
       </div>

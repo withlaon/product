@@ -131,6 +131,10 @@ code, kbd, pre, .font-mono {
   to { transform: rotate(360deg); }
 }
 
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
 /* ─── Animation Utilities ────────────────────────────────────── */
 .animate-fade-in  { animation: fade-in  var(--t-slow) var(--ease-out) both; }
 .animate-fade-up  { animation: fade-up  var(--t-slow) var(--ease-out) both; }
