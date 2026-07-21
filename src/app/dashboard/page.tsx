@@ -920,9 +920,9 @@ function CalendarPanel() {
         {Array.from({ length: cells.length / 7 }, (_, r) => {
           const weekBars = getWeekBars(r)
           const maxLane = weekBars.length > 0 ? Math.max(...weekBars.map(b => b.lane)) : 0
-          const extraHeight = maxLane * 7
+          const extraHeight = maxLane * 9
           return (
-            <div key={r} style={{ position:'relative', marginBottom:2 }}>
+            <div key={r} style={{ position:'relative', marginBottom:3 }}>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(7,1fr)', gap:2 }}>
                 {cells.slice(r*7, r*7+7).map((d, ci) => {
                   const dow = ci % 7
@@ -936,23 +936,23 @@ function CalendarPanel() {
                   return (
                     <div key={ci} onClick={() => d && setSelDay(d === selDay ? null : d)}
                       style={{
-                        minHeight: 36 + extraHeight, borderRadius:6, cursor:d?'pointer':'default',
+                        minHeight: 48 + extraHeight, borderRadius:6, cursor:d?'pointer':'default',
                         background: isSel ? '#2563eb' : isToday ? '#eff6ff' : isInRange ? 'rgba(37,99,235,0.04)' : 'transparent',
                         border: isToday && !isSel ? '1.5px solid #bfdbfe' : '1.5px solid transparent',
                         display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'flex-start',
-                        padding: `3px 1px ${8 + extraHeight}px`,
+                        padding: `5px 1px ${11 + extraHeight}px`,
                         transition:'background 100ms',
                       }}>
                       {d && (
                         <>
                           <span style={{
-                            fontSize:'11px', fontWeight: isToday ? 900 : 700, lineHeight:1.3,
+                            fontSize:'13px', fontWeight: isToday ? 900 : 700, lineHeight:1.3,
                             color: isSel ? '#fff' : isWeekend ? (dow===0?'#ef4444':'#3b82f6') : isHolidayDay ? '#ef4444' : '#1e293b',
                           }}>{d}</span>
                           {hasDot && (
-                            <div style={{ display:'flex', gap:2, flexWrap:'wrap', justifyContent:'center', marginTop:1 }}>
+                            <div style={{ display:'flex', gap:2, flexWrap:'wrap', justifyContent:'center', marginTop:2 }}>
                               {(schByDay[d] ?? []).slice(0,3).map(s => (
-                                <div key={s.id} style={{ width:4, height:4, borderRadius:'50%', background: isSel ? '#fff' : s.color }} />
+                                <div key={s.id} style={{ width:5, height:5, borderRadius:'50%', background: isSel ? '#fff' : s.color }} />
                               ))}
                             </div>
                           )}
@@ -966,10 +966,10 @@ function CalendarPanel() {
               {weekBars.map((bar, bi) => (
                 <div key={`${bar.schedule.id}-${bi}`} style={{
                   position:'absolute',
-                  bottom: 2 + bar.lane * 7,
+                  bottom: 2 + bar.lane * 9,
                   left: `calc(${(bar.colStart / 7) * 100}% + ${bar.isStart ? 3 : 0}px)`,
                   right: `calc(${((6 - bar.colEnd) / 7) * 100}% + ${bar.isEnd ? 3 : 0}px)`,
-                  height: 5,
+                  height: 7,
                   background: bar.schedule.color,
                   borderRadius: `${bar.isStart ? 3 : 0}px ${bar.isEnd ? 3 : 0}px ${bar.isEnd ? 3 : 0}px ${bar.isStart ? 3 : 0}px`,
                   opacity: 0.85,
@@ -979,7 +979,7 @@ function CalendarPanel() {
                   {bar.isStart && (
                     <span style={{
                       position:'absolute', left:4, top:'50%', transform:'translateY(-50%)',
-                      fontSize:'7px', fontWeight:800, color:'#fff', whiteSpace:'nowrap',
+                      fontSize:'8.5px', fontWeight:800, color:'#fff', whiteSpace:'nowrap',
                       overflow:'hidden', maxWidth:'90%', textOverflow:'ellipsis',
                     }}>{bar.schedule.text}</span>
                   )}
@@ -1006,13 +1006,13 @@ function CalendarPanel() {
         {/* 선택한 날의 일정 목록 */}
         {selDay && (
           <div style={{ marginBottom:8 }}>
-            <p style={{ fontSize:'11px', fontWeight:800, color:'#0f172a', marginBottom:5 }}>
+            <p style={{ fontSize:'12.5px', fontWeight:800, color:'#0f172a', marginBottom:6 }}>
               {calMonth.replace('-','년 ')}월 {selDay}일 일정
             </p>
             {selDayScheds.length === 0
-              ? <p style={{ fontSize:'10.5px', color:'#cbd5e1', fontWeight:600, marginBottom:4 }}>일정 없음</p>
+              ? <p style={{ fontSize:'12px', color:'#cbd5e1', fontWeight:600, marginBottom:4 }}>일정 없음</p>
               : selDayScheds.map(s => (
-                <div key={s.id} style={{ marginBottom:5, padding:'5px 8px', background:'#f8fafc', borderRadius:8, borderLeft:`3px solid ${editId===s.id ? SCHED_COLORS[editColorIdx] : s.color}` }}>
+                <div key={s.id} style={{ marginBottom:6, padding:'7px 9px', background:'#f8fafc', borderRadius:8, borderLeft:`3px solid ${editId===s.id ? SCHED_COLORS[editColorIdx] : s.color}` }}>
                   {editId === s.id ? (
                     <>
                       <ColorLabelRow
@@ -1031,7 +1031,7 @@ function CalendarPanel() {
                         <input value={editText} onChange={e => setEditText(e.target.value)}
                           onKeyDown={e => { if (e.key==='Enter') saveEdit(s); if (e.key==='Escape') setEditId(null) }}
                           autoFocus
-                          style={{ flex:1, fontSize:'11px', border:'1.5px solid #2563eb', borderRadius:5, padding:'3px 6px', outline:'none', color:'#1e293b' }}/>
+                          style={{ flex:1, fontSize:'12.5px', border:'1.5px solid #2563eb', borderRadius:5, padding:'4px 7px', outline:'none', color:'#1e293b' }}/>
                         <button onClick={() => saveEdit(s)}
                           style={{ padding:'3px 8px', fontSize:'10px', fontWeight:700, background:'#2563eb', color:'#fff', border:'none', borderRadius:5, cursor:'pointer' }}>저장</button>
                         <button onClick={() => setEditId(null)}
@@ -1041,25 +1041,25 @@ function CalendarPanel() {
                   ) : (
                     <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
-                          <span style={{ fontSize:'8px', fontWeight:800, color:s.color, background:`${s.color}18`, padding:'1px 5px', borderRadius:4, flexShrink:0 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
+                          <span style={{ fontSize:'9.5px', fontWeight:800, color:s.color, background:`${s.color}18`, padding:'2px 6px', borderRadius:4, flexShrink:0 }}>
                             {colorLabels[SCHED_COLORS.indexOf(s.color)] ?? '쇼핑몰'}
                           </span>
-                          <span style={{ fontSize:'11.5px', fontWeight:700, color:'#1e293b', wordBreak:'break-all' }}>{s.text}</span>
+                          <span style={{ fontSize:'13.5px', fontWeight:700, color:'#1e293b', wordBreak:'break-all' }}>{s.text}</span>
                         </div>
                         {s.endDate && (
-                          <span style={{ fontSize:'9.5px', color:'#94a3b8', fontWeight:600 }}>
+                          <span style={{ fontSize:'11px', color:'#94a3b8', fontWeight:600 }}>
                             {s.date.slice(5).replace('-','/')} ~ {s.endDate.slice(5).replace('-','/')}
                           </span>
                         )}
                       </div>
                       <button onClick={() => startEdit(s)}
-                        style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', flexShrink:0 }}>
-                        <Pencil size={10}/>
+                        style={{ width:20, height:20, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', flexShrink:0 }}>
+                        <Pencil size={12}/>
                       </button>
                       <button onClick={() => mutate(schedules.filter(x => x.id !== s.id))}
-                        style={{ width:18, height:18, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', flexShrink:0 }}>
-                        <Trash2 size={10}/>
+                        style={{ width:20, height:20, display:'flex', alignItems:'center', justifyContent:'center', background:'none', border:'none', cursor:'pointer', color:'#94a3b8', flexShrink:0 }}>
+                        <Trash2 size={12}/>
                       </button>
                     </div>
                   )}
@@ -1108,7 +1108,7 @@ function CalendarPanel() {
               onKeyDown={e => e.key === 'Enter' && addSched()}
               placeholder={rangeMode ? '기간 일정 내용 입력' : (selDay ? '일정 입력 후 Enter' : '날짜를 먼저 선택하세요')}
               disabled={!rangeMode && !selDay}
-              style={{ flex:1, fontSize:'11.5px', border:'1.5px solid #e2e8f0', borderRadius:7, padding:'5px 8px', outline:'none', color:'#1e293b', opacity: (!rangeMode && !selDay) ? 0.5 : 1 }}
+              style={{ flex:1, fontSize:'13px', border:'1.5px solid #e2e8f0', borderRadius:7, padding:'6px 9px', outline:'none', color:'#1e293b', opacity: (!rangeMode && !selDay) ? 0.5 : 1 }}
             />
             <button onClick={addSched} disabled={!rangeMode && !selDay}
               style={{ width:30, height:30, background: (!rangeMode && !selDay) ? '#e2e8f0' : '#2563eb', color:'#fff', border:'none', borderRadius:7, cursor: (!rangeMode && !selDay) ? 'not-allowed' : 'pointer', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
