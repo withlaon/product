@@ -92,11 +92,27 @@ function getSkipDays(ym: string): Set<number> {
 const SCHED_KEY = 'pm_dashboard_schedules_v1'
 interface ScheduleItem { id: string; date: string; endDate?: string; text: string; color: string }
 const SCHED_COLORS = ['#2563eb','#059669','#dc2626','#7c3aed','#d97706','#0891b2','#be185d','#0f766e']
+/* 색상별 사이트명 라벨 (파란색=ESM, 녹색=토스쇼핑, 나머지는 일단 쇼핑몰 — 사용자가 직접 수정 가능) */
+const SCHED_LABELS_KEY = 'pm_dashboard_sched_labels_v1'
+const DEFAULT_SCHED_LABELS = ['ESM','토스쇼핑','쇼핑몰','쇼핑몰','쇼핑몰','쇼핑몰','쇼핑몰','쇼핑몰']
 function loadSchedules(): ScheduleItem[] {
   try { return JSON.parse(localStorage.getItem(SCHED_KEY) ?? '[]') } catch { return [] }
 }
 function saveSchedules(list: ScheduleItem[]) {
   try { localStorage.setItem(SCHED_KEY, JSON.stringify(list)) } catch {}
+}
+function loadSchedColorLabels(): string[] {
+  try {
+    const raw = localStorage.getItem(SCHED_LABELS_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw)
+      if (Array.isArray(arr) && arr.length === SCHED_COLORS.length) return arr as string[]
+    }
+  } catch {}
+  return [...DEFAULT_SCHED_LABELS]
+}
+function saveSchedColorLabels(labels: string[]) {
+  try { localStorage.setItem(SCHED_LABELS_KEY, JSON.stringify(labels)) } catch {}
 }
 function addOneDayStr(dateStr: string): string {
   const [y, m, d] = dateStr.split('-').map(Number)
@@ -680,6 +696,52 @@ function MonthlySales3YChart({ data }: { data: MonthlyAmtPoint[] }) {
   )
 }
 
+/* ── 색상 + 사이트명 선택 행 (일정 색상표) ─────────────────── */
+function ColorLabelRow({
+  colors, labels, selectedIdx, onSelect, editingIdx, labelDraft,
+  onStartEdit, onDraftChange, onSaveEdit, onCancelEdit,
+}: {
+  colors: string[]
+  labels: string[]
+  selectedIdx: number
+  onSelect: (i: number) => void
+  editingIdx: number | null
+  labelDraft: string
+  onStartEdit: (i: number) => void
+  onDraftChange: (v: string) => void
+  onSaveEdit: () => void
+  onCancelEdit: () => void
+}) {
+  return (
+    <div style={{ display:'flex', gap:6, marginBottom:6, flexWrap:'wrap' }}>
+      {colors.map((c, i) => (
+        <div key={c} style={{ display:'flex', flexDirection:'column', alignItems:'center', gap:2, width:36 }}>
+          <div onClick={() => onSelect(i)}
+            style={{ width:16, height:16, borderRadius:'50%', background:c, cursor:'pointer',
+              border: selectedIdx===i ? '2px solid #0f172a' : '2px solid transparent',
+              transition:'transform 80ms', transform: selectedIdx===i ? 'scale(1.2)' : 'scale(1)' }}/>
+          {editingIdx === i ? (
+            <input
+              value={labelDraft}
+              onChange={e => onDraftChange(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') onSaveEdit(); if (e.key === 'Escape') onCancelEdit() }}
+              onBlur={onSaveEdit}
+              autoFocus
+              style={{ width:36, fontSize:'8px', textAlign:'center', border:'1px solid #2563eb', borderRadius:4, padding:'1px 2px', outline:'none', color:'#1e293b' }}
+            />
+          ) : (
+            <span
+              onClick={() => onStartEdit(i)}
+              title="클릭하여 사이트명 수정"
+              style={{ fontSize:'8px', color:'#64748b', fontWeight:700, cursor:'pointer', textAlign:'center', maxWidth:36, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}
+            >{labels[i]}</span>
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 /* ── 달력 + 일정 패널 ────────────────────────────────────── */
 function CalendarPanel() {
   const [calMonth, setCalMonth] = useState(getCurYM())
@@ -693,11 +755,25 @@ function CalendarPanel() {
   const [editId, setEditId] = useState<string | null>(null)
   const [editText, setEditText] = useState('')
   const [editColorIdx, setEditColorIdx] = useState(0)
+  const [colorLabels, setColorLabels] = useState<string[]>(DEFAULT_SCHED_LABELS)
+  const [labelEditIdx, setLabelEditIdx] = useState<number | null>(null)
+  const [labelDraft, setLabelDraft] = useState('')
   const curYM = getCurYM()
   const today = getToday()
   const todayDay = today.slice(0, 7) === calMonth ? Number(today.slice(8)) : null
 
-  useEffect(() => { setSchedules(loadSchedules()) }, [])
+  useEffect(() => { setSchedules(loadSchedules()); setColorLabels(loadSchedColorLabels()) }, [])
+
+  const startEditLabel = (i: number) => { setLabelEditIdx(i); setLabelDraft(colorLabels[i]) }
+  const saveLabelEdit = () => {
+    if (labelEditIdx === null) return
+    const next = [...colorLabels]
+    next[labelEditIdx] = labelDraft.trim() || DEFAULT_SCHED_LABELS[labelEditIdx] || '쇼핑몰'
+    setColorLabels(next)
+    saveSchedColorLabels(next)
+    setLabelEditIdx(null)
+  }
+  const cancelLabelEdit = () => setLabelEditIdx(null)
 
   // 날짜 선택 시 기간 시작일 자동 채움
   useEffect(() => {
@@ -801,6 +877,14 @@ function CalendarPanel() {
     return [...singles, ...ranges]
   })() : []
 
+  // 다음달로 이동 가능 여부: 현재월 이전이면 항상 가능, 이후(미래월)는 그 달에 등록된 일정이 있을 때만 가능
+  const nextMonthYM = shiftMonth(calMonth, 1)
+  const monthHasSchedule = (ym: string) => schedules.some(s => {
+    if (s.endDate) return s.date.slice(0, 7) <= ym && s.endDate.slice(0, 7) >= ym
+    return s.date.slice(0, 7) === ym
+  })
+  const canGoNext = calMonth < curYM || monthHasSchedule(nextMonthYM)
+
   return (
     <div className="pm-card" style={{ display:'flex', flexDirection:'column', height:'100%', overflow:'hidden', padding:0 }}>
       {/* 헤더 */}
@@ -815,8 +899,9 @@ function CalendarPanel() {
           <span style={{ fontSize:'12px', fontWeight:800, color:'#0f172a', minWidth:64, textAlign:'center' }}>
             {calMonth.replace('-','년 ')}월
           </span>
-          <button onClick={() => setCalMonth(m => shiftMonth(m,1))} disabled={calMonth >= curYM}
-            style={{ width:22, height:22, borderRadius:6, border:'1px solid #e2e8f0', background:'#fff', cursor:calMonth>=curYM?'not-allowed':'pointer', opacity:calMonth>=curYM?0.4:1, display:'flex', alignItems:'center', justifyContent:'center' }}>
+          <button onClick={() => canGoNext && setCalMonth(m => shiftMonth(m,1))} disabled={!canGoNext}
+            title={!canGoNext && !monthHasSchedule(nextMonthYM) ? '다음달에 등록된 일정이 없습니다' : undefined}
+            style={{ width:22, height:22, borderRadius:6, border:'1px solid #e2e8f0', background:'#fff', cursor:canGoNext?'pointer':'not-allowed', opacity:canGoNext?1:0.4, display:'flex', alignItems:'center', justifyContent:'center' }}>
             <ChevronRight size={11}/>
           </button>
         </div>
@@ -930,14 +1015,18 @@ function CalendarPanel() {
                 <div key={s.id} style={{ marginBottom:5, padding:'5px 8px', background:'#f8fafc', borderRadius:8, borderLeft:`3px solid ${editId===s.id ? SCHED_COLORS[editColorIdx] : s.color}` }}>
                   {editId === s.id ? (
                     <>
-                      <div style={{ display:'flex', gap:3, marginBottom:5 }}>
-                        {SCHED_COLORS.map((c,i) => (
-                          <div key={c} onClick={() => setEditColorIdx(i)}
-                            style={{ width:14, height:14, borderRadius:'50%', background:c, cursor:'pointer', flexShrink:0,
-                              border: editColorIdx===i ? '2px solid #0f172a' : '2px solid transparent',
-                              transform: editColorIdx===i ? 'scale(1.2)' : 'scale(1)', transition:'transform 80ms' }}/>
-                        ))}
-                      </div>
+                      <ColorLabelRow
+                        colors={SCHED_COLORS}
+                        labels={colorLabels}
+                        selectedIdx={editColorIdx}
+                        onSelect={setEditColorIdx}
+                        editingIdx={labelEditIdx}
+                        labelDraft={labelDraft}
+                        onStartEdit={startEditLabel}
+                        onDraftChange={setLabelDraft}
+                        onSaveEdit={saveLabelEdit}
+                        onCancelEdit={cancelLabelEdit}
+                      />
                       <div style={{ display:'flex', gap:4 }}>
                         <input value={editText} onChange={e => setEditText(e.target.value)}
                           onKeyDown={e => { if (e.key==='Enter') saveEdit(s); if (e.key==='Escape') setEditId(null) }}
@@ -952,7 +1041,12 @@ function CalendarPanel() {
                   ) : (
                     <div style={{ display:'flex', alignItems:'center', gap:6 }}>
                       <div style={{ flex:1, minWidth:0 }}>
-                        <span style={{ fontSize:'11.5px', fontWeight:700, color:'#1e293b', wordBreak:'break-all', display:'block' }}>{s.text}</span>
+                        <div style={{ display:'flex', alignItems:'center', gap:5 }}>
+                          <span style={{ fontSize:'8px', fontWeight:800, color:s.color, background:`${s.color}18`, padding:'1px 5px', borderRadius:4, flexShrink:0 }}>
+                            {colorLabels[SCHED_COLORS.indexOf(s.color)] ?? '쇼핑몰'}
+                          </span>
+                          <span style={{ fontSize:'11.5px', fontWeight:700, color:'#1e293b', wordBreak:'break-all' }}>{s.text}</span>
+                        </div>
                         {s.endDate && (
                           <span style={{ fontSize:'9.5px', color:'#94a3b8', fontWeight:600 }}>
                             {s.date.slice(5).replace('-','/')} ~ {s.endDate.slice(5).replace('-','/')}
@@ -980,15 +1074,19 @@ function CalendarPanel() {
           <p style={{ fontSize:'10.5px', fontWeight:800, color:'#64748b', marginBottom:6 }}>
             {rangeMode ? '기간 일정 등록' : '일정 추가'}
           </p>
-          {/* 색상 선택 */}
-          <div style={{ display:'flex', gap:4, marginBottom:6 }}>
-            {SCHED_COLORS.map((c,i) => (
-              <div key={c} onClick={() => setColorIdx(i)}
-                style={{ width:16, height:16, borderRadius:'50%', background:c, cursor:'pointer',
-                  border: colorIdx===i ? '2px solid #0f172a' : '2px solid transparent',
-                  transition:'transform 80ms', transform: colorIdx===i ? 'scale(1.2)' : 'scale(1)' }}/>
-            ))}
-          </div>
+          {/* 색상 + 사이트명 선택 (라벨 클릭 시 이름 수정 가능) */}
+          <ColorLabelRow
+            colors={SCHED_COLORS}
+            labels={colorLabels}
+            selectedIdx={colorIdx}
+            onSelect={setColorIdx}
+            editingIdx={labelEditIdx}
+            labelDraft={labelDraft}
+            onStartEdit={startEditLabel}
+            onDraftChange={setLabelDraft}
+            onSaveEdit={saveLabelEdit}
+            onCancelEdit={cancelLabelEdit}
+          />
           {/* 기간 입력 */}
           {rangeMode && (
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:4, marginBottom:6 }}>
