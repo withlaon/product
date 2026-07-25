@@ -1167,9 +1167,9 @@ export default function DashboardPage() {
       .then(({ data }) => { if (data) setPurchases(data as Purchase[]) })
   }, [])
 
-  /* ── 물류비 로드 ── */
+  /* ── 물류비 로드 (MONEY 앱 지출내역 '물류비' 카테고리 실시간 연동) ── */
   const refreshLogistics = useCallback(() => {
-    fetch('/api/pm-logistics')
+    fetch('/api/money-logistics')
       .then(r => r.json())
       .then(data => { if (Array.isArray(data)) setLogisticsFees(data) })
       .catch(() => {})
@@ -1393,7 +1393,7 @@ export default function DashboardPage() {
     return receivedCost + (retention.purchaseByMonth[selMonth] ?? 0)
   }, [purchases, products, selMonth, lastUpdate, retention])
 
-  /* ── 당월 택배비/물류비 (고유 운송장번호 × 2800원 + 등록된 물류비) ── */
+  /* ── 당월 택배비/물류비 (고유 운송장번호 × 2400원 + MONEY 앱 물류비 실시간 합산) ── */
   const monthShippingFee = useMemo(() => {
     const uniq = new Set(
       shipped
