@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Package, Warehouse,
   Settings,
   PanelLeftClose, PanelLeftOpen, ChevronRight, Boxes, X, PackagePlus, ShoppingCart, Truck, GitMerge,
-  ClipboardList, Printer, Send, HeadphonesIcon, History, TrendingUp, Container, MapPin,
+  ClipboardList, Printer, Send, HeadphonesIcon, History, TrendingUp, MapPin,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -45,7 +45,6 @@ const navGroups: NavGroup[] = [
         children: [
           { label: '발주관리', href: '/purchase/manage',  icon: PackagePlus },
           { label: '입고관리', href: '/purchase/receive', icon: Truck },
-          { label: '물류비',   href: '/logistics',        icon: Container },
         ],
       },
       { label: '불량등록',     href: '/inventory',             icon: Warehouse },
