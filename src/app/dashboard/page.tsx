@@ -14,7 +14,7 @@ import { loadDashboardRetention, type DashboardRetention } from '@/lib/product-d
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
 import type { Order, ShippedOrder } from '@/lib/orders'
 import { supabase } from '@/lib/supabase'
-import { DEFAULT_EXCHANGE_RATE, unitToOrderKrw } from '@/app/purchase/_shared'
+import { DEFAULT_EXCHANGE_RATE, PRICE_FACTOR } from '@/app/purchase/_shared'
 import { isCsItemPending, countPendingCsRows } from '@/lib/cs-pending'
 
 /* ── 헬퍼 ─────────────────────────────────────────────────── */
@@ -60,6 +60,15 @@ function fmtMoney(v: number) {
   if (v >= 10000000) return `${Math.round(v/10000000)}천만`
   if (v >= 10000)    return `${Math.round(v/10000)}만`
   return `${Math.round(v).toLocaleString()}`
+}
+/** 대시보드 매입액 전용 단가(원화) 환산: 원화는 단가 그대로, 위안은 고정환율(220원)×1.18×1.25, 기타 외화는 실시간 환율×1.18×1.25 */
+const PURCHASE_CNY_RATE = 220
+function purchaseUnitCostKrw(costPrice: number, currency: string, exchangeRate: number): number {
+  const isKrw = currency === '원' || currency === 'KRW'
+  if (isKrw) return costPrice
+  const isCny = currency === '위안' || currency === 'CNY'
+  if (isCny) return costPrice * PURCHASE_CNY_RATE * PRICE_FACTOR
+  return costPrice * exchangeRate * PRICE_FACTOR
 }
 
 /* ── 한국 공휴일 · 주말 판별 ─────────────────────────────── */
@@ -1387,7 +1396,7 @@ export default function DashboardPage() {
         if (!item.product_code || !(item.received > 0)) return is
         const prod = products.find(pp => pp.code === item.product_code)
         if (prod?.cost_price == null) return is
-        const unitKrw = unitToOrderKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate)
+        const unitKrw = purchaseUnitCostKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate)
         return is + unitKrw * item.received
       }, 0), 0)
     return receivedCost + (retention.purchaseByMonth[selMonth] ?? 0)
