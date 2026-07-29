@@ -1147,6 +1147,7 @@ export default function DashboardPage() {
   const [shipped,       setShipped]       = useState<ShippedOrder[]>([])
   const [invoiceQueue,  setInvoiceQueue]  = useState<Order[]>([])
   const [products,      setProducts]      = useState<CachedProduct[]>([])
+  const [productCostMap,setProductCostMap]= useState<Record<string, { cost_price: number; cost_currency?: string }>>({})
   const [csItems,       setCsItems]       = useState<CsItem[]>([])
   const [purchases,     setPurchases]     = useState<Purchase[]>([])
   const [logisticsFees, setLogisticsFees] = useState<LogisticsEntry[]>([])
@@ -1176,6 +1177,19 @@ export default function DashboardPage() {
       .then(({ data }) => { if (data) setPurchases(data as Purchase[]) })
   }, [])
 
+  /* ── 상품 원가 Supabase 직접 로드 (매입액 계산용 · localStorage 캐시 유실/지연 영향 없이 항상 최신 원가 보장) ── */
+  const refreshProductCosts = useCallback(() => {
+    supabase.from('pm_products').select('code,cost_price,cost_currency')
+      .then(({ data }) => {
+        if (!data) return
+        const map: Record<string, { cost_price: number; cost_currency?: string }> = {}
+        for (const p of data as { code?: string; cost_price?: number; cost_currency?: string }[]) {
+          if (p.code) map[p.code] = { cost_price: Number(p.cost_price), cost_currency: p.cost_currency }
+        }
+        setProductCostMap(map)
+      })
+  }, [])
+
   /* ── 물류비 로드 (MONEY 앱 지출내역 '물류비' 카테고리 실시간 연동) ── */
   const refreshLogistics = useCallback(() => {
     fetch('/api/money-logistics')
@@ -1184,12 +1198,13 @@ export default function DashboardPage() {
       .catch(() => {})
   }, [])
 
-  /* ── 로컬 + 발주 + 물류비 전부 (실시간 대시보드 기준) ── */
+  /* ── 로컬 + 발주 + 물류비 + 상품원가 전부 (실시간 대시보드 기준) ── */
   const fullRefresh = useCallback(() => {
     refreshLocal()
     refreshPurchases()
     refreshLogistics()
-  }, [refreshLocal, refreshPurchases, refreshLogistics])
+    refreshProductCosts()
+  }, [refreshLocal, refreshPurchases, refreshLogistics, refreshProductCosts])
 
   /* ── 전체 새로고침 (버튼용) ── */
   const handleRefresh = useCallback(async () => {
@@ -1394,13 +1409,15 @@ export default function DashboardPage() {
       })
       .reduce((sum, p) => sum + p.items.reduce((is, item) => {
         if (!item.product_code || !(item.received > 0)) return is
-        const prod = products.find(pp => pp.code === item.product_code)
-        if (prod?.cost_price == null) return is
-        const unitKrw = purchaseUnitCostKrw(prod.cost_price, prod.cost_currency || '원', exchangeRate)
+        // 실시간 Supabase 원가 우선, 없으면 로컬 캐시 상품정보로 폴백
+        const costInfo = productCostMap[item.product_code]
+          ?? products.find(pp => pp.code === item.product_code)
+        if (costInfo?.cost_price == null || !Number.isFinite(Number(costInfo.cost_price))) return is
+        const unitKrw = purchaseUnitCostKrw(Number(costInfo.cost_price), costInfo.cost_currency || '원', exchangeRate)
         return is + unitKrw * item.received
       }, 0), 0)
     return receivedCost + (retention.purchaseByMonth[selMonth] ?? 0)
-  }, [purchases, products, selMonth, lastUpdate, retention])
+  }, [purchases, products, productCostMap, selMonth, lastUpdate, retention])
 
   /* ── 당월 택배비/물류비 (고유 운송장번호 × 2400원 + MONEY 앱 물류비 실시간 합산) ── */
   const monthShippingFee = useMemo(() => {
