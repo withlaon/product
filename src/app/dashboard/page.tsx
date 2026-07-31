@@ -295,10 +295,12 @@ function prevMonthLabel(day: number) {
   return `${y}.${m}.${String(day).padStart(2,'0')}`
 }
 
-/* ── 당월(실선) + 전월(점선) 누적 판매금액 비교 차트 ────── */
-function DualCumulativeChart({ curData, prevData, skipDays }: {
+/* ── 당월(실선) + 전월(점선) + 역대최고월(빨간 점선) 누적 판매금액 비교 차트 ────── */
+function DualCumulativeChart({ curData, prevData, bestData, bestLabel, skipDays }: {
   curData: SimplePoint[]
   prevData: SimplePoint[]
+  bestData?: SimplePoint[]
+  bestLabel?: string
   skipDays?: Set<number>
 }) {
   const [tipDay, setTipDay] = useState<number | null>(null)
@@ -320,12 +322,14 @@ function DualCumulativeChart({ curData, prevData, skipDays }: {
   const padL = 4; const padR = 4; const padT = 4; const padB = 14
   const cW = W - padL - padR; const cH = H - padT - padB
 
+  const bestPts = bestData ?? []
   const maxDays = Math.max(
     curData.length > 0 ? curData[curData.length - 1].day : 0,
     prevData.length > 0 ? prevData[prevData.length - 1].day : 0,
+    bestPts.length > 0 ? bestPts[bestPts.length - 1].day : 0,
     1
   )
-  const maxV = Math.max(...curData.map(d => d.value), ...prevData.map(d => d.value), 1)
+  const maxV = Math.max(...curData.map(d => d.value), ...prevData.map(d => d.value), ...bestPts.map(d => d.value), 1)
 
   const xPos = (day: number) => maxDays <= 1 ? padL + cW / 2 : padL + ((day - 1) / (maxDays - 1)) * cW
   const yVal = (v: number) => padT + cH - (v / maxV) * cH
@@ -336,6 +340,7 @@ function DualCumulativeChart({ curData, prevData, skipDays }: {
 
   const curPath  = buildPath(curData)
   const prevPath = buildPath(prevData)
+  const bestPath = buildPath(bestPts)
 
   const curFillPath = (() => {
     if (!curData.length) return ''
@@ -360,6 +365,7 @@ function DualCumulativeChart({ curData, prevData, skipDays }: {
 
   const curTipPt  = tipDay !== null ? curData.find(d => d.day === tipDay) : undefined
   const prevTipPt = tipDay !== null ? prevData.find(d => d.day === tipDay) : undefined
+  const bestTipPt = tipDay !== null ? bestPts.find(d => d.day === tipDay) : undefined
   const tipXPx    = tipDay !== null ? xPos(tipDay) : 0
   const tipXPct   = W > 0 ? (tipXPx / W) * 100 : 0
 
@@ -375,6 +381,10 @@ function DualCumulativeChart({ curData, prevData, skipDays }: {
           </linearGradient>
         </defs>
         <line x1={padL} y1={padT+cH} x2={W-padR} y2={padT+cH} stroke="#f1f5f9" strokeWidth={0.8}/>
+        {bestPath && (
+          <path d={bestPath} fill="none" stroke="#ef4444" strokeWidth={1.2}
+            strokeDasharray="2 2" strokeLinejoin="round" strokeLinecap="round" opacity={0.7}/>
+        )}
         {prevPath && (
           <path d={prevPath} fill="none" stroke="#94a3b8" strokeWidth={1.2}
             strokeDasharray="4 3" strokeLinejoin="round" strokeLinecap="round" opacity={0.65}/>
@@ -388,6 +398,9 @@ function DualCumulativeChart({ curData, prevData, skipDays }: {
           <line x1={tipXPx} y1={padT} x2={tipXPx} y2={padT+cH}
             stroke="#94a3b8" strokeWidth={0.7} strokeDasharray="3 2" opacity={0.5}/>
         )}
+        {tipDay !== null && bestTipPt && (
+          <circle cx={tipXPx} cy={yVal(bestTipPt.value)} r={2.3} fill="#ef4444" stroke="#fff" strokeWidth={1.3} opacity={0.9}/>
+        )}
         {tipDay !== null && curTipPt && (
           <circle cx={tipXPx} cy={yVal(curTipPt.value)} r={2.8} fill="#7c3aed" stroke="#fff" strokeWidth={1.5}/>
         )}
@@ -400,7 +413,7 @@ function DualCumulativeChart({ curData, prevData, skipDays }: {
           )
         )}
       </svg>
-      {tipDay !== null && (curTipPt || prevTipPt) && (
+      {tipDay !== null && (curTipPt || prevTipPt || bestTipPt) && (
         <div style={{
           position: 'absolute', top: '5%', pointerEvents: 'none', zIndex: 20,
           left: `${tipXPct > 70 ? tipXPct - 14 : tipXPct + 1}%`,
@@ -413,7 +426,7 @@ function DualCumulativeChart({ curData, prevData, skipDays }: {
               <p style={{ fontSize: '9px', color: '#c4b5fd', fontWeight: 700, marginBottom: 1 }}>
                 {selMonthLabel(tipDay)} 누적
               </p>
-              <p style={{ fontSize: '12px', color: '#fff', fontWeight: 800, marginBottom: curTipPt && prevTipPt ? 4 : 0 }}>
+              <p style={{ fontSize: '12px', color: '#fff', fontWeight: 800, marginBottom: (prevTipPt || bestTipPt) ? 4 : 0 }}>
                 ₩{Math.round(curTipPt.value).toLocaleString()}
               </p>
             </>
@@ -423,8 +436,18 @@ function DualCumulativeChart({ curData, prevData, skipDays }: {
               <p style={{ fontSize: '9px', color: '#94a3b8', fontWeight: 700, marginBottom: 1 }}>
                 {prevMonthLabel(tipDay)} 누적
               </p>
-              <p style={{ fontSize: '11px', color: '#a1b4c8', fontWeight: 700 }}>
+              <p style={{ fontSize: '11px', color: '#a1b4c8', fontWeight: 700, marginBottom: bestTipPt ? 4 : 0 }}>
                 ₩{Math.round(prevTipPt.value).toLocaleString()}
+              </p>
+            </>
+          )}
+          {bestTipPt && bestLabel && (
+            <>
+              <p style={{ fontSize: '9px', color: '#fca5a5', fontWeight: 700, marginBottom: 1 }}>
+                {bestLabel.replace('-','.')}.{String(tipDay).padStart(2,'0')} 누적 (역대최고)
+              </p>
+              <p style={{ fontSize: '11px', color: '#fecaca', fontWeight: 700 }}>
+                ₩{Math.round(bestTipPt.value).toLocaleString()}
               </p>
             </>
           )}
@@ -1394,6 +1417,37 @@ export default function DashboardPage() {
     return keys.map(ym => ({ ym, amount: byMonth[ym] ?? 0 }))
   }, [allOrdersMerged, shippedById, curYM, retention])
 
+  /* ── 역대 최고 매출액 월(최근 3년 내) 일별 누적 ── */
+  const bestMonth = useMemo(() => {
+    let best: MonthlyAmtPoint | null = null
+    for (const m of monthlySales3y) {
+      if (m.amount > 0 && (!best || m.amount > best.amount)) best = m
+    }
+    return best
+  }, [monthlySales3y])
+
+  const bestMonthChartData = useMemo(() => {
+    if (!bestMonth) return []
+    const days = daysInMonth(bestMonth.ym)
+    const mo = allOrdersMerged.filter(
+      o => o.order_date?.slice(0,7) === bestMonth.ym && o.status !== 'cancelled'
+    )
+    return Array.from({ length: days }, (_, i) => {
+      const day  = i + 1
+      const date = `${bestMonth.ym}-${String(day).padStart(2,'0')}`
+      const dayO = mo.filter(o => o.order_date === date)
+      const live = dayO.reduce((s, o) => s + dashboardAmountForMergedRow(o, shippedById), 0)
+      return { day, amount: live + (retention.salesByDay[date] ?? 0) }
+    })
+  }, [allOrdersMerged, shippedById, bestMonth, retention])
+
+  const bestMonthCumulative = useMemo(() => {
+    let sum = 0
+    return bestMonthChartData.map(d => ({ day: d.day, value: (sum += d.amount) }))
+  }, [bestMonthChartData])
+
+  const bestMonthIsOther = !!bestMonth && bestMonth.ym !== selMonth
+
   /* ── 선택 월 매입액: 입고관리 입고 수량 기준 ── */
   const monthPurchaseCost = useMemo(() => {
     let exchangeRate = DEFAULT_EXCHANGE_RATE
@@ -1595,6 +1649,14 @@ export default function DashboardPage() {
                 </svg>
                 <span style={{ fontSize:'10px', fontWeight:600, color:'#94a3b8' }}>{prevMonth.replace('-','년 ')}월</span>
               </div>
+              {bestMonthIsOther && (
+                <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                  <svg width="18" height="7" style={{ flexShrink:0 }}>
+                    <line x1="0" y1="3.5" x2="18" y2="3.5" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="2 2"/>
+                  </svg>
+                  <span style={{ fontSize:'10px', fontWeight:600, color:'#ef4444' }}>{bestMonth!.ym.replace('-','년 ')}월(역대최고)</span>
+                </div>
+              )}
             </div>
             {/* 누적 비교 차트 */}
             <div style={{ flex:1, minHeight:0 }}>
@@ -1605,6 +1667,8 @@ export default function DashboardPage() {
                 : <DualCumulativeChart
                     curData={curCumulative}
                     prevData={prevCumulative}
+                    bestData={bestMonthIsOther ? bestMonthCumulative : undefined}
+                    bestLabel={bestMonthIsOther ? bestMonth!.ym : undefined}
                     skipDays={chartSkipDays}
                   />
               }
