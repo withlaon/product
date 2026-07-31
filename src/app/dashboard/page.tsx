@@ -295,7 +295,7 @@ function prevMonthLabel(day: number) {
   return `${y}.${m}.${String(day).padStart(2,'0')}`
 }
 
-/* ── 당월(실선) + 전월(점선) + 역대최고월(빨간 점선) 누적 판매금액 비교 차트 ────── */
+/* ── 당월(실선) + 전월(점선) + 역대최고월(빨간 실선) 누적 판매금액 비교 차트 ────── */
 function DualCumulativeChart({ curData, prevData, bestData, bestLabel, skipDays }: {
   curData: SimplePoint[]
   prevData: SimplePoint[]
@@ -383,7 +383,7 @@ function DualCumulativeChart({ curData, prevData, bestData, bestLabel, skipDays 
         <line x1={padL} y1={padT+cH} x2={W-padR} y2={padT+cH} stroke="#f1f5f9" strokeWidth={0.8}/>
         {bestPath && (
           <path d={bestPath} fill="none" stroke="#ef4444" strokeWidth={1.2}
-            strokeDasharray="2 2" strokeLinejoin="round" strokeLinecap="round" opacity={0.7}/>
+            strokeLinejoin="round" strokeLinecap="round" opacity={0.75}/>
         )}
         {prevPath && (
           <path d={prevPath} fill="none" stroke="#94a3b8" strokeWidth={1.2}
@@ -1398,10 +1398,8 @@ export default function DashboardPage() {
     return prevChartData.map(d => ({ day: d.day, value: (sum += d.amount) }))
   }, [prevChartData])
 
-  /** 최근 36개월(3년) 월별 판매금액 — 당월(curYM)까지 */
-  const monthlySales3y = useMemo((): MonthlyAmtPoint[] => {
-    const keys: string[] = []
-    for (let i = 35; i >= 0; i--) keys.push(shiftMonth(curYM, -i))
+  /* ── 역대 최고 매출액 월(전체 기간, 3년 제한 없음) 일별 누적 ── */
+  const bestMonth = useMemo(() => {
     const byMonth: Record<string, number> = {}
     for (const o of allOrdersMerged) {
       if (o.status === 'cancelled') continue
@@ -1414,17 +1412,12 @@ export default function DashboardPage() {
       if (!ym) continue
       byMonth[ym] = (byMonth[ym] ?? 0) + amt
     }
-    return keys.map(ym => ({ ym, amount: byMonth[ym] ?? 0 }))
-  }, [allOrdersMerged, shippedById, curYM, retention])
-
-  /* ── 역대 최고 매출액 월(최근 3년 내) 일별 누적 ── */
-  const bestMonth = useMemo(() => {
     let best: MonthlyAmtPoint | null = null
-    for (const m of monthlySales3y) {
-      if (m.amount > 0 && (!best || m.amount > best.amount)) best = m
+    for (const [ym, amount] of Object.entries(byMonth)) {
+      if (amount > 0 && (!best || amount > best.amount)) best = { ym, amount }
     }
     return best
-  }, [monthlySales3y])
+  }, [allOrdersMerged, shippedById, retention])
 
   const bestMonthChartData = useMemo(() => {
     if (!bestMonth) return []
@@ -1652,7 +1645,7 @@ export default function DashboardPage() {
               {bestMonthIsOther && (
                 <div style={{ display:'flex', alignItems:'center', gap:4 }}>
                   <svg width="18" height="7" style={{ flexShrink:0 }}>
-                    <line x1="0" y1="3.5" x2="18" y2="3.5" stroke="#ef4444" strokeWidth={1.5} strokeDasharray="2 2"/>
+                    <line x1="0" y1="3.5" x2="18" y2="3.5" stroke="#ef4444" strokeWidth={1.5}/>
                   </svg>
                   <span style={{ fontSize:'10px', fontWeight:600, color:'#ef4444' }}>{bestMonth!.ym.replace('-','년 ')}월(역대최고)</span>
                 </div>
