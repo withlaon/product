@@ -43,6 +43,10 @@ interface CsItem {
   tracking_number_out        ?: string
   exchange_in_processed_at   ?: string
   exchange_out_processed_at  ?: string
+  /** 바코드 기준 상품관리탭 재고(current_stock/defective) 반영 완료 시각 — 미설정 시 "재고 재동기화" 대상 */
+  stock_synced_at             ?: string
+  stock_synced_in_at          ?: string
+  stock_synced_out_at         ?: string
 }
 
 /** 목록 표시: 교환은 교환입고·교환출고 각각 한 행 */
@@ -166,6 +170,22 @@ function saveCachedProducts(products: CachedProduct[]) {
       localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ...parsed, data: products }))
     }
   } catch {}
+}
+
+/**
+ * 상품 캐시를 Supabase에서 직접 최신 상태로 새로고침.
+ * CS관리탭은 상품관리탭 방문 여부와 무관하게 바코드 자동입력이 항상 동작해야 하므로,
+ * 페이지 진입/포커스 시마다 이 함수로 캐시를 강제 워밍한다.
+ */
+async function refreshProductsCacheLive(): Promise<boolean> {
+  try {
+    const res = await fetch(`/api/pm-products?t=${Date.now()}`, { cache: 'no-store' })
+    if (!res.ok) return false
+    const data = await res.json()
+    if (!Array.isArray(data)) return false
+    localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts: Date.now(), data }))
+    return true
+  } catch { return false }
 }
 
 /* ─── 상품캐시 기반 자동조회 ────────────────────────────────────── */
@@ -361,6 +381,24 @@ export default function CsManagementPage() {
     } catch { /* ignore */ }
   }, [])
 
+  /* ── 상품 캐시 실시간 워밍: 바코드→약어/옵션명 자동입력이 항상 최신 데이터를 쓰도록 보장 ── */
+  const [cacheNonce, setCacheNonce] = useState(0)
+  useEffect(() => {
+    let alive = true
+    const doRefresh = () => { refreshProductsCacheLive().then(ok => { if (ok && alive) setCacheNonce(n => n + 1) }) }
+    doRefresh()
+    const iv = setInterval(doRefresh, 60000)
+    const onVis = () => { if (!document.hidden) doRefresh() }
+    window.addEventListener('focus', doRefresh)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      alive = false
+      clearInterval(iv)
+      window.removeEventListener('focus', doRefresh)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
+
   /* ── 옵션이미지/상품약어 누락 시 캐시에서 자동 보완 ── */
   const enrichedItems = useMemo(() => items.map(item => {
     let next = { ...item }
@@ -400,7 +438,7 @@ export default function CsManagementPage() {
       product_abbr: item.product_abbr || found.product_abbr,
       option_name : item.option_name  || found.option_name,
     }
-  }), [items])
+  }), [items, cacheNonce])
 
   /* ── 파생 목록 (교환은 입고·출고 행으로 펼침) ── */
   const pendingItems = useMemo(() => {
@@ -452,6 +490,8 @@ export default function CsManagementPage() {
     setBarcodeInMatched(false)
     setBarcodeOutMatched(false)
     setModal({ open: true, type, tab: 'direct' })
+    /* 등록창을 열 때마다 상품 캐시를 재워밍 → 바코드 입력 즉시 최신 약어/옵션명 매칭 */
+    refreshProductsCacheLive().then(ok => { if (ok) setCacheNonce(n => n + 1) })
   }
 
   /* ── 폼 기본 setter ── */
@@ -703,108 +743,69 @@ export default function CsManagementPage() {
 
     setProcessing(procKey)
     try {
-      let products = loadCachedProducts()
-
-      const patchOptionByBarcode = (
-        barcode: string,
-        fn: (o: CachedOption) => CachedOption,
-      ): { products: CachedProduct[]; hit: boolean } => {
-        let hit = false
-        const next = products.map(p => ({
-          ...p,
-          options: p.options.map(o => {
-            if ((o.barcode ?? '').trim() !== barcode.trim()) return o
-            hit = true
-            return fn(o)
-          }),
-        }))
-        return { products: next, hit }
-      }
-
       const ts = nowIso()
 
+      /* ── 바코드 기준 재고 델타 계산 (실제 반영은 서버에서 최신 DB 값 기준으로 처리) ── */
+      let stockUpdate: { barcode: string; stockDelta?: number; defectiveDelta?: number } | null = null
       if (item.type === 'exchange') {
         const bin  = (item.barcode_in ?? item.barcode ?? '').trim()
         const bout = (item.barcode_out ?? '').trim()
         if (bin && bout) {
-          if (leg === 'in') {
-            const r1 = patchOptionByBarcode(bin, o => ({
-              ...o,
-              current_stock: (typeof o.current_stock === 'number' ? o.current_stock : 0) + qty,
-            }))
-            products = r1.products
-          } else if (leg === 'out') {
-            const r2 = patchOptionByBarcode(bout, o => ({
-              ...o,
-              current_stock: Math.max(0, (typeof o.current_stock === 'number' ? o.current_stock : 0) - qty),
-            }))
-            products = r2.products
-          }
+          if (leg === 'in') stockUpdate = { barcode: bin, stockDelta: qty }
+          else if (leg === 'out') stockUpdate = { barcode: bout, stockDelta: -qty }
         } else if (bin) {
-          const r = patchOptionByBarcode(bin, o => {
-            if (item.reason === 'simple_change') {
-              return { ...o, current_stock: (typeof o.current_stock === 'number' ? o.current_stock : 0) + qty }
-            }
-            return { ...o, defective: (typeof o.defective === 'number' ? o.defective : 0) + qty }
-          })
-          products = r.products
+          stockUpdate = item.reason === 'simple_change'
+            ? { barcode: bin, stockDelta: qty }
+            : { barcode: bin, defectiveDelta: qty }
         }
       } else {
-        let found = false
-        products = products.map(p => ({
-          ...p,
-          options: p.options.map(o => {
-            if ((o.barcode ?? '').trim() !== item.barcode.trim()) return o
-            found = true
-            if (item.reason === 'simple_change') {
-              return { ...o, current_stock: (typeof o.current_stock === 'number' ? o.current_stock : 0) + qty }
+        stockUpdate = item.reason === 'simple_change'
+          ? { barcode: item.barcode, stockDelta: qty }
+          : { barcode: item.barcode, defectiveDelta: qty }
+      }
+
+      let syncOk = false
+      if (stockUpdate) {
+        try {
+          const res = await fetch('/api/pm-cs-stock', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ updates: [{ key: 'main', ...stockUpdate }] }),
+          })
+          const j = await res.json().catch(() => null)
+          const r = j?.results?.[0]
+          if (r?.ok) {
+            syncOk = true
+          } else {
+            const msg = r?.error || j?.error || `HTTP ${res.status}`
+            if (!confirm(`재고 반영 실패: ${msg}\n\n재고 반영 없이 CS 상태만 처리완료로 변경하시겠습니까?`)) {
+              setProcessing(null)
+              return
             }
-            return { ...o, defective: (typeof o.defective === 'number' ? o.defective : 0) + qty }
-          }),
-        }))
-        if (!found) {
-          /* 바코드 미매칭: 상태만 업데이트 + 대시보드 차감 */
-          const updated = items.map(i =>
-            i.id === item.id ? { ...i, status: 'processed' as CsStatus, processed_at: ts } : i
-          )
-          saveCs(updated); setItems(updated)
-          /* 반품 → 대시보드 판매 차감 (금액 0으로 처리) */
-          mergeReturnDeduction(ts.slice(0, 10), item.mall, qty, 0)
-          return
+          }
+        } catch (e) {
+          if (!confirm(`재고 반영 중 오류가 발생했습니다: ${e instanceof Error ? e.message : String(e)}\n\n재고 반영 없이 CS 상태만 처리완료로 변경하시겠습니까?`)) {
+            setProcessing(null)
+            return
+          }
         }
       }
 
-      const origSnapshot = loadCachedProducts()
-      saveCachedProducts(products)
-      const changedIds = new Set(
-        products
-          .filter(p => p.options.some((o, i) => {
-            const orig = origSnapshot.find(pp => pp.id === p.id)?.options[i]
-            return orig && (o.current_stock !== orig.current_stock || o.defective !== orig.defective)
-          }))
-          .map(p => p.id)
-      )
-      await Promise.all([...changedIds].map(id => {
-        const p = products.find(pp => pp.id === id)!
-        return fetch('/api/pm-products', {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ id: p.id, options: p.options }),
-        })
-      }))
+      /* 상품약어/옵션명/이미지 표시용 로컬 캐시 최신화 (실패해도 무시) */
+      refreshProductsCacheLive().then(ok => { if (ok) setCacheNonce(n => n + 1) })
 
       let patch: Partial<CsItem> = {}
       if (item.type === 'exchange') {
         const bin  = (item.barcode_in ?? item.barcode ?? '').trim()
         const bout = (item.barcode_out ?? '').trim()
         if (bin && bout) {
-          if (leg === 'in') patch = { exchange_in_processed_at: ts }
-          else if (leg === 'out') patch = { exchange_out_processed_at: ts }
+          if (leg === 'in') patch = { exchange_in_processed_at: ts, ...(syncOk ? { stock_synced_in_at: ts } : {}) }
+          else if (leg === 'out') patch = { exchange_out_processed_at: ts, ...(syncOk ? { stock_synced_out_at: ts } : {}) }
         } else if (bin) {
-          patch = { exchange_in_processed_at: ts, status: 'processed', processed_at: ts }
+          patch = { exchange_in_processed_at: ts, status: 'processed', processed_at: ts, ...(syncOk ? { stock_synced_in_at: ts } : {}) }
         }
       } else {
-        patch = { status: 'processed', processed_at: ts }
+        patch = { status: 'processed', processed_at: ts, ...(syncOk ? { stock_synced_at: ts } : {}) }
 
         /* ── 반품 처리완료: 대시보드 판매수량·금액 차감 ── */
         const allProds = loadCachedProducts()
@@ -825,6 +826,87 @@ export default function CsManagementPage() {
       })
       saveCs(updated); setItems(updated)
     } finally { setProcessing(null) }
+  }
+
+  /* ── 이미 처리완료됐지만 재고 반영이 누락된(stock_synced_* 미설정) 건을 선택 월 기준 일괄 재동기화 ──
+   *  캐시 지연/공백으로 인해 실시간 반영이 실패했던 과거 CS 건들을 나중에라도 바로잡기 위한 도구.
+   *  이미 stock_synced_*가 찍힌 건(이 수정 이후 정상 처리된 건)은 건드리지 않아 중복 반영을 방지한다.
+   */
+  const [resyncing, setResyncing] = useState(false)
+  const handleBulkResync = async () => {
+    type PendingSync = { key: string; barcode: string; stockDelta?: number; defectiveDelta?: number; itemId: string; leg?: 'in' | 'out' }
+    const targets: PendingSync[] = []
+
+    for (const it of processedItems) {
+      if (it.type === 'return') {
+        if (it.status !== 'processed' || (it.processed_at ?? '').slice(0, 7) !== rightYM) continue
+        if (it.stock_synced_at) continue
+        const bc = (it.barcode ?? '').trim()
+        if (!bc) continue
+        targets.push(it.reason === 'simple_change'
+          ? { key: it.id, barcode: bc, stockDelta: it.quantity ?? 1, itemId: it.id }
+          : { key: it.id, barcode: bc, defectiveDelta: it.quantity ?? 1, itemId: it.id })
+        continue
+      }
+      // exchange
+      const bin  = (it.barcode_in ?? it.barcode ?? '').trim()
+      const bout = (it.barcode_out ?? '').trim()
+      const inM  = (it.exchange_in_processed_at ?? '').slice(0, 7) === rightYM
+      const outM = (it.exchange_out_processed_at ?? '').slice(0, 7) === rightYM
+      if (bin && bout) {
+        if (inM && !it.stock_synced_in_at) targets.push({ key: `${it.id}:in`, barcode: bin, stockDelta: it.quantity ?? 1, itemId: it.id, leg: 'in' })
+        if (outM && !it.stock_synced_out_at) targets.push({ key: `${it.id}:out`, barcode: bout, stockDelta: -(it.quantity ?? 1), itemId: it.id, leg: 'out' })
+      } else if (bin && inM && !it.stock_synced_in_at) {
+        targets.push(it.reason === 'simple_change'
+          ? { key: `${it.id}:in`, barcode: bin, stockDelta: it.quantity ?? 1, itemId: it.id, leg: 'in' }
+          : { key: `${it.id}:in`, barcode: bin, defectiveDelta: it.quantity ?? 1, itemId: it.id, leg: 'in' })
+      }
+    }
+
+    if (targets.length === 0) {
+      alert(`${rightYM.replace('-', '년 ')}월 처리완료 건 중 재고 미반영 건이 없습니다.`)
+      return
+    }
+    if (!confirm(`${rightYM.replace('-', '년 ')}월 처리완료 건 중 재고 미반영 ${targets.length}건을 지금 바코드 기준으로 재고에 반영하시겠습니까?\n(이미 반영된 건은 건드리지 않습니다)`)) return
+
+    setResyncing(true)
+    try {
+      const res = await fetch('/api/pm-cs-stock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates: targets.map(t => ({ key: t.key, barcode: t.barcode, stockDelta: t.stockDelta, defectiveDelta: t.defectiveDelta })) }),
+      })
+      const j = await res.json().catch(() => null)
+      const results: { key: string; ok: boolean; error?: string }[] = j?.results ?? []
+      const ts = nowIso()
+      const okKeys = new Set(results.filter(r => r.ok).map(r => r.key))
+      const failed = results.filter(r => !r.ok)
+
+      const updated = items.map(i => {
+        const own = targets.filter(t => t.itemId === i.id)
+        if (own.length === 0) return i
+        let next = { ...i }
+        for (const t of own) {
+          if (!okKeys.has(t.key)) continue
+          if (t.leg === 'in') next = { ...next, stock_synced_in_at: ts }
+          else if (t.leg === 'out') next = { ...next, stock_synced_out_at: ts }
+          else next = { ...next, stock_synced_at: ts }
+        }
+        return next
+      })
+      saveCs(updated); setItems(updated)
+      refreshProductsCacheLive().then(ok => { if (ok) setCacheNonce(n => n + 1) })
+
+      if (failed.length > 0) {
+        alert(`재고 재동기화 완료: 성공 ${okKeys.size}건 / 실패 ${failed.length}건\n\n실패 내역:\n${failed.map(f => `- ${f.key}: ${f.error}`).join('\n')}`)
+      } else {
+        alert(`재고 재동기화 완료: ${okKeys.size}건 모두 반영되었습니다.`)
+      }
+    } catch (e) {
+      alert(`재고 재동기화 중 오류: ${e instanceof Error ? e.message : String(e)}`)
+    } finally {
+      setResyncing(false)
+    }
   }
 
   /* ── 반송장번호 인라인 저장 ── */
@@ -1023,6 +1105,11 @@ export default function CsManagementPage() {
             <span style={{ fontSize: '12px', fontWeight: 700, color: '#94a3b8', background: '#f1f5f9', padding: '2px 8px', borderRadius: 6 }}>{processedRows.length}건</span>
           </div>
           <MonthNav ym={rightYM} curYM={curYM} onChange={setRightYM} accentColor="#059669" accentBg="#f0fdf4">
+            <button onClick={handleBulkResync} disabled={resyncing} title="처리완료됐지만 재고에 반영되지 않은 건을 바코드 기준으로 다시 반영합니다"
+              style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '5px 9px', borderRadius: 7, border: '1.5px solid #059669', background: resyncing ? '#f0fdf4' : '#fff', color: '#059669', fontSize: '11px', fontWeight: 800, cursor: resyncing ? 'default' : 'pointer', marginRight: 6, whiteSpace: 'nowrap' }}>
+              <RefreshCw size={11} style={resyncing ? { animation: 'spin 1s linear infinite' } : undefined} />
+              재고 재동기화
+            </button>
             <SearchBox value={rightSearch} onChange={setRightSearch} />
           </MonthNav>
         </div>
