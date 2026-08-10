@@ -330,13 +330,14 @@ export default function PurchaseManagePage() {
 
   /* ── 발주 추천 목록 ──
      조건:
-       · 판매중(active), 전송준비(ready_to_ship), 판매예정(upcoming) 포함: 현재고 ≤ 3 또는 발주일 이후 출고 판매 > 0
+       · 판매중(active), 전송준비(ready_to_ship), 판매예정(upcoming), 품절(soldout) 포함
+         (삭제예정 pending_delete만 제외): 현재고 ≤ 3 또는 발주일 이후 출고 판매 > 0
      정렬: 바코드 오름차순
   ── */
   const qualOpts = useMemo((): QualOpt[] => {
     const result: QualOpt[] = []
     for (const prod of products) {
-      if (prod.status !== 'active' && prod.status !== 'ready_to_ship' && prod.status !== 'upcoming') continue
+      if (prod.status === 'pending_delete') continue
 
       for (const opt of prod.options) {
         const stock = opt.current_stock ?? 0
