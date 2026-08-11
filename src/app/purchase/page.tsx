@@ -28,12 +28,21 @@ function loadCachedProducts(): FP[] {
 function saveCachedProducts(list: FP[]) {
   try {
     const raw = localStorage.getItem(CACHE_KEY)
-    if (!raw) return
-    const parsed = JSON.parse(raw)
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...parsed, data: list }))
+    const parsed = raw ? JSON.parse(raw) : {}
+    // 캐시가 비어있어도(raw 없음) 새로 생성 → "캐시가 없어서 상품을 못 찾는" 문제 방지
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ...parsed, ts: Date.now(), data: list }))
   } catch {}
 }
 
+/** 상품 데이터를 Supabase에서 직접 새로 조회 (로컬캐시 지연/공백에 의존하지 않음) */
+async function fetchProductsLive(): Promise<FP[] | null> {
+  try {
+    const res = await fetch(`/api/pm-products?t=${Date.now()}`, { cache: 'no-store' })
+    if (!res.ok) return null
+    const data = await res.json()
+    return Array.isArray(data) ? (data as FP[]) : null
+  } catch { return null }
+}
 
 function notifyProductsCacheSync() {
   try {
@@ -42,15 +51,15 @@ function notifyProductsCacheSync() {
 }
 
 function resolveProductForItem(products: FP[], item: PurchaseItem): FP | null {
-  const bc = (item.barcode || '').trim()
+  const bc = (item.barcode || '').trim().toLowerCase()
   if (bc) {
     for (const p of products) {
-      if (p.options.some(o => (o.barcode || '').trim() === bc)) return p
+      if (p.options.some(o => (o.barcode || '').trim().toLowerCase() === bc)) return p
     }
   }
-  const code = (item.product_code || '').trim()
+  const code = (item.product_code || '').trim().toLowerCase()
   if (!code) return null
-  return products.find(x => (x.code || '').trim() === code) ?? null
+  return products.find(x => (x.code || '').trim().toLowerCase() === code) ?? null
 }
 
 /** Local cache: apply ordered/received delta */
@@ -160,6 +169,21 @@ export default function PurchaseMainPage() {
     setPurchases(data)
   }, [])
 
+  /** 상품 캐시를 Supabase 최신 데이터로 강제 새로고침.
+   *  발주 품목 삭제/수정 시 "상품을 찾지 못해 수량을 차감하지 않았습니다" 오류가
+   *  로컬캐시 공백/지연 때문에 발생하지 않도록, 페이지 진입/포커스/주기마다 워밍하고
+   *  실제 삭제·수정 시점에도 실패하면 즉시 재조회해서 재시도한다. */
+  const refreshProducts = useCallback(async (): Promise<FP[] | null> => {
+    const fresh = await fetchProductsLive()
+    if (fresh) {
+      saveCachedProducts(fresh)
+      setProducts(fresh)
+      setOptImageFetchGen(n => n + 1)
+      notifyProductsCacheSync()
+    }
+    return fresh
+  }, [])
+
   useEffect(() => {
     setProducts(loadCachedProducts())
     try {
@@ -168,7 +192,12 @@ export default function PurchaseMainPage() {
     } catch { /* ignore */ }
 
     loadPurchases()
-    const onVisible = () => { if (document.visibilityState === 'visible') loadPurchases() }
+    refreshProducts()
+    const iv = setInterval(() => { refreshProducts() }, 60000)
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') { loadPurchases(); refreshProducts() }
+    }
+    const onFocus = () => { refreshProducts() }
     const onStorage = (e: StorageEvent) => {
       if (e.key === CACHE_KEY) {
         setProducts(loadCachedProducts())
@@ -184,14 +213,17 @@ export default function PurchaseMainPage() {
       setOptImageFetchGen(n => n + 1)
     }
     document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onFocus)
     window.addEventListener('storage', onStorage)
     window.addEventListener('pm_products_cache_sync', onPmProductsSync)
     return () => {
+      clearInterval(iv)
       document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onFocus)
       window.removeEventListener('storage', onStorage)
       window.removeEventListener('pm_products_cache_sync', onPmProductsSync)
     }
-  }, [loadPurchases])
+  }, [loadPurchases, refreshProducts])
 
   /* ── 발주 목록: 해당 월의 ordered 상태 발주 ── */
   const poList = useMemo(() =>
@@ -235,11 +267,17 @@ export default function PurchaseMainPage() {
       setPurchases(prev => prev.map(p => p.id === purchase.id ? { ...p, items: newItems } : p))
       setEditingKey(null)
 
-      const prod = resolveProductForItem(products as FP[], item)
+      let currentProducts = products as FP[]
+      let prod = resolveProductForItem(currentProducts, item)
+      if (!prod) {
+        // 로컬캐시 공백/지연 대응: Supabase에서 즉시 재조회해 재시도
+        const fresh = await refreshProducts()
+        if (fresh) { currentProducts = fresh; prod = resolveProductForItem(currentProducts, item) }
+      }
       if (prod) {
         try {
           const bcTrim = (item.barcode || '').trim()
-          await syncProductQty(products, [{
+          await syncProductQty(currentProducts, [{
             prodId:       prod.id,
             optName:      item.option_name || '',
             barcode:      bcTrim || undefined,
@@ -247,7 +285,7 @@ export default function PurchaseMainPage() {
             receivedDelta: 0,
           }])
           const patches = [{ productCode: prod.code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: newQty - oldQty, receivedDelta: 0 }]
-          const updated = applyDeltaToCache(products as FP[], patches)
+          const updated = applyDeltaToCache(currentProducts, patches)
           saveCachedProducts(updated)
           setProducts(updated)
           notifyProductsCacheSync()
@@ -279,12 +317,22 @@ export default function PurchaseMainPage() {
 
     setDeletingIds(prev => new Set(prev).add(purchase.id))
     try {
+      let currentProducts = products as FP[]
+      const needsQty = purchase.items.filter(i => i.ordered > 0 || i.received > 0)
+      const hasUnresolved = needsQty.some(i => !resolveProductForItem(currentProducts, i))
+      if (hasUnresolved) {
+        // 로컬캐시 공백/지연 대응: Supabase에서 즉시 재조회해 재시도
+        const fresh = await refreshProducts()
+        if (fresh) currentProducts = fresh
+      }
+
       const syncRows: { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }[] = []
       const patches: { productCode: string; barcode: string; optionName: string; orderedDelta: number; receivedDelta: number }[] = []
+      const stillUnresolved: PurchaseItem[] = []
       for (const i of purchase.items) {
         if (i.ordered <= 0 && i.received <= 0) continue
-        const prod = resolveProductForItem(products as FP[], i)
-        if (!prod) continue
+        const prod = resolveProductForItem(currentProducts, i)
+        if (!prod) { stillUnresolved.push(i); continue }
         const bcTrim = (i.barcode || '').trim()
         syncRows.push({
           prodId: prod.id,
@@ -303,11 +351,14 @@ export default function PurchaseMainPage() {
       }
 
       if (syncRows.length > 0) {
-        await syncProductQty(products, syncRows)
-        const updated = applyDeltaToCache(products as FP[], patches)
+        await syncProductQty(currentProducts, syncRows)
+        const updated = applyDeltaToCache(currentProducts, patches)
         saveCachedProducts(updated)
         setProducts(updated)
         notifyProductsCacheSync()
+      }
+      if (stillUnresolved.length > 0) {
+        alert(`상품관리에서 다음 ${stillUnresolved.length}개 품목을 찾지 못해 발주 수량을 차감하지 않았습니다.\n${stillUnresolved.map(i => `- ${i.product_code} / ${i.option_name || '-'} / ${(i.barcode || '').trim() || '-'}`).join('\n')}`)
       }
 
       const { error } = await apiDeletePurchase(purchase.id)
@@ -337,7 +388,13 @@ export default function PurchaseMainPage() {
     const opKey = `${purchase.id}-${itemIdx}`
     setDeletingItemKeys(prev => new Set(prev).add(opKey))
     try {
-      const prod = resolveProductForItem(products as FP[], item)
+      let currentProducts = products as FP[]
+      let prod = resolveProductForItem(currentProducts, item)
+      if (!prod && (item.ordered > 0 || item.received > 0)) {
+        // 로컬캐시 공백/지연 대응: Supabase에서 즉시 재조회해 재시도
+        const fresh = await refreshProducts()
+        if (fresh) { currentProducts = fresh; prod = resolveProductForItem(currentProducts, item) }
+      }
       const patches = prod
         ? [{
             productCode: prod.code,
@@ -355,8 +412,8 @@ export default function PurchaseMainPage() {
       const warnNoPmSync = syncRows.length === 0 && (item.ordered > 0 || item.received > 0)
 
       if (syncRows.length > 0) {
-        await syncProductQty(products, syncRows)
-        const updated = applyDeltaToCache(products as FP[], patches)
+        await syncProductQty(currentProducts, syncRows)
+        const updated = applyDeltaToCache(currentProducts, patches)
         saveCachedProducts(updated)
         setProducts(updated)
         notifyProductsCacheSync()
@@ -430,19 +487,26 @@ export default function PurchaseMainPage() {
       if (error) { alert(`입고처리 실패: ${error}`); return }
 
       // 상품 재고 동기화
+      let currentProducts = products as FP[]
+      const hasUnresolved = deltas.some(({ idx }) => !resolveProductForItem(currentProducts, p.items[idx]))
+      if (hasUnresolved) {
+        const fresh = await refreshProducts()
+        if (fresh) currentProducts = fresh
+      }
       const syncRows: { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }[] = []
       const patches: { productCode: string; barcode: string; optionName: string; orderedDelta: number; receivedDelta: number }[] = []
+      const unresolvedItems: PurchaseItem[] = []
       deltas.forEach(({ idx, delta }) => {
         const item = p.items[idx]
-        const prod = resolveProductForItem(products as FP[], item)
-        if (!prod) return
+        const prod = resolveProductForItem(currentProducts, item)
+        if (!prod) { unresolvedItems.push(item); return }
         const bcTrim = (item.barcode || '').trim()
         syncRows.push({ prodId: prod.id, optName: item.option_name || '', barcode: bcTrim || undefined, orderedDelta: 0, receivedDelta: delta })
         patches.push({ productCode: prod.code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: 0, receivedDelta: delta })
       })
       if (syncRows.length > 0) {
-        await syncProductQty(products, syncRows)
-        const updated = applyDeltaToCache(products as FP[], patches)
+        await syncProductQty(currentProducts, syncRows)
+        const updated = applyDeltaToCache(currentProducts, patches)
         saveCachedProducts(updated)
         setProducts(updated)
         notifyProductsCacheSync()
@@ -452,7 +516,11 @@ export default function PurchaseMainPage() {
       try { localStorage.setItem('pm_products_mapping_signal', String(Date.now())) } catch { /* ignore */ }
       broadcastDashboardRefresh()
       setReceiveModal(null)
-      alert(`입고처리 완료! (${deltas.reduce((s, d) => s + d.delta, 0)}개 입고)`)
+      if (unresolvedItems.length > 0) {
+        alert(`입고처리는 완료됐지만, 상품관리에서 다음 품목을 찾지 못해 재고에 반영되지 않았습니다.\n${unresolvedItems.map(i => `- ${i.product_code} / ${i.option_name || '-'}`).join('\n')}`)
+      } else {
+        alert(`입고처리 완료! (${deltas.reduce((s, d) => s + d.delta, 0)}개 입고)`)
+      }
     } catch (e) {
       alert(`입고처리 중 오류: ${String(e)}`)
     } finally {
@@ -487,11 +555,16 @@ export default function PurchaseMainPage() {
       const { error } = await apiUpdatePurchase(p.id, { items: newItems, status: newStatus, received_at: now })
       if (error) { alert(`입고처리 실패: ${error}`); return }
 
-      const prod = resolveProductForItem(products as FP[], item)
+      let currentProducts = products as FP[]
+      let prod = resolveProductForItem(currentProducts, item)
+      if (!prod) {
+        const fresh = await refreshProducts()
+        if (fresh) { currentProducts = fresh; prod = resolveProductForItem(currentProducts, item) }
+      }
       if (prod) {
         const bcTrim = (item.barcode || '').trim()
-        await syncProductQty(products, [{ prodId: prod.id, optName: item.option_name || '', barcode: bcTrim || undefined, orderedDelta: 0, receivedDelta: qty }])
-        const updated = applyDeltaToCache(products as FP[], [{ productCode: prod.code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: 0, receivedDelta: qty }])
+        await syncProductQty(currentProducts, [{ prodId: prod.id, optName: item.option_name || '', barcode: bcTrim || undefined, orderedDelta: 0, receivedDelta: qty }])
+        const updated = applyDeltaToCache(currentProducts, [{ productCode: prod.code, barcode: item.barcode || '', optionName: item.option_name || '', orderedDelta: 0, receivedDelta: qty }])
         saveCachedProducts(updated)
         setProducts(updated)
         notifyProductsCacheSync()
@@ -499,7 +572,11 @@ export default function PurchaseMainPage() {
 
       await loadPurchases()
       setReceiveItemModal(null)
-      alert(`입고 완료! ${item.option_name || item.product_code} ${qty}개 입고`)
+      if (prod) {
+        alert(`입고 완료! ${item.option_name || item.product_code} ${qty}개 입고`)
+      } else {
+        alert(`입고처리는 완료됐지만, 상품관리에서 해당 품목(${item.product_code} / ${item.option_name || '-'})을 찾지 못해 재고에 반영되지 않았습니다.`)
+      }
     } catch (e) {
       alert(`입고처리 중 오류: ${String(e)}`)
     } finally {
