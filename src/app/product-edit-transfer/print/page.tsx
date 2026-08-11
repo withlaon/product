@@ -66,7 +66,7 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
   }
 
   // 상품 캐시 로드 (바코드 → 색상명 자동 조회)
-  type CacheOpt  = { barcode: string; korean_name: string; size?: string }
+  type CacheOpt  = { barcode?: string; korean_name?: string; size?: string; name?: string }
   type CacheProd = { id: string; options?: CacheOpt[] }
   let productCache: CacheProd[] = []
   try {
@@ -77,19 +77,39 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     }
   } catch {}
 
+  /** 매핑 바코드 기준으로 전체 상품(옵션)을 뒤져 색상/사이즈를 찾는다.
+   *  product_id가 오래되어 실제 바코드를 보유한 상품과 어긋나는 경우까지 대비해
+   *  product_id로 좁히지 않고 전체 상품의 옵션 바코드를 대상으로 매칭한다. */
+  function findOptionByBarcode(barcode: string): CacheOpt | undefined {
+    const bc = barcode.trim().toLowerCase()
+    if (!bc) return undefined
+    for (const p of productCache) {
+      const opt = (p.options ?? []).find(o => (o.barcode ?? '').trim().toLowerCase() === bc)
+      if (opt) return opt
+    }
+    return undefined
+  }
+
   const rows: PickRow[] = []
   for (const order of orders) {
     for (const item of order.items) {
       const m = lookupMapping(mappings, item.product_name, item.option)
 
-      // 색상/사이즈: 바코드 기준 캐시 조회 → fallback: option 텍스트 추출
+      // 색상/사이즈: ① 매핑 바코드 기준 전체 상품 옵션 조회 → ② product_id+옵션명 조회 → ③ 주문 옵션 텍스트 추출
       let color = ''
       let size  = ''
-      if (m.product_id && m.barcode) {
+      const bcOpt = m.barcode ? findOptionByBarcode(m.barcode) : undefined
+      if (bcOpt) {
+        if (bcOpt.korean_name) color = bcOpt.korean_name
+        if (bcOpt.size)        size  = bcOpt.size
+      }
+      if ((!color || !size) && m.product_id) {
         const prod = productCache.find(p => p.id === m.product_id)
-        const opt  = prod?.options?.find(o => o.barcode === m.barcode)
-        if (opt?.korean_name) color = opt.korean_name
-        if (opt?.size)        size  = opt.size
+        const opt  = prod?.options?.find(o =>
+          (m.my_option_name && (o.korean_name === m.my_option_name || o.name === m.my_option_name))
+        )
+        if (!color && opt?.korean_name) color = opt.korean_name
+        if (!size  && opt?.size)        size  = opt.size
       }
       if (!color) color = extractColor(item.option ?? '')
       if (!size)  size  = extractSize(item.option ?? '')

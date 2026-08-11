@@ -299,7 +299,7 @@ const DUP_NAME_COLORS = [
 ]
 
 /* ─── 피킹리스트 출력 ─────────────────────────────────────── */
-function printPickingList(orders: Order[], mappings: MappingStore) {
+function printPickingList(orders: Order[], mappings: MappingStore, liveProducts: MyProduct[] = []) {
   interface PickRow {
     order_number: string
     customer_name: string
@@ -312,31 +312,53 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
     sku: string
   }
 
-  // 상품 캐시 로드 (바코드 → 색상명 자동 조회)
-  type CacheOpt = { barcode: string; korean_name: string; size?: string }
+  // 상품 데이터: 컴포넌트에 이미 로드된 최신 상품(liveProducts) 우선, 없으면 로컬캐시로 보완
+  type CacheOpt = { barcode?: string; korean_name?: string; size?: string; name?: string }
   type CacheProd = { id: string; options?: CacheOpt[] }
-  let productCache: CacheProd[] = []
-  try {
-    const raw = localStorage.getItem('pm_products_cache_v1')
-    if (raw) {
-      const { data } = JSON.parse(raw) as { ts: number; data: CacheProd[] }
-      if (Array.isArray(data)) productCache = data
+  let productCache: CacheProd[] = liveProducts
+  if (productCache.length === 0) {
+    try {
+      const raw = localStorage.getItem('pm_products_cache_v1')
+      if (raw) {
+        const { data } = JSON.parse(raw) as { ts: number; data: CacheProd[] }
+        if (Array.isArray(data)) productCache = data
+      }
+    } catch {}
+  }
+
+  /** 매핑 바코드 기준으로 전체 상품(옵션)을 뒤져 색상/사이즈를 찾는다.
+   *  product_id가 오래되어 실제 바코드를 보유한 상품과 어긋나는 경우까지 대비해
+   *  product_id로 좁히지 않고 전체 상품의 옵션 바코드를 대상으로 매칭한다. */
+  function findOptionByBarcode(barcode: string): CacheOpt | undefined {
+    const bc = barcode.trim().toLowerCase()
+    if (!bc) return undefined
+    for (const p of productCache) {
+      const opt = (p.options ?? []).find(o => (o.barcode ?? '').trim().toLowerCase() === bc)
+      if (opt) return opt
     }
-  } catch {}
+    return undefined
+  }
 
   const rows: PickRow[] = []
   for (const order of orders) {
     for (const item of order.items) {
       const m = lookupMapping(mappings, item.product_name, item.option)
 
-      // 색상/사이즈: 바코드 기준 캐시 조회 → fallback: option 텍스트 추출
+      // 색상/사이즈: ① 매핑 바코드 기준 전체 상품 옵션 조회 → ② product_id+옵션명 조회 → ③ 주문 옵션 텍스트 추출
       let color = ''
       let size  = ''
-      if (m.product_id && m.barcode) {
+      const bcOpt = m.barcode ? findOptionByBarcode(m.barcode) : undefined
+      if (bcOpt) {
+        if (bcOpt.korean_name) color = bcOpt.korean_name
+        if (bcOpt.size)        size  = bcOpt.size
+      }
+      if ((!color || !size) && m.product_id) {
         const prod = productCache.find(p => p.id === m.product_id)
-        const opt  = prod?.options?.find(o => o.barcode === m.barcode)
-        if (opt?.korean_name) color = opt.korean_name
-        if (opt?.size)        size  = opt.size
+        const opt  = prod?.options?.find(o =>
+          (m.my_option_name && (o.korean_name === m.my_option_name || o.name === m.my_option_name))
+        )
+        if (!color && opt?.korean_name) color = opt.korean_name
+        if (!size  && opt?.size)        size  = opt.size
       }
       if (!color) color = extractColor(item.option ?? '')
       if (!size)  size  = extractSize(item.option ?? '')
@@ -433,11 +455,6 @@ function printPickingList(orders: Order[], mappings: MappingStore) {
   </tr></thead>
   <tbody>${trRows}</tbody>
 </table>
-<div style="margin-top:14px;font-size:12.5px;color:#64748b;line-height:1.8;font-weight:700">
-  ● 하늘배경: 합포장(동일 수령인·주소) — 수령인 이름 색상으로 그룹 구분<br>
-  ● 노란배경: 수량 2개 이상(수량 빨간색) &nbsp; ● 진하늘배경: 합포장+2개이상<br>
-  ※ 색상·사이즈 칸 클릭 → 직접 수정 가능 · 수정 후 인쇄 버튼 클릭
-</div>
 </body></html>`
 
   const w = window.open('', '_blank', 'width=900,height=720')
@@ -895,7 +912,7 @@ export default function OrdersPage() {
       ? orders.filter(o => checked.has(o.id))
       : displayOrders
     if (targets.length === 0) return alert('출력할 주문이 없습니다.')
-    printPickingList(targets, mappings)
+    printPickingList(targets, mappings, myProducts)
   }
 
   /* 선택 주문 삭제 */
