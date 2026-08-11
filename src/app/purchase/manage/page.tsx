@@ -654,15 +654,41 @@ export default function PurchaseManagePage() {
     setReceiveTarget(null); setSaving(false)
   }
 
-  /* ── 수정 ── */
+  /* ── 수정 ──
+     항목을 배열 인덱스로 비교하면, 목록 중간의 항목을 삭제(X 버튼)했을 때 이후 항목들이
+     한 칸씩 밀려 서로 다른 상품끼리 비교되거나(발주수량 오차) 삭제된 항목의 수량이
+     아예 반영되지 않는 문제가 있었음.
+     → 바코드(없으면 상품코드+옵션명)를 키로 매칭하여 신규/변경/삭제 항목을 정확히 구분. */
   const handleEditSave = async () => {
     if (!editTarget || !editFormData) return
     setSaving(true)
-    const deltas = editFormData.items.map((newItem, i) => {
-      const oldItem = editTarget.items[i] || { product_code: '', option_name: '', barcode: '', ordered: 0, received: 0 }
-      const prod = products.find(p => p.code === newItem.product_code || p.code === oldItem.product_code)
-      return { prodId: prod?.id ?? '', optName: newItem.option_name, orderedDelta: newItem.ordered - oldItem.ordered, receivedDelta: newItem.received - oldItem.received }
-    }).filter(d => d.prodId && (d.orderedDelta !== 0 || d.receivedDelta !== 0))
+
+    type EItem = { product_code: string; option_name: string; barcode: string; ordered: number; received: number }
+    const keyOf = (it: EItem) => (it.barcode ?? '').trim() || `${(it.product_code ?? '').trim()}__${(it.option_name ?? '').trim()}`
+
+    const oldByKey = new Map<string, EItem>(editTarget.items.map(it => [keyOf(it), it]))
+    const newByKey = new Map<string, EItem>(editFormData.items.map(it => [keyOf(it), it]))
+
+    const deltas: { prodId: string; optName: string; barcode?: string; orderedDelta: number; receivedDelta: number }[] = []
+
+    // 신규 추가 또는 수량 변경된 항목
+    for (const [k, newItem] of newByKey) {
+      const oldItem = oldByKey.get(k)
+      const orderedDelta  = newItem.ordered  - (oldItem?.ordered  ?? 0)
+      const receivedDelta = newItem.received - (oldItem?.received ?? 0)
+      if (orderedDelta === 0 && receivedDelta === 0) continue
+      const prod = products.find(p => p.code === newItem.product_code || p.code === oldItem?.product_code)
+      if (!prod) continue
+      deltas.push({ prodId: prod.id, optName: newItem.option_name, barcode: newItem.barcode, orderedDelta, receivedDelta })
+    }
+    // X 버튼으로 삭제된 항목 → 발주/입고 수량을 전량 음수로 반영해 상품관리에서 차감
+    for (const [k, oldItem] of oldByKey) {
+      if (newByKey.has(k)) continue
+      const prod = products.find(p => p.code === oldItem.product_code)
+      if (!prod) continue
+      deltas.push({ prodId: prod.id, optName: oldItem.option_name, barcode: oldItem.barcode, orderedDelta: -oldItem.ordered, receivedDelta: -oldItem.received })
+    }
+
     await apiUpdatePurchase(editTarget.id, { order_date: editFormData.order_date, supplier: editFormData.supplier, status: editFormData.status, items: editFormData.items })
     if (deltas.length) await syncProductQty(products, deltas)
     localStorage.removeItem(SHARED_CACHE_KEY)
