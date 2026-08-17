@@ -307,7 +307,8 @@ export default function PurchaseManagePage() {
         if (!bc) continue
         const base = ymdComparable(lastOrderByBarcode[bc] || SHIP_BASE_DATE)
         const shipDay = ymdComparable(shippedDate)
-        if (shipDay && base && shipDay >= base) {
+        // 발주확정일 당일 판매분은 제외(발주 확정 즉시 0개로 리셋) → 다음날부터 판매되면 누적
+        if (shipDay && base && shipDay > base) {
           map[bc] = (map[bc] || 0) + (Number(item.quantity) || 0)
         }
       }
