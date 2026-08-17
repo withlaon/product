@@ -66,6 +66,15 @@ function norm(s: string) {
   return s.trim().toLowerCase()
 }
 
+/** 바코드 비교: 대소문자·앞뒤공백 무시 (스캐너/수동입력 편차 대응) */
+function normBarcode(s: string) {
+  return s.trim().toLowerCase()
+}
+/** 바코드 비교(느슨한 매칭): 내부 공백까지 무시 — "코드 옵션" 사이 공백 유무가 달라도 매칭 */
+function normBarcodeLoose(s: string) {
+  return s.trim().toLowerCase().replace(/\s+/g, '')
+}
+
 function getThisMonth() {
   const d = new Date()
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
@@ -95,10 +104,14 @@ export default function InventoryPage() {
 
   const loadProducts = useCallback(async () => {
     setLoading(true)
-    const { data } = await supabase.from('pm_products').select('id,code,name,abbr,category,options').order('code', { ascending: true })
+    const { data, error } = await supabase.from('pm_products').select('id,code,name,abbr,category,options').order('code', { ascending: true })
     if (data) {
       setProducts(data as PmProduct[])
       // 상품관리 공유 캐시에는 쓰지 않음 (불량등록은 일부 필드만 조회하므로 기존 캐시 덮어쓰면 안 됨)
+    } else if (error) {
+      // 네트워크 지연/일시 오류로 상품 목록이 비어 있으면 바코드 매칭이 계속 실패하므로 잠시 후 자동 재시도
+      console.error('[불량등록] 상품 목록 조회 실패:', error.message)
+      setTimeout(() => { void loadProducts() }, 3000)
     }
     setLoading(false)
   }, [])
@@ -106,6 +119,17 @@ export default function InventoryPage() {
   useEffect(() => {
     void loadProducts()
   }, [loadProducts, syncFlag])
+
+  /* 창 포커스/주기적 새로고침: 다른 탭에서 바코드·재고가 바뀐 뒤에도 매칭이 항상 최신 데이터를 쓰도록 보장 */
+  useEffect(() => {
+    const onFocus = () => { void loadProducts() }
+    const iv = setInterval(() => { void loadProducts() }, 60000)
+    window.addEventListener('focus', onFocus)
+    return () => {
+      window.removeEventListener('focus', onFocus)
+      clearInterval(iv)
+    }
+  }, [loadProducts])
 
   useEffect(() => {
     setTxList(loadTx())
@@ -132,25 +156,47 @@ export default function InventoryPage() {
     return () => window.removeEventListener('pm_product_deleted', onDel as EventListener)
   }, [])
 
+  /** 정확 매칭(대소문자 무시)용 1차 인덱스 */
   const barcodeIndex = useMemo(() => {
     const m = new Map<string, { prod: PmProduct; opt: PmOption }>()
     for (const prod of products) {
       for (const opt of prod.options ?? []) {
         const bc = (opt.barcode ?? '').trim()
-        if (bc) m.set(bc, { prod, opt })
+        if (bc) m.set(normBarcode(bc), { prod, opt })
       }
     }
     return m
   }, [products])
 
+  /** 내부 공백까지 무시하는 느슨한 매칭용 2차 인덱스(1차 실패 시 폴백) */
+  const barcodeIndexLoose = useMemo(() => {
+    const m = new Map<string, { prod: PmProduct; opt: PmOption }>()
+    for (const prod of products) {
+      for (const opt of prod.options ?? []) {
+        const bc = (opt.barcode ?? '').trim()
+        if (bc) m.set(normBarcodeLoose(bc), { prod, opt })
+      }
+    }
+    return m
+  }, [products])
+
+  const lookupBarcode = useCallback(
+    (raw: string): { prod: PmProduct; opt: PmOption } | undefined => {
+      const t = raw.trim()
+      if (!t) return undefined
+      return barcodeIndex.get(normBarcode(t)) ?? barcodeIndexLoose.get(normBarcodeLoose(t))
+    },
+    [barcodeIndex, barcodeIndexLoose],
+  )
+
   const fillFromBarcode = useCallback(
     (bc: string) => {
-      const row = barcodeIndex.get(bc.trim())
+      const row = lookupBarcode(bc)
       if (!row) return
       setCodeInput(row.prod.code)
       setOptInput(row.opt.name)
     },
-    [barcodeIndex],
+    [lookupBarcode],
   )
 
   const fillFromCodeOption = useCallback(
@@ -158,7 +204,7 @@ export default function InventoryPage() {
       const c = code.trim()
       const o = optName.trim()
       if (!c || !o) return
-      const prod = products.find(p => p.code.trim() === c)
+      const prod = products.find(p => norm(p.code) === norm(c))
       if (!prod) return
       const opt = prod.options.find(
         x =>
@@ -175,8 +221,7 @@ export default function InventoryPage() {
 
   const handleBarcodeInput = (v: string) => {
     setBcInput(v)
-    const t = v.trim()
-    if (t && barcodeIndex.has(t)) fillFromBarcode(t)
+    if (v.trim()) fillFromBarcode(v)
   }
 
   const handleCodeBlur = () => {
@@ -189,11 +234,14 @@ export default function InventoryPage() {
 
   const resolved = useMemo(() => {
     const t = bcInput.trim()
-    if (t && barcodeIndex.has(t)) return barcodeIndex.get(t)!
+    if (t) {
+      const row = lookupBarcode(t)
+      if (row) return row
+    }
     const c = codeInput.trim()
     const o = optInput.trim()
     if (!c || !o) return null
-    const prod = products.find(p => p.code.trim() === c)
+    const prod = products.find(p => norm(p.code) === norm(c))
     if (!prod) return null
     const opt = prod.options.find(
       x =>
@@ -204,7 +252,7 @@ export default function InventoryPage() {
     )
     if (!opt) return null
     return { prod, opt }
-  }, [bcInput, codeInput, optInput, products, barcodeIndex])
+  }, [bcInput, codeInput, optInput, products, lookupBarcode])
 
   const batchUpdateOptions = useCallback(
     async (updates: { prodId: string; optName: string; updater: (o: PmOption) => PmOption }[]) => {
@@ -280,7 +328,7 @@ export default function InventoryPage() {
     if (!confirm(`이 불량 이력을 삭제하시겠습니까?\n수량 ${Math.abs(tx.qty)}개가 재고에 복구됩니다.`)) return
     setActionLoading(tx.id)
     const n = Math.abs(tx.qty)
-    const entry = barcodeIndex.get(tx.barcode)
+    const entry = lookupBarcode(tx.barcode)
     if (entry) {
       await batchUpdateOptions([{
         prodId: entry.prod.id,
@@ -317,7 +365,7 @@ export default function InventoryPage() {
     setActionLoading(tx.id)
     const oldN = Math.abs(tx.qty)
     const delta = newN - oldN // 양수 = 불량 증가, 음수 = 불량 감소
-    const entry = barcodeIndex.get(tx.barcode)
+    const entry = lookupBarcode(tx.barcode)
     if (entry && delta !== 0) {
       await batchUpdateOptions([{
         prodId: entry.prod.id,
