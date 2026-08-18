@@ -1083,7 +1083,7 @@ export default function ReceiveManagePage() {
             </div>
           ) : (
             <>
-              <div style={{ flex:1, overflowY:'auto' }}>
+              <div style={{ flex:1, overflowY:'auto', overflowX:'auto' }}>
                 <table style={{ width:'100%', borderCollapse:'collapse', fontSize: '11px' }}>
                   <thead>
                     <tr style={{ background:'#f8fafc', position:'sticky', top:0, zIndex:1 }}>

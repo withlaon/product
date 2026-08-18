@@ -565,7 +565,7 @@ export default function InventoryPage() {
             엑셀 다운로드
           </button>
         </div>
-        <div style={{ maxHeight: 480, overflowY: 'auto' }}>
+        <div style={{ maxHeight: 480, overflowY: 'auto', overflowX: 'auto' }}>
           {loading ? (
             <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>불러오는 중...</div>
           ) : filteredDefectTx.length === 0 ? (

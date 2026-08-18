@@ -1414,25 +1414,24 @@ export default function OrdersPage() {
               </div>
             )}
 
-            {/* 컬럼 헤더 */}
-            <div style={{ padding: '0 24px', flexShrink: 0 }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '2fr 130px 220px 155px 120px 80px 70px', gap: 8, padding: '8px 10px', background: '#f8fafc', borderRadius: 8, margin: '8px 0 3px' }}>
-                {[
-                  { label: '주문서 상품명' },
-                  { label: '주문 옵션' },
-                  { label: '내 상품 연결' },
-                  { label: '내 옵션 선택' },
-                  { label: '바코드' },
-                  { label: '약어' },
-                  { label: 'LOCA' },
-                ].map(col => (
-                  <span key={col.label} style={{ fontSize: '10.5px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{col.label}</span>
-                ))}
+            {/* 매핑 행들 (헤더 포함, 가로/세로 스크롤 동기화) */}
+            <div style={{ flex: 1, overflow: 'auto', padding: '0 24px 10px' }}>
+              {/* 컬럼 헤더 */}
+              <div style={{ position: 'sticky', top: 0, zIndex: 1, background: '#fff', paddingTop: 10 }}>
+                <div style={{ display: 'grid', gridTemplateColumns: '2fr 130px 220px 155px 120px 80px 70px', gap: 8, padding: '8px 10px', background: '#f8fafc', borderRadius: 8, margin: '0 0 3px' }}>
+                  {[
+                    { label: '주문서 상품명' },
+                    { label: '주문 옵션' },
+                    { label: '내 상품 연결' },
+                    { label: '내 옵션 선택' },
+                    { label: '바코드' },
+                    { label: '약어' },
+                    { label: 'LOCA' },
+                  ].map(col => (
+                    <span key={col.label} style={{ fontSize: '10.5px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{col.label}</span>
+                  ))}
+                </div>
               </div>
-            </div>
-
-            {/* 매핑 행들 */}
-            <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px 10px' }}>
               {mappingFilteredEntries.length === 0 ? (
                 <div style={{ textAlign: 'center', padding: '40px 0', color: '#94a3b8' }}>
                   <Package size={32} style={{ marginBottom: 12, opacity: 0.4 }} />

@@ -76,7 +76,10 @@ export function LayoutShell({ children }: { children: React.ReactNode }) {
         <Header onMenuClick={() => setMobileOpen(true)} />
         <main
           className="flex-1 p-4 md:p-5"
-          style={{ background: 'var(--color-bg)', width: '100%', minWidth: 0, overflow: 'auto', height: 0 }}
+          style={{
+            background: 'var(--color-bg)', width: '100%', minWidth: 0, maxWidth: '100vw',
+            overflowY: 'auto', overflowX: 'hidden', height: 0,
+          }}
         >
           {children}
         </main>

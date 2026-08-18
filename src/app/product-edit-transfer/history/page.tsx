@@ -1097,7 +1097,7 @@ export default function ShippingHistoryPage() {
             </p>
           </div>
         ) : (
-          <div>
+          <div style={{ overflowX: 'auto' }}>
             {/* 컬럼 헤더 */}
             <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 16px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
               <span onClick={toggleAll} style={{ cursor: 'pointer', fontSize: '13px', color: allChecked ? '#2563eb' : '#cbd5e1' }}>

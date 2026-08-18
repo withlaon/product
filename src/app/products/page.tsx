@@ -3291,13 +3291,14 @@ export default function ProductsPage() {
 
             <div style={{ gridColumn:'1/-1', background:'#f8fafc', borderRadius:12, padding:14 }}>
               <p style={{ fontSize:11, fontWeight:800, color:'#94a3b8', textTransform:'uppercase', letterSpacing:'0.06em', marginBottom:8 }}>옵션 재고 현황</p>
-              <div style={{ display:'grid', gridTemplateColumns:'32px 1fr 80px 60px 60px 60px 60px 60px 54px', gap:'0 8px', paddingBottom:6, borderBottom:'1px solid #f1f5f9', marginBottom:4 }}>
+              <div style={{ overflowX:'auto' }}>
+              <div style={{ display:'grid', gridTemplateColumns:'32px 1fr 80px 60px 60px 60px 60px 60px 54px', gap:'0 8px', paddingBottom:6, borderBottom:'1px solid #f1f5f9', marginBottom:4, minWidth:520 }}>
                 {['','옵션명','바코드','발주','입고','미입고','판매','현재고','불량'].map((h,i) => (
                   <span key={i} style={{ fontSize:10, fontWeight:800, color: h==='불량'?'#fca5a5':'#94a3b8', textTransform:'uppercase' }}>{h}</span>
                 ))}
               </div>
               {detail.options.map((opt, i) => (
-                <div key={i} style={{ display:'grid', gridTemplateColumns:'32px 1fr 80px 60px 60px 60px 60px 60px 54px', gap:'0 8px', padding:'6px 0', borderTop:i>0?'1px solid rgba(15,23,42,0.05)':'none', alignItems:'center' }}>
+                <div key={i} style={{ display:'grid', gridTemplateColumns:'32px 1fr 80px 60px 60px 60px 60px 60px 54px', gap:'0 8px', padding:'6px 0', borderTop:i>0?'1px solid rgba(15,23,42,0.05)':'none', alignItems:'center', minWidth:520 }}>
                   <div style={{ width:28, height:28, borderRadius:6, overflow:'hidden', background:'#f1f5f9' }}>
                     {opt.image ? <img src={opt.image} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }}/> : <div style={{ width:'100%', height:'100%', display:'flex', alignItems:'center', justifyContent:'center' }}><ImageIcon size={11} color="#cbd5e1"/></div>}
                   </div>
@@ -3311,6 +3312,7 @@ export default function ProductsPage() {
                   <span style={{ fontSize:13, fontWeight:800, color: optDefective(opt)>0?'#dc2626':'#cbd5e1', textAlign:'right' }}>{optDefective(opt)||'-'}</span>
                 </div>
               ))}
+              </div>
             </div>
 
             <div style={{ gridColumn:'1/-1', background:'#f8fafc', borderRadius:12, padding:14 }}>

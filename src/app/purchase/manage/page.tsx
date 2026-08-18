@@ -781,7 +781,7 @@ export default function PurchaseManagePage() {
               <p style={{ fontSize: '11px', color: '#cbd5e1' }}>{products.length === 0 ? '잠시 후 자동으로 표시됩니다' : '판매중·판매예정 기준으로 조건에 맞는 옵션이 없습니다'}</p>
             </div>
           ) : (
-            <div style={{ flex: 1, overflowY: 'auto' }}>
+            <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
                 <thead style={{ position: 'sticky', top: 0, background: '#f8fafc', zIndex: 1 }}>
                   <tr>
@@ -1086,7 +1086,7 @@ export default function PurchaseManagePage() {
               </span>
             </div>
 
-            <div style={{ maxHeight: 320, overflowY: 'auto' }}>
+            <div style={{ maxHeight: 320, overflowY: 'auto', overflowX: 'auto' }}>
               {allList.length === 0
                 ? <div style={{ textAlign: 'center', padding: '24px 0', color: '#94a3b8' }}>
                     <p style={{ fontSize: '13px', fontWeight: 700 }}>발주 내역이 없습니다</p>

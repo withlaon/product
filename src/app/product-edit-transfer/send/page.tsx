@@ -560,7 +560,7 @@ export default function InvoiceSendPage() {
             </p>
           </div>
         ) : (
-          <div>
+          <div style={{ overflowX: 'auto' }}>
             <div style={{ display: 'grid', gridTemplateColumns: '32px 140px 72px 90px 1fr 160px 90px 100px', gap: 10, padding: '8px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
               <span onClick={toggleAll} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>
                 {allChecked ? <CheckSquare size={14} style={{ color: '#2563eb' }} /> : <Square size={14} style={{ color: '#cbd5e1' }} />}

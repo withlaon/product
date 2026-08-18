@@ -577,7 +577,7 @@ export default function InvoicePrintPage() {
             </p>
           </div>
         ) : (
-          <div>
+          <div style={{ overflowX: 'auto' }}>
             {/* 헤더 */}
             <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: 8, padding: '8px 20px', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
               <span onClick={togglePrintAll} style={{ cursor: 'pointer', display: 'flex', alignItems: 'center' }}>

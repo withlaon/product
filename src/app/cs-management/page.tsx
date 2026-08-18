@@ -996,9 +996,10 @@ export default function CsManagementPage() {
         </div>
 
         {/* 목록 카드 */}
-        <div className="pm-card" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <GridHeader cols={GRID_LEFT} headers={HDRS_LEFT} />
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div className="pm-card" style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ position: 'sticky', top: 0, zIndex: 1, background: '#fff' }}>
+            <GridHeader cols={GRID_LEFT} headers={HDRS_LEFT} />
+          </div>
             {pendingRows.length === 0 ? (
               <EmptyState icon={<HeadphonesIcon size={32} />} text="미처리 CS가 없습니다" />
             ) : pendingRows.map(row => {
@@ -1088,7 +1089,6 @@ export default function CsManagementPage() {
                 </div>
               )
             })}
-          </div>
         </div>
       </div>
 
@@ -1115,9 +1115,10 @@ export default function CsManagementPage() {
         </div>
 
         {/* 목록 카드 */}
-        <div className="pm-card" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <GridHeader cols={GRID_RIGHT} headers={HDRS_RIGHT} />
-          <div style={{ flex: 1, overflowY: 'auto' }}>
+        <div className="pm-card" style={{ flex: 1, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ position: 'sticky', top: 0, zIndex: 1, background: '#fff' }}>
+            <GridHeader cols={GRID_RIGHT} headers={HDRS_RIGHT} />
+          </div>
             {processedRows.length === 0 ? (
               <EmptyState icon={<CheckCircle2 size={32} />} text={`${rightYM.replace('-', '년 ')}월 처리된 CS가 없습니다`} />
             ) : processedRows.map(row => {
@@ -1228,7 +1229,6 @@ export default function CsManagementPage() {
                 </div>
               )
             })}
-          </div>
         </div>
       </div>
 

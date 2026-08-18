@@ -46,7 +46,7 @@ export function Modal({ isOpen, onClose, title, children, className, size = 'md'
         backdropFilter: 'blur(8px)',
         WebkitBackdropFilter: 'blur(8px)',
         overflowY: 'auto',
-        overflowX: 'hidden',
+        overflowX: 'auto',
         padding: '2rem 1rem 4rem',
       }}
     >
@@ -61,6 +61,7 @@ export function Modal({ isOpen, onClose, title, children, className, size = 'md'
           border: '1px solid rgba(255,255,255,0.7)',
           width: '100%',
           maxWidth: maxW,
+          minWidth: 'min(320px, 100%)',
           margin: '0 auto',
         }}
       >
