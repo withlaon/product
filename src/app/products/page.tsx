@@ -680,7 +680,7 @@ const PRICE_CHANNELS = ['쿠팡', '네이버 스마트스토어', '11번가', '�
 const INIT_FORM = {
   code:'', name:'', abbr:'', category:'', supplier:'', loca:'',
   cost_price:'', cost_currency:'CNY' as CostCurrency,
-  newCat:'', status:'active' as ProductStatus,
+  newCat:'', status:'upcoming' as ProductStatus,
   options:[{ ...INIT_OPT }],
   promo_text:'',
 }
