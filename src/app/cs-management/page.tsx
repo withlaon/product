@@ -7,7 +7,7 @@ import {
   HeadphonesIcon, CheckCircle2, Clock, Search, FileUp, X,
   AlertTriangle, Image as ImageIcon, Trash2,
 } from 'lucide-react'
-import { loadShippedOrders, loadMappings, lookupMapping } from '@/lib/orders'
+import { loadShippedOrders, loadMappings, lookupMapping, zeroSalePriceByTracking } from '@/lib/orders'
 import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
 import { isCsItemPending as isCsItemPendingShared } from '@/lib/cs-pending'
 import { mergeReturnDeduction } from '@/lib/product-delete-cascade'
@@ -594,6 +594,18 @@ export default function CsManagementPage() {
     else alert('출고내역에서 해당 바코드의 송장번호를 찾지 못했습니다.\n쇼핑몰·수령인을 함께 입력하면 더 정확하게 찾을 수 있습니다.')
   }
 
+  /* ── 반품등록: 송장번호 기준 출고내역 판매가 0원 처리 (대시보드 당일 매출에도 자동 반영) ── */
+  const applyReturnSalePriceZero = (trackingNumber: string, barcode: string) => {
+    const tn = (trackingNumber || '').trim()
+    if (!tn) return
+    const { matchedOrders, zeroedItems, ambiguousOrders } = zeroSalePriceByTracking(tn, barcode)
+    if (matchedOrders === 0) {
+      console.warn(`[CS반품] 송장번호(${tn})와 일치하는 출고내역을 찾지 못해 판매가를 0원 처리하지 못했습니다.`)
+    } else if (ambiguousOrders > 0 && zeroedItems === 0) {
+      alert(`반품 등록은 완료됐지만, 송장번호(${tn}) 주문에 품목이 여러 개라 어떤 품목을 0원 처리할지 특정하지 못했습니다.\n출고내역 탭에서 판매가를 직접 0원으로 수정해주세요.`)
+    }
+  }
+
   /* ── 직접 등록 저장 ── */
   const handleDirectSave = () => {
     const qty = Math.max(1, formQty || 1)
@@ -648,6 +660,7 @@ export default function CsManagementPage() {
     const updated = [newItem, ...items]
     saveCs(updated); setItems(updated)
     setModal(null); setSaving(false)
+    if (modal!.type === 'return') applyReturnSalePriceZero(newItem.tracking_number, newItem.barcode)
   }
 
   /* ── 파일 등록 ── */
@@ -706,6 +719,9 @@ export default function CsManagementPage() {
         })
         const updated = [...newItems, ...items]
         saveCs(updated); setItems(updated)
+        if (!isEx) {
+          for (const it of newItems) applyReturnSalePriceZero(it.tracking_number, it.barcode)
+        }
         alert(`${newItems.length}건이 등록되었습니다.`)
         setModal(null)
       } catch { alert('파일 형식이 올바르지 않습니다.') }

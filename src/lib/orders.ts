@@ -413,6 +413,72 @@ export function splitMappingKey(key: string): [string, string] {
   return [key.slice(0, idx), key.slice(idx + 3)]
 }
 
+/**
+ * CS 반품등록 시 송장번호 기준으로 출고내역(pm_shipped_orders)에서 해당 주문을 찾아
+ * 그 제품의 판매가(unit_price)를 0원으로 변경한다.
+ * → 출고내역 탭에 즉시 반영되고, 대시보드는 출고내역 데이터를 그대로 재계산하므로
+ *   당일 판매 금액합계에도 자동으로 반영된다.
+ * barcode 를 함께 넘기면 다품목 주문에서도 반품된 품목만 정확히 0원 처리한다.
+ */
+export function zeroSalePriceByTracking(
+  trackingNumber: string,
+  barcode?: string,
+): { matchedOrders: number; zeroedItems: number; ambiguousOrders: number } {
+  const tn = (trackingNumber || '').trim()
+  if (!tn) return { matchedOrders: 0, zeroedItems: 0, ambiguousOrders: 0 }
+
+  const bc = (barcode || '').trim().toLowerCase()
+  const mappings = loadMappings()
+  const all = loadShippedOrders()
+  const matched = all.filter(o => (o.tracking_number || '').trim() === tn)
+  if (matched.length === 0) return { matchedOrders: 0, zeroedItems: 0, ambiguousOrders: 0 }
+
+  let zeroedItems = 0
+  let ambiguousOrders = 0
+  const toUpdate: ShippedOrder[] = []
+
+  for (const o of matched) {
+    let touched = false
+    let items = o.items
+
+    if (bc) {
+      const hasBarcodeHit = items.some(it => resolveMappedBarcode(mappings, it).trim().toLowerCase() === bc)
+      if (hasBarcodeHit) {
+        items = items.map(it => {
+          if (resolveMappedBarcode(mappings, it).trim().toLowerCase() !== bc) return it
+          if ((Number(it.unit_price) || 0) === 0) return it
+          touched = true
+          zeroedItems += 1
+          return { ...it, unit_price: 0 }
+        })
+      } else if (items.length === 1) {
+        // 매핑된 바코드로 특정할 수 없지만 품목이 하나뿐이면 해당 품목으로 간주
+        if ((Number(items[0].unit_price) || 0) !== 0) {
+          items = [{ ...items[0], unit_price: 0 }]
+          touched = true
+          zeroedItems += 1
+        }
+      } else {
+        ambiguousOrders += 1
+      }
+    } else if (items.length === 1) {
+      if ((Number(items[0].unit_price) || 0) !== 0) {
+        items = [{ ...items[0], unit_price: 0 }]
+        touched = true
+        zeroedItems += 1
+      }
+    } else {
+      ambiguousOrders += 1
+    }
+
+    if (touched) toUpdate.push({ ...o, items })
+  }
+
+  if (toUpdate.length > 0) upsertShippedOrders(toUpdate)
+
+  return { matchedOrders: matched.length, zeroedItems, ambiguousOrders }
+}
+
 /* ─── 마켓플러스 채널 매핑 ─────────────────────────────── */
 export const MP_CHANNEL_MAP: Record<string, string> = {
   '네이버 페이': '카페24',
