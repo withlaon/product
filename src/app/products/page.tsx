@@ -673,6 +673,19 @@ const genBarcode = (code: string, opt: string, size?: string | number) => {
   return `${code.trim()} ${opt.trim().toUpperCase()}${sizeCode}`
 }
 
+/** UTF-8 바이트 수 계산 (한글 3byte 등 정확한 byte 길이) */
+const strByteLength = (s: string) => new TextEncoder().encode(s ?? '').length
+
+/** 상품명 입력칸 옆에 표시할 (글자수/byte) 카운터 */
+function NameCounter({ value }: { value: string }) {
+  const v = value ?? ''
+  return (
+    <span style={{ fontSize:10.5, color:'#94a3b8', fontWeight:600, marginLeft:6 }}>
+      ({v.length}자/{strByteLength(v)}byte)
+    </span>
+  )
+}
+
 const INIT_OPT  = { name:'', size:'FREE', korean_name:'', chinese_name:'', barcode:'', loca:'', image:'' }
 const INIT_MALL_CAT = { channel:'', category:'', category_code:'' }
 const PRICE_CHANNELS = ['쿠팡', '네이버 스마트스토어', '11번가', '마켓플러스', '토스쇼핑', 'G마켓', '지에스샵', '올웨이즈']
@@ -3058,7 +3071,7 @@ export default function ProductsPage() {
             {addErrors.has('code_dup') && <p style={{ fontSize:11, color:'#ef4444', marginTop:3 }}>이미 등록된 상품코드입니다. 다른 코드를 입력해주세요.</p>}
           </div>
           <div>
-            <Label>상품명 *</Label>
+            <Label>상품명 * <NameCounter value={form.name} /></Label>
             <Input placeholder="상품명 입력" value={form.name}
               style={addErrors.has('name') ? { borderColor:'#ef4444', outline:'none' } : undefined}
               onChange={e => { setAddErrors(prev => { const n = new Set(prev); n.delete('name'); return n }); setForm(f => ({...f,name:e.target.value})) }}
@@ -3375,7 +3388,7 @@ export default function ProductsPage() {
                 }}
               />
             </div>
-            <div><Label>상품명 *</Label>
+            <div><Label>상품명 * <NameCounter value={editForm.name} /></Label>
               <Input placeholder="상품명" value={editForm.name}
                 onChange={e => setEditForm(f => f ? ({ ...f, name: e.target.value }) : f)}/>
             </div>
