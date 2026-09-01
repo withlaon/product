@@ -11,6 +11,7 @@ import {
 import {
   loadOrders, upsertOrders, removeOrdersByIds, toOrderDate,
   loadMappings, saveMappings, makeMappingKey, mpToChannel, lookupMapping,
+  autoMatchBarcode, loadCachedProductsForMatch, upsertMappingBarcode,
 } from '@/lib/orders'
 import type { Order } from '@/lib/orders'
 import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
@@ -795,7 +796,8 @@ export default function OrderRegistrationPage() {
       shipping_address: directForm.recipientAddress.trim(),
       items: [{
         product_name: directForm.productName.trim() || directForm.productCode.trim(),
-        sku:          directForm.productCode.trim(),
+        // 자동 조회된 바코드를 최우선으로 저장 (없으면 상품코드) → 출고내역 탭에서 바로 인식되도록
+        sku:          directForm.barcode.trim() || directForm.productCode.trim(),
         quantity:     directForm.quantity,
         option:       directForm.option.trim(),
       }],
@@ -808,6 +810,16 @@ export default function OrderRegistrationPage() {
         상품약어: directForm.abbreviation,
         바코드:  directForm.barcode,
       },
+    }
+
+    // 바코드가 자동 조회됐다면 매핑 테이블에도 반영해 이후 동일 상품명/옵션 주문에도 재사용
+    if (directForm.barcode.trim()) {
+      upsertMappingBarcode(
+        newRegOrder.items[0].product_name,
+        newRegOrder.items[0].option ?? '',
+        directForm.barcode.trim(),
+        directForm.abbreviation.trim() || undefined,
+      )
     }
 
     // order_reg_v1_direct_{today} 에 누적 저장
@@ -1011,17 +1023,43 @@ export default function OrderRegistrationPage() {
           })
         }
 
-        // 마켓플러스: 매핑 자동 업데이트 (abbreviation만, loca는 유지)
+        // 마켓플러스: 매핑 자동 업데이트 (abbreviation만 갱신, barcode·loca 등 기존 값은 보존)
+        // ※ 기존에는 abbreviation/loca 로만 새 객체를 만들어 저장해 barcode 필드가
+        //   덮어써질 때마다 지워지는 문제가 있었음 → 기존 매핑을 always spread 하도록 수정
         if (isMarketPlus && Object.keys(autoMappingUpdates).length > 0) {
           const currentMappings = loadMappings()
           const updated = { ...currentMappings }
           for (const [key, abbr] of Object.entries(autoMappingUpdates)) {
-            updated[key] = {
-              abbreviation: abbr,
-              loca: currentMappings[key]?.loca ?? '',
-            }
+            const existing = currentMappings[key] ?? { abbreviation: '', loca: '' }
+            updated[key] = { ...existing, abbreviation: abbr }
           }
           saveMappings(updated)
+        }
+
+        // 바코드 자동 매칭: 이미 매핑되어 있으면 그 바코드를, 없으면 상품 캐시에서
+        // 상품명(관리용 상품명 우선)+옵션 기준으로 자동 추정하여 item.sku 에 채워 넣는다.
+        // → 출고내역 탭 등 이후 모든 화면에서 항상 정확한 바코드가 표시되도록 보장.
+        {
+          const matchProducts = loadCachedProductsForMatch()
+          const liveMappings  = loadMappings()
+          orders.forEach(o => {
+            o.items.forEach(item => {
+              if ((item.sku || '').trim()) return
+              const mgmt = String(o.extra_data?.['상품명관리용'] ?? '').trim()
+              const candidateNames = [mgmt, item.product_name].filter(Boolean) as string[]
+              for (const name of candidateNames) {
+                const existing = lookupMapping(liveMappings, name, item.option)
+                if (existing.barcode) { item.sku = existing.barcode; break }
+                if (matchProducts.length === 0) continue
+                const result = autoMatchBarcode(name, item.option ?? '', matchProducts)
+                if (result) {
+                  item.sku = result.barcode
+                  upsertMappingBarcode(item.product_name, item.option ?? '', result.barcode)
+                  break
+                }
+              }
+            })
+          })
         }
 
         const newData: DayData = {

@@ -413,6 +413,123 @@ export function splitMappingKey(key: string): [string, string] {
   return [key.slice(0, idx), key.slice(idx + 3)]
 }
 
+/* ─── 바코드 자동매칭 (주문서 등록·출고내역 공용) ──────────
+ * 상품명/옵션 텍스트만으로 상품 캐시에서 바코드를 추정한다.
+ * 여러 화면(주문서 등록, 출고내역 등)에서 동일 로직을 쓰도록 공용화하여
+ * "한쪽에서는 매칭되는데 다른쪽은 안 되는" 불일치를 방지한다. */
+export interface AutoMatchProduct {
+  id: string
+  name?: string
+  abbr?: string
+  code?: string
+  options: Array<{ barcode?: string; name?: string; korean_name?: string; [k: string]: unknown }>
+}
+export interface AutoMatchBarcodeResult {
+  barcode: string
+  matchedProductName: string
+  matchedOptionName: string
+}
+
+function normalizeForMatch(s: string): string {
+  return s.toLowerCase().replace(/[\s\-_,./()（）【】\[\]]/g, '')
+}
+
+export function autoMatchBarcode(
+  productName: string,
+  option: string,
+  products: AutoMatchProduct[],
+): AutoMatchBarcodeResult | null {
+  const normProd = normalizeForMatch(productName)
+  const normOpt  = normalizeForMatch(option)
+  const color    = extractColor(option)
+
+  /* 1단계: 상품 후보 추출 (코드 → 이름/약어 정확일치 → 부분일치 순) */
+  let candidates = products.filter(p =>
+    (p.code && normalizeForMatch(p.code) === normProd) ||
+    normalizeForMatch(p.name ?? '') === normProd ||
+    normalizeForMatch(p.abbr ?? '') === normProd
+  )
+  if (candidates.length === 0) {
+    candidates = products.filter(p => {
+      const pn = normalizeForMatch(p.name ?? '')
+      const pa = normalizeForMatch(p.abbr ?? '')
+      const pc = normalizeForMatch(p.code ?? '')
+      return (pn.length > 0 && (normProd.includes(pn) || pn.includes(normProd))) ||
+             (pa.length > 0 && (normProd.includes(pa) || pa.includes(normProd))) ||
+             (pc.length > 0 && (normProd.includes(pc) || pc.includes(normProd)))
+    })
+  }
+  if (candidates.length === 0) return null
+
+  /* 2단계: 옵션 후보 매칭 */
+  for (const p of candidates) {
+    const opts = (p.options ?? []).filter(o => o.barcode)
+
+    if (opts.length === 1) {
+      return {
+        barcode: opts[0].barcode!,
+        matchedProductName: p.name ?? p.abbr ?? '',
+        matchedOptionName: opts[0].korean_name ?? opts[0].name ?? '',
+      }
+    }
+
+    if (color) {
+      const byColor = opts.find(o => {
+        const oc = extractColor(o.korean_name ?? o.name ?? '')
+        const on = normalizeForMatch(o.korean_name ?? o.name ?? '')
+        return oc === color || on.includes(normalizeForMatch(color)) || normalizeForMatch(color).includes(on)
+      })
+      if (byColor) {
+        return {
+          barcode: byColor.barcode!,
+          matchedProductName: p.name ?? p.abbr ?? '',
+          matchedOptionName: byColor.korean_name ?? byColor.name ?? '',
+        }
+      }
+    }
+
+    if (!normOpt) continue
+    const byText = opts.find(o => {
+      const on = normalizeForMatch(o.korean_name ?? o.name ?? '')
+      return on.length > 0 && (normOpt.includes(on) || on.includes(normOpt))
+    })
+    if (byText) {
+      return {
+        barcode: byText.barcode!,
+        matchedProductName: p.name ?? p.abbr ?? '',
+        matchedOptionName: byText.korean_name ?? byText.name ?? '',
+      }
+    }
+  }
+
+  return null
+}
+
+/** localStorage 상품 캐시(pm_products_cache_v1)에서 AutoMatchProduct[] 로드 */
+export function loadCachedProductsForMatch(): AutoMatchProduct[] {
+  try {
+    const raw = localStorage.getItem('pm_products_cache_v1')
+    if (!raw) return []
+    const { data } = JSON.parse(raw)
+    return Array.isArray(data) ? data : []
+  } catch { return [] }
+}
+
+/** 매핑 저장 시 barcode 도 함께 반영 (상품명+옵션 키, 기존 필드는 보존) */
+export function upsertMappingBarcode(
+  productName: string,
+  option: string,
+  barcode: string,
+  abbreviation?: string,
+) {
+  if (!productName || !barcode) return
+  const key = makeMappingKey(productName, option)
+  const cur = loadMappings()
+  const existing: ProductMapping = cur[key] ?? { abbreviation: '', loca: '' }
+  cur[key] = { ...existing, barcode, ...(abbreviation ? { abbreviation } : {}) }
+  saveMappings(cur)
+}
+
 /**
  * CS 반품등록 시 송장번호 기준으로 출고내역(pm_shipped_orders)에서 해당 주문을 찾아
  * 그 제품의 판매가(unit_price)를 0원으로 변경한다.

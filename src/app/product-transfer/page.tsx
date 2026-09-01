@@ -884,8 +884,12 @@ export default function OrdersPage() {
   }
 
   const saveMapping = () => {
-    saveMappings(draftMappings)
-    setMappings(draftMappings)
+    // ⚠️ draftMappings 는 매핑 모달을 열 때 대상 주문(오늘/선택분)의 키만 담고 있어
+    //    그대로 저장하면 다른 날짜에 등록된 상품들의 기존 매핑(바코드 포함)이 전부
+    //    사라지는 심각한 버그가 있었음 → 항상 최신 전체 매핑에 병합 저장한다.
+    const merged: MappingStore = { ...loadMappings(), ...draftMappings }
+    saveMappings(merged)
+    setMappings(merged)
 
     // 매핑 저장 시 pm_shipped_orders_v1의 item.sku도 바코드로 업데이트
     // → 출고내역 탭에서 바코드가 즉시 반영되도록
@@ -893,7 +897,7 @@ export default function OrdersPage() {
     const updatedShipped = shippedOrders.map(order => ({
       ...order,
       items: order.items.map(item => {
-        const mapping = lookupMapping(draftMappings, item.product_name, item.option)
+        const mapping = lookupMapping(merged, item.product_name, item.option)
         if (mapping?.barcode) {
           return { ...item, sku: mapping.barcode }
         }

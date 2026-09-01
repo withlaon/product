@@ -6,9 +6,11 @@ import { ChevronLeft, ChevronRight, Package, Truck, CheckCircle2, RotateCcw, Pac
 import {
   loadShippedOrders, saveShippedOrders, removeShippedOrdersByIds,
   loadOrders, saveOrders, isVisibleInShippingHistory, isShippedOrderDelivered,
-  loadMappings, saveMappings, lookupMapping, makeMappingKey, extractColor,
+  loadMappings, saveMappings, lookupMapping, makeMappingKey,
   resolveMappedBarcode, MAPPING_KEY, SHIPPED_ORDERS_KEY, shippedOrderLocalYmd,
+  autoMatchBarcode, upsertMappingBarcode,
 } from '@/lib/orders'
+import type { AutoMatchBarcodeResult } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 import { broadcastDashboardRefresh, broadcastPmProductsCacheSync } from '@/lib/dashboard-sync'
 
@@ -180,90 +182,8 @@ function runStockDeductionForOrders(orders: ShippedOrder[], products: CachedProd
   return { stockChanges, updatedProducts, notFound, stockAppliedIds }
 }
 
-/* ─── 바코드 자동매칭 ────────────────────────────────────── */
-interface AutoMatchResult {
-  barcode             : string
-  matchedProductName  : string
-  matchedOptionName   : string
-}
-
-function normalize(s: string) {
-  return s.toLowerCase().replace(/[\s\-_,./()（）【】\[\]]/g, '')
-}
-
-function autoMatchBarcode(
-  productName : string,
-  option      : string,
-  products    : CachedProduct[],
-): AutoMatchResult | null {
-  const normProd  = normalize(productName)
-  const normOpt   = normalize(option)
-  const color     = extractColor(option) // '블랙' '화이트' 등 표준화된 색상명
-
-  /* 1단계: 상품 후보 추출 */
-  // 정확 일치 (name 또는 abbr)
-  let candidates = products.filter(p =>
-    normalize(p.name  ?? '') === normProd ||
-    normalize(p.abbr  ?? '') === normProd
-  )
-  // 부분 포함 일치 (주문명이 더 길거나 짧은 경우)
-  if (candidates.length === 0) {
-    candidates = products.filter(p => {
-      const pn = normalize(p.name ?? '')
-      const pa = normalize(p.abbr ?? '')
-      return (pn.length > 0 && (normProd.includes(pn) || pn.includes(normProd))) ||
-             (pa.length > 0 && (normProd.includes(pa) || pa.includes(normProd)))
-    })
-  }
-  if (candidates.length === 0) return null
-
-  /* 2단계: 옵션 후보 매칭 */
-  for (const p of candidates) {
-    const opts = (p.options ?? []).filter(o => o.barcode)
-
-    // 옵션이 하나면 바로 반환
-    if (opts.length === 1) {
-      return {
-        barcode: opts[0].barcode!,
-        matchedProductName: p.name ?? p.abbr ?? '',
-        matchedOptionName : opts[0].korean_name ?? opts[0].name ?? '',
-      }
-    }
-
-    // 색상 기준 매칭
-    if (color) {
-      const byColor = opts.find(o => {
-        const oc = extractColor(o.korean_name ?? o.name ?? '')
-        const on = normalize(o.korean_name ?? o.name ?? '')
-        return oc === color ||
-               on.includes(normalize(color)) ||
-               normalize(color).includes(on)
-      })
-      if (byColor) {
-        return {
-          barcode: byColor.barcode!,
-          matchedProductName: p.name ?? p.abbr ?? '',
-          matchedOptionName : byColor.korean_name ?? byColor.name ?? '',
-        }
-      }
-    }
-
-    // 옵션 전체 텍스트 포함 매칭
-    const byText = opts.find(o => {
-      const on = normalize(o.korean_name ?? o.name ?? '')
-      return on.length > 0 && (normOpt.includes(on) || on.includes(normOpt))
-    })
-    if (byText) {
-      return {
-        barcode: byText.barcode!,
-        matchedProductName: p.name ?? p.abbr ?? '',
-        matchedOptionName : byText.korean_name ?? byText.name ?? '',
-      }
-    }
-  }
-
-  return null
-}
+/* ─── 바코드 자동매칭 (lib/orders.ts 공용 로직 사용) ───────── */
+type AutoMatchResult = AutoMatchBarcodeResult
 
 /* ─── 날짜 유틸 ─────────────────────────────────────────── */
 function getToday() {
