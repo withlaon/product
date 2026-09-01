@@ -20,6 +20,7 @@ import {
   hydrateShippedOrdersFromServer,
   MAPPING_KEY,
   SHIPPED_ORDERS_KEY,
+  shippedOrderLocalYmd,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
@@ -345,7 +346,7 @@ export default function SalesManagementPage() {
     const rows: { ym: string; channel: string; barcode: string; qty: number }[] = []
     for (const o of shipped) {
       if (!isDeliveredConfirmed(o)) continue
-      const dateKey = (o.shipped_at ?? o.order_date ?? '').slice(0, 10)
+      const dateKey = shippedOrderLocalYmd(o) || (o.order_date ?? '')
       const ym = dateKey.slice(0, 7)
       if (!ym || ym.length < 7) continue
       for (const item of o.items) {

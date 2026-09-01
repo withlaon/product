@@ -10,6 +10,7 @@ import {
 import {
   loadShippedOrders,
   saveShippedOrders,
+  shippedOrderLocalYmd,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 import { loadAllDayData } from '@/app/order-registration/page'
@@ -402,7 +403,7 @@ export default function InvoiceSendPage() {
   const filtered = useMemo(() => {
     let list = allShipped
     if (!showAllDates && dateFilter) {
-      list = list.filter(o => (o.shipped_at ?? o.order_date).slice(0, 10) === dateFilter)
+      list = list.filter(o => (shippedOrderLocalYmd(o) || o.order_date) === dateFilter)
     }
     const q = search.trim().toLowerCase()
     if (!q) return list
@@ -583,7 +584,7 @@ export default function InvoiceSendPage() {
                     {isChk ? <CheckSquare size={14} style={{ color: '#2563eb' }} /> : <Square size={14} style={{ color: '#cbd5e1' }} />}
                   </span>
                   <span style={{ fontSize: '11px', fontWeight: 800, color: '#2563eb', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{order.order_number}</span>
-                  <span style={{ fontSize: '11px', color: '#64748b' }}>{(order.shipped_at ?? order.order_date).slice(0, 10)}</span>
+                  <span style={{ fontSize: '11px', color: '#64748b' }}>{shippedOrderLocalYmd(order) || order.order_date}</span>
                   <span style={{ fontSize: '11.5px', fontWeight: 700, color: mallDef?.color ?? '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                     {mallDef?.label ?? order.channel}
                   </span>

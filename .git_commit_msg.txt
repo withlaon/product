@@ -1,1 +1,9 @@
-overhaul order management: rename tabs, add order history, mapping, packing list
+fix: 송장전송파일 탭 출고일 필터가 UTC 기준으로 계산되어 자정~오전9시 등록건이 누락되던 문제 수정
+
+- shipped_at(ISO, UTC)을 slice(0,10)로 직접 잘라 로컬 날짜와 비교하던 로직이
+  한국시간 자정~오전9시 사이에 저장된 주문의 날짜를 하루 전으로 잘못 인식해
+  "오늘" 필터에서 누락되는 버그가 있었음(월초 등 특정 시점에 등록내역이
+  안 보이는 원인)
+- lib/orders.ts의 shippedOrderLocalYmd(로컬 타임존 기준 YYYY-MM-DD 변환 헬퍼)를
+  송장전송파일/출고내역/매출관리/대시보드 탭의 모든 shipped_at 날짜 비교·표시
+  로직에 일괄 적용하여 동일 버그 재발 방지

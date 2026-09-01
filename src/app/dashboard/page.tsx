@@ -8,7 +8,7 @@ import {
 } from 'lucide-react'
 import {
   loadOrders, loadShippedOrders, loadInvoiceQueue,
-  dashboardAmountForMergedRow,
+  dashboardAmountForMergedRow, shippedOrderLocalYmd,
 } from '@/lib/orders'
 import { loadDashboardRetention, type DashboardRetention } from '@/lib/product-delete-cascade'
 import { DASHBOARD_REFRESH_EVENT } from '@/lib/dashboard-sync'
@@ -1470,7 +1470,7 @@ export default function DashboardPage() {
   const monthShippingFee = useMemo(() => {
     const uniq = new Set(
       shipped
-        .filter(o => (o.shipped_at ?? o.order_date)?.slice(0,7) === selMonth && o.tracking_number)
+        .filter(o => (shippedOrderLocalYmd(o) || o.order_date || '').slice(0,7) === selMonth && o.tracking_number)
         .map(o => o.tracking_number!)
     )
     const logisticsCost = logisticsFees

@@ -7,7 +7,7 @@ import {
   loadShippedOrders, saveShippedOrders, removeShippedOrdersByIds,
   loadOrders, saveOrders, isVisibleInShippingHistory, isShippedOrderDelivered,
   loadMappings, saveMappings, lookupMapping, makeMappingKey, extractColor,
-  resolveMappedBarcode, MAPPING_KEY, SHIPPED_ORDERS_KEY,
+  resolveMappedBarcode, MAPPING_KEY, SHIPPED_ORDERS_KEY, shippedOrderLocalYmd,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 import { broadcastDashboardRefresh, broadcastPmProductsCacheSync } from '@/lib/dashboard-sync'
@@ -480,9 +480,9 @@ export default function ShippingHistoryPage() {
     if (showAllDates) {
       list = shipped
     } else if (viewMode === 'daily') {
-      list = shipped.filter(o => (o.shipped_at ?? o.order_date).slice(0, 10) === selDate)
+      list = shipped.filter(o => (shippedOrderLocalYmd(o) || o.order_date) === selDate)
     } else {
-      list = shipped.filter(o => (o.shipped_at ?? o.order_date).slice(0, 7) === selMonth)
+      list = shipped.filter(o => (shippedOrderLocalYmd(o) || o.order_date).slice(0, 7) === selMonth)
     }
     if (searchText.trim()) {
       const q = searchText.trim().toLowerCase()
@@ -503,8 +503,8 @@ export default function ShippingHistoryPage() {
   }, [shipped, showAllDates, viewMode, selDate, selMonth, searchText, mappings])
 
   /* KPI */
-  const todayShipped = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,10) === today).length, [shipped, today])
-  const monthShipped = useMemo(() => shipped.filter(o => o.shipped_at?.slice(0,7) === curYM).length, [shipped, curYM])
+  const todayShipped = useMemo(() => shipped.filter(o => shippedOrderLocalYmd(o) === today).length, [shipped, today])
+  const monthShipped = useMemo(() => shipped.filter(o => shippedOrderLocalYmd(o).slice(0,7) === curYM).length, [shipped, curYM])
 
   /* 체크박스 */
   const allChecked = displayOrders.length > 0 && displayOrders.every(o => checked.has(o.id))
@@ -521,7 +521,7 @@ export default function ShippingHistoryPage() {
   const startEdit = (o: ShippedOrder, barcode: string) => {
     setEditingId(o.id)
     setEditFields({
-      shipped_at     : o.shipped_at ? o.shipped_at.slice(0, 10) : o.order_date,
+      shipped_at     : shippedOrderLocalYmd(o) || o.order_date,
       channel        : o.channel,
       customer_name  : o.customer_name,
       tracking_number: o.tracking_number ?? '',
@@ -637,7 +637,7 @@ export default function ShippingHistoryPage() {
       const item    = o.items[0]
       const barcode = resolveMappedBarcode(mappings, item ?? {})
       return {
-        '출고일': o.shipped_at ? o.shipped_at.slice(0,10) : o.order_date,
+        '출고일': shippedOrderLocalYmd(o) || o.order_date,
         '주문번호': o.order_number, '쇼핑몰': o.channel, '바코드': barcode,
         '상품명': item?.product_name ?? '', '옵션': item?.option ?? '',
         '수량': item?.quantity ?? 1, '판매가': item?.unit_price ?? 0,
@@ -1189,7 +1189,7 @@ export default function ShippingHistoryPage() {
 
                   {/* 출고일 */}
                   <span style={{ fontSize: '11px', color: '#64748b' }}>
-                    {o.shipped_at ? o.shipped_at.slice(0, 10) : o.order_date}
+                    {shippedOrderLocalYmd(o) || o.order_date}
                   </span>
 
                   {/* 쇼핑몰 */}
