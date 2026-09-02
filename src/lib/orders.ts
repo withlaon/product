@@ -41,6 +41,41 @@ async function persistShippedDeletesToServer(ids: string[]) {
   } catch { /* ignore */ }
 }
 
+/** localStorage 용량 초과(QuotaExceededError) 시 이미 "출고내역으로 이동" 처리되어
+ *  서버에도 안전하게 남아있는 오래된 건부터 로컬 캐시에서 정리한 뒤 재시도한다.
+ *  ※ 서버(Supabase pm_shipped_orders)에는 원본이 그대로 남아있으므로 데이터 손실은 없고,
+ *    필요 시 hydrateShippedOrdersFromServer() 로 언제든 복구된다.
+ *  이 저장 함수가 도입되기 전에는 목록이 커지면 저장이 "조용히" 실패해
+ *  방금 저장한 송장이 송장전송파일 탭에 아예 표시되지 않는 문제가 있었다. */
+function safeSetShippedOrders(list: ShippedOrder[]): boolean {
+  const trySet = (arr: ShippedOrder[]) => {
+    try { localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(arr)); return true }
+    catch { return false }
+  }
+  if (trySet(list)) return true
+
+  const byOldestMovedFirst = [...list]
+    .filter(o => o.history_moved === true)
+    .sort((a, b) => {
+      const ad = (a.shipped_at || a.order_date || '')
+      const bd = (b.shipped_at || b.order_date || '')
+      return ad.localeCompare(bd)
+    })
+
+  let pruned = list
+  let removed = 0
+  for (const victim of byOldestMovedFirst) {
+    pruned = pruned.filter(o => o.id !== victim.id)
+    removed++
+    if (trySet(pruned)) {
+      console.warn(`[pm_shipped_orders_v1] 저장 공간 부족으로 이미 이동 완료된 과거 출고건 ${removed}개를 로컬 캐시에서 정리했습니다. (서버 데이터는 유지됨)`)
+      return true
+    }
+  }
+  console.error('[pm_shipped_orders_v1] localStorage 저장 실패 — 서버에는 반영되었으나 이 브라우저 캐시에는 즉시 표시되지 않을 수 있습니다. 새로고침하면 서버에서 자동 복구됩니다.')
+  return false
+}
+
 /** 서버(pm_shipped_orders)와 로컬 캐시 병합. DB가 비어 있고 로컬만 있으면 1회 업로드 */
 export async function hydrateShippedOrdersFromServer(): Promise<void> {
   if (typeof window === 'undefined') return
@@ -60,9 +95,7 @@ export async function hydrateShippedOrdersFromServer(): Promise<void> {
     for (const o of local) byId.set(o.id, o)
     for (const o of remote) byId.set(o.id, o)
     const merged = Array.from(byId.values())
-    try {
-      localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(merged))
-    } catch { /* ignore */ }
+    safeSetShippedOrders(merged)
     broadcastDashboardRefresh()
   } catch { /* ignore */ }
 }
@@ -70,15 +103,13 @@ export async function hydrateShippedOrdersFromServer(): Promise<void> {
 /** 출고 저장소: id 기준 병합만 (전달하지 않은 id는 삭제하지 않음). 제거는 removeShippedOrdersByIds. */
 export function upsertShippedOrders(updates: ShippedOrder[]) {
   if (updates.length === 0) return
-  try {
-    const prev = loadShippedOrders()
-    const upd  = new Map(updates.map(o => [o.id, o]))
-    const next: ShippedOrder[] = prev.map(o => upd.get(o.id) ?? o)
-    for (const o of updates) {
-      if (!prev.some(p => p.id === o.id)) next.push(o)
-    }
-    localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(next))
-  } catch {}
+  const prev = loadShippedOrders()
+  const upd  = new Map(updates.map(o => [o.id, o]))
+  const next: ShippedOrder[] = prev.map(o => upd.get(o.id) ?? o)
+  for (const o of updates) {
+    if (!prev.some(p => p.id === o.id)) next.push(o)
+  }
+  safeSetShippedOrders(next)
   broadcastDashboardRefresh()
   void persistShippedUpsertsToServer(updates)
 }
@@ -86,11 +117,9 @@ export function upsertShippedOrders(updates: ShippedOrder[]) {
 /** 사용자가 명시적으로 삭제·출고취소한 출고 건만 제거 */
 export function removeShippedOrdersByIds(ids: string[]) {
   if (ids.length === 0) return
-  try {
-    const idSet = new Set(ids)
-    const prev = loadShippedOrders()
-    localStorage.setItem(SHIPPED_ORDERS_KEY, JSON.stringify(prev.filter(o => !idSet.has(o.id))))
-  } catch {}
+  const idSet = new Set(ids)
+  const prev = loadShippedOrders()
+  safeSetShippedOrders(prev.filter(o => !idSet.has(o.id)))
   broadcastDashboardRefresh()
   void persistShippedDeletesToServer(ids)
 }

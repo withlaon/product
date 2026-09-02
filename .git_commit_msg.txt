@@ -1,12 +1,15 @@
-fix: 피킹리스트 LOCA·상품약어 미표시 및 정렬 오류 수정
+fix: 송장전송파일 탭에 방금 저장한 송장이 안 보이는 문제 재발 방지 (근본 원인 해결)
 
-- (원인) 피킹리스트가 상품관리/LOCA탭에서 관리하는 실제 상품 데이터(loca, abbr)가 아니라
-  주문 매핑 테이블(mapping.loca, mapping.abbreviation)만 참조하고 있었음. 이 매핑 필드는
-  사용자가 매핑창에서 직접 입력하지 않는 한 항상 비어 있어 LOCA·약어가 표시되지 않거나
-  부정확했고, LOCA가 비어있으니 "LOCA순 정렬"도 사실상 동작하지 않았음
-- lib/orders.ts에 공용 resolvePickInfo()를 추가해 바코드→상품 매칭을 최우선으로 사용하고
-  (LOCA탭과 동일한 정규화 규칙 normalizeLoca 적용), 상품을 못 찾을 때만 매핑값을 보조로
-  사용하도록 통일. 주문관리(product-transfer)·송장출력/등록(print) 두 화면의
-  printPickingList가 동일 로직을 공유하도록 리팩토링해 화면 간 결과 불일치 재발 방지
-- LOCA 기준 자연정렬(comparePickLoca) 적용, LOCA 미배정 품목은 목록 맨 뒤로 정렬되도록 수정
-- loca/page.tsx의 normalizeLoca 중복 정의를 제거하고 공용 함수를 사용하도록 정리
+- (진짜 원인) 출고 저장소(pm_shipped_orders_v1)는 한 번 출고된 건이 계속 누적되기만 하고
+  거의 정리되지 않는 구조라 시간이 지날수록 커지고, 결국 브라우저 localStorage 용량을
+  초과하면 upsertShippedOrders()의 localStorage.setItem 이 조용히 실패했음(try/catch로
+  에러를 그냥 삼킴). 이 경우 방금 "일괄저장"한 송장은 송장출력/등록 탭 큐에서는 제거되지만
+  실제로는 로컬 저장소에 남지 않아, 송장전송파일 탭에서 아무것도 안 보이는 현상이 반복적으로
+  발생했음(서버 DB에는 정상적으로 저장되어 데이터 자체는 유실되지 않았음)
+- lib/orders.ts에 safeSetShippedOrders()를 추가: 용량 초과 시 이미 "출고내역으로 이동"되어
+  서버에 안전하게 남아있는 오래된 건부터 로컬 캐시에서 정리한 뒤 재시도하도록 수정
+  (upsertShippedOrders/removeShippedOrdersByIds/hydrateShippedOrdersFromServer 공통 적용)
+- 송장출력/등록·송장전송파일·출고내역 3개 탭에 진입 시 서버(pm_shipped_orders)와 우선
+  동기화(hydrateShippedOrdersFromServer)하도록 추가 — 과거에 로컬 저장이 실패했던 건까지
+  포함해 항상 서버 기준 최신 데이터를 복구해서 보여주므로, 이 문제가 다시 발생해도
+  화면에는 정상적으로 표시된다. 포커스 복귀·60초 주기로도 재동기화.

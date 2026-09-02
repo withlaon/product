@@ -12,6 +12,7 @@ import {
   loadShippedOrders, upsertShippedOrders,
   loadMappings, lookupMapping,
   resolvePickInfo, comparePickLoca,
+  hydrateShippedOrdersFromServer,
 } from '@/lib/orders'
 import type { Order, ShippedOrder, MappingStore, PickProduct } from '@/lib/orders'
 
@@ -203,6 +204,9 @@ export default function InvoicePrintPage() {
 
   useEffect(() => {
     setOrders(loadInvoiceQueue())
+    // 출고 저장소도 서버와 동기화해둔다 — 일괄저장 시 기존 출고건 판별(existingIds)이
+    // 로컬 용량 초과 등으로 유실된 캐시 때문에 어긋나지 않도록 보장.
+    void hydrateShippedOrdersFromServer()
   }, [])
 
   const filtered = useMemo(() => {

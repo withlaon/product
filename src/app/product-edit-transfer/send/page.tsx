@@ -11,6 +11,7 @@ import {
   loadShippedOrders,
   saveShippedOrders,
   shippedOrderLocalYmd,
+  hydrateShippedOrdersFromServer,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
 import { loadAllDayData } from '@/app/order-registration/page'
@@ -374,9 +375,21 @@ export default function InvoiceSendPage() {
   const [dateFilter, setDateFilter] = useState(today)
   const [showAllDates, setShowAllDates] = useState(false)
 
-  useEffect(() => {
+  const refreshShipped = () => {
     // pm_shipped_orders_v1에서 status='shipped' AND history_moved가 아닌 것만 표시
     setAllShipped(loadShippedOrders().filter(o => o.status === 'shipped' && !o.history_moved))
+  }
+
+  useEffect(() => {
+    // 서버(pm_shipped_orders)와 우선 동기화 후 표시 — 브라우저 localStorage 용량 초과 등으로
+    // 로컬 저장이 실패했어도 서버에는 남아있는 데이터를 항상 복구해서 보여준다.
+    refreshShipped()
+    let cancelled = false
+    hydrateShippedOrdersFromServer().then(() => { if (!cancelled) refreshShipped() })
+    const onFocus = () => { hydrateShippedOrdersFromServer().then(() => { if (!cancelled) refreshShipped() }) }
+    const interval = setInterval(onFocus, 60000)
+    window.addEventListener('focus', onFocus)
+    return () => { cancelled = true; window.removeEventListener('focus', onFocus); clearInterval(interval) }
   }, [])
 
   /* 출고내역 탭으로 이동 (단건) */

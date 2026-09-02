@@ -8,7 +8,7 @@ import {
   loadOrders, saveOrders, isVisibleInShippingHistory, isShippedOrderDelivered,
   loadMappings, saveMappings, lookupMapping, makeMappingKey,
   resolveMappedBarcode, MAPPING_KEY, SHIPPED_ORDERS_KEY, shippedOrderLocalYmd,
-  autoMatchBarcode, upsertMappingBarcode,
+  autoMatchBarcode, upsertMappingBarcode, hydrateShippedOrdersFromServer,
 } from '@/lib/orders'
 import type { AutoMatchBarcodeResult } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
@@ -339,15 +339,25 @@ export default function ShippingHistoryPage() {
   }
 
   useEffect(() => {
+    // 서버(pm_shipped_orders)와 먼저 동기화 — localStorage 용량 초과 등으로 로컬 저장이
+    // 실패했던 건도 서버에는 남아있으므로 항상 최신 전체 출고내역을 복구해서 보여준다.
+    let cancelled = false
+    hydrateShippedOrdersFromServer().then(() => { if (!cancelled) applyShippedSkuFromMappings() })
     applyShippedSkuFromMappings()
     const onStorage = (e: StorageEvent) => {
       if (e.key === MAPPING_KEY || e.key === SHIPPED_ORDERS_KEY) applyShippedSkuFromMappings()
     }
+    const onFocus = () => { hydrateShippedOrdersFromServer().then(() => { if (!cancelled) applyShippedSkuFromMappings() }) }
+    const interval = setInterval(onFocus, 60000)
     window.addEventListener('storage', onStorage)
     window.addEventListener('pm_mapping_updated', applyShippedSkuFromMappings)
+    window.addEventListener('focus', onFocus)
     return () => {
+      cancelled = true
       window.removeEventListener('storage', onStorage)
       window.removeEventListener('pm_mapping_updated', applyShippedSkuFromMappings)
+      window.removeEventListener('focus', onFocus)
+      clearInterval(interval)
     }
   }, [])
 
