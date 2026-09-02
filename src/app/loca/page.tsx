@@ -2,6 +2,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { Printer, RefreshCw, Plus, ChevronDown, ChevronRight, Search, X } from 'lucide-react'
+import { normalizeLoca } from '@/lib/orders'
 
 /* ── 상수 ── */
 const CATS_STORAGE_KEY           = 'pm_categories_v1'
@@ -39,13 +40,8 @@ interface Product {
 interface LocaGroup { prefix: string; items: string[] }
 
 /* ── 헬퍼 ── */
-/**
- * loca 정규화: trim → 대문자 → 끝 숫자 단독 자리수 제로패딩
- * 예) " 1j-2 " → "1J-02",  "1J-02" → "1J-02",  "box" → "BOX"
- */
-function normalizeLoca(raw: string): string {
-  return raw.trim().toUpperCase().replace(/-(\d)$/, '-0$1')
-}
+/* loca 정규화(normalizeLoca)는 lib/orders.ts 공용 함수 사용 — 피킹리스트 등 다른 화면과
+   동일한 규칙을 유지하기 위해 이 파일에서 별도 정의하지 않음 */
 
 function loadCats(): string[] {
   if (typeof window === 'undefined') return INIT_EXTRA_CATS

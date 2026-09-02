@@ -530,6 +530,76 @@ export function upsertMappingBarcode(
   saveMappings(cur)
 }
 
+/* ─── 피킹리스트 공용 조회 (주문관리·송장출력 탭 공용) ──────
+ * LOCA 표기 규칙: trim → 대문자 → 끝 숫자 단독 자리수 제로패딩
+ * 예) " 1j-2 " → "1J-02" (LOCA 탭과 동일 규칙 — 반드시 이 함수로 통일해서 사용) */
+export function normalizeLoca(raw: string): string {
+  return raw.trim().toUpperCase().replace(/-(\d)$/, '-0$1')
+}
+
+export interface PickProductOption {
+  barcode?: string
+  name?: string
+  korean_name?: string
+  size?: string
+  loca?: string
+}
+export interface PickProduct {
+  id: string
+  abbr?: string
+  loca?: string
+  options?: PickProductOption[]
+}
+
+/**
+ * 피킹리스트 출력용 상품정보 조회.
+ * ⚠️ 예전에는 매핑(mapping.abbreviation / mapping.loca)만 사용해서, 사용자가
+ * 매핑 창에서 직접 입력해두지 않은 이상 약어·LOCA가 항상 비어 있었음(상품관리·LOCA탭에서
+ * 관리하는 실제 상품 데이터와 별개의 값이었기 때문).
+ * → 항상 "실제 상품 데이터(바코드 매칭 → product_id 매칭)"를 최우선으로 사용하고,
+ *   상품을 찾지 못했을 때만 매핑값으로 보조한다.
+ */
+export function resolvePickInfo(
+  mappings: MappingStore,
+  item: { product_name?: string; sku?: string; option?: string },
+  products: PickProduct[],
+): { abbreviation: string; loca: string; color: string; size: string } {
+  const m = lookupMapping(mappings, item.product_name ?? '', item.option)
+  const barcode = resolveMappedBarcode(mappings, item).trim().toLowerCase()
+
+  let product: PickProduct | undefined
+  let option: PickProductOption | undefined
+
+  if (barcode) {
+    for (const p of products) {
+      const o = (p.options ?? []).find(o => (o.barcode ?? '').trim().toLowerCase() === barcode)
+      if (o) { product = p; option = o; break }
+    }
+  }
+  if (!product && m.product_id) {
+    product = products.find(p => p.id === m.product_id)
+    option = product?.options?.find(o =>
+      !!m.my_option_name && (o.korean_name === m.my_option_name || o.name === m.my_option_name)
+    )
+  }
+
+  const color = option?.korean_name || extractColor(item.option ?? '')
+  const size  = option?.size || extractSize(item.option ?? '')
+  const abbreviation = product?.abbr || m.abbreviation || item.product_name || ''
+  const rawLoca = (option?.loca || product?.loca || m.loca || '').trim()
+  const loca = rawLoca ? normalizeLoca(rawLoca) : ''
+
+  return { abbreviation, loca, color, size }
+}
+
+/** 피킹리스트 행 정렬: LOCA 오름차순(자연정렬), LOCA 미배정 항목은 맨 뒤로 */
+export function comparePickLoca(a: string, b: string): number {
+  if (!a && !b) return 0
+  if (!a) return 1
+  if (!b) return -1
+  return a.localeCompare(b, 'ko', { numeric: true })
+}
+
 /**
  * CS 반품등록 시 송장번호 기준으로 출고내역(pm_shipped_orders)에서 해당 주문을 찾아
  * 그 제품의 판매가(unit_price)를 0원으로 변경한다.

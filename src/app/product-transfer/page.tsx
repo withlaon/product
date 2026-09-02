@@ -10,13 +10,13 @@ import {
 } from 'lucide-react'
 import * as XLSX from 'xlsx'
 import {
-  loadOrders, saveOrders, removeOrdersByIds, loadMappings, saveMappings, extractColor, extractSize,
+  loadOrders, saveOrders, removeOrdersByIds, loadMappings, saveMappings,
   saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
   upsertInvoiceQueue,
   loadShippedOrders, saveShippedOrders,
-  mpToChannel,
+  mpToChannel, resolveMappedBarcode, resolvePickInfo, comparePickLoca,
 } from '@/lib/orders'
-import type { Order, MappingStore } from '@/lib/orders'
+import type { Order, MappingStore, PickProduct } from '@/lib/orders'
 
 /* ─── 내 상품 타입 (상품관리에서 로드) ─────────────────── */
 interface MyProductOption {
@@ -313,72 +313,40 @@ function printPickingList(orders: Order[], mappings: MappingStore, liveProducts:
   }
 
   // 상품 데이터: 컴포넌트에 이미 로드된 최신 상품(liveProducts) 우선, 없으면 로컬캐시로 보완
-  type CacheOpt = { barcode?: string; korean_name?: string; size?: string; name?: string }
-  type CacheProd = { id: string; options?: CacheOpt[] }
-  let productCache: CacheProd[] = liveProducts
+  let productCache: PickProduct[] = liveProducts
   if (productCache.length === 0) {
     try {
       const raw = localStorage.getItem('pm_products_cache_v1')
       if (raw) {
-        const { data } = JSON.parse(raw) as { ts: number; data: CacheProd[] }
+        const { data } = JSON.parse(raw) as { ts: number; data: PickProduct[] }
         if (Array.isArray(data)) productCache = data
       }
     } catch {}
   }
 
-  /** 매핑 바코드 기준으로 전체 상품(옵션)을 뒤져 색상/사이즈를 찾는다.
-   *  product_id가 오래되어 실제 바코드를 보유한 상품과 어긋나는 경우까지 대비해
-   *  product_id로 좁히지 않고 전체 상품의 옵션 바코드를 대상으로 매칭한다. */
-  function findOptionByBarcode(barcode: string): CacheOpt | undefined {
-    const bc = barcode.trim().toLowerCase()
-    if (!bc) return undefined
-    for (const p of productCache) {
-      const opt = (p.options ?? []).find(o => (o.barcode ?? '').trim().toLowerCase() === bc)
-      if (opt) return opt
-    }
-    return undefined
-  }
-
   const rows: PickRow[] = []
   for (const order of orders) {
     for (const item of order.items) {
-      const m = lookupMapping(mappings, item.product_name, item.option)
-
-      // 색상/사이즈: ① 매핑 바코드 기준 전체 상품 옵션 조회 → ② product_id+옵션명 조회 → ③ 주문 옵션 텍스트 추출
-      let color = ''
-      let size  = ''
-      const bcOpt = m.barcode ? findOptionByBarcode(m.barcode) : undefined
-      if (bcOpt) {
-        if (bcOpt.korean_name) color = bcOpt.korean_name
-        if (bcOpt.size)        size  = bcOpt.size
-      }
-      if ((!color || !size) && m.product_id) {
-        const prod = productCache.find(p => p.id === m.product_id)
-        const opt  = prod?.options?.find(o =>
-          (m.my_option_name && (o.korean_name === m.my_option_name || o.name === m.my_option_name))
-        )
-        if (!color && opt?.korean_name) color = opt.korean_name
-        if (!size  && opt?.size)        size  = opt.size
-      }
-      if (!color) color = extractColor(item.option ?? '')
-      if (!size)  size  = extractSize(item.option ?? '')
+      // 약어·LOCA·색상·사이즈는 항상 상품관리(LOCA탭 포함)의 실제 상품 데이터를
+      // 최우선으로 조회한다 — 매핑에만 있는 값(비어있기 쉬움)에 의존하지 않도록 통일.
+      const { abbreviation, loca, color, size } = resolvePickInfo(mappings, item, productCache)
 
       rows.push({
         order_number:     order.order_number,
         customer_name:    order.customer_name,
         shipping_address: order.shipping_address,
-        abbreviation:     m.abbreviation || item.product_name,
+        abbreviation,
         color,
         size,
         quantity: item.quantity,
-        loca:     m.loca ?? '',
-        sku:      item.sku ?? '',
+        loca,
+        sku:      resolveMappedBarcode(mappings, item) || item.sku || '',
       })
     }
   }
 
-  // LOCA 오름차순
-  rows.sort((a, b) => a.loca.localeCompare(b.loca, 'ko'))
+  // 피킹(LOCA) 순 정렬 — 자연정렬, LOCA 미배정 항목은 맨 뒤로
+  rows.sort((a, b) => comparePickLoca(a.loca, b.loca))
 
   // 합포장 카운트 (같은 수령인+주소)
   const addrCount: Record<string, number> = {}
