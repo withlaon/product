@@ -451,7 +451,7 @@ export interface AutoMatchProduct {
   name?: string
   abbr?: string
   code?: string
-  options: Array<{ barcode?: string; name?: string; korean_name?: string; [k: string]: unknown }>
+  options: Array<{ barcode?: string; name?: string; korean_name?: string }>
 }
 export interface AutoMatchBarcodeResult {
   barcode: string

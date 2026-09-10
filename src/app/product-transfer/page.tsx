@@ -14,7 +14,7 @@ import {
   saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
   upsertInvoiceQueue,
   loadShippedOrders, saveShippedOrders,
-  mpToChannel, resolveMappedBarcode, resolvePickInfo, comparePickLoca,
+  mpToChannel, resolveMappedBarcode, resolvePickInfo, comparePickLoca, autoMatchBarcode,
 } from '@/lib/orders'
 import type { Order, MappingStore, PickProduct } from '@/lib/orders'
 
@@ -574,11 +574,14 @@ export default function OrdersPage() {
 
   /* 매핑 모달용 - useMemo로 렌더 분리 */
   const mappingAllEntries = useMemo(() => Object.entries(draftMappings), [draftMappings])
-  const mappingMappedCount = useMemo(() => mappingAllEntries.filter(([, m]) => !!m.product_id).length, [mappingAllEntries])
+  // ⚠️ product_id만 있고 barcode가 비어있는 "반쪽 매핑" 상태는 완료로 취급하지 않는다.
+  // (예전에는 product_id만 있으면 매핑완료로 표시되어, 바코드가 실제로는 비어있는데도
+  //  사용자가 완료된 것으로 오인하는 문제가 있었음)
+  const mappingMappedCount = useMemo(() => mappingAllEntries.filter(([, m]) => !!m.product_id && !!m.barcode).length, [mappingAllEntries])
   const mappingFilteredEntries = useMemo(() => {
     const searchLower = mappingSearch.toLowerCase()
     return mappingAllEntries.filter(([key, m]) => {
-      if (mappingFilter === 'unmapped' && m.product_id) return false
+      if (mappingFilter === 'unmapped' && m.product_id && m.barcode) return false
       if (searchLower) {
         const [productName, option] = splitMappingKey(key)
         if (!productName.toLowerCase().includes(searchLower) && !option.toLowerCase().includes(searchLower)) return false
@@ -754,6 +757,17 @@ export default function OrdersPage() {
       )
     }
 
+    // 정형 규칙(matchOption)으로 옵션을 못 찾았을 때 쓰는 2차 보완 매칭.
+    // lib/orders.ts의 공용 퍼지 매칭(색상/사이즈 텍스트 유사도 기반)으로 전체 상품 중에서
+    // 바코드를 추정한다 — 몰마다 옵션 텍스트 표기 방식이 달라 정형 규칙이 못 잡는 경우를 보완.
+    const findOptionByFuzzyBarcode = (barcode: string): { product: MyProduct; option: MyProductOption } | undefined => {
+      for (const pr of myProducts) {
+        const fopt = pr.options.find(o => o.barcode === barcode)
+        if (fopt) return { product: pr, option: fopt }
+      }
+      return undefined
+    }
+
     const newDraft = { ...draftMappings }
     Object.entries(newDraft).forEach(([key, m]) => {
       const [productName, option] = splitMappingKey(key)
@@ -762,7 +776,11 @@ export default function OrdersPage() {
       if (m.product_id && !m.barcode) {
         const p = myProducts.find(pr => pr.id === m.product_id)
         if (p && option) {
-          const matchedOpt = matchOption(option, p.options)
+          let matchedOpt = matchOption(option, p.options)
+          if (!matchedOpt) {
+            const fuzzy = autoMatchBarcode(productName, option, [p])
+            if (fuzzy) matchedOpt = p.options.find(o => o.barcode === fuzzy.barcode)
+          }
           if (matchedOpt) {
             newDraft[key] = {
               ...m,
@@ -785,9 +803,33 @@ export default function OrdersPage() {
       if (m.product_id) { skipped++; return }
 
       const p = matchProduct(productName)
-      if (!p) return
+      if (!p) {
+        // 상품명 기준 매칭이 완전히 실패한 경우 → 전체 상품 대상 퍼지 매칭으로 마지막 시도
+        const fuzzy = option ? autoMatchBarcode(productName, option, myProducts) : null
+        const found = fuzzy ? findOptionByFuzzyBarcode(fuzzy.barcode) : undefined
+        if (found) {
+          newDraft[key] = {
+            ...m,
+            product_id:      found.product.id,
+            product_code:    found.product.code,
+            my_product_name: found.product.name,
+            my_option_name:  found.option.name,
+            barcode:         found.option.barcode,
+            abbreviation:    m.abbreviation || found.product.abbr || '',
+            loca:            m.loca || found.product.loca || '',
+          }
+          mapped++
+        } else {
+          skipped++
+        }
+        return
+      }
 
-      const matchedOpt = option ? matchOption(option, p.options) : undefined
+      let matchedOpt = option ? matchOption(option, p.options) : undefined
+      if (!matchedOpt && option) {
+        const fuzzy = autoMatchBarcode(productName, option, [p])
+        if (fuzzy) matchedOpt = p.options.find(o => o.barcode === fuzzy.barcode)
+      }
 
       newDraft[key] = {
         ...m,
@@ -799,7 +841,8 @@ export default function OrdersPage() {
         abbreviation:    m.abbreviation || p.abbr || '',
         loca:            m.loca || p.loca || '',
       }
-      mapped++
+      if (matchedOpt?.barcode) mapped++
+      else skipped++
     })
 
     setDraftMappings(newDraft)
@@ -852,10 +895,24 @@ export default function OrdersPage() {
   }
 
   const saveMapping = () => {
+    // 저장 직전 한 번 더 바코드 자동 보완 시도 — "자동매핑" 버튼을 누르지 않았거나
+    // 첫 시도에서 옵션 텍스트 매칭에 실패했던 항목까지 최대한 채워서, 저장 후에도
+    // 바코드가 비어있는 채로 남는 경우를 최소화한다.
+    const finalDraft: MappingStore = { ...draftMappings }
+    Object.entries(finalDraft).forEach(([key, m]) => {
+      if (m.barcode || !m.product_id) return
+      const [productName, option] = splitMappingKey(key)
+      const p = myProducts.find(pr => pr.id === m.product_id)
+      if (!p || !option) return
+      const fuzzy = autoMatchBarcode(productName, option, [p])
+      const opt = fuzzy ? p.options.find(o => o.barcode === fuzzy.barcode) : undefined
+      if (opt) finalDraft[key] = { ...m, my_option_name: opt.name, barcode: opt.barcode }
+    })
+
     // ⚠️ draftMappings 는 매핑 모달을 열 때 대상 주문(오늘/선택분)의 키만 담고 있어
     //    그대로 저장하면 다른 날짜에 등록된 상품들의 기존 매핑(바코드 포함)이 전부
     //    사라지는 심각한 버그가 있었음 → 항상 최신 전체 매핑에 병합 저장한다.
-    const merged: MappingStore = { ...loadMappings(), ...draftMappings }
+    const merged: MappingStore = { ...loadMappings(), ...finalDraft }
     saveMappings(merged)
     setMappings(merged)
 
@@ -876,6 +933,18 @@ export default function OrdersPage() {
 
     try { window.dispatchEvent(new CustomEvent('pm_mapping_updated')) } catch { /* ignore */ }
     setShowMapping(false)
+
+    // 그래도 바코드를 못 찾은 품목은 명확히 알려준다 (조용히 누락되는 것 방지)
+    const unresolvedNames = [...new Set(
+      Object.entries(finalDraft).filter(([, m]) => !m.barcode).map(([key]) => splitMappingKey(key)[0])
+    )]
+    if (unresolvedNames.length > 0) {
+      alert(
+        `⚠️ ${unresolvedNames.length}개 상품은 바코드를 자동으로 찾지 못해 매핑이 완료되지 않았습니다.\n` +
+        `"매핑하기" 창에서 해당 상품의 "내 상품 연결"·"내 옵션 선택"을 직접 지정해주세요.\n\n` +
+        unresolvedNames.slice(0, 8).join(', ') + (unresolvedNames.length > 8 ? ' 등' : '')
+      )
+    }
   }
 
   /* 피킹리스트 출력 */
@@ -1412,15 +1481,24 @@ export default function OrdersPage() {
               ) : mappingFilteredEntries.map(([key, m]) => {
                 const [productName, option] = splitMappingKey(key)
                 const selectedProduct = myProducts.find(p => p.id === m.product_id)
-                const isMapped = !!m.product_id
+                // 상품 연결 + 바코드까지 확보되어야 "완료"로 취급 (반쪽 매핑 오인 방지)
+                const isMapped  = !!m.product_id && !!m.barcode
+                const isPartial = !!m.product_id && !m.barcode
+                const rowBg     = isMapped ? '#f0fdf4' : isPartial ? '#fffbeb' : '#fafafa'
+                const rowBorder = isMapped ? '#bbf7d0' : isPartial ? '#fde68a' : '#f1f5f9'
                 return (
-                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 130px 220px 155px 120px 80px 70px', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 9, marginBottom: 3, background: isMapped ? '#f0fdf4' : '#fafafa', border: `1.5px solid ${isMapped ? '#bbf7d0' : '#f1f5f9'}` }}>
+                  <div key={key} style={{ display: 'grid', gridTemplateColumns: '2fr 130px 220px 155px 120px 80px 70px', gap: 8, alignItems: 'center', padding: '8px 10px', borderRadius: 9, marginBottom: 3, background: rowBg, border: `1.5px solid ${rowBorder}` }}>
                     {/* 주문서 상품명 */}
                     <div style={{ minWidth: 0 }}>
                       <p style={{ fontSize: '12px', fontWeight: 700, color: '#0f172a', margin: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={productName}>{productName}</p>
                       {isMapped && (
                         <span style={{ fontSize: '10px', color: '#16a34a', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 2, marginTop: 1 }}>
                           <Link2 size={9} />연결됨
+                        </span>
+                      )}
+                      {isPartial && (
+                        <span style={{ fontSize: '10px', color: '#b45309', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 2, marginTop: 1 }}>
+                          <Link2Off size={9} />바코드 미확인 — 옵션을 다시 선택해주세요
                         </span>
                       )}
                     </div>
