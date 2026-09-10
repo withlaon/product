@@ -5,11 +5,12 @@ import { useRouter } from 'next/navigation'
 import * as XLSX from 'xlsx'
 import {
   Send, Search, Package, Truck, Download, FileDown,
-  CheckSquare, Square, ChevronLeft, ChevronRight, ArrowRight,
+  CheckSquare, Square, ChevronLeft, ChevronRight, ArrowRight, Trash2,
 } from 'lucide-react'
 import {
   loadShippedOrders,
   saveShippedOrders,
+  removeShippedOrdersByIds,
   shippedOrderLocalYmd,
   hydrateShippedOrdersFromServer,
 } from '@/lib/orders'
@@ -413,6 +414,15 @@ export default function InvoiceSendPage() {
     router.push('/product-edit-transfer/history')
   }
 
+  /* 선택 항목 완전 삭제 (출고내역으로 이동하지 않고 그대로 삭제) */
+  const handleDeleteChecked = () => {
+    if (checked.size === 0) return
+    if (!confirm(`선택한 ${checked.size}건을 완전히 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return
+    removeShippedOrdersByIds(Array.from(checked))
+    setAllShipped(prev => prev.filter(o => !checked.has(o.id)))
+    setChecked(new Set())
+  }
+
   const filtered = useMemo(() => {
     let list = allShipped
     if (!showAllDates && dateFilter) {
@@ -553,6 +563,11 @@ export default function InvoiceSendPage() {
               onClick={handleMoveCheckedToHistory}
               style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#7c3aed', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
               <ArrowRight size={13} /> 선택 항목 출고내역으로 이동
+            </button>
+            <button
+              onClick={handleDeleteChecked}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 12px', background: '#dc2626', color: '#fff', border: 'none', borderRadius: 8, fontSize: '12px', fontWeight: 800, cursor: 'pointer' }}>
+              <Trash2 size={13} /> 선택 항목 삭제
             </button>
           </>
         )}
