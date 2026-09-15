@@ -224,7 +224,7 @@ function migrateCats(cats: string[]): string[] {
 const OPT_COLOR_MAP: Record<string, string> = {
   BD:'버건디', BE:'베이지', BG:'볼주그린', BI:'볼주인디고', BK:'블랙', BL:'블루',
   BN:'볼루그린', BR:'브라운', CA:'자갈', CB:'코발트블루', CH:'조셋', CL:'스빌',
-  CM:'카멜', CO:'코코아', CP:'체리핑크', CR:'크림', DB:'다크브라운', DE:'다크베이지',
+  CF:'커피', CM:'카멜', CO:'코코아', CP:'체리핑크', CR:'크림', DB:'다크브라운', DE:'다크베이지',
   DG:'다크카키', DI:'다크인디고', DN:'다크그린', DO:'다크올리브', DP:'다크핑크',
   DU:'다크블루', GN:'그린', GO:'골드', GP:'그래파이트', GR:'그레이', IV:'아이보리',
   KH:'카키', KN:'카키브라운', LB:'라이트브라운', LE:'레몬', LG:'라이트그레이',
