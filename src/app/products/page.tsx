@@ -101,7 +101,7 @@ interface Product {
   mall_categories: MallCategory[]
   basic_info: BasicInfo | null
   status: ProductStatus; supplier: string
-  registered_malls: (string | { mall: string; code: string })[]   // 등록된 쇼핑몰 이름 및 상품코드
+  registered_malls: (string | { mall: string; code: string; name?: string })[]   // 등록된 쇼핑몰 이름 · 상품코드 · 쇼핑몰 상품명(참고)
   /** 판매중으로 둔 시점(최초 또는 재전환 시 비어 있으면 채움) YYYY-MM-DD */
   active_since?: string | null
   promo_text?: string
@@ -557,7 +557,7 @@ function buildLocalMallCodesMap(): Record<string, Record<string, string>> {
 interface MappingRow { mallKey:string; mall:string; productId:string; productName:string; tagPrice:string; price:string }
 function MallMappingModal({
   product, onClose, onSave,
-}: { product: Product; onClose: () => void; onSave: (cp: ChannelPrice[], rm: (string|{mall:string;code:string})[]) => void }) {
+}: { product: Product; onClose: () => void; onSave: (cp: ChannelPrice[], rm: (string|{mall:string;code:string;name?:string})[]) => void }) {
   const channels = useMemo(() => loadMallChannels(), [])
   const existingMappings = useMemo(() => loadLocalMappings(), [])
 
@@ -567,7 +567,7 @@ function MallMappingModal({
       const mallEntry  = (product.registered_malls ?? []).find(m =>
         typeof m === 'object' ? m.mall === ch.name : m === ch.name
       )
-      // localStorage pm_channel_mappings_v2 에서도 기존 매핑 조회
+      // localStorage pm_channel_mappings_v2 에서도 기존 매핑 조회 (기기별 캐시 · 서버가 우선)
       const localRow = (existingMappings[ch.key] || []).find(r => r.matched_product_id === product.id)
       return {
         mallKey:     ch.key,
@@ -575,8 +575,11 @@ function MallMappingModal({
         productId:   typeof mallEntry === 'object'
           ? (mallEntry.code || localRow?.mall_product_id || '')
           : (localRow?.mall_product_id || ''),
-        // 로컬에 저장된 쇼핑몰 상품명이 있으면 그것을, 없으면 상품 자체의 이름을 기본값으로 표시
-        productName: localRow?.mall_product_name || product.name,
+        // 서버(Supabase registered_malls)에 저장된 쇼핑몰 상품명이 최우선, 없으면 로컬 캐시,
+        // 그마저 없으면 상품 자체의 이름을 기본값으로 표시 → 기기와 관계없이 동일하게 보임
+        productName: (typeof mallEntry === 'object' ? mallEntry.name : undefined)
+          || localRow?.mall_product_name
+          || product.name,
         tagPrice: priceEntry?.tag_price ? String(priceEntry.tag_price) : '',
         price: priceEntry
           ? String(priceEntry.price)
@@ -593,10 +596,15 @@ function MallMappingModal({
                      price:     Number(r.price),
                      ...(r.tagPrice && Number(r.tagPrice) > 0 ? { tag_price: Number(r.tagPrice) } : {}),
                    }))
-    const rm = rows.filter(r => r.productId.trim())
-                   .map(r => ({ mall: r.mall, code: r.productId.trim() }))
+    // 상품ID·상품명 중 하나라도 있으면 서버(registered_malls)에도 반영 → 기기 간 동일하게 표시됨
+    const rm = rows.filter(r => r.productId.trim() || r.productName.trim())
+                   .map(r => ({
+                     mall: r.mall,
+                     code: r.productId.trim(),
+                     ...(r.productName.trim() ? { name: r.productName.trim() } : {}),
+                   }))
 
-    // localStorage pm_channel_mappings_v2 도 동기화
+    // localStorage pm_channel_mappings_v2 도 동기화 (오프라인 캐시 · 매핑관리탭 표시용)
     // ※ 상품ID를 비워도 쇼핑몰 상품명(참고)만 입력했다면 그 값은 보존한다.
     //    (기존에는 상품ID가 비어있으면 상품명까지 통째로 삭제되어 "입력해도 안 들어간다"는 문제가 있었음)
     const allMaps = { ...existingMappings }
@@ -793,7 +801,7 @@ function rowToProduct(row: any): Product {
     channel_prices: (row.channel_prices ?? []) as ChannelPrice[],
     mall_categories: (row.mall_categories ?? []) as MallCategory[],
     basic_info: (row.basic_info ?? null) as BasicInfo | null,
-    registered_malls: (row.registered_malls ?? []) as (string | { mall: string; code: string })[],
+    registered_malls: (row.registered_malls ?? []) as (string | { mall: string; code: string; name?: string })[],
     active_since: row.active_since ?? null,
     promo_text: row.promo_text ?? '',
     created_at: row.created_at ?? '',
@@ -1797,7 +1805,7 @@ export default function ProductsPage() {
     setChannelPriceTarget(null)
   }
 
-  const handleMappingSave = async (cp: ChannelPrice[], rm: (string|{mall:string;code:string})[]) => {
+  const handleMappingSave = async (cp: ChannelPrice[], rm: (string|{mall:string;code:string;name?:string})[]) => {
     if (!mappingTarget) return
     const { error } = await pmPatch(mappingTarget.id, { channel_prices: cp, registered_malls: rm })
     if (!error) {
@@ -2211,7 +2219,7 @@ export default function ProductsPage() {
         channel_prices: [] as ChannelPrice[],
         mall_categories: [] as MallCategory[],
         basic_info: null,
-        registered_malls: [] as (string | { mall: string; code: string })[],
+        registered_malls: [] as (string | { mall: string; code: string; name?: string })[],
       }
 
       if (!payload.name) { errors.push(`${code}: 상품명 없음`); continue }

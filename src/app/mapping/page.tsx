@@ -25,7 +25,7 @@ interface MappedRow {
 interface PmOption { name: string; barcode: string }
 interface PmProduct {
   id: string; code: string; name: string; category: string; options: PmOption[]
-  registered_malls?: (string | { mall: string; code: string })[]
+  registered_malls?: (string | { mall: string; code: string; name?: string })[]
   channel_prices?:   { channel: string; price: number }[]
 }
 
@@ -117,29 +117,43 @@ export default function MappingPage() {
         setProducts(pmProducts)
 
         /* ── Supabase registered_malls → pm_channel_mappings_v2 역방향 동기화
-           상품관리탭에서 매핑완료 후 registered_malls가 설정됐지만
-           localStorage에 아직 항목이 없는 경우 자동 생성 ── */
+           상품관리탭에서 매핑완료 후 registered_malls(상품ID·상품명)가 설정된 것을
+           로컬 캐시에 없으면 새로 만들고, 이미 있으면 서버 값(다른 기기에서 수정한
+           상품ID·상품명 포함)으로 최신화한다. → 기기와 관계없이 항상 서버가 기준. ── */
         const currentMappings = loadMappings()
         let localUpdated = false
 
         for (const product of pmProducts) {
-          const regMalls = (product.registered_malls ?? []) as (string | { mall: string; code: string })[]
+          const regMalls = (product.registered_malls ?? []) as (string | { mall: string; code: string; name?: string })[]
           for (const entry of regMalls) {
             const mallName = typeof entry === 'string' ? entry : entry.mall
             const mallCode = typeof entry === 'string' ? '' : (entry.code || '')
+            const mallCustomName = typeof entry === 'string' ? '' : (entry.name || '')
             if (!mallCode) continue
 
             const channel = connected.find(c => c.name === mallName)
             if (!channel) continue
 
             const mallRows = currentMappings[channel.key] ?? []
-            // 이미 매핑된 항목이면 스킵
-            if (mallRows.some(r => r.matched_product_id === product.id)) continue
-
+            const idx = mallRows.findIndex(r => r.matched_product_id === product.id)
             const chPrice = (product.channel_prices ?? []).find(cp => cp.channel === mallName)
+            const desiredName = mallCustomName || product.name
+
+            if (idx >= 0) {
+              // 이미 있으면 서버 값과 다를 때만 최신 상품ID·상품명으로 갱신
+              const existing = mallRows[idx]
+              if (existing.mall_product_id !== mallCode || existing.mall_product_name !== desiredName) {
+                currentMappings[channel.key] = mallRows.map((r, i) =>
+                  i === idx ? { ...r, mall_product_id: mallCode, mall_product_name: desiredName } : r
+                )
+                localUpdated = true
+              }
+              continue
+            }
+
             currentMappings[channel.key] = [...mallRows, {
               mall_product_id:      mallCode,
-              mall_product_name:    product.name,
+              mall_product_name:    desiredName,
               mall_option:          '',
               matched_product_id:   product.id,
               matched_product_code: product.code || null,
@@ -176,7 +190,7 @@ export default function MappingPage() {
       for (const { mallKey, r } of allMatched) {
         const mallName = connected.find(m => m.key === mallKey)?.name || mallKey
         if (r.matched_product_id) {
-          await updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id)
+          await updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id, r.mall_product_name)
           synced = true
         }
       }
@@ -357,7 +371,7 @@ export default function MappingPage() {
       const matched = newRows.filter(r => r.status === 'matched' && r.matched_product_id)
       for (const r of matched) {
         if (r.matched_product_id) {
-          await updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id)
+          await updateRegisteredMalls(r.matched_product_id, mallName, r.mall_product_id, r.mall_product_name)
           if (r.mall_price && r.mall_price > 0) {
             await updateChannelPrice(r.matched_product_id, mallName, r.mall_price)
           }
@@ -389,18 +403,23 @@ export default function MappingPage() {
     await apiPatchProduct(productId, { channel_prices: updated })
   }
 
-  const updateRegisteredMalls = async (productId: string, mallName: string, mallCode: string) => {
+  /** registered_malls에 상품ID(+선택적으로 상품명)를 반영. 기존에 저장된 상품명이 있고
+   *  새 이름이 없으면 기존 이름을 그대로 보존(다른 값으로 덮어써서 지우지 않음). */
+  const updateRegisteredMalls = async (productId: string, mallName: string, mallCode: string, mallProductName?: string) => {
     const data = await apiGetProduct(productId)
     if (!data) return
-    const current: (string | { mall: string; code: string })[] = (data.registered_malls as (string | { mall: string; code: string })[]) ?? []
+    const current: (string | { mall: string; code: string; name?: string })[] = (data.registered_malls as (string | { mall: string; code: string; name?: string })[]) ?? []
     const hasMall = current.some(m => (typeof m === 'string' ? m === mallName : m.mall === mallName))
     const updated = hasMall
-      ? current.map(m =>
-          (typeof m === 'string' ? m === mallName : m.mall === mallName)
-            ? { mall: mallName, code: mallCode }
-            : m
-        )
-      : [...current, { mall: mallName, code: mallCode }]
+      ? current.map(m => {
+          if (typeof m === 'string' ? m === mallName : m.mall === mallName) {
+            const prevName = typeof m === 'object' ? m.name : undefined
+            const nextName = mallProductName?.trim() || prevName
+            return { mall: mallName, code: mallCode, ...(nextName ? { name: nextName } : {}) }
+          }
+          return m
+        })
+      : [...current, { mall: mallName, code: mallCode, ...(mallProductName?.trim() ? { name: mallProductName.trim() } : {}) }]
     await apiPatchProduct(productId, { registered_malls: updated })
   }
 
@@ -426,7 +445,7 @@ export default function MappingPage() {
     // 매핑된 상품에 쇼핑몰 등록현황 + 판매가 업데이트
     if (prod) {
       const mallName = connectedMalls.find(m => m.key === selectedMall)?.name || selectedMall
-      await updateRegisteredMalls(prod.id, mallName, manualTarget?.mall_product_id || '')
+      await updateRegisteredMalls(prod.id, mallName, manualTarget?.mall_product_id || '', manualTarget?.mall_product_name)
       if (price && price > 0) await updateChannelPrice(prod.id, mallName, price)
       // 다음 방문 시 syncExisting 재실행 (throttle 초기화)
       try { localStorage.removeItem('pm_mapping_last_sync') } catch {}
