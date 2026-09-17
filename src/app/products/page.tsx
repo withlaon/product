@@ -596,14 +596,18 @@ function MallMappingModal({
                    .map(r => ({ mall: r.mall, code: r.productId.trim() }))
 
     // localStorage pm_channel_mappings_v2 도 동기화
+    // ※ 상품ID를 비워도 쇼핑몰 상품명(참고)만 입력했다면 그 값은 보존한다.
+    //    (기존에는 상품ID가 비어있으면 상품명까지 통째로 삭제되어 "입력해도 안 들어간다"는 문제가 있었음)
     const allMaps = { ...existingMappings }
     for (const row of rows) {
       const mallRows = [...(allMaps[row.mallKey] || [])]
-      if (row.productId.trim()) {
+      const trimmedId   = row.productId.trim()
+      const trimmedName = row.productName.trim()
+      if (trimmedId || trimmedName) {
         const idx = mallRows.findIndex(r => r.matched_product_id === product.id)
         const entry: LocalMappedRow = {
-          mall_product_id:   row.productId.trim(),
-          mall_product_name: row.productName || product.name,
+          mall_product_id:   trimmedId,
+          mall_product_name: trimmedName || product.name,
           mall_option:       '',
           matched_product_id:   product.id,
           matched_product_code: product.code || null,
@@ -615,7 +619,7 @@ function MallMappingModal({
         }
         if (idx >= 0) mallRows[idx] = entry; else mallRows.push(entry)
       } else {
-        // productId 비어있으면 해당 상품의 매핑 제거
+        // 상품ID·상품명 모두 비어있으면 해당 상품의 매핑 제거
         mallRows.splice(0, mallRows.length, ...mallRows.filter(r => r.matched_product_id !== product.id))
       }
       allMaps[row.mallKey] = mallRows
