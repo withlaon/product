@@ -575,7 +575,8 @@ function MallMappingModal({
         productId:   typeof mallEntry === 'object'
           ? (mallEntry.code || localRow?.mall_product_id || '')
           : (localRow?.mall_product_id || ''),
-        productName: localRow?.mall_product_name || '',
+        // 로컬에 저장된 쇼핑몰 상품명이 있으면 그것을, 없으면 상품 자체의 이름을 기본값으로 표시
+        productName: localRow?.mall_product_name || product.name,
         tagPrice: priceEntry?.tag_price ? String(priceEntry.tag_price) : '',
         price: priceEntry
           ? String(priceEntry.price)
