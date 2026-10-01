@@ -190,6 +190,60 @@ function mergeCsImgCache(images: Record<string, string[]>) {
 }
 
 /**
+ * 전체 상품 캐시(pm_products_cache_v1)가 아직 안 받아졌거나(최초 방문·네트워크 지연 등)
+ * 오래돼서 특정 바코드를 못 찾을 때를 대비한 보조 캐시.
+ * 서버 단건 바코드 조회(/api/pm-products?barcode=)로 확인된 결과만 여기에 저장되므로,
+ * 전체 상품 목록 로딩 성패와 무관하게 "입력한 바코드 그 자체"는 항상 자동입력될 수 있다.
+ */
+const BARCODE_INFO_CACHE_KEY = 'pm_cs_barcode_info_v1'
+type BarcodeInfoEntry = { productId: string; optIdx: number; product_abbr: string; option_name: string; option_image: string; ts: number }
+
+function loadBarcodeInfoCache(): Record<string, BarcodeInfoEntry> {
+  try {
+    const raw = localStorage.getItem(BARCODE_INFO_CACHE_KEY)
+    return raw ? JSON.parse(raw) as Record<string, BarcodeInfoEntry> : {}
+  } catch { return {} }
+}
+
+function mergeBarcodeInfoCache(entries: Record<string, BarcodeInfoEntry>) {
+  try {
+    const merged = { ...loadBarcodeInfoCache(), ...entries }
+    localStorage.setItem(BARCODE_INFO_CACHE_KEY, JSON.stringify(merged))
+  } catch {}
+}
+
+/**
+ * 바코드 1건을 서버에서 직접 조회(JSONB 포함 연산자로 options 배열 안의 barcode를 바로 찾음).
+ * 전체 상품 캐시 워밍이 끝났는지와 전혀 무관하게 동작하므로 가장 신뢰도 높은 1차 자동입력 경로.
+ */
+async function fetchProductByBarcodeServer(barcode: string): Promise<BarcodeInfoEntry | null> {
+  const bc = barcode.trim()
+  if (!bc) return null
+  try {
+    const res = await fetch(`/api/pm-products?barcode=${encodeURIComponent(bc)}`, { cache: 'no-store' })
+    if (!res.ok) return null
+    const rows = await res.json() as Array<{ id: string; abbr?: string; options?: Array<{ barcode?: string; name?: string; korean_name?: string; image?: string }> }>
+    if (!Array.isArray(rows) || rows.length === 0) return null
+    const row = rows[0]
+    const opts = row.options ?? []
+    const idx = opts.findIndex(o => (o.barcode ?? '').trim().toLowerCase() === bc.toLowerCase())
+    if (idx === -1) return null
+    const o = opts[idx]
+    const entry: BarcodeInfoEntry = {
+      productId   : String(row.id),
+      optIdx      : idx,
+      product_abbr: row.abbr || '',
+      option_name : String(o.korean_name || o.name || ''),
+      option_image: String(o.image ?? ''),
+      ts          : Date.now(),
+    }
+    mergeBarcodeInfoCache({ [bc.toLowerCase()]: entry })
+    if (entry.option_image) mergeCsImgCache({ [entry.productId]: opts.map(x => String(x.image ?? '')) })
+    return entry
+  } catch { return null }
+}
+
+/**
  * 목록 조회 API(/api/pm-products)는 payload 축소를 위해 옵션의 image 필드를 제거해서 내려준다
  * (상품관리탭은 페이지네이션 단위로 imageIds 배치조회를 별도로 호출해 보완함).
  * CS관리탭은 상품관리탭 방문 여부와 무관하게 바코드 하나로 이미지까지 자동입력돼야 하므로,
@@ -242,6 +296,17 @@ function lookupByBarcodeDetailed(barcode: string): (Omit<OptionSuggestion, 'barc
           option_image: overlayOptionImage(String(p.id), i, String(o.image ?? '')),
         }
       }
+    }
+  }
+  // 전체 상품 캐시(pm_products_cache_v1)에 없으면, 서버 단건 바코드 조회로 이미 확인된 보조 캐시를 확인
+  const supplemental = loadBarcodeInfoCache()[bc]
+  if (supplemental) {
+    return {
+      productId   : supplemental.productId,
+      optIdx      : supplemental.optIdx,
+      product_abbr: supplemental.product_abbr,
+      option_name : supplemental.option_name,
+      option_image: supplemental.option_image,
     }
   }
   return null
@@ -461,6 +526,26 @@ export default function CsManagementPage() {
   const [barcodeInMatched,  setBarcodeInMatched]  = useState(false)
   const [barcodeOutMatched, setBarcodeOutMatched] = useState(false)
 
+  /** 바코드 입력 디바운스용 타이머(필드별) — 로컬 캐시에 없을 때만 서버 단건조회를 보냄.
+   *  (전체 상품 캐시 워밍이 아직 안 끝났거나 실패해도, 입력한 바코드 자체는 서버에서 직접 확인) */
+  const barcodeLookupTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const scheduleServerBarcodeLookup = (
+    key: string,
+    barcode: string,
+    onFound: (entry: BarcodeInfoEntry) => void,
+  ) => {
+    clearTimeout(barcodeLookupTimers.current[key])
+    const bc = barcode.trim()
+    if (bc.length < 6) return
+    barcodeLookupTimers.current[key] = setTimeout(() => {
+      fetchProductByBarcodeServer(bc).then(entry => {
+        if (!entry) return
+        onFound(entry)
+        setCacheNonce(n => n + 1)
+      })
+    }, 350)
+  }
+
   useEffect(() => {
     const raw = loadCs()
     const migrated = raw.map(migrateExchangeProcessedFields)
@@ -528,6 +613,40 @@ export default function CsManagementPage() {
       option_name : item.option_name  || found.option_name,
     }
   }), [items, cacheNonce])
+
+  /* ── CS접수목록(이미 등록된 건)에 약어/옵션/이미지가 비어 있으면, 전체 상품 캐시 워밍
+   *    성패와 무관하게 그 바코드 각각을 서버에서 직접 조회해 보강한다(세션당 1회만 시도). ── */
+  const barcodeBackfillAttempted = useRef<Set<string>>(new Set())
+  useEffect(() => {
+    const missing = new Set<string>()
+    for (const item of items) {
+      const checks: Array<[string, boolean]> = item.type === 'exchange'
+        ? [
+            [(item.barcode_in ?? item.barcode ?? '').trim(), !!(item.product_abbr && item.option_image)],
+            [(item.barcode_out ?? '').trim(), !!(item.product_abbr_out && item.option_image_out)],
+          ]
+        : [[item.barcode.trim(), !!(item.product_abbr && item.option_image)]]
+      for (const [bc, complete] of checks) {
+        if (!bc || complete) continue
+        const key = bc.toLowerCase()
+        if (barcodeBackfillAttempted.current.has(key)) continue
+        if (lookupByBarcode(bc)) continue // 로컬 캐시에 이미 있으면(이미지만 없는 경우 포함) 스킵
+        missing.add(bc)
+      }
+    }
+    if (missing.size === 0) return
+    const list = [...missing]
+    list.forEach(bc => barcodeBackfillAttempted.current.add(bc.toLowerCase()))
+    const CONCURRENCY = 4
+    ;(async () => {
+      let resolvedAny = false
+      for (let i = 0; i < list.length; i += CONCURRENCY) {
+        const results = await Promise.all(list.slice(i, i + CONCURRENCY).map(fetchProductByBarcodeServer))
+        if (results.some(r => r !== null)) resolvedAny = true
+      }
+      if (resolvedAny) setCacheNonce(n => n + 1)
+    })()
+  }, [items])
 
   /* ── 파생 목록 (교환은 입고·출고 행으로 펼침) ── */
   const pendingItems = useMemo(() => {
@@ -649,6 +768,20 @@ export default function CsManagementPage() {
         setForm(f => (f.barcode === v ? { ...f, option_image: f.option_image || img } : f))
       })
     }
+    if (!found) {
+      scheduleServerBarcodeLookup('barcode', v, entry => {
+        setForm(f => {
+          if (f.barcode !== v) return f
+          return {
+            ...f,
+            product_abbr: f.product_abbr || entry.product_abbr,
+            option_name : f.option_name  || entry.option_name,
+            option_image: f.option_image || entry.option_image,
+          }
+        })
+        setBarcodeMatched(true)
+      })
+    }
   }
 
   const handleExchangeInChange = (v: string) => {
@@ -668,6 +801,20 @@ export default function CsManagementPage() {
         setForm(f => (f.barcode_in === v ? { ...f, option_image: f.option_image || img } : f))
       })
     }
+    if (!found) {
+      scheduleServerBarcodeLookup('barcode_in', v, entry => {
+        setForm(f => {
+          if (f.barcode_in !== v) return f
+          return {
+            ...f,
+            product_abbr: f.product_abbr || entry.product_abbr,
+            option_name : f.option_name  || entry.option_name,
+            option_image: f.option_image || entry.option_image,
+          }
+        })
+        setBarcodeInMatched(true)
+      })
+    }
   }
 
   const handleExchangeOutChange = (v: string) => {
@@ -684,6 +831,20 @@ export default function CsManagementPage() {
       fetchSingleProductImage(found.productId, found.optIdx).then(img => {
         if (!img) return
         setForm(f => (f.barcode_out === v ? { ...f, option_image_out: f.option_image_out || img } : f))
+      })
+    }
+    if (!found) {
+      scheduleServerBarcodeLookup('barcode_out', v, entry => {
+        setForm(f => {
+          if (f.barcode_out !== v) return f
+          return {
+            ...f,
+            product_abbr_out: f.product_abbr_out || entry.product_abbr,
+            option_name_out : f.option_name_out  || entry.option_name,
+            option_image_out: f.option_image_out || entry.option_image,
+          }
+        })
+        setBarcodeOutMatched(true)
       })
     }
   }

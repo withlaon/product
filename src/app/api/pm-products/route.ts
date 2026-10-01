@@ -61,6 +61,38 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(data)
     }
 
+    // 바코드 단건 조회: ?barcode=XXXX
+    // CS관리탭 등에서 전체 상품 캐시(워밍) 완료 여부와 무관하게, 입력된 바코드 1건에 대해
+    // 즉시·정확하게 상품약어/옵션명/이미지를 가져오기 위한 전용 경로.
+    // options(JSONB 배열) 안에 해당 barcode를 가진 원소가 있는 행만 jsonb 포함(containment) 연산자로 직접 조회.
+    const barcode = new URL(req.url).searchParams.get('barcode')
+    if (barcode !== null) {
+      const bc = barcode.trim()
+      if (!bc) return NextResponse.json([], { headers: NO_STORE })
+
+      const bcHeaders: Record<string, string> = {
+        apikey:         SERVICE_KEY,
+        Authorization:  `Bearer ${SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+      }
+      const queryByBarcode = async (value: string) => {
+        const filter = encodeURIComponent(JSON.stringify([{ barcode: value }]))
+        return fetch(
+          `${SUPABASE_URL}/rest/v1/${TABLE}?select=id,abbr,options&options=cs.${filter}`,
+          { headers: bcHeaders, signal: AbortSignal.timeout(TIMEOUT_MS), cache: 'no-store' }
+        ).catch(() => null)
+      }
+
+      let bcRes = await queryByBarcode(bc)
+      let bcData: unknown = bcRes && bcRes.ok ? await bcRes.json() : []
+      // 대소문자 표기가 저장값과 다를 수 있으므로, 빈 결과면 대문자로 한번 더 시도
+      if (Array.isArray(bcData) && bcData.length === 0 && bc.toUpperCase() !== bc) {
+        bcRes = await queryByBarcode(bc.toUpperCase())
+        bcData = bcRes && bcRes.ok ? await bcRes.json() : []
+      }
+      return NextResponse.json(Array.isArray(bcData) ? bcData : [], { headers: NO_STORE })
+    }
+
     // 이미지 배치 조회: ?imageIds=id1,id2,...
     // RPC는 이미지 제거 버전이므로 직접 테이블 쿼리로 이미지 포함 데이터 조회
     // 현재 페이지 상품(최대 10개)만 조회 → 응답 크기 작음 + 1시간 캐시로 재호출 최소화
