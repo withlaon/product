@@ -196,25 +196,73 @@ function mergeCsImgCache(images: Record<string, string[]>) {
  * 아직 이미지 캐시에 없는 상품들만 배치로 보강해서 pm_product_images_v1 에 저장한다.
  * (7일 TTL로 캐시되므로 최초 1회만 전체 보강되고 이후에는 신규 상품만 추가 조회됨)
  */
+async function fetchOptionImagesChunk(ids: string[]): Promise<void> {
+  try {
+    const res = await fetch(`/api/pm-products?imageIds=${ids.join(',')}`, { cache: 'no-store' })
+    if (!res.ok) return
+    const rows = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
+    if (!Array.isArray(rows)) return
+    const result: Record<string, string[]> = {}
+    rows.forEach(row => { result[row.id] = (row.options ?? []).map(o => o.image ?? '') })
+    if (Object.keys(result).length > 0) mergeCsImgCache(result)
+  } catch { /* 일부 청크 실패해도 나머지는 계속 진행 */ }
+}
+
 async function warmMissingOptionImages(products: CachedProduct[]): Promise<void> {
   try {
     const cached = loadCsImgCache()
     const toFetch = [...new Set(products.map(p => p.id).filter(id => id && !(id in cached)))]
     if (toFetch.length === 0) return
     const CHUNK = 40
-    for (let i = 0; i < toFetch.length; i += CHUNK) {
-      const chunk = toFetch.slice(i, i + CHUNK)
-      try {
-        const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`, { cache: 'no-store' })
-        if (!res.ok) continue
-        const rows = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
-        if (!Array.isArray(rows)) continue
-        const result: Record<string, string[]> = {}
-        rows.forEach(row => { result[row.id] = (row.options ?? []).map(o => o.image ?? '') })
-        if (Object.keys(result).length > 0) mergeCsImgCache(result)
-      } catch { /* 일부 청크 실패해도 나머지는 계속 진행 */ }
+    const chunks: string[][] = []
+    for (let i = 0; i < toFetch.length; i += CHUNK) chunks.push(toFetch.slice(i, i + CHUNK))
+    // 청크를 순차가 아닌 동시(최대 6개씩) 요청으로 처리 → 상품 수가 많아도 전체 보강 시간을 크게 단축
+    const CONCURRENCY = 6
+    for (let i = 0; i < chunks.length; i += CONCURRENCY) {
+      await Promise.all(chunks.slice(i, i + CONCURRENCY).map(fetchOptionImagesChunk))
     }
   } catch { /* ignore */ }
+}
+
+/** 바코드 하나에 매칭된 상품의 productId·옵션 인덱스까지 함께 반환 (이미지 단건 즉시 보강용) */
+function lookupByBarcodeDetailed(barcode: string): (Omit<OptionSuggestion, 'barcode'> & { productId: string; optIdx: number }) | null {
+  const bc = barcode.trim().toLowerCase()
+  if (!bc) return null
+  const products = loadCachedProducts()
+  for (const p of products) {
+    const opts = p.options ?? []
+    for (let i = 0; i < opts.length; i++) {
+      const o = opts[i]
+      if ((o.barcode ?? '').trim().toLowerCase() === bc) {
+        return {
+          productId   : String(p.id),
+          optIdx      : i,
+          product_abbr: p.abbr || '',
+          option_name : String(o.korean_name || o.name || ''),
+          option_image: overlayOptionImage(String(p.id), i, String(o.image ?? '')),
+        }
+      }
+    }
+  }
+  return null
+}
+
+/**
+ * 특정 상품 1건의 옵션 이미지만 즉시 단건 조회해서 캐시에 반영.
+ * 바코드 입력 직후 전체 상품 이미지 백그라운드 보강(warmMissingOptionImages)이
+ * 아직 끝나지 않았어도, 지금 입력한 바코드의 이미지만큼은 바로 받아올 수 있도록 한다.
+ */
+async function fetchSingleProductImage(productId: string, optIdx: number): Promise<string> {
+  try {
+    const res = await fetch(`/api/pm-products?imageIds=${productId}`, { cache: 'no-store' })
+    if (!res.ok) return ''
+    const rows = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
+    const row = Array.isArray(rows) ? rows.find(r => r.id === productId) : undefined
+    if (!row) return ''
+    const images = (row.options ?? []).map(o => o.image ?? '')
+    mergeCsImgCache({ [productId]: images })
+    return images[optIdx] ?? ''
+  } catch { return '' }
 }
 
 /**
@@ -238,27 +286,19 @@ async function refreshProductsCacheLive(): Promise<boolean> {
 /* ─── 상품캐시 기반 자동조회 ────────────────────────────────────── */
 export type OptionSuggestion = {
   barcode: string; option_name: string; option_image: string; product_abbr: string
+  /** 이미지가 아직 캐시에 없을 때 단건 즉시 보강 조회에 사용 */
+  productId?: string; optIdx?: number
 }
 
 /** 바코드 → 상품약어 + 옵션명 + 이미지 (공백 제거 후 대소문자 무시) */
 function lookupByBarcode(barcode: string): Omit<OptionSuggestion, 'barcode'> | null {
-  const bc = barcode.trim().toLowerCase()
-  if (!bc) return null
-  const products = loadCachedProducts()
-  for (const p of products) {
-    const opts = p.options ?? []
-    for (let i = 0; i < opts.length; i++) {
-      const o = opts[i]
-      if ((o.barcode ?? '').trim().toLowerCase() === bc) {
-        return {
-          product_abbr: p.abbr || '',
-          option_name : String(o.korean_name || o.name || ''),
-          option_image: overlayOptionImage(String(p.id), i, String(o.image ?? '')),
-        }
-      }
-    }
+  const found = lookupByBarcodeDetailed(barcode)
+  if (!found) return null
+  return {
+    product_abbr: found.product_abbr,
+    option_name : found.option_name,
+    option_image: found.option_image,
   }
-  return null
 }
 
 /** 상품약어 → 전체 옵션 목록 (드롭다운용) */
@@ -277,6 +317,8 @@ function getOptionsByAbbr(abbr: string): OptionSuggestion[] {
         option_name : String(o.korean_name ?? o.name ?? ''),
         option_image: overlayOptionImage(String(p.id), i, String(o.image ?? '')),
         product_abbr: p.abbr ?? '',
+        productId   : String(p.id),
+        optIdx      : i,
       })
     }
   }
@@ -284,13 +326,13 @@ function getOptionsByAbbr(abbr: string): OptionSuggestion[] {
 }
 
 /** 약어 + 옵션명 → 바코드 + 이미지 */
-function lookupByAbbrAndOption(abbr: string, optionName: string): Pick<OptionSuggestion, 'barcode' | 'option_image'> | null {
+function lookupByAbbrAndOption(abbr: string, optionName: string): Pick<OptionSuggestion, 'barcode' | 'option_image' | 'productId' | 'optIdx'> | null {
   const opts = getOptionsByAbbr(abbr)
   if (opts.length === 0) return null
-  if (!optionName) return { barcode: opts[0].barcode, option_image: opts[0].option_image }
+  if (!optionName) return { barcode: opts[0].barcode, option_image: opts[0].option_image, productId: opts[0].productId, optIdx: opts[0].optIdx }
   const q   = optionName.trim().toLowerCase()
   const hit = opts.find(o => o.option_name.toLowerCase().includes(q))
-  return hit ? { barcode: hit.barcode, option_image: hit.option_image } : null
+  return hit ? { barcode: hit.barcode, option_image: hit.option_image, productId: hit.productId, optIdx: hit.optIdx } : null
 }
 
 /* ─── 출고내역 송장번호 조회 ─────────────────────────────────────── */
@@ -589,9 +631,10 @@ export default function CsManagementPage() {
   /* ── 폼 기본 setter ── */
   const setF = (k: keyof typeof EMPTY_FORM, v: string) => setForm(f => ({ ...f, [k]: v }))
 
-  /* ── 바코드 변경 → 약어/옵션명/이미지 자동입력 ── */
+  /* ── 바코드 변경 → 약어/옵션명/이미지 자동입력. 이미지가 캐시에 없으면
+   *    전체 상품 백그라운드 보강을 기다리지 않고 해당 상품 1건만 즉시 조회해서 보완한다. ── */
   const handleBarcodeChange = (v: string) => {
-    const found = lookupByBarcode(v)
+    const found = lookupByBarcodeDetailed(v)
     setBarcodeMatched(found !== null)
     setForm(f => ({
       ...f,
@@ -600,10 +643,16 @@ export default function CsManagementPage() {
       option_name  : found !== null ? (found.option_name  || f.option_name)  : f.option_name,
       option_image : found !== null ? (found.option_image || f.option_image) : f.option_image,
     }))
+    if (found && !found.option_image) {
+      fetchSingleProductImage(found.productId, found.optIdx).then(img => {
+        if (!img) return
+        setForm(f => (f.barcode === v ? { ...f, option_image: f.option_image || img } : f))
+      })
+    }
   }
 
   const handleExchangeInChange = (v: string) => {
-    const found = lookupByBarcode(v)
+    const found = lookupByBarcodeDetailed(v)
     setBarcodeInMatched(found !== null)
     setForm(f => ({
       ...f,
@@ -613,10 +662,16 @@ export default function CsManagementPage() {
       option_name  : found !== null ? (found.option_name  || f.option_name)  : f.option_name,
       option_image : found !== null ? (found.option_image || f.option_image) : f.option_image,
     }))
+    if (found && !found.option_image) {
+      fetchSingleProductImage(found.productId, found.optIdx).then(img => {
+        if (!img) return
+        setForm(f => (f.barcode_in === v ? { ...f, option_image: f.option_image || img } : f))
+      })
+    }
   }
 
   const handleExchangeOutChange = (v: string) => {
-    const found = lookupByBarcode(v)
+    const found = lookupByBarcodeDetailed(v)
     setBarcodeOutMatched(found !== null)
     setForm(f => ({
       ...f,
@@ -625,6 +680,12 @@ export default function CsManagementPage() {
       option_name_out   : found !== null ? (found.option_name  || f.option_name_out)  : f.option_name_out,
       option_image_out  : found !== null ? (found.option_image || f.option_image_out) : f.option_image_out,
     }))
+    if (found && !found.option_image) {
+      fetchSingleProductImage(found.productId, found.optIdx).then(img => {
+        if (!img) return
+        setForm(f => (f.barcode_out === v ? { ...f, option_image_out: f.option_image_out || img } : f))
+      })
+    }
   }
 
   /* ── 상품약어 변경 → 드롭다운 + 바코드/이미지 자동입력 ── */
@@ -633,16 +694,20 @@ export default function CsManagementPage() {
     setAbbrSuggestions(suggs)
     setShowAbbrDrop(suggs.length > 0)
     const found = lookupByAbbrAndOption(v, form.option_name)
-    setForm(f => {
-      const bc = found?.barcode || f.barcode
-      return {
-        ...f,
-        product_abbr: v,
-        barcode      : bc,
-        option_image : found?.option_image  || f.option_image,
-        ...(modal?.type === 'exchange' && found?.barcode ? { barcode_in: found.barcode } : {}),
-      }
-    })
+    const bc = found?.barcode || form.barcode
+    setForm(f => ({
+      ...f,
+      product_abbr: v,
+      barcode      : bc,
+      option_image : found?.option_image  || f.option_image,
+      ...(modal?.type === 'exchange' && found?.barcode ? { barcode_in: found.barcode } : {}),
+    }))
+    if (found?.option_image === '' && found.productId !== undefined && found.optIdx !== undefined) {
+      fetchSingleProductImage(found.productId, found.optIdx).then(img => {
+        if (!img) return
+        setForm(f => (f.barcode === bc ? { ...f, option_image: f.option_image || img } : f))
+      })
+    }
   }
 
   /* ── 옵션명 변경 → 바코드/이미지 자동입력 ── */
@@ -656,6 +721,12 @@ export default function CsManagementPage() {
       option_image : found?.option_image  || f.option_image,
       ...(modal?.type === 'exchange' && found?.barcode ? { barcode_in: found.barcode } : {}),
     }))
+    if (found?.option_image === '' && found.productId !== undefined && found.optIdx !== undefined) {
+      fetchSingleProductImage(found.productId, found.optIdx).then(img => {
+        if (!img) return
+        setForm(f => (f.barcode === bc ? { ...f, option_image: f.option_image || img } : f))
+      })
+    }
   }
 
   /* ── 드롭다운 선택 ── */
@@ -668,6 +739,12 @@ export default function CsManagementPage() {
       ...(modal?.type === 'exchange' ? { barcode_in: s.barcode } : {}),
       option_image: s.option_image,
     }))
+    if (!s.option_image && s.productId !== undefined && s.optIdx !== undefined) {
+      fetchSingleProductImage(s.productId, s.optIdx).then(img => {
+        if (!img) return
+        setForm(f => (f.barcode === s.barcode ? { ...f, option_image: f.option_image || img } : f))
+      })
+    }
     setShowAbbrDrop(false)
   }
 
