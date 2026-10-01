@@ -172,10 +172,56 @@ function saveCachedProducts(products: CachedProduct[]) {
   } catch {}
 }
 
+/** 옵션 이미지 캐시(pm_products_cache_v1 과 별도) 읽기 — productId → 옵션별 이미지 배열 */
+function loadCsImgCache(): Record<string, string[]> {
+  try {
+    const raw = localStorage.getItem(PM_IMG_CACHE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as { data?: Record<string, string[]> }
+    return parsed?.data ?? {}
+  } catch { return {} }
+}
+
+function mergeCsImgCache(images: Record<string, string[]>) {
+  try {
+    const merged = { ...loadCsImgCache(), ...images }
+    localStorage.setItem(PM_IMG_CACHE_KEY, JSON.stringify({ data: merged, ts: Date.now() }))
+  } catch {}
+}
+
+/**
+ * 목록 조회 API(/api/pm-products)는 payload 축소를 위해 옵션의 image 필드를 제거해서 내려준다
+ * (상품관리탭은 페이지네이션 단위로 imageIds 배치조회를 별도로 호출해 보완함).
+ * CS관리탭은 상품관리탭 방문 여부와 무관하게 바코드 하나로 이미지까지 자동입력돼야 하므로,
+ * 아직 이미지 캐시에 없는 상품들만 배치로 보강해서 pm_product_images_v1 에 저장한다.
+ * (7일 TTL로 캐시되므로 최초 1회만 전체 보강되고 이후에는 신규 상품만 추가 조회됨)
+ */
+async function warmMissingOptionImages(products: CachedProduct[]): Promise<void> {
+  try {
+    const cached = loadCsImgCache()
+    const toFetch = [...new Set(products.map(p => p.id).filter(id => id && !(id in cached)))]
+    if (toFetch.length === 0) return
+    const CHUNK = 40
+    for (let i = 0; i < toFetch.length; i += CHUNK) {
+      const chunk = toFetch.slice(i, i + CHUNK)
+      try {
+        const res = await fetch(`/api/pm-products?imageIds=${chunk.join(',')}`, { cache: 'no-store' })
+        if (!res.ok) continue
+        const rows = await res.json() as Array<{ id: string; options?: Array<{ image?: string }> }>
+        if (!Array.isArray(rows)) continue
+        const result: Record<string, string[]> = {}
+        rows.forEach(row => { result[row.id] = (row.options ?? []).map(o => o.image ?? '') })
+        if (Object.keys(result).length > 0) mergeCsImgCache(result)
+      } catch { /* 일부 청크 실패해도 나머지는 계속 진행 */ }
+    }
+  } catch { /* ignore */ }
+}
+
 /**
  * 상품 캐시를 Supabase에서 직접 최신 상태로 새로고침.
- * CS관리탭은 상품관리탭 방문 여부와 무관하게 바코드 자동입력이 항상 동작해야 하므로,
- * 페이지 진입/포커스 시마다 이 함수로 캐시를 강제 워밍한다.
+ * CS관리탭은 상품관리탭 방문 여부와 무관하게 바코드 자동입력(약어·옵션명·이미지)이
+ * 항상 동작해야 하므로, 페이지 진입/포커스 시마다 이 함수로 캐시를 강제 워밍하고
+ * 목록 API에서 제거된 옵션 이미지도 함께 보강한다.
  */
 async function refreshProductsCacheLive(): Promise<boolean> {
   try {
@@ -184,6 +230,7 @@ async function refreshProductsCacheLive(): Promise<boolean> {
     const data = await res.json()
     if (!Array.isArray(data)) return false
     localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts: Date.now(), data }))
+    await warmMissingOptionImages(data as CachedProduct[])
     return true
   } catch { return false }
 }
@@ -490,9 +537,54 @@ export default function CsManagementPage() {
     setBarcodeInMatched(false)
     setBarcodeOutMatched(false)
     setModal({ open: true, type, tab: 'direct' })
-    /* 등록창을 열 때마다 상품 캐시를 재워밍 → 바코드 입력 즉시 최신 약어/옵션명 매칭 */
+    /* 등록창을 열 때마다 상품 캐시를 재워밍 → 바코드 입력 즉시 최신 약어/옵션명/이미지 매칭 */
     refreshProductsCacheLive().then(ok => { if (ok) setCacheNonce(n => n + 1) })
   }
+
+  /* ── 캐시가 뒤늦게 워밍된 경우(이미지 보강 등) 이미 입력된 바코드를 다시 조회해서
+   *    모달이 열려 있는 동안에도 약어/옵션명/이미지가 자동으로 채워지도록 보정 ── */
+  useEffect(() => {
+    if (!modal?.open) return
+    if (form.barcode) {
+      const found = lookupByBarcode(form.barcode)
+      if (found) {
+        setBarcodeMatched(true)
+        setForm(f => ({
+          ...f,
+          product_abbr: f.product_abbr || found.product_abbr,
+          option_name : f.option_name  || found.option_name,
+          option_image: f.option_image || found.option_image,
+        }))
+      }
+    }
+    if (modal.type === 'exchange') {
+      if (form.barcode_in) {
+        const foundIn = lookupByBarcode(form.barcode_in)
+        if (foundIn) {
+          setBarcodeInMatched(true)
+          setForm(f => ({
+            ...f,
+            product_abbr: f.product_abbr || foundIn.product_abbr,
+            option_name : f.option_name  || foundIn.option_name,
+            option_image: f.option_image || foundIn.option_image,
+          }))
+        }
+      }
+      if (form.barcode_out) {
+        const foundOut = lookupByBarcode(form.barcode_out)
+        if (foundOut) {
+          setBarcodeOutMatched(true)
+          setForm(f => ({
+            ...f,
+            product_abbr_out: f.product_abbr_out || foundOut.product_abbr,
+            option_name_out : f.option_name_out  || foundOut.option_name,
+            option_image_out: f.option_image_out || foundOut.option_image,
+          }))
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cacheNonce])
 
   /* ── 폼 기본 setter ── */
   const setF = (k: keyof typeof EMPTY_FORM, v: string) => setForm(f => ({ ...f, [k]: v }))
