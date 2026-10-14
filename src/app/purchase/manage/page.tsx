@@ -141,6 +141,8 @@ export default function PurchaseManagePage() {
   const [loadError, setLoadError] = useState('')
   // 발주 추천 목록 카테고리별 그룹핑 순서 (상품관리탭의 카테고리 순서를 그대로 따름)
   const [catOrder, setCatOrder] = useState<string[]>(() => loadCategoryOrder())
+  // 발주 추천 목록 — 상품관리탭처럼 카테고리 버튼으로 필터링 ('전체' = 전체 보기)
+  const [selectedCat, setSelectedCat] = useState<string>('전체')
   // 추천 목록 옵션이미지: 바코드 → URL (별도 비동기 로딩)
   const [qualImages, setQualImages] = useState<Record<string, string>>({})
   /** 상품 저장 시 동일 prodId 묶음이면 imageIds effect 가 재실행되지 않아 갱신용 */
@@ -413,6 +415,21 @@ export default function PurchaseManagePage() {
     }
     return groups
   }, [qualOpts, catOrder])
+
+  /** 상품관리탭 스타일의 카테고리 필터 버튼 목록 (전체 + 추천 항목이 있는 카테고리) */
+  const catTabs = useMemo(
+    () => ['전체', ...groupedQualOpts.map(g => g.category)],
+    [groupedQualOpts]
+  )
+  /** 선택된 카테고리 버튼에 따라 보여줄 그룹 (전체면 전부, 아니면 해당 카테고리만) */
+  const displayGroups = useMemo(
+    () => selectedCat === '전체' ? groupedQualOpts : groupedQualOpts.filter(g => g.category === selectedCat),
+    [groupedQualOpts, selectedCat]
+  )
+  // 선택했던 카테고리에 더 이상 추천 항목이 없으면 자동으로 '전체'로 복귀
+  useEffect(() => {
+    if (selectedCat !== '전체' && !catTabs.includes(selectedCat)) setSelectedCat('전체')
+  }, [catTabs, selectedCat])
 
   // 추천 목록 이미지 로딩: qualOpts 내 prodId 목록이 바뀔 때마다 재실행
   const qualProdIdsKey = useMemo(
@@ -811,16 +828,47 @@ export default function PurchaseManagePage() {
             </div>
           </div>
 
+          {/* 카테고리 필터 버튼 (상품관리탭과 동일한 카테고리 구성) */}
+          {qualOpts.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '8px 10px', borderBottom: '1px solid #f1f5f9', overflowX: 'auto', flexShrink: 0 }} className="scrollbar-hide">
+              {catTabs.map(cat => {
+                const count = cat === '전체' ? qualOpts.length : qualOpts.filter(o => o.category === cat).length
+                const active = selectedCat === cat
+                return (
+                  <button key={cat} onClick={() => setSelectedCat(cat)} style={{
+                    flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4,
+                    padding: '6px 11px', fontSize: '11.5px', fontWeight: 800,
+                    color: active ? '#2563eb' : '#64748b',
+                    background: active ? '#eff6ff' : '#f8fafc',
+                    border: `1px solid ${active ? '#bfdbfe' : '#f1f5f9'}`,
+                    borderRadius: 99, cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 150ms ease',
+                  }}>
+                    {cat}
+                    <span style={{
+                      fontSize: '10px', fontWeight: 800, padding: '1px 6px', borderRadius: 99,
+                      background: active ? '#dbeafe' : '#eef2f7',
+                      color: active ? '#2563eb' : '#94a3b8',
+                    }}>
+                      {count}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+          )}
+
           {/* 목록 */}
           {loadError && (
             <div style={{ margin: '12px 14px', padding: '8px 12px', background: '#fff1f2', borderRadius: 6, fontSize: '11px', color: '#dc2626' }}>
               상품 로딩 오류: {loadError}
             </div>
           )}
-          {qualOpts.length === 0 ? (
+          {displayGroups.length === 0 ? (
             <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', gap: 8 }}>
               <Package size={36} style={{ opacity: 0.2 }} />
-              <p style={{ fontSize: '13px', fontWeight: 700 }}>{products.length === 0 ? '상품 데이터 로딩 중...' : '발주가 필요한 상품이 없습니다'}</p>
+              <p style={{ fontSize: '13px', fontWeight: 700 }}>
+                {products.length === 0 ? '상품 데이터 로딩 중...' : selectedCat === '전체' ? '발주가 필요한 상품이 없습니다' : `'${selectedCat}' 카테고리에는 발주가 필요한 상품이 없습니다`}
+              </p>
               <p style={{ fontSize: '11px', color: '#cbd5e1' }}>{products.length === 0 ? '잠시 후 자동으로 표시됩니다' : '판매중·판매예정 기준으로 조건에 맞는 옵션이 없습니다'}</p>
             </div>
           ) : (
@@ -843,15 +891,17 @@ export default function PurchaseManagePage() {
                     ))}
                   </tr>
                 </thead>
-                {groupedQualOpts.map(group => (
+                {displayGroups.map(group => (
                   <tbody key={group.category}>
-                    {/* 카테고리 헤더 (상품관리탭 카테고리 순서 기준) */}
-                    <tr>
-                      <td colSpan={7} style={{ padding: '6px 10px', background: '#eef2ff', borderTop: '1px solid #e0e7ff', borderBottom: '1px solid #e0e7ff' }}>
-                        <span style={{ fontSize: '11.5px', fontWeight: 900, color: '#4338ca' }}>{group.category}</span>
-                        <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#818cf8', marginLeft: 6 }}>{group.opts.length}건</span>
-                      </td>
-                    </tr>
+                    {/* 카테고리 헤더: '전체' 선택 시에만 구분용으로 표시 (특정 카테고리 선택 시엔 버튼으로 이미 구분되므로 생략) */}
+                    {selectedCat === '전체' && (
+                      <tr>
+                        <td colSpan={7} style={{ padding: '6px 10px', background: '#eef2ff', borderTop: '1px solid #e0e7ff', borderBottom: '1px solid #e0e7ff' }}>
+                          <span style={{ fontSize: '11.5px', fontWeight: 900, color: '#4338ca' }}>{group.category}</span>
+                          <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#818cf8', marginLeft: 6 }}>{group.opts.length}건</span>
+                        </td>
+                      </tr>
+                    )}
                     {group.opts.map(opt => {
                       const sel = selectedKeys.has(opt.key)
                       const hasSalesRow = opt.sold > 0 && opt.currentStock > 0
