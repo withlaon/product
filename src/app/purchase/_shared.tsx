@@ -82,6 +82,7 @@ export interface PmOption {
 }
 export interface PmProduct {
   id: string; code: string; name: string; abbr?: string; status?: string; options: PmOption[]
+  category?: string
 }
 
 /* ── 상태 표시 ── */

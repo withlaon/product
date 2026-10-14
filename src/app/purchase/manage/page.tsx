@@ -45,6 +45,22 @@ function stripCodePrefix(abbr?: string): string {
   return (abbr || '').replace(/^\d+_/, '').trim()
 }
 
+// 상품관리탭과 동일한 카테고리 순서를 사용하기 위한 로컬스토리지 키/기본값
+// (상품관리탭에서 카테고리를 추가·삭제·순서변경하면 이 키가 갱신되므로 그대로 재사용)
+const CATS_STORAGE_KEY = 'pm_categories_v1'
+const INIT_EXTRA_CATS  = ['가방', '의류-상의', '의류-하의', '잡화']
+function loadCategoryOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(CATS_STORAGE_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw)
+      if (Array.isArray(arr) && arr.length > 0) return arr
+    }
+  } catch { /* ignore */ }
+  return INIT_EXTRA_CATS
+}
+const UNCATEGORIZED = '미분류'
+
 /* ── 발주 추천 옵션 타입 ── */
 interface QualOpt {
   key: string
@@ -58,6 +74,7 @@ interface QualOpt {
   unreceived: number
   sold: number          // 누적 판매수량
   reason: 'lowStock' | 'unreceived' | 'both' | 'sold' | 'upcoming'
+  category: string
 }
 interface SelectedOpt extends QualOpt { qty: string }
 
@@ -122,6 +139,8 @@ export default function PurchaseManagePage() {
   }, [])
 
   const [loadError, setLoadError] = useState('')
+  // 발주 추천 목록 카테고리별 그룹핑 순서 (상품관리탭의 카테고리 순서를 그대로 따름)
+  const [catOrder, setCatOrder] = useState<string[]>(() => loadCategoryOrder())
   // 추천 목록 옵션이미지: 바코드 → URL (별도 비동기 로딩)
   const [qualImages, setQualImages] = useState<Record<string, string>>({})
   /** 상품 저장 시 동일 prodId 묶음이면 imageIds effect 가 재실행되지 않아 갱신용 */
@@ -210,6 +229,7 @@ export default function PurchaseManagePage() {
         bumpQualImages()
         applyProductsFromStorage()
       }
+      if (e.key === CATS_STORAGE_KEY) setCatOrder(loadCategoryOrder())
     }
     window.addEventListener('storage', onStorage)
     const onPmProductsSync = () => {
@@ -222,6 +242,7 @@ export default function PurchaseManagePage() {
         bumpShip()
         bumpQualImages()
         applyProductsFromStorage()
+        setCatOrder(loadCategoryOrder())
       }
     }
     document.addEventListener('visibilitychange', onVis)
@@ -365,11 +386,33 @@ export default function PurchaseManagePage() {
           unreceived:   unr,
           sold,
           reason,
+          category:     (prod.category || '').trim() || UNCATEGORIZED,
         })
       }
     }
     return result.sort(compareByBarcode)
   }, [products, unreceivedMap, shipSoldMap])
+
+  /** 발주 추천 목록을 상품관리탭과 동일한 카테고리 순서로 그룹핑 (항목이 있는 카테고리만 표시) */
+  const groupedQualOpts = useMemo(() => {
+    const byCat = new Map<string, QualOpt[]>()
+    for (const opt of qualOpts) {
+      const arr = byCat.get(opt.category)
+      if (arr) arr.push(opt)
+      else byCat.set(opt.category, [opt])
+    }
+    const orderedNames = [...catOrder, UNCATEGORIZED]
+    const groups: { category: string; opts: QualOpt[] }[] = []
+    for (const cat of orderedNames) {
+      const arr = byCat.get(cat)
+      if (arr && arr.length > 0) groups.push({ category: cat, opts: arr })
+    }
+    // 상품관리탭에서 삭제됐지만 과거 상품에 남아있는 카테고리 값 등 → 목록 끝에 추가
+    for (const [cat, arr] of byCat) {
+      if (!orderedNames.includes(cat)) groups.push({ category: cat, opts: arr })
+    }
+    return groups
+  }, [qualOpts, catOrder])
 
   // 추천 목록 이미지 로딩: qualOpts 내 prodId 목록이 바뀔 때마다 재실행
   const qualProdIdsKey = useMemo(
@@ -800,76 +843,85 @@ export default function PurchaseManagePage() {
                     ))}
                   </tr>
                 </thead>
-                <tbody>
-                  {qualOpts.map(opt => {
-                    const sel = selectedKeys.has(opt.key)
-                    const hasSalesRow = opt.sold > 0 && opt.currentStock > 0
-                    const rowBg = sel
-                      ? '#eff6ff'
-                      : opt.currentStock === 0
-                        ? '#fff7f7'
-                        : hasSalesRow
-                          ? '#f5f3ff'
-                          : undefined
-                    return (
-                      <tr key={opt.key} style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer', transition: 'background 0.15s' }}
-                        onClick={() => toggleSelect(opt)}>
-                        {/* 재고 / 발주 후 판매 배지 */}
-                        <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 44, flexShrink: 0 }}>
-                          {opt.currentStock === 0 ? (
-                            <span style={{ fontSize: '8.5px', background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>품절</span>
-                          ) : opt.sold > 0 ? (
-                            <span style={{ fontSize: '8.5px', background: '#eef2ff', color: '#4f46e5', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>판매</span>
-                          ) : (
-                            <span style={{ fontSize: '8.5px', background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>부족</span>
-                          )}
-                        </td>
-                        {/* 이미지 (약어 앞으로 이동) */}
-                        <td style={{ padding: '4px 5px', textAlign: 'center', width: 46 }}>
-                          {(() => { const img = resolveQualImage(opt.barcode, opt.image); return img
-                            ? <img src={img} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block', margin: '0 auto' }} />
-                            : <div style={{ width: 36, height: 36, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                <Package size={14} style={{ color: '#cbd5e1' }} />
-                              </div>
-                          })()}
-                        </td>
-                        {/* 약어 · 옵션 · 바코드 */}
-                        <td style={{ padding: '5px 6px', minWidth: 0 }}>
-                          <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
-                            <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.prodAbbr}</span>
-                            <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                            <span style={{ fontSize: '10.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{opt.optName}</span>
-                            <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
-                            <span data-pm-barcode="1" style={{ fontSize: 11, fontWeight: 900, color: '#000000', letterSpacing: '0.02em', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.barcode || '-'}</span>
-                          </div>
-                        </td>
-                        {/* 판매수량 */}
-                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
-                          <span style={{ fontSize: '12px', fontWeight: 900, color: opt.sold > 0 ? '#6366f1' : '#94a3b8' }}>{opt.sold > 0 ? opt.sold : '-'}</span>
-                        </td>
-                        {/* 미입고 */}
-                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
-                          <span style={{ fontSize: '12px', fontWeight: 900, color: opt.unreceived > 0 ? '#d97706' : '#94a3b8' }}>{opt.unreceived > 0 ? opt.unreceived : '-'}</span>
-                        </td>
-                        {/* 현재고 */}
-                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
-                          <span style={{ fontSize: '12px', fontWeight: 900, color: stockColor(opt.currentStock), background: stockBg(opt.currentStock), padding: '2px 6px', borderRadius: 99 }}>
-                            {opt.currentStock}
-                          </span>
-                        </td>
-                        {/* 선택 체크 */}
-                        <td style={{ padding: '5px 6px', textAlign: 'center', width: 30 }}>
-                          <div style={{
-                            width: 18, height: 18, borderRadius: 4, border: `2px solid ${sel ? '#2563eb' : '#cbd5e1'}`,
-                            background: sel ? '#2563eb' : 'white', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto',
-                          }}>
-                            {sel && <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4L4 7L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                          </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
+                {groupedQualOpts.map(group => (
+                  <tbody key={group.category}>
+                    {/* 카테고리 헤더 (상품관리탭 카테고리 순서 기준) */}
+                    <tr>
+                      <td colSpan={7} style={{ padding: '6px 10px', background: '#eef2ff', borderTop: '1px solid #e0e7ff', borderBottom: '1px solid #e0e7ff' }}>
+                        <span style={{ fontSize: '11.5px', fontWeight: 900, color: '#4338ca' }}>{group.category}</span>
+                        <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#818cf8', marginLeft: 6 }}>{group.opts.length}건</span>
+                      </td>
+                    </tr>
+                    {group.opts.map(opt => {
+                      const sel = selectedKeys.has(opt.key)
+                      const hasSalesRow = opt.sold > 0 && opt.currentStock > 0
+                      const rowBg = sel
+                        ? '#eff6ff'
+                        : opt.currentStock === 0
+                          ? '#fff7f7'
+                          : hasSalesRow
+                            ? '#f5f3ff'
+                            : undefined
+                      return (
+                        <tr key={opt.key} style={{ borderBottom: '1px solid #f8fafc', background: rowBg, cursor: 'pointer', transition: 'background 0.15s' }}
+                          onClick={() => toggleSelect(opt)}>
+                          {/* 재고 / 발주 후 판매 배지 */}
+                          <td style={{ padding: '5px 3px 5px 6px', textAlign: 'center', width: 44, flexShrink: 0 }}>
+                            {opt.currentStock === 0 ? (
+                              <span style={{ fontSize: '8.5px', background: '#fff1f2', color: '#dc2626', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>품절</span>
+                            ) : opt.sold > 0 ? (
+                              <span style={{ fontSize: '8.5px', background: '#eef2ff', color: '#4f46e5', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>판매</span>
+                            ) : (
+                              <span style={{ fontSize: '8.5px', background: '#fffbeb', color: '#d97706', fontWeight: 800, padding: '1px 5px', borderRadius: 4, whiteSpace: 'nowrap' }}>부족</span>
+                            )}
+                          </td>
+                          {/* 이미지 (약어 앞으로 이동) */}
+                          <td style={{ padding: '4px 5px', textAlign: 'center', width: 46 }}>
+                            {(() => { const img = resolveQualImage(opt.barcode, opt.image); return img
+                              ? <img src={img} alt="" style={{ width: 36, height: 36, objectFit: 'cover', borderRadius: 6, border: '1px solid #e2e8f0', display: 'block', margin: '0 auto' }} />
+                              : <div style={{ width: 36, height: 36, background: '#f1f5f9', borderRadius: 6, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                  <Package size={14} style={{ color: '#cbd5e1' }} />
+                                </div>
+                            })()}
+                          </td>
+                          {/* 약어 · 옵션 · 바코드 */}
+                          <td style={{ padding: '5px 6px', minWidth: 0 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'nowrap', overflow: 'hidden' }}>
+                              <span style={{ fontSize: '11.5px', fontWeight: 800, color: '#1e293b', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.prodAbbr}</span>
+                              <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                              <span style={{ fontSize: '10.5px', color: '#64748b', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flexShrink: 1, minWidth: 0 }}>{opt.optName}</span>
+                              <span style={{ fontSize: '10px', color: '#cbd5e1', flexShrink: 0 }}>·</span>
+                              <span data-pm-barcode="1" style={{ fontSize: 11, fontWeight: 900, color: '#000000', letterSpacing: '0.02em', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.barcode || '-'}</span>
+                            </div>
+                          </td>
+                          {/* 판매수량 */}
+                          <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
+                            <span style={{ fontSize: '12px', fontWeight: 900, color: opt.sold > 0 ? '#6366f1' : '#94a3b8' }}>{opt.sold > 0 ? opt.sold : '-'}</span>
+                          </td>
+                          {/* 미입고 */}
+                          <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
+                            <span style={{ fontSize: '12px', fontWeight: 900, color: opt.unreceived > 0 ? '#d97706' : '#94a3b8' }}>{opt.unreceived > 0 ? opt.unreceived : '-'}</span>
+                          </td>
+                          {/* 현재고 */}
+                          <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
+                            <span style={{ fontSize: '12px', fontWeight: 900, color: stockColor(opt.currentStock), background: stockBg(opt.currentStock), padding: '2px 6px', borderRadius: 99 }}>
+                              {opt.currentStock}
+                            </span>
+                          </td>
+                          {/* 선택 체크 */}
+                          <td style={{ padding: '5px 6px', textAlign: 'center', width: 30 }}>
+                            <div style={{
+                              width: 18, height: 18, borderRadius: 4, border: `2px solid ${sel ? '#2563eb' : '#cbd5e1'}`,
+                              background: sel ? '#2563eb' : 'white', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto',
+                            }}>
+                              {sel && <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4L4 7L9 1" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                ))}
               </table>
             </div>
           )}
@@ -1255,6 +1307,7 @@ function AddProductModal({
             unreceived:   0,
             sold:         0,
             reason:       'lowStock',
+            category:     (prod.category || '').trim() || UNCATEGORIZED,
             qty:          '1',
           })
         }
