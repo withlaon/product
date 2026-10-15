@@ -45,6 +45,14 @@ function stripCodePrefix(abbr?: string): string {
   return (abbr || '').replace(/^\d+_/, '').trim()
 }
 
+// 상품관리탭과 동일한 "총 판매수량" 계산 (전체 누적: 입고 - 현재고 - 불량)
+function optStockOf(o: PmOption): number {
+  return o.current_stock !== undefined ? o.current_stock : Math.max(0, (o.received ?? 0) - (o.sold ?? 0))
+}
+function optTotalSold(o: PmOption): number {
+  return Math.max(0, (o.received ?? 0) - optStockOf(o) - (o.defective ?? 0))
+}
+
 // 상품관리탭과 동일한 카테고리 순서를 사용하기 위한 로컬스토리지 키/기본값
 // (상품관리탭에서 카테고리를 추가·삭제·순서변경하면 이 키가 갱신되므로 그대로 재사용)
 const CATS_STORAGE_KEY = 'pm_categories_v1'
@@ -72,7 +80,8 @@ interface QualOpt {
   image: string
   currentStock: number
   unreceived: number
-  sold: number          // 누적 판매수량
+  sold: number          // 발주일 이후 판매수량(출고내역 기준)
+  totalSold: number     // 총 판매수량(상품관리탭과 동일: 입고-현재고-불량, 전체 누적)
   reason: 'lowStock' | 'unreceived' | 'both' | 'sold' | 'upcoming'
   category: string
 }
@@ -387,6 +396,7 @@ export default function PurchaseManagePage() {
           currentStock: stock,
           unreceived:   unr,
           sold,
+          totalSold:    optTotalSold(opt),
           reason,
           category:     (prod.category || '').trim() || UNCATEGORIZED,
         })
@@ -880,6 +890,7 @@ export default function PurchaseManagePage() {
                       ['', ''],
                       ['이미지', ''],
                       ['약어 / 옵션 / 바코드', ''],
+                      ['총판매', '전체 누적'],
                       ['판매', '누적·발주일 이후'],
                       ['미입고', ''],
                       ['현재고', ''],
@@ -896,7 +907,7 @@ export default function PurchaseManagePage() {
                     {/* 카테고리 헤더: '전체' 선택 시에만 구분용으로 표시 (특정 카테고리 선택 시엔 버튼으로 이미 구분되므로 생략) */}
                     {selectedCat === '전체' && (
                       <tr>
-                        <td colSpan={7} style={{ padding: '6px 10px', background: '#eef2ff', borderTop: '1px solid #e0e7ff', borderBottom: '1px solid #e0e7ff' }}>
+                        <td colSpan={8} style={{ padding: '6px 10px', background: '#eef2ff', borderTop: '1px solid #e0e7ff', borderBottom: '1px solid #e0e7ff' }}>
                           <span style={{ fontSize: '11.5px', fontWeight: 900, color: '#4338ca' }}>{group.category}</span>
                           <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#818cf8', marginLeft: 6 }}>{group.opts.length}건</span>
                         </td>
@@ -944,7 +955,11 @@ export default function PurchaseManagePage() {
                               <span data-pm-barcode="1" style={{ fontSize: 11, fontWeight: 900, color: '#000000', letterSpacing: '0.02em', whiteSpace: 'nowrap', flexShrink: 0 }}>{opt.barcode || '-'}</span>
                             </div>
                           </td>
-                          {/* 판매수량 */}
+                          {/* 총 판매수량 (전체 누적 — 진한 검정색) */}
+                          <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
+                            <span style={{ fontSize: '12px', fontWeight: 900, color: '#000000' }}>{opt.totalSold > 0 ? opt.totalSold : '-'}</span>
+                          </td>
+                          {/* 판매수량 (발주일 이후) */}
                           <td style={{ padding: '5px 6px', textAlign: 'center', width: 40 }}>
                             <span style={{ fontSize: '12px', fontWeight: 900, color: opt.sold > 0 ? '#6366f1' : '#94a3b8' }}>{opt.sold > 0 ? opt.sold : '-'}</span>
                           </td>
@@ -1356,6 +1371,7 @@ function AddProductModal({
             currentStock: opt.current_stock ?? 0,
             unreceived:   0,
             sold:         0,
+            totalSold:    optTotalSold(opt),
             reason:       'lowStock',
             category:     (prod.category || '').trim() || UNCATEGORIZED,
             qty:          '1',
