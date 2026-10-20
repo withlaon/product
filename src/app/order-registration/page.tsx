@@ -666,6 +666,13 @@ export default function OrderRegistrationPage() {
   const [mappingMalls, setMappingMalls] = useState<{ key: string; name: string }[]>([])
   /** 상품코드+옵션 자동조회용 상품 캐시가 새로 워밍될 때마다 증가 → 자동입력 재시도 트리거 */
   const [directCacheNonce, setDirectCacheNonce] = useState(0)
+  /** 상품코드로 서버에서 직접 단건 조회한 상품(가장 신뢰도 높음) — 클라이언트 벌크 캐시 상태와 무관하게 항상 정확 */
+  const [directServerProduct, setDirectServerProduct] = useState<{
+    code: string; name: string; abbr: string
+    options: Array<{ name?: string; korean_name?: string; size?: string; barcode?: string }>
+  } | null>(null)
+  const directCodeLookupTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const directCodeLookupSeq   = useRef(0)
 
   /* 매핑관리탭 연동 쇼핑몰 목록 로드 + 변경 시 동기화 */
   useEffect(() => {
@@ -706,6 +713,30 @@ export default function OrderRegistrationPage() {
     const iv = setInterval(warm, 60000)
     return () => { alive = false; clearInterval(iv) }
   }, [directMode])
+
+  /* ─── 직접등록: 상품코드 서버 단건 조회 (CS관리탭 바코드 자동입력과 동일한 패턴) ───
+   * 벌크 상품 캐시(pm_products_cache_v1)가 비어있거나/오래되었거나/형식이 깨져있어도
+   * 상품코드 자체는 서버에서 항상 정확하게 조회되도록, 입력이 멈추면(디바운스) 서버에
+   * 코드 1건을 직접 질의해 상품명/약어/옵션을 가져온다 — 가장 신뢰도 높은 1순위 소스. */
+  useEffect(() => {
+    if (!directMode) return
+    if (directCodeLookupTimer.current) clearTimeout(directCodeLookupTimer.current)
+    const code = directForm.productCode.trim()
+    if (code.length < 3) return
+
+    const mySeq = ++directCodeLookupSeq.current
+    directCodeLookupTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/pm-products?code=${encodeURIComponent(code)}`, { cache: 'no-store' })
+        if (!res.ok || mySeq !== directCodeLookupSeq.current) return
+        const data = await res.json()
+        if (mySeq !== directCodeLookupSeq.current) return
+        const prod = Array.isArray(data) ? data[0] : undefined
+        if (prod) setDirectServerProduct(prod)
+      } catch { /* ignore */ }
+    }, 300)
+    return () => { if (directCodeLookupTimer.current) clearTimeout(directCodeLookupTimer.current) }
+  }, [directForm.productCode, directMode])
 
   const isToday   = currentDate === today
   const canGoNext = currentDate < today
@@ -816,6 +847,18 @@ export default function OrderRegistrationPage() {
 
     const products = loadCachedProductsForMatch()
 
+    // 0순위: 서버에서 방금 직접 조회해온 상품(가장 신뢰도 높음, 클라이언트 캐시 상태 무관)
+    if (code && directServerProduct && directServerProduct.code.trim().toLowerCase() === code.toLowerCase()) {
+      const matched = matchProductOption(directServerProduct.options, opt)
+      setDirectForm(prev => ({
+        ...prev,
+        productName:  directServerProduct.name || prev.productName,
+        abbreviation: directServerProduct.abbr || '',
+        barcode:      matched?.barcode || '',
+      }))
+      return
+    }
+
     // 1순위: 상품코드가 상품 캐시의 코드와 정확히 일치 → 상품명·약어·바코드 확정 자동입력
     if (code) {
       const prod = products.find(p => (p.code ?? '').trim().toLowerCase() === code.toLowerCase())
@@ -862,7 +905,7 @@ export default function OrderRegistrationPage() {
       barcode:      mapping.barcode      || '',
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directForm.productCode, directForm.productName, directForm.option, directMode, directCacheNonce])
+  }, [directForm.productCode, directForm.productName, directForm.option, directMode, directCacheNonce, directServerProduct])
 
   /* ─── 직접등록 저장 ───────────────────────────────────── */
   const handleDirectSave = () => {
@@ -1530,7 +1573,7 @@ export default function OrderRegistrationPage() {
                 <PackageCheck size={15} />
                 {directSaving ? '저장 중...' : '저장 후 주문관리로 이동'}
               </button>
-              <button onClick={() => { setDirectForm(emptyDirectForm()); setDirectMsg(null); setDirectMallCustom(false) }}
+              <button onClick={() => { setDirectForm(emptyDirectForm()); setDirectMsg(null); setDirectMallCustom(false); setDirectServerProduct(null) }}
                 style={{ padding: '10px 18px', background: '#f1f5f9', color: '#64748b', borderRadius: 10, fontSize: '13px', fontWeight: 700, border: '1px solid #e2e8f0', cursor: 'pointer' }}>
                 초기화
               </button>

@@ -93,6 +93,37 @@ export async function GET(req: NextRequest) {
       return NextResponse.json(Array.isArray(bcData) ? bcData : [], { headers: NO_STORE })
     }
 
+    // 상품코드 단건 조회: ?code=XXXX
+    // 주문서등록탭 직접등록 등에서, 벌크 상품 캐시(pm_products_cache_v1)의 워밍/정합성 여부와
+    // 무관하게 상품코드 1건에 대해 즉시·정확하게 상품명/약어/옵션(바코드)을 가져오기 위한 전용 경로.
+    const codeParam = new URL(req.url).searchParams.get('code')
+    if (codeParam !== null) {
+      const codeVal = codeParam.trim()
+      if (!codeVal) return NextResponse.json([], { headers: NO_STORE })
+
+      const codeHeaders: Record<string, string> = {
+        apikey:         SERVICE_KEY,
+        Authorization:  `Bearer ${SERVICE_KEY}`,
+        'Content-Type': 'application/json',
+      }
+      const queryByCode = async (value: string, ilike: boolean) => {
+        const op = ilike ? 'ilike' : 'eq'
+        return fetch(
+          `${SUPABASE_URL}/rest/v1/${TABLE}?select=id,code,name,abbr,options&code=${op}.${encodeURIComponent(value)}&limit=1`,
+          { headers: codeHeaders, signal: AbortSignal.timeout(TIMEOUT_MS), cache: 'no-store' }
+        ).catch(() => null)
+      }
+
+      // 1차: 대소문자 정확 일치 → 2차: 대소문자 무시 일치 (ilike) 로 재시도
+      let codeRes = await queryByCode(codeVal, false)
+      let codeData: unknown = codeRes && codeRes.ok ? await codeRes.json() : []
+      if (Array.isArray(codeData) && codeData.length === 0) {
+        codeRes = await queryByCode(codeVal, true)
+        codeData = codeRes && codeRes.ok ? await codeRes.json() : []
+      }
+      return NextResponse.json(Array.isArray(codeData) ? codeData : [], { headers: NO_STORE })
+    }
+
     // 이미지 배치 조회: ?imageIds=id1,id2,...
     // RPC는 이미지 제거 버전이므로 직접 테이블 쿼리로 이미지 포함 데이터 조회
     // 현재 페이지 상품(최대 10개)만 조회 → 응답 크기 작음 + 1시간 캐시로 재호출 최소화
