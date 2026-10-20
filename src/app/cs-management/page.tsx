@@ -164,11 +164,11 @@ function saveCachedProducts(products: CachedProduct[]) {
     const raw = localStorage.getItem('pm_products_cache_v1')
     if (!raw) return
     const parsed = JSON.parse(raw)
-    if (Array.isArray(parsed)) {
-      localStorage.setItem('pm_products_cache_v1', JSON.stringify(products))
-    } else {
-      localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ...parsed, data: products }))
-    }
+    // 항상 { ts, data } 래핑 형태로 정규화해서 저장 — 과거에 "배열 그대로" 저장된 캐시를
+    // 그 형태 그대로 되돌려쓰면, 이 형식을 처리 못 하는 다른 화면(주문서등록 등)의 조회가
+    // 조용히 빈 결과를 반환하는 문제가 생기므로 이 저장 경로에서 형태를 고정 통일한다.
+    const ts = Array.isArray(parsed) ? Date.now() : (parsed?.ts ?? Date.now())
+    localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts, data: products }))
   } catch {}
 }
 

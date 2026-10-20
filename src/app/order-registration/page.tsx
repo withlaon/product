@@ -316,8 +316,10 @@ function loadCachedProductsForPrice(): CachedProductPrice[] {
   try {
     const raw = localStorage.getItem('pm_products_cache_v1')
     if (!raw) return []
-    const parsed = JSON.parse(raw) as { ts: number; data: CachedProductPrice[] }
-    if (Date.now() - parsed.ts < 10 * 60 * 1000 && Array.isArray(parsed.data)) return parsed.data
+    const parsed = JSON.parse(raw)
+    // 캐시가 { ts, data } 래핑 형태 또는 배열 그대로인 경우가 혼재되어 있어 둘 다 처리
+    if (Array.isArray(parsed)) return parsed
+    if (Date.now() - (parsed?.ts ?? 0) < 10 * 60 * 1000 && Array.isArray(parsed?.data)) return parsed.data
   } catch {}
   return []
 }

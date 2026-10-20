@@ -534,12 +534,17 @@ export function autoMatchBarcode(
   return null
 }
 
-/** localStorage 상품 캐시(pm_products_cache_v1)에서 AutoMatchProduct[] 로드 */
+/** localStorage 상품 캐시(pm_products_cache_v1)에서 AutoMatchProduct[] 로드
+ *  주의: 이 캐시는 화면에 따라 { ts, data } 래핑 형태 또는 배열이 그대로 저장되는 두 형태가
+ *  혼재되어 있다(cs-management 등 일부 저장 경로가 배열 그대로 저장). 두 형태 모두 안전하게
+ *  처리해야 "다른 탭에서 캐시를 건드린 뒤 이 조회만 조용히 빈 배열을 반환"하는 문제를 막을 수 있다. */
 export function loadCachedProductsForMatch(): AutoMatchProduct[] {
   try {
     const raw = localStorage.getItem('pm_products_cache_v1')
     if (!raw) return []
-    const { data } = JSON.parse(raw)
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) return parsed
+    const data = parsed?.data
     return Array.isArray(data) ? data : []
   } catch { return [] }
 }
