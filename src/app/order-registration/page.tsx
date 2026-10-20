@@ -86,6 +86,36 @@ const emptyDirectForm = (): DirectForm => ({
   phone: '', deliveryMessage: '',
 })
 
+/** 옵션 비교용 정규화: 공백·슬래시·쉼표·하이픈 제거 + 소문자화 (예: "블랙 / L" → "블랙l") */
+function normOptionLabel(s: string | undefined): string {
+  return (s || '').toLowerCase().replace(/[\s/,\-_]+/g, '')
+}
+
+/**
+ * 상품코드로 찾은 상품의 옵션 중, 사용자가 입력한 옵션 문자열(한글 색상명/영문 코드/사이즈
+ * 임의 조합)과 가장 잘 맞는 옵션 1건을 찾는다.
+ * - 한글 색상명(korean_name), 영문 코드(name), 사이즈(size)와 그 조합 전부를 비교 대상으로 삼아
+ *   "블랙", "BK", "블랙/L", "블랙 L", "BKL" 등 입력 방식과 무관하게 매칭되도록 한다.
+ */
+function matchProductOption<T extends { name: string; korean_name?: string; size?: string; barcode: string }>(
+  options: T[] | undefined,
+  optionInput: string,
+): T | undefined {
+  if (!options?.length) return undefined
+  const norm = normOptionLabel(optionInput)
+  if (!norm) return options.length === 1 ? options[0] : undefined
+
+  for (const o of options) {
+    const variants = [
+      o.korean_name, o.name, o.size,
+      `${o.korean_name ?? ''}${o.size ?? ''}`,
+      `${o.name ?? ''}${o.size ?? ''}`,
+    ].map(normOptionLabel).filter(Boolean)
+    if (variants.some(v => v === norm || v.includes(norm) || norm.includes(v))) return o
+  }
+  return undefined
+}
+
 /* ─── 상태 맵 ────────────────────────────────────────────── */
 const STATUS_MAP = {
   pending:   { label: '결제완료', color: '#2563eb', bg: '#eff6ff' },
@@ -612,6 +642,8 @@ export default function OrderRegistrationPage() {
   const [directForm, setDirectForm]     = useState<DirectForm>(emptyDirectForm())
   const [directSaving, setDirectSaving] = useState(false)
   const [directMsg, setDirectMsg]       = useState<{ text: string; ok: boolean } | null>(null)
+  /** 직접등록 쇼핑몰 입력 방식: 목록에서 선택(select) / 직접 타이핑(custom) */
+  const [directMallCustom, setDirectMallCustom] = useState(false)
 
   const isToday   = currentDate === today
   const canGoNext = currentDate < today
@@ -724,26 +756,20 @@ export default function OrderRegistrationPage() {
             ts: number
             data: Array<{
               code: string; name: string; abbr: string
-              options?: Array<{ name: string; barcode: string }>
+              options?: Array<{ name: string; korean_name?: string; size?: string; barcode: string }>
             }>
           }
           const prod = Array.isArray(data)
             ? data.find(p => p.code?.toLowerCase() === code.toLowerCase())
             : undefined
           if (prod) {
-            let barcode = ''
-            if (opt && prod.options?.length) {
-              const ol = opt.toLowerCase()
-              const matched = prod.options.find(o =>
-                o.name.toLowerCase().includes(ol) || ol.includes(o.name.toLowerCase())
-              )
-              barcode = matched?.barcode || ''
-            }
+            // 옵션을 입력했으면 한글색상명/영문코드/사이즈 조합으로 매칭, 옵션이 없고 단일 옵션 상품이면 그 옵션으로 자동 확정
+            const matched = matchProductOption(prod.options, opt)
             setDirectForm(prev => ({
               ...prev,
               productName:  prod.name,
               abbreviation: prod.abbr || '',
-              barcode,
+              barcode:      matched?.barcode || '',
             }))
             return
           }
@@ -1276,12 +1302,37 @@ export default function OrderRegistrationPage() {
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px 20px' }}>
-              {/* 쇼핑몰 */}
+              {/* 쇼핑몰: 목록에서 선택 또는 직접입력 */}
               <div>
                 <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>쇼핑몰</p>
-                <input value={directForm.mall} onChange={e => setDirectForm(p => ({ ...p, mall: e.target.value }))}
-                  placeholder="예: 네이버스마트스토어"
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                {!directMallCustom ? (
+                  <select
+                    value={MALLS.some(m => m.label === directForm.mall) ? directForm.mall : ''}
+                    onChange={e => {
+                      if (e.target.value === '__custom__') {
+                        setDirectMallCustom(true)
+                        setDirectForm(p => ({ ...p, mall: '' }))
+                      } else {
+                        setDirectForm(p => ({ ...p, mall: e.target.value }))
+                      }
+                    }}
+                    style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }}>
+                    <option value="">쇼핑몰 선택</option>
+                    {MALLS.map(m => <option key={m.id} value={m.label}>{m.label}</option>)}
+                    <option value="__custom__">+ 직접입력</option>
+                  </select>
+                ) : (
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <input autoFocus value={directForm.mall} onChange={e => setDirectForm(p => ({ ...p, mall: e.target.value }))}
+                      placeholder="예: 네이버스마트스토어"
+                      style={{ flex: 1, padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                    <button type="button" onClick={() => { setDirectMallCustom(false); setDirectForm(p => ({ ...p, mall: '' })) }}
+                      title="목록에서 선택"
+                      style={{ padding: '0 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#64748b', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                      목록
+                    </button>
+                  </div>
+                )}
               </div>
 
               {/* 주문번호 */}
@@ -1398,7 +1449,7 @@ export default function OrderRegistrationPage() {
                 <PackageCheck size={15} />
                 {directSaving ? '저장 중...' : '저장 후 주문관리로 이동'}
               </button>
-              <button onClick={() => { setDirectForm(emptyDirectForm()); setDirectMsg(null) }}
+              <button onClick={() => { setDirectForm(emptyDirectForm()); setDirectMsg(null); setDirectMallCustom(false) }}
                 style={{ padding: '10px 18px', background: '#f1f5f9', color: '#64748b', borderRadius: 10, fontSize: '13px', fontWeight: 700, border: '1px solid #e2e8f0', cursor: 'pointer' }}>
                 초기화
               </button>
