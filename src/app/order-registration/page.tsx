@@ -97,15 +97,16 @@ function normOptionLabel(s: string | undefined): string {
  * - 한글 색상명(korean_name), 영문 코드(name), 사이즈(size)와 그 조합 전부를 비교 대상으로 삼아
  *   "블랙", "BK", "블랙/L", "블랙 L", "BKL" 등 입력 방식과 무관하게 매칭되도록 한다.
  */
-function matchProductOption<T extends { name: string; korean_name?: string; size?: string; barcode: string }>(
+function matchProductOption<T extends { name?: string; korean_name?: string; size?: string; barcode?: string }>(
   options: T[] | undefined,
   optionInput: string,
 ): T | undefined {
-  if (!options?.length) return undefined
+  const withBarcode = (options ?? []).filter(o => o.barcode)
+  if (!withBarcode.length) return undefined
   const norm = normOptionLabel(optionInput)
-  if (!norm) return options.length === 1 ? options[0] : undefined
+  if (!norm) return withBarcode.length === 1 ? withBarcode[0] : undefined
 
-  for (const o of options) {
+  for (const o of withBarcode) {
     const variants = [
       o.korean_name, o.name, o.size,
       `${o.korean_name ?? ''}${o.size ?? ''}`,
@@ -114,6 +115,21 @@ function matchProductOption<T extends { name: string; korean_name?: string; size
     if (variants.some(v => v === norm || v.includes(norm) || norm.includes(v))) return o
   }
   return undefined
+}
+
+/** 매핑관리탭과 동일한 "연동 쇼핑몰" 목록 (localStorage pm_mall_channels_v5, active만) —
+ *  직접등록 쇼핑몰 선택 드롭다운을 매핑관리탭과 항상 같은 목록으로 유지하기 위해 공용 사용 */
+const MALL_CHANNEL_STORAGE_KEY = 'pm_mall_channels_v5'
+function loadMappingMallChannels(): { key: string; name: string }[] {
+  try {
+    const raw = localStorage.getItem(MALL_CHANNEL_STORAGE_KEY)
+    if (!raw) return []
+    const arr = JSON.parse(raw)
+    if (!Array.isArray(arr)) return []
+    return (arr as { key: string; name: string; active?: boolean }[])
+      .filter(c => c.active)
+      .map(c => ({ key: c.key, name: c.name }))
+  } catch { return [] }
 }
 
 /* ─── 상태 맵 ────────────────────────────────────────────── */
@@ -644,6 +660,50 @@ export default function OrderRegistrationPage() {
   const [directMsg, setDirectMsg]       = useState<{ text: string; ok: boolean } | null>(null)
   /** 직접등록 쇼핑몰 입력 방식: 목록에서 선택(select) / 직접 타이핑(custom) */
   const [directMallCustom, setDirectMallCustom] = useState(false)
+  /** 직접등록 쇼핑몰 선택 목록 — 매핑관리탭과 동일한 연동 쇼핑몰(pm_mall_channels_v5) 사용 */
+  const [mappingMalls, setMappingMalls] = useState<{ key: string; name: string }[]>([])
+  /** 상품코드+옵션 자동조회용 상품 캐시가 새로 워밍될 때마다 증가 → 자동입력 재시도 트리거 */
+  const [directCacheNonce, setDirectCacheNonce] = useState(0)
+
+  /* 매핑관리탭 연동 쇼핑몰 목록 로드 + 변경 시 동기화 */
+  useEffect(() => {
+    const load = () => setMappingMalls(loadMappingMallChannels())
+    load()
+    const onStorage = (e: StorageEvent) => { if (e.key === MALL_CHANNEL_STORAGE_KEY) load() }
+    const onVis = () => { if (document.visibilityState === 'visible') load() }
+    window.addEventListener('storage', onStorage)
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [])
+
+  /* 연동된 쇼핑몰이 하나도 없으면 드롭다운이 비어 못 쓰게 되므로 자동으로 직접입력 모드로 전환 */
+  useEffect(() => {
+    if (directMode && mappingMalls.length === 0) setDirectMallCustom(true)
+  }, [directMode, mappingMalls.length])
+
+  /* ─── 직접등록: 상품코드+옵션 자동조회가 다른 탭 방문 여부와 무관하게 항상 동작하도록
+   *    상품 캐시(pm_products_cache_v1)를 이 페이지에서도 직접 워밍 ─── */
+  useEffect(() => {
+    if (!directMode) return
+    let alive = true
+    const warm = async () => {
+      try {
+        const res = await fetch(`/api/pm-products?t=${Date.now()}`, { cache: 'no-store' })
+        if (!res.ok || !alive) return
+        const data = await res.json()
+        if (Array.isArray(data)) {
+          localStorage.setItem('pm_products_cache_v1', JSON.stringify({ ts: Date.now(), data }))
+          if (alive) setDirectCacheNonce(n => n + 1)
+        }
+      } catch { /* ignore */ }
+    }
+    warm()
+    const iv = setInterval(warm, 60000)
+    return () => { alive = false; clearInterval(iv) }
+  }, [directMode])
 
   const isToday   = currentDate === today
   const canGoNext = currentDate < today
@@ -747,37 +807,47 @@ export default function OrderRegistrationPage() {
     const name = directForm.productName.trim()
     const opt  = directForm.option.trim()
 
-    // 1순위: 상품코드로 상품 캐시에서 조회 → 상품명·약어·바코드 자동입력
-    if (code) {
-      try {
-        const raw = localStorage.getItem('pm_products_cache_v1')
-        if (raw) {
-          const { data } = JSON.parse(raw) as {
-            ts: number
-            data: Array<{
-              code: string; name: string; abbr: string
-              options?: Array<{ name: string; korean_name?: string; size?: string; barcode: string }>
-            }>
-          }
-          const prod = Array.isArray(data)
-            ? data.find(p => p.code?.toLowerCase() === code.toLowerCase())
-            : undefined
-          if (prod) {
-            // 옵션을 입력했으면 한글색상명/영문코드/사이즈 조합으로 매칭, 옵션이 없고 단일 옵션 상품이면 그 옵션으로 자동 확정
-            const matched = matchProductOption(prod.options, opt)
-            setDirectForm(prev => ({
-              ...prev,
-              productName:  prod.name,
-              abbreviation: prod.abbr || '',
-              barcode:      matched?.barcode || '',
-            }))
-            return
-          }
-        }
-      } catch {}
+    if (!code && !name) {
+      setDirectForm(prev => ({ ...prev, abbreviation: '', barcode: '' }))
+      return
     }
 
-    // 2순위: 상품명으로 매핑 테이블에서 약어·바코드 조회
+    const products = loadCachedProductsForMatch()
+
+    // 1순위: 상품코드가 상품 캐시의 코드와 정확히 일치 → 상품명·약어·바코드 확정 자동입력
+    if (code) {
+      const prod = products.find(p => (p.code ?? '').trim().toLowerCase() === code.toLowerCase())
+      if (prod) {
+        // 옵션을 입력했으면 한글색상명/영문코드/사이즈 조합으로 매칭, 옵션이 없고 단일 옵션 상품이면 그 옵션으로 자동 확정
+        const matched = matchProductOption(prod.options, opt)
+        setDirectForm(prev => ({
+          ...prev,
+          productName:  prod.name || prev.productName,
+          abbreviation: prod.abbr || '',
+          barcode:      matched?.barcode || '',
+        }))
+        return
+      }
+    }
+
+    // 2순위: 정확한 코드 일치가 없을 때 — 주문관리·출고내역과 동일한 공용 매칭 로직(autoMatchBarcode)으로
+    //        상품코드/상품명 텍스트 + 옵션을 느슨하게 매칭 (부분일치·오타·색상표기 차이 등 보완)
+    const queryText = code || name
+    if (queryText) {
+      const result = autoMatchBarcode(queryText, opt, products)
+      if (result) {
+        const matchedProd = products.find(p => (p.options ?? []).some(o => o.barcode === result.barcode))
+        setDirectForm(prev => ({
+          ...prev,
+          productName:  result.matchedProductName || prev.productName,
+          abbreviation: matchedProd?.abbr || '',
+          barcode:      result.barcode,
+        }))
+        return
+      }
+    }
+
+    // 3순위: 상품명으로 매핑 테이블(수기 매핑 이력)에서 약어·바코드 조회
     if (!name) {
       setDirectForm(prev => ({ ...prev, abbreviation: '', barcode: '' }))
       return
@@ -790,7 +860,7 @@ export default function OrderRegistrationPage() {
       barcode:      mapping.barcode      || '',
     }))
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [directForm.productCode, directForm.productName, directForm.option, directMode])
+  }, [directForm.productCode, directForm.productName, directForm.option, directMode, directCacheNonce])
 
   /* ─── 직접등록 저장 ───────────────────────────────────── */
   const handleDirectSave = () => {
@@ -1305,9 +1375,9 @@ export default function OrderRegistrationPage() {
               {/* 쇼핑몰: 목록에서 선택 또는 직접입력 */}
               <div>
                 <p style={{ fontSize: '11px', fontWeight: 800, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>쇼핑몰</p>
-                {!directMallCustom ? (
+                {!directMallCustom && mappingMalls.length > 0 ? (
                   <select
-                    value={MALLS.some(m => m.label === directForm.mall) ? directForm.mall : ''}
+                    value={mappingMalls.some(m => m.name === directForm.mall) ? directForm.mall : ''}
                     onChange={e => {
                       if (e.target.value === '__custom__') {
                         setDirectMallCustom(true)
@@ -1318,19 +1388,28 @@ export default function OrderRegistrationPage() {
                     }}
                     style={{ width: '100%', padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }}>
                     <option value="">쇼핑몰 선택</option>
-                    {MALLS.map(m => <option key={m.id} value={m.label}>{m.label}</option>)}
+                    {mappingMalls.map(m => <option key={m.key} value={m.name}>{m.name}</option>)}
                     <option value="__custom__">+ 직접입력</option>
                   </select>
                 ) : (
-                  <div style={{ display: 'flex', gap: 6 }}>
-                    <input autoFocus value={directForm.mall} onChange={e => setDirectForm(p => ({ ...p, mall: e.target.value }))}
-                      placeholder="예: 네이버스마트스토어"
-                      style={{ flex: 1, padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
-                    <button type="button" onClick={() => { setDirectMallCustom(false); setDirectForm(p => ({ ...p, mall: '' })) }}
-                      title="목록에서 선택"
-                      style={{ padding: '0 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#64748b', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
-                      목록
-                    </button>
+                  <div>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <input autoFocus value={directForm.mall} onChange={e => setDirectForm(p => ({ ...p, mall: e.target.value }))}
+                        placeholder="예: 네이버스마트스토어"
+                        style={{ flex: 1, padding: '9px 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', fontSize: '13px', color: '#0f172a', background: 'white', boxSizing: 'border-box' }} />
+                      {mappingMalls.length > 0 && (
+                        <button type="button" onClick={() => { setDirectMallCustom(false); setDirectForm(p => ({ ...p, mall: '' })) }}
+                          title="목록에서 선택"
+                          style={{ padding: '0 12px', borderRadius: 9, border: '1.5px solid #e2e8f0', background: '#f8fafc', color: '#64748b', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>
+                          목록
+                        </button>
+                      )}
+                    </div>
+                    {mappingMalls.length === 0 && (
+                      <p style={{ fontSize: '11px', color: '#94a3b8', fontWeight: 600, margin: '5px 0 0' }}>
+                        매핑관리탭에 연동된 쇼핑몰이 없어 직접입력으로 전환되었습니다.
+                      </p>
+                    )}
                   </div>
                 )}
               </div>
