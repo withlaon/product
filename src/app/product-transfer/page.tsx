@@ -215,8 +215,9 @@ function loadOrdersFromPerMallStorage(date: string): Order[] {
       for (const o of dayData.orders) {
         try {
           const importSrc = String(o.extra_data?.import_source ?? '')
+          // 마켓플러스: 주문서 A열 주문경로(매출경로 필드에 정규화 저장됨)가 쇼핑몰 이름
           const channel = importSrc === 'marketplus'
-            ? mpToChannel(String(o.extra_data?.['매출경로'] ?? mallLabel))
+            ? (mpToChannel(String(o.extra_data?.['매출경로'] ?? '').trim()) || mallLabel)
             : mallLabel
           result.push({
             id:               String(o.id ?? `${Date.now()}-${Math.random()}`),

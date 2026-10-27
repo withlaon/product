@@ -243,7 +243,13 @@ function parseMarketPlusRow(row: Record<string, unknown>, idx: number, today: st
   autoMappingKey?: string
   autoMappingAbbr?: string
 } {
-  const 매출경로    = String(row['매출경로'] ?? '')
+  // A열 "주문경로"(신규 양식) 우선, 없으면 "매출경로"(구 양식). 헤더에 공백/변형이 있어도 잡히도록
+  // '경로'가 포함된 헤더를 추가로 탐색한다. 이 값이 주문관리탭·출고내역탭의 쇼핑몰 이름이 된다.
+  const 경로헤더 = Object.keys(row).find(k => k.replace(/\s+/g, '') === '주문경로')
+    ?? Object.keys(row).find(k => k.replace(/\s+/g, '') === '매출경로')
+    ?? Object.keys(row).find(k => k.includes('경로'))
+  const 주문경로  = String((경로헤더 ? row[경로헤더] : '') ?? '').trim()
+  const 매출경로  = 주문경로 || '마켓플러스'
   const channel   = mpToChannel(매출경로)
   const productName = String(row['상품명(한국어 쇼핑몰)'] ?? row['상품명'] ?? '-')
   const option      = String(row['상품옵션'] ?? row['옵션'] ?? '')
@@ -269,6 +275,7 @@ function parseMarketPlusRow(row: Record<string, unknown>, idx: number, today: st
     extra_data: {
       import_source:        'marketplus',
       매출경로,
+      주문경로,
       주문번호:             orderNum,
       품목별_주문번호:      String(row['품목별 주문번호'] ?? ''),
       수령인_우편번호:      String(row['수령인 우편번호'] ?? ''),
@@ -1155,7 +1162,7 @@ export default function OrderRegistrationPage() {
             o.items.forEach(item => {
               if (!item.unit_price) {
                 const channel = isMarketPlus
-                  ? mpToChannel(String(o.extra_data?.['매출경로'] ?? ''))
+                  ? (mpToChannel(String(o.extra_data?.['매출경로'] ?? '').trim()) || mallLabel)
                   : mallLabel
                 const price = lookupChannelPrice(cachedProds, item.product_name, channel)
                 if (price > 0) item.unit_price = price
@@ -1222,9 +1229,9 @@ export default function OrderRegistrationPage() {
           id: o.id,
           order_date: today,
           order_number: o.order_number,
-          // 마켓플러스: 실제 채널(G마켓, 스마트스토어 등) / 기타: 쇼핑몰명
+          // 마켓플러스: A열 주문경로(G마켓, 스마트스토어 등)가 쇼핑몰 이름 / 기타: 쇼핑몰명
           channel: isMarketPlus
-            ? mpToChannel(String(o.extra_data?.['매출경로'] ?? mallLabel))
+            ? (mpToChannel(String(o.extra_data?.['매출경로'] ?? '').trim()) || mallLabel)
             : mallLabel,
           customer_name:    o.customer_name,
           customer_phone:   o.customer_phone,
