@@ -26,10 +26,35 @@ interface PmOption { name: string; barcode: string }
 interface PmProduct {
   id: string; code: string; name: string; category: string; options: PmOption[]
   registered_malls?: (string | { mall: string; code: string; name?: string })[]
-  channel_prices?:   { channel: string; price: number }[]
+  channel_prices?:   { channel: string; price: number; tag_price?: number }[]
 }
 
 const MAPPING_KEY = 'pm_channel_mappings_v2'
+
+/* ── 상품관리탭 카테고리 목록(pm_categories_v1) — 쇼핑몰별 엑셀 다운로드의 카테고리 버튼에 사용 ── */
+const CATS_STORAGE_KEY = 'pm_categories_v1'
+const INIT_EXTRA_CATS  = ['가방', '의류-상의', '의류-하의', '잡화']
+const UNCATEGORIZED    = '미분류'
+function loadCategoryOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(CATS_STORAGE_KEY)
+    if (raw) {
+      const arr = JSON.parse(raw)
+      if (Array.isArray(arr) && arr.length > 0) return arr
+    }
+  } catch { /* ignore */ }
+  return INIT_EXTRA_CATS
+}
+
+/** 엑셀 다운로드 1행: 상품관리탭 매핑창(쇼핑몰별 상품ID·상품명·TAG가·판매가)과 동일한 데이터 */
+interface MallExportRow {
+  mallProductId: string
+  code: string
+  mappedName: string
+  tagPrice: number | ''
+  price: number | ''
+  category: string
+}
 
 /* ── API 헬퍼 (service role key → RLS 완전 우회) ── */
 const PM_API = '/api/pm-products'
@@ -292,30 +317,79 @@ export default function MappingPage() {
     return null
   }
 
-  /* ── 쇼핑몰 매핑 목록 엑셀 다운로드 ── */
-  const handleDownloadMallExcel = (mallKey: string, mallName: string) => {
-    const mallRows = mappings[mallKey] || []
-    if (mallRows.length === 0) {
-      alert(`${mallName}의 매핑 데이터가 없습니다.`)
+  /* ── 쇼핑몰별 엑셀 다운로드용 행 생성 ──
+   * 상품관리탭의 각 상품 매핑창과 동일한 기준으로 값을 구한다.
+   *  - 쇼핑몰 상품ID / 매핑상품명 : 서버 registered_malls(해당 쇼핑몰 항목) 우선, 없으면 로컬 매핑(pm_channel_mappings_v2)
+   *  - TAG가 / 판매가            : 서버 channel_prices(해당 쇼핑몰 항목) 우선, 판매가는 없으면 로컬 매핑의 mall_price
+   * 상품ID·상품명·TAG가·판매가 중 하나라도 값이 있는(=그 쇼핑몰에 매핑된) 상품만 포함한다. */
+  const selectedMallName = connectedMalls.find(m => m.key === selectedMall)?.name || ''
+
+  const buildMallExportRows = (mallKey: string, mallName: string): MallExportRow[] => {
+    const localRows = mappings[mallKey] || []
+    const result: MallExportRow[] = []
+    for (const p of products) {
+      const mallEntry = (p.registered_malls ?? []).find(m => typeof m === 'object' ? m.mall === mallName : m === mallName)
+      const cp        = (p.channel_prices ?? []).find(c => c.channel === mallName)
+      const localRow  = localRows.find(r => r.matched_product_id === p.id)
+      const serverId   = typeof mallEntry === 'object' ? (mallEntry.code || '') : ''
+      const serverName = typeof mallEntry === 'object' ? (mallEntry.name || '') : ''
+      const mallProductId = serverId || localRow?.mall_product_id || ''
+      const mappedName    = serverName || localRow?.mall_product_name || ''
+      const price         = cp?.price ?? localRow?.mall_price ?? null
+      const tagPrice      = cp?.tag_price ?? null
+      const isMapped = !!mallEntry || !!cp || !!localRow
+      if (!isMapped) continue
+      result.push({
+        mallProductId,
+        code:       p.code || '',
+        mappedName: mappedName || p.name,
+        tagPrice:   tagPrice && tagPrice > 0 ? tagPrice : '',
+        price:      price && price > 0 ? price : '',
+        category:   (p.category || '').trim() || UNCATEGORIZED,
+      })
+    }
+    return result.sort((a, b) => a.code.localeCompare(b.code))
+  }
+
+  /** 쇼핑몰별 카테고리 탭: 전체 + 상품관리탭 카테고리 순서 (+미분류/미등록 카테고리) 와 각 건수 */
+  const catOrder = useMemo(() => loadCategoryOrder(), [])
+  const exportCatTabs = useMemo(() => {
+    if (!selectedMall) return [] as { name: string; count: number }[]
+    const rows = buildMallExportRows(selectedMall, selectedMallName)
+    const counts = new Map<string, number>()
+    rows.forEach(r => counts.set(r.category, (counts.get(r.category) ?? 0) + 1))
+    const ordered = [
+      ...catOrder.filter(c => counts.has(c)),
+      ...[...counts.keys()].filter(c => !catOrder.includes(c) && c !== UNCATEGORIZED),
+      ...(counts.has(UNCATEGORIZED) ? [UNCATEGORIZED] : []),
+    ]
+    return [{ name: '전체', count: rows.length }, ...ordered.map(c => ({ name: c, count: counts.get(c) ?? 0 }))]
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedMall, selectedMallName, products, mappings, catOrder])
+
+  /* ── 쇼핑몰 매핑 목록 엑셀 다운로드 (category 미지정 = 전체) ── */
+  const handleDownloadMallExcel = (mallKey: string, mallName: string, category?: string) => {
+    const all = buildMallExportRows(mallKey, mallName)
+    const target = category && category !== '전체' ? all.filter(r => r.category === category) : all
+    if (target.length === 0) {
+      alert(`${mallName}${category && category !== '전체' ? ` · ${category}` : ''}의 매핑 데이터가 없습니다.`)
       return
     }
     const today = new Date().toISOString().slice(0, 10)
-    const excelRows = mallRows.map(row => {
-      const prod = products.find(p => p.id === row.matched_product_id)
-      const cp = (prod?.channel_prices ?? []).find(c => c.channel === mallName) as { channel: string; price: number; tag_price?: number } | undefined
-      return {
-        '쇼핑몰 상품ID':   row.mall_product_id,
-        '상품코드':        row.matched_product_code || '',
-        '상품명':          row.mall_product_name,
-        'TAG가':           cp?.tag_price ?? '',
-        '판매가':          row.mall_price ?? '',
-      }
-    })
+    const excelRows = target.map(r => ({
+      '쇼핑몰 상품ID': r.mallProductId,
+      '상품코드':      r.code,
+      '매핑상품명':    r.mappedName,
+      'TAG가':         r.tagPrice,
+      '판매가':        r.price,
+    }))
     const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.json_to_sheet(excelRows)
-    ws['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 32 }, { wch: 12 }, { wch: 12 }]
-    XLSX.utils.book_append_sheet(wb, ws, mallName.slice(0, 30))
-    XLSX.writeFile(wb, `${mallName}_매핑목록_${today}.xlsx`)
+    const ws = XLSX.utils.json_to_sheet(excelRows, { header: ['쇼핑몰 상품ID', '상품코드', '매핑상품명', 'TAG가', '판매가'] })
+    ws['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 40 }, { wch: 12 }, { wch: 12 }]
+    const sheetName = (category && category !== '전체' ? category : mallName).replace(/[\\/?*[\]:]/g, '_').slice(0, 30)
+    XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1')
+    const catSuffix = category && category !== '전체' ? `_${category}` : '_전체'
+    XLSX.writeFile(wb, `${mallName}${catSuffix}_매핑목록_${today}.xlsx`)
   }
 
   const handleDownloadTemplate = () => {
@@ -536,8 +610,6 @@ export default function MappingPage() {
     return p.name.toLowerCase().includes(q) || p.code.toLowerCase().includes(q)
   })
 
-  const selectedMallName = connectedMalls.find(m => m.key === selectedMall)?.name || ''
-
   return (
     <div style={{ display: 'flex', height: 'calc(100vh - 56px)', overflow: 'hidden' }}>
 
@@ -619,11 +691,11 @@ export default function MappingPage() {
                       )}
                     </div>
                   </button>
-                  {/* 쇼핑몰별 엑셀 다운로드 버튼 */}
-                  {s.total > 0 && (
+                  {/* 쇼핑몰별 엑셀 다운로드 버튼 (전체) */}
+                  {(s.total > 0 || buildMallExportRows(m.key, m.name).length > 0) && (
                     <button
                       onClick={e => { e.stopPropagation(); handleDownloadMallExcel(m.key, m.name) }}
-                      title={`${m.name} 매핑목록 엑셀 다운로드`}
+                      title={`${m.name} 전체 매핑목록 엑셀 다운로드`}
                       style={{
                         position: 'absolute', top: 8, right: 6,
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -701,16 +773,6 @@ export default function MappingPage() {
                 </div>
 
                 <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: 'none' }} onChange={handleFileChange} />
-                {/* 현재 쇼핑몰 매핑목록 엑셀 다운로드 */}
-                {rows.length > 0 && (
-                  <button
-                    onClick={() => handleDownloadMallExcel(selectedMall, selectedMallName)}
-                    style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#f0fdf4', color: '#15803d', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '7px 13px', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
-                    title={`${selectedMallName} 매핑목록 엑셀 다운로드`}
-                  >
-                    <FileSpreadsheet size={13} />매핑목록 다운로드
-                  </button>
-                )}
                 <button
                   onClick={handleDownloadTemplate}
                   style={{ display: 'flex', alignItems: 'center', gap: 6, background: 'white', color: '#059669', border: '1.5px solid #bbf7d0', borderRadius: 8, padding: '7px 13px', fontSize: '12.5px', fontWeight: 800, cursor: 'pointer', flexShrink: 0 }}
@@ -742,6 +804,37 @@ export default function MappingPage() {
                     <Trash2 size={13} />전체 삭제
                   </button>
                 )}
+              </div>
+
+              {/* 쇼핑몰별 엑셀 다운로드: 전체 + 상품관리탭 카테고리별 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', padding: '10px 12px', background: 'white', border: '1.5px solid #e2e8f0', borderRadius: 10, marginBottom: 14 }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: '11.5px', fontWeight: 900, color: '#15803d', marginRight: 4, whiteSpace: 'nowrap' }}>
+                  <FileSpreadsheet size={13} />{selectedMallName} 엑셀 다운로드
+                </span>
+                {exportCatTabs.length === 0 ? (
+                  <span style={{ fontSize: '11.5px', fontWeight: 600, color: '#94a3b8' }}>이 쇼핑몰에 매핑된 상품이 없습니다 (상품관리탭 매핑창에서 상품ID·판매가를 입력하면 여기서 다운로드할 수 있습니다)</span>
+                ) : exportCatTabs.map(t => {
+                  const isAll = t.name === '전체'
+                  return (
+                    <button key={t.name}
+                      onClick={() => handleDownloadMallExcel(selectedMall, selectedMallName, t.name)}
+                      title={`${selectedMallName} · ${t.name} 엑셀 다운로드 (${t.count}건)`}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 5, cursor: 'pointer',
+                        background: isAll ? 'linear-gradient(135deg,#16a34a,#15803d)' : '#f0fdf4',
+                        color: isAll ? 'white' : '#15803d',
+                        border: isAll ? 'none' : '1.5px solid #bbf7d0',
+                        borderRadius: 8, padding: '6px 11px', fontSize: '12px', fontWeight: 800, flexShrink: 0,
+                        boxShadow: isAll ? '0 2px 8px #16a34a40' : 'none',
+                      }}
+                    >
+                      <Download size={12} />{t.name}
+                      <span style={{ fontSize: '10.5px', fontWeight: 900, background: isAll ? 'rgba(255,255,255,0.25)' : '#dcfce7', color: isAll ? 'white' : '#166534', padding: '1px 6px', borderRadius: 10 }}>
+                        {t.count}
+                      </span>
+                    </button>
+                  )
+                })}
               </div>
 
               {/* 엑셀 안내 */}
