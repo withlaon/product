@@ -15,7 +15,13 @@ export function loadShippedOrders(): ShippedOrder[] {
   if (typeof window === 'undefined') return []
   try {
     const raw = localStorage.getItem(SHIPPED_ORDERS_KEY)
-    return raw ? (JSON.parse(raw) as ShippedOrder[]) : []
+    const list = raw ? (JSON.parse(raw) as ShippedOrder[]) : []
+    // 11/2 출고내역 쇼핑몰명 보정(카페24·모바일웹 → 위드라온) — 읽을 때 즉시 적용 + 서버 원본 1회 갱신
+    return readWithLegacyRename(SHIPPED_ORDERS_KEY, list, changed => {
+      if (withlaonShippedServerSynced) return
+      withlaonShippedServerSynced = true
+      void persistShippedUpsertsToServer(changed)
+    })
   } catch { return [] }
 }
 
@@ -259,7 +265,9 @@ export const ORDERS_KEY = 'pm_orders_v1'
 export function loadOrders(): Order[] {
   try {
     const raw = localStorage.getItem(ORDERS_KEY)
-    return raw ? (JSON.parse(raw) as Order[]) : []
+    const list = raw ? (JSON.parse(raw) as Order[]) : []
+    // 11/2 주문 쇼핑몰명 보정(카페24·모바일웹 → 위드라온) — 대시보드 쇼핑몰별 집계에도 즉시 반영
+    return readWithLegacyRename(ORDERS_KEY, list)
   } catch { return [] }
 }
 
@@ -336,7 +344,8 @@ export const INVOICE_QUEUE_KEY = 'pm_invoice_queue_v1'
 export function loadInvoiceQueue(): Order[] {
   try {
     const raw = localStorage.getItem(INVOICE_QUEUE_KEY)
-    return raw ? (JSON.parse(raw) as Order[]) : []
+    const list = raw ? (JSON.parse(raw) as Order[]) : []
+    return readWithLegacyRename(INVOICE_QUEUE_KEY, list)
   } catch { return [] }
 }
 
@@ -736,23 +745,47 @@ export function isLegacyWithlaonChannel(channel: string): boolean {
 /** 출고내역 쇼핑몰명 보정: 2026-11-02 출고/주문 건 중 카페24·모바일웹(·네이버페이) → 위드라온.
  *  hydrate 시마다 수행되지만 멱등(이미 바뀐 건은 대상이 아님)이라 비용·부작용이 없다. */
 export const WITHLAON_RENAME_DATE = '2026-11-02'
-export function renameLegacyWithlaonShippedChannels(list: ShippedOrder[]): { next: ShippedOrder[]; changed: ShippedOrder[] } {
-  const changed: ShippedOrder[] = []
+function ymdLocal(s: unknown): string {
+  const str = String(s ?? '').trim()
+  if (!str) return ''
+  const d = new Date(str)
+  if (isNaN(d.getTime())) return str.slice(0, 10)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+/** 주문/송장큐/출고 공용: 11/2 건의 카페24·모바일웹·네이버페이 채널명을 위드라온으로 */
+export function renameLegacyWithlaonChannels<T extends { channel: string; order_date?: string; shipped_at?: string; extra_data?: Record<string, unknown> }>(
+  list: T[],
+): { next: T[]; changed: T[] } {
+  const changed: T[] = []
   const next = list.map(o => {
     if (!isLegacyWithlaonChannel(o.channel)) return o
-    const shipDay = (() => {
-      const s = String(o.shipped_at ?? '')
-      if (!s) return ''
-      const d = new Date(s)
-      if (isNaN(d.getTime())) return s.slice(0, 10)
-      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-    })()
-    if (o.order_date !== WITHLAON_RENAME_DATE && shipDay !== WITHLAON_RENAME_DATE) return o
+    const orderDay = String(o.order_date ?? '').slice(0, 10)
+    const shipDay  = ymdLocal(o.shipped_at)
+    if (orderDay !== WITHLAON_RENAME_DATE && shipDay !== WITHLAON_RENAME_DATE) return o
     const n = { ...o, channel: WITHLAON_CHANNEL }
     changed.push(n)
     return n
   })
   return { next, changed }
+}
+export function renameLegacyWithlaonShippedChannels(list: ShippedOrder[]): { next: ShippedOrder[]; changed: ShippedOrder[] } {
+  return renameLegacyWithlaonChannels(list)
+}
+
+/* 읽기 시점 보정: 어떤 화면(출고내역·주문관리·대시보드)에서 읽든 즉시 위드라온으로 보이게 하고,
+ * 바뀐 것이 있으면 localStorage에 1회 반영(멱등 → 이후 읽기에서는 변경 0건). */
+let withlaonShippedServerSynced = false
+function readWithLegacyRename<T extends { channel: string; order_date?: string; shipped_at?: string }>(
+  key: string,
+  list: T[],
+  onChanged?: (changed: T[]) => void,
+): T[] {
+  const { next, changed } = renameLegacyWithlaonChannels(list)
+  if (changed.length > 0) {
+    try { localStorage.setItem(key, JSON.stringify(next)) } catch { /* 용량 초과 등은 무시(표시는 보정된 값 사용) */ }
+    onChanged?.(changed)
+  }
+  return next
 }
 
 /** 시스템 channel → 마켓플러스 매출경로 */
