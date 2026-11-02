@@ -87,15 +87,19 @@ export async function hydrateShippedOrdersFromServer(): Promise<void> {
     const local = loadShippedOrders()
 
     if (remote.length === 0 && local.length > 0) {
-      await persistShippedUpsertsToServer(local)
+      const fixedLocal = renameLegacyWithlaonShippedChannels(local)
+      if (fixedLocal.changed.length > 0) safeSetShippedOrders(fixedLocal.next)
+      await persistShippedUpsertsToServer(fixedLocal.next)
       return
     }
 
     const byId = new Map<string, ShippedOrder>()
     for (const o of local) byId.set(o.id, o)
     for (const o of remote) byId.set(o.id, o)
-    const merged = Array.from(byId.values())
-    safeSetShippedOrders(merged)
+    // 11/2 출고내역 쇼핑몰명 보정(카페24·모바일웹 → 위드라온) — 서버 원본도 함께 갱신
+    const fixed = renameLegacyWithlaonShippedChannels(Array.from(byId.values()))
+    safeSetShippedOrders(fixed.next)
+    if (fixed.changed.length > 0) void persistShippedUpsertsToServer(fixed.changed)
     broadcastDashboardRefresh()
   } catch { /* ignore */ }
 }
@@ -191,7 +195,8 @@ function listPriceSumFromItems(items: OrderItem[]): number {
 function normalizeMallForNetRev(channel: string): string {
   let s = canonicalMallDisplayName(String(channel ?? '').trim())
   if (s.includes('스마트스토어') || s === '네이버 스마트스토어') return '스마트스토어'
-  if (s === '네이버페이' || s === '네이버 페이') return '카페24'
+  // 자사몰 계열(네이버페이·모바일웹·위드라온)은 카페24와 동일 배율 버킷
+  if (s === '네이버페이' || s === '네이버 페이' || s === '모바일웹' || s === '모바일 웹' || s === '위드라온') return '카페24'
   return s
 }
 
@@ -701,14 +706,53 @@ export function zeroSalePriceByTracking(
 }
 
 /* ─── 마켓플러스 채널 매핑 ─────────────────────────────── */
+/** 자사몰(카페24 기반) 경로는 모두 '위드라온' 쇼핑몰명으로 통일 */
+export const WITHLAON_CHANNEL = '위드라온'
 export const MP_CHANNEL_MAP: Record<string, string> = {
-  '네이버 페이': '카페24',
-  '네이버페이':  '카페24',
+  '네이버 페이': WITHLAON_CHANNEL,
+  '네이버페이':  WITHLAON_CHANNEL,
+  '카페24':      WITHLAON_CHANNEL,
+  '모바일웹':    WITHLAON_CHANNEL,
+  '모바일 웹':   WITHLAON_CHANNEL,
 }
 
-/** 마켓플러스 매출경로 → 시스템 channel */
+/** 마켓플러스 주문경로(매출경로) → 시스템 channel. 공백·대소문자 차이가 있어도 매핑되도록 정규화 비교 */
 export function mpToChannel(매출경로: string): string {
-  return MP_CHANNEL_MAP[매출경로] ?? 매출경로
+  const raw = String(매출경로 ?? '').trim()
+  if (!raw) return raw
+  const compact = raw.replace(/\s+/g, '').toLowerCase()
+  for (const [mp, ch] of Object.entries(MP_CHANNEL_MAP)) {
+    if (mp.replace(/\s+/g, '').toLowerCase() === compact) return ch
+  }
+  return raw
+}
+
+/** 과거 데이터의 자사몰 채널명(카페24·모바일웹·네이버페이) → '위드라온' 으로 통일할 대상인지 */
+export function isLegacyWithlaonChannel(channel: string): boolean {
+  const c = String(channel ?? '').replace(/\s+/g, '').toLowerCase()
+  return c === '카페24' || c === '모바일웹' || c === '네이버페이'
+}
+
+/** 출고내역 쇼핑몰명 보정: 2026-11-02 출고/주문 건 중 카페24·모바일웹(·네이버페이) → 위드라온.
+ *  hydrate 시마다 수행되지만 멱등(이미 바뀐 건은 대상이 아님)이라 비용·부작용이 없다. */
+export const WITHLAON_RENAME_DATE = '2026-11-02'
+export function renameLegacyWithlaonShippedChannels(list: ShippedOrder[]): { next: ShippedOrder[]; changed: ShippedOrder[] } {
+  const changed: ShippedOrder[] = []
+  const next = list.map(o => {
+    if (!isLegacyWithlaonChannel(o.channel)) return o
+    const shipDay = (() => {
+      const s = String(o.shipped_at ?? '')
+      if (!s) return ''
+      const d = new Date(s)
+      if (isNaN(d.getTime())) return s.slice(0, 10)
+      return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    })()
+    if (o.order_date !== WITHLAON_RENAME_DATE && shipDay !== WITHLAON_RENAME_DATE) return o
+    const n = { ...o, channel: WITHLAON_CHANNEL }
+    changed.push(n)
+    return n
+  })
+  return { next, changed }
 }
 
 /** 시스템 channel → 마켓플러스 매출경로 */

@@ -218,6 +218,7 @@ const MALL_COLORS: Record<string, { color: string; bg: string }> = {
   '올웨이즈':   { color: '#d97706', bg: '#fffbeb' },
   '스마트스토어':{ color: '#059669', bg: '#ecfdf5' },
   '카페24':     { color: '#7c3aed', bg: '#f5f3ff' },
+  '위드라온':   { color: '#7c3aed', bg: '#f5f3ff' },
   '쿠팡':       { color: '#f97316', bg: '#fff7ed' },
   '옥션':       { color: '#0284c7', bg: '#f0f9ff' },
   '오늘의집':   { color: '#059669', bg: '#f0fdf4' },
