@@ -499,6 +499,29 @@ interface LocalMappedRow {
   matched_option: string | null; matched_barcode: string | null
   mall_price: number | null; status: 'matched' | 'unmatched'
 }
+/** 상품 매핑창 쇼핑몰 표시 순서 (목록에 없는 쇼핑몰은 이 순서 뒤에 유지) */
+const MALL_MAPPING_ORDER = [
+  '패션플러스', '하프클럽', 'SSG종합몰', '지에스샵', '에이블리', '지그재그',
+  '올웨이즈', '토스쇼핑', '카페24', '옥션', 'G마켓', '롯데ON', '11번가', '쿠팡', '스마트스토어',
+]
+const MALL_MAPPING_ALIAS: Record<string, string> = {
+  '지마켓': 'G마켓',
+  '롯데온': '롯데ON',
+  'gs샵': '지에스샵',
+  'gs shop': '지에스샵',
+  'ssg': 'SSG종합몰',
+  'ssg.com': 'SSG종합몰',
+  'ssg닷컴': 'SSG종합몰',
+  '네이버 스마트스토어': '스마트스토어',
+  '네이버스마트스토어': '스마트스토어',
+  '위드라온': '카페24',
+}
+function mallMappingRank(name: string): number {
+  const key = name.trim()
+  const aliased = MALL_MAPPING_ALIAS[key] ?? MALL_MAPPING_ALIAS[key.toLowerCase()] ?? key
+  const idx = MALL_MAPPING_ORDER.indexOf(aliased)
+  return idx >= 0 ? idx : MALL_MAPPING_ORDER.length
+}
 function loadMallChannels(): { key: string; name: string }[] {
   try {
     const raw = localStorage.getItem(LOCAL_CHANNEL_KEY)
@@ -558,7 +581,10 @@ interface MappingRow { mallKey:string; mall:string; productId:string; productNam
 function MallMappingModal({
   product, onClose, onSave,
 }: { product: Product; onClose: () => void; onSave: (cp: ChannelPrice[], rm: (string|{mall:string;code:string;name?:string})[]) => void }) {
-  const channels = useMemo(() => loadMallChannels(), [])
+  const channels = useMemo(
+    () => [...loadMallChannels()].sort((a, b) => mallMappingRank(a.name) - mallMappingRank(b.name)),
+    [],
+  )
   const existingMappings = useMemo(() => loadLocalMappings(), [])
 
   const [rows, setRows] = useState<MappingRow[]>(() =>
