@@ -26,6 +26,60 @@ import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, 
 // 출고내역 기반 판매수량 집계 기준일 (발주 이력이 없을 경우 기본값 — 3/29 발주 기준 재집계)
 const SHIP_BASE_DATE = '2026-03-29'
 
+/** 상품관리 옵션 이미지(URL 또는 data URL)를 80×80 JPEG base64로 만든다.
+ *  가로세로 비율은 유지하고 흰 배경 안에 맞춘다. 원격 URL은 /api/pm-image 로 받아 CORS를 피한다. */
+async function rasterizeToJpeg80(src: string): Promise<string | null> {
+  const raw = (src || '').trim()
+  if (!raw) return null
+  let objectUrl = ''
+  try {
+    let imgSrc = raw
+    if (/^https?:\/\//i.test(raw)) {
+      const res = await fetch(`/api/pm-image?url=${encodeURIComponent(raw)}`)
+      if (!res.ok) return null
+      objectUrl = URL.createObjectURL(await res.blob())
+      imgSrc = objectUrl
+    }
+    const img = await new Promise<HTMLImageElement | null>(resolve => {
+      const el = new Image()
+      el.onload = () => resolve(el)
+      el.onerror = () => resolve(null)
+      el.src = imgSrc
+    })
+    if (!img || !img.naturalWidth || !img.naturalHeight) return null
+    const canvas = document.createElement('canvas')
+    canvas.width = 80
+    canvas.height = 80
+    const ctx = canvas.getContext('2d')
+    if (!ctx) return null
+    ctx.fillStyle = '#ffffff'
+    ctx.fillRect(0, 0, 80, 80)
+    const scale = Math.min(80 / img.naturalWidth, 80 / img.naturalHeight)
+    const w = Math.max(1, img.naturalWidth * scale)
+    const h = Math.max(1, img.naturalHeight * scale)
+    ctx.drawImage(img, (80 - w) / 2, (80 - h) / 2, w, h)
+    return canvas.toDataURL('image/jpeg', 0.9).split(',')[1] || null
+  } catch {
+    return null
+  } finally {
+    if (objectUrl) URL.revokeObjectURL(objectUrl)
+  }
+}
+
+/** 캐시에 이미지가 없을 때 바코드로 상품관리 옵션 이미지를 1건 조회 */
+async function fetchOptionImageByBarcode(barcode: string): Promise<string> {
+  const bc = barcode.trim()
+  if (!bc) return ''
+  try {
+    const res = await fetch(`/api/pm-products?barcode=${encodeURIComponent(bc)}`, { cache: 'no-store' })
+    if (!res.ok) return ''
+    const data = await res.json() as Array<{ options?: Array<{ barcode?: string; image?: string }> }>
+    const opts = (Array.isArray(data) ? data : []).flatMap(p => p.options ?? [])
+    const hit = opts.find(o => (o.barcode || '').trim().toUpperCase() === bc.toUpperCase())
+    return (hit?.image || '').trim()
+  } catch { return '' }
+}
+
 // Sheet3 컬러 코드 → 영문색상명 맵
 const COLOR_EN_MAP: Record<string, string> = {
   BD:'BURGANDY',BE:'BEIGE',BG:'BLUE GREEN',BI:'BLUE INDIGO',BK:'BLACK',BL:'BLUE',BN:'BLUE GREEN',
@@ -541,6 +595,7 @@ export default function PurchaseManagePage() {
 
       // ② 각 선택 상품 → 행 데이터 구성
       const sheet1Rows: (string | number)[][] = []
+      const imageSrcs: string[] = []
       for (const s of selectedOptsSorted) {
         const prod = fullProducts.find(p => p.id === s.prodId)
         if (!prod) continue
@@ -553,6 +608,7 @@ export default function PurchaseManagePage() {
         const chineseName = (opt as PmOption & { chinese_name?: string }).chinese_name || ''
         const imgVal      = resolveQualImage(s.barcode, s.image)
         const abbrClean   = stripCodePrefix(prod.abbr || prod.name)
+        imageSrcs.push(imgVal)
 
         sheet1Rows.push([
           prod.code        || '',   // A: 품번
@@ -565,7 +621,7 @@ export default function PurchaseManagePage() {
           'F',                      // H: 중국사이즈 (고정)
           'FFF',                    // I: 리블리크사이즈 (고정)
           prod.category    || '',   // J: 품목
-          '',                       // K: 이미지 (링크 미출력)
+          '',                       // K: 이미지 (아래 ExcelJS에서 80×80으로 첨부)
           prod.supplier    || '',   // L: URL (구매처 사이트)
           prod.cost_price  ?? '',   // M: 단가
           Number(s.qty)    || 0,    // N: 부족수량
@@ -616,10 +672,45 @@ export default function PurchaseManagePage() {
       r2.e.c = Math.max(r2.e.c, 5)
       ws2['!ref'] = XLSX.utils.encode_range(r2)
 
-      // ⑤ 다운로드
+      // ⑤ K열(11번째)에 바코드 기준 상품관리 이미지를 80×80으로 첨부
+      //    캐시에 없으면 바코드로 서버에서 한 번 더 조회
+      await Promise.all(imageSrcs.map(async (src, i) => {
+        if (src) return
+        const bc = String(sheet1Rows[i]?.[5] ?? '')
+        const fetched = await fetchOptionImageByBarcode(bc)
+        if (fetched) imageSrcs[i] = fetched
+      }))
+      const jpegs = await Promise.all(imageSrcs.map(src => rasterizeToJpeg80(src)))
+
+      const xlsxArr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+      const ExcelJS = (await import('exceljs')).default
+      const wbEx = new ExcelJS.Workbook()
+      await wbEx.xlsx.load(xlsxArr)
+      const wsEx = wbEx.worksheets[0]
+      if (wsEx) {
+        // 80px ≈ 열너비 11.5, 행높이 60pt
+        wsEx.getColumn(11).width = 11.5
+        jpegs.forEach((b64, i) => {
+          const excelRow = wsEx.getRow(i + 2)
+          excelRow.height = 60
+          if (!b64) return
+          const imgId = wbEx.addImage({ base64: b64, extension: 'jpeg' })
+          // K열 해당 행 칸(약 80×80)에 맞춰 첨부
+          wsEx.addImage(imgId, `K${i + 2}:K${i + 2}`)
+        })
+      }
+
+      // ⑥ 다운로드
       const d  = new Date()
       const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
-      XLSX.writeFile(wb, `YNM_온라인 오더리스트_가방_${ds}.xlsx`)
+      const out = await wbEx.xlsx.writeBuffer()
+      const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `YNM_온라인 오더리스트_가방_${ds}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
     } catch (e: unknown) {
       alert('다운로드 오류: ' + (e instanceof Error ? e.message : String(e)))
     }
