@@ -595,21 +595,22 @@ function MallMappingModal({
       )
       // localStorage pm_channel_mappings_v2 에서도 기존 매핑 조회 (기기별 캐시 · 서버가 우선)
       const localRow = (existingMappings[ch.key] || []).find(r => r.matched_product_id === product.id)
+      const productId = typeof mallEntry === 'object'
+        ? (mallEntry.code || localRow?.mall_product_id || '')
+        : (localRow?.mall_product_id || '')
+      // 상품ID가 없으면 상품명·TAG가·판매가는 채우지 않는다 (상품 자체 이름/기존 가격으로 기본값을 넣지 않음)
+      const hasId = productId.trim().length > 0
       return {
         mallKey:     ch.key,
         mall:        ch.name,
-        productId:   typeof mallEntry === 'object'
-          ? (mallEntry.code || localRow?.mall_product_id || '')
-          : (localRow?.mall_product_id || ''),
-        // 서버(Supabase registered_malls)에 저장된 쇼핑몰 상품명이 최우선, 없으면 로컬 캐시,
-        // 그마저 없으면 상품 자체의 이름을 기본값으로 표시 → 기기와 관계없이 동일하게 보임
-        productName: (typeof mallEntry === 'object' ? mallEntry.name : undefined)
-          || localRow?.mall_product_name
-          || product.name,
-        tagPrice: priceEntry?.tag_price ? String(priceEntry.tag_price) : '',
-        price: priceEntry
-          ? String(priceEntry.price)
-          : (localRow?.mall_price ? String(localRow.mall_price) : ''),
+        productId,
+        productName: hasId
+          ? ((typeof mallEntry === 'object' ? mallEntry.name : undefined) || localRow?.mall_product_name || product.name)
+          : '',
+        tagPrice: hasId && priceEntry?.tag_price ? String(priceEntry.tag_price) : '',
+        price: hasId
+          ? (priceEntry ? String(priceEntry.price) : (localRow?.mall_price ? String(localRow.mall_price) : ''))
+          : '',
       }
     })
   )
@@ -631,8 +632,7 @@ function MallMappingModal({
                    }))
 
     // localStorage pm_channel_mappings_v2 도 동기화 (오프라인 캐시 · 매핑관리탭 표시용)
-    // ※ 상품ID를 비워도 쇼핑몰 상품명(참고)만 입력했다면 그 값은 보존한다.
-    //    (기존에는 상품ID가 비어있으면 상품명까지 통째로 삭제되어 "입력해도 안 들어간다"는 문제가 있었음)
+    // 상품ID가 없으면 상품명·TAG가·판매가도 비우므로, 해당 쇼핑몰 매핑은 제거된다.
     const allMaps = { ...existingMappings }
     for (const row of rows) {
       const mallRows = [...(allMaps[row.mallKey] || [])]
@@ -675,7 +675,15 @@ function MallMappingModal({
         <div key={row.mallKey} style={{ display:'grid', gridTemplateColumns:'130px 1fr 1.5fr 110px 110px', gap:8, marginBottom:6, alignItems:'center' }}>
           <span style={{ fontSize:12.5, fontWeight:800, color:'#334155', background:'#f1f5f9', padding:'6px 10px', borderRadius:7, textAlign:'center' }}>{row.mall}</span>
           <Input placeholder="상품ID" value={row.productId}
-            onChange={e => { const r=[...rows]; r[i]={...r[i],productId:e.target.value}; setRows(r) }}/>
+            onChange={e => {
+              const r = [...rows]
+              const id = e.target.value
+              // 상품ID를 지우면 상품명·TAG가·판매가도 함께 비운다
+              r[i] = id.trim()
+                ? { ...r[i], productId: id }
+                : { ...r[i], productId: id, productName: '', tagPrice: '', price: '' }
+              setRows(r)
+            }}/>
           <Input placeholder="상품명 (선택)" value={row.productName}
             onChange={e => { const r=[...rows]; r[i]={...r[i],productName:e.target.value}; setRows(r) }}/>
           <div style={{ position:'relative' }}>
