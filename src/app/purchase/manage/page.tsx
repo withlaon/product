@@ -26,6 +26,36 @@ import { Truck, Edit2, Trash2, X, Plus, CheckCircle2, PackagePlus, ChevronDown, 
 // 출고내역 기반 판매수량 집계 기준일 (발주 이력이 없을 경우 기본값 — 3/29 발주 기준 재집계)
 const SHIP_BASE_DATE = '2026-03-29'
 
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf)
+  let binary = ''
+  const step = 0x8000
+  for (let i = 0; i < bytes.length; i += step) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + step))
+  }
+  return btoa(binary)
+}
+
+/** ExcelJS가 그림 크기를 0으로 기록해 엑셀에서 안 보이는 문제를 고친다. 80px = 762000 EMU */
+async function ensureImageExtents(buf: ArrayBuffer): Promise<ArrayBuffer> {
+  const JSZip = (await import('jszip')).default
+  const zip = await JSZip.loadAsync(buf)
+  const emu = String(80 * 9525)
+  let changed = false
+  for (const name of Object.keys(zip.files)) {
+    if (!name.startsWith('xl/drawings/drawing') || !name.endsWith('.xml')) continue
+    const entry = zip.file(name)
+    if (!entry) continue
+    const xml = await entry.async('string')
+    const next = xml.replace(/<a:ext cx="0" cy="0"\/>/g, `<a:ext cx="${emu}" cy="${emu}"/>`)
+    if (next !== xml) {
+      zip.file(name, next)
+      changed = true
+    }
+  }
+  return changed ? zip.generateAsync({ type: 'arraybuffer' }) : buf
+}
+
 /** 상품관리 옵션 이미지(URL 또는 data URL)를 80×80 JPEG base64로 만든다.
  *  가로세로 비율은 유지하고 흰 배경 안에 맞춘다. 원격 URL은 /api/pm-image 로 받아 CORS를 피한다. */
 async function rasterizeToJpeg80(src: string): Promise<string | null> {
@@ -64,6 +94,28 @@ async function rasterizeToJpeg80(src: string): Promise<string | null> {
   } finally {
     if (objectUrl) URL.revokeObjectURL(objectUrl)
   }
+}
+
+/** 80×80 변환이 실패해도 원본 바이트를 붙여 이미지가 빠지지 않게 한다. */
+async function loadImageForExcel(src: string): Promise<{ base64: string; extension: 'jpeg' | 'png' | 'gif' } | null> {
+  const raw = (src || '').trim()
+  if (!raw) return null
+  const resized = await rasterizeToJpeg80(raw)
+  if (resized) return { base64: resized, extension: 'jpeg' }
+  try {
+    if (raw.startsWith('data:image/')) {
+      const [meta, b64] = raw.split(',')
+      if (!b64) return null
+      const extension = meta.includes('png') ? 'png' : meta.includes('gif') ? 'gif' : 'jpeg'
+      return { base64: b64, extension }
+    }
+    const fetchUrl = /^https?:\/\//i.test(raw) ? `/api/pm-image?url=${encodeURIComponent(raw)}` : raw
+    const res = await fetch(fetchUrl)
+    if (!res.ok) return null
+    const mime = res.headers.get('content-type') || 'image/jpeg'
+    const extension = mime.includes('png') ? 'png' : mime.includes('gif') ? 'gif' : 'jpeg'
+    return { base64: arrayBufferToBase64(await res.arrayBuffer()), extension }
+  } catch { return null }
 }
 
 /** 캐시에 이미지가 없을 때 바코드로 상품관리 옵션 이미지를 1건 조회 */
@@ -680,37 +732,47 @@ export default function PurchaseManagePage() {
         const fetched = await fetchOptionImageByBarcode(bc)
         if (fetched) imageSrcs[i] = fetched
       }))
-      const jpegs = await Promise.all(imageSrcs.map(src => rasterizeToJpeg80(src)))
+      const images = await Promise.all(imageSrcs.map(src => loadImageForExcel(src)))
 
       const xlsxArr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
       const ExcelJS = (await import('exceljs')).default
       const wbEx = new ExcelJS.Workbook()
       await wbEx.xlsx.load(xlsxArr)
       const wsEx = wbEx.worksheets[0]
+      let attached = 0
       if (wsEx) {
         // 80px ≈ 열너비 11.5, 행높이 60pt
         wsEx.getColumn(11).width = 11.5
-        jpegs.forEach((b64, i) => {
+        images.forEach((img, i) => {
           const excelRow = wsEx.getRow(i + 2)
           excelRow.height = 60
-          if (!b64) return
-          const imgId = wbEx.addImage({ base64: b64, extension: 'jpeg' })
-          // K열 해당 행 칸(약 80×80)에 맞춰 첨부
-          wsEx.addImage(imgId, `K${i + 2}:K${i + 2}`)
+          if (!img) return
+          const imgId = wbEx.addImage({ base64: img.base64, extension: img.extension })
+          // 0-based: K열=10, 데이터 첫 행(엑셀 2행)=1. 크기는 80×80px
+          wsEx.addImage(imgId, {
+            tl: { col: 10, row: i + 1 },
+            ext: { width: 80, height: 80 },
+            editAs: 'oneCell',
+          } as never)
+          attached++
         })
       }
 
       // ⑥ 다운로드
       const d  = new Date()
       const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`
-      const out = await wbEx.xlsx.writeBuffer()
-      const blob = new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const rawOut = await wbEx.xlsx.writeBuffer()
+      const fixed = await ensureImageExtents(rawOut as ArrayBuffer)
+      const blob = new Blob([fixed], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `YNM_온라인 오더리스트_가방_${ds}.xlsx`
+      a.download = `위드라온_오더리스트_가방_${ds}.xlsx`
       a.click()
       URL.revokeObjectURL(url)
+      if (sheet1Rows.length > 0 && attached === 0) {
+        alert('엑셀은 저장됐지만, 선택한 상품의 바코드에 연결된 이미지를 찾지 못했습니다.')
+      }
     } catch (e: unknown) {
       alert('다운로드 오류: ' + (e instanceof Error ? e.message : String(e)))
     }
