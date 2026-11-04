@@ -634,16 +634,17 @@ export default function PurchaseManagePage() {
     const fullProducts = products as unknown as FullProduct[]
 
     try {
-      // ① 템플릿 파일 로드
+      // ① 색상표(Sheet3)만 템플릿에서 읽는다.
+      //    템플릿 xls 전체를 xlsx로 다시 저장하면 빈 칸(t="z")과 행 높이 속성이
+      //    깨진 XML이 되어, 엑셀이 2행을 복구하면서 그림까지 지운다.
       const res = await fetch('/purchase-order-template.xls')
       if (!res.ok) throw new Error('템플릿 파일을 찾을 수 없습니다.')
       const buf = await res.arrayBuffer()
-      const wb  = XLSX.read(buf, { type: 'array' })
-
-      const ws1Name = wb.SheetNames[0] // 주문장
-      const ws2Name = wb.SheetNames[1] // 스티커작업 리스트
-      const ws1 = wb.Sheets[ws1Name]
-      const ws2 = wb.Sheets[ws2Name]
+      const tpl = XLSX.read(buf, { type: 'array' })
+      const colorSheetName = tpl.SheetNames[2]
+      const colorRows = colorSheetName
+        ? XLSX.utils.sheet_to_json<(string | number)[]>(tpl.Sheets[colorSheetName], { header: 1, defval: '' })
+        : []
 
       // ② 각 선택 상품 → 행 데이터 구성
       const sheet1Rows: (string | number)[][] = []
@@ -680,52 +681,7 @@ export default function PurchaseManagePage() {
         ])
       }
 
-      // ③ Sheet1 셀에 데이터 입력 (row 2부터, 1행 헤더 유지)
-      sheet1Rows.forEach((row, ri) => {
-        row.forEach((val, ci) => {
-          const cellRef = XLSX.utils.encode_cell({ r: ri + 1, c: ci })
-          // M열(ci=12): 원가 - 정수면 정수, 소숫점 있으면 끝까지 표시
-          if (ci === 12 && val !== '') {
-            const numVal = typeof val === 'number' ? val : Number(val)
-            if (!isNaN(numVal)) {
-              const isInt = Number.isInteger(numVal)
-              ws1[cellRef] = { v: numVal, t: 'n', z: isInt ? '#,##0' : '#,##0.##########' }
-            } else {
-              ws1[cellRef] = { v: val, t: 's' }
-            }
-          } else {
-            ws1[cellRef] = { v: val, t: typeof val === 'number' ? 'n' : 's' }
-          }
-        })
-      })
-      // Sheet1 범위 갱신
-      const r1 = XLSX.utils.decode_range(ws1['!ref'] || 'A1')
-      r1.e.r = Math.max(r1.e.r, sheet1Rows.length)
-      r1.e.c = Math.max(r1.e.c, 13)
-      ws1['!ref'] = XLSX.utils.encode_range(r1)
-
-      // ④ Sheet2 (스티커작업 리스트): A상품명, B품번, C색상, D리블리크사이즈(FFF), E바코드, F부족수량
-      sheet1Rows.forEach((row, ri) => {
-        const s2row = [
-          row[6],   // A: 상품명 = Sheet1 G(상품명)
-          row[0],   // B: 품번   = Sheet1 A(품번)
-          row[3],   // C: 색상   = Sheet1 D(한글색상명)
-          'FFF',    // D: 리블리크사이즈 고정
-          row[5],   // E: 바코드 = Sheet1 F(바코드)
-          row[13],  // F: 부족수량
-        ]
-        s2row.forEach((val, ci) => {
-          const cellRef = XLSX.utils.encode_cell({ r: ri + 1, c: ci })
-          ws2[cellRef] = { v: val, t: typeof val === 'number' ? 'n' : 's' }
-        })
-      })
-      const r2 = XLSX.utils.decode_range(ws2['!ref'] || 'A1')
-      r2.e.r = Math.max(r2.e.r, sheet1Rows.length)
-      r2.e.c = Math.max(r2.e.c, 5)
-      ws2['!ref'] = XLSX.utils.encode_range(r2)
-
-      // ⑤ K열(11번째)에 바코드 기준 상품관리 이미지를 80×80으로 첨부
-      //    캐시에 없으면 바코드로 서버에서 한 번 더 조회
+      // ③ 캐시에 이미지가 없으면 바코드로 서버에서 한 번 더 조회
       await Promise.all(imageSrcs.map(async (src, i) => {
         if (src) return
         const bc = String(sheet1Rows[i]?.[5] ?? '')
@@ -734,28 +690,58 @@ export default function PurchaseManagePage() {
       }))
       const images = await Promise.all(imageSrcs.map(src => loadImageForExcel(src)))
 
-      const xlsxArr = XLSX.write(wb, { bookType: 'xlsx', type: 'array' }) as ArrayBuffer
+      // ④ 깨끗한 통합문서로 작성 (주문장 / 스티커 / 색상표)
       const ExcelJS = (await import('exceljs')).default
       const wbEx = new ExcelJS.Workbook()
-      await wbEx.xlsx.load(xlsxArr)
-      const wsEx = wbEx.worksheets[0]
+      const ws1 = wbEx.addWorksheet('주문장')
+      ws1.columns = [
+        { width: 16 }, { width: 12 }, { width: 16 }, { width: 14 }, { width: 14 },
+        { width: 22 }, { width: 24 }, { width: 12 }, { width: 14 }, { width: 12 },
+        { width: 12 }, { width: 28 }, { width: 12 }, { width: 12 },
+      ]
+      const head1 = ws1.addRow(['품번', '색상코드', '영문색상명', '한글색상명', '중국색상', '바코드', '상품명(15자이내)', '중국사이즈', '리블리크 사이즈', '품목', '이미지', 'URL', '단가', '부족수량'])
+      head1.font = { bold: true, size: 10 }
+      head1.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+      head1.height = 32
+
+      const ws2 = wbEx.addWorksheet('스티커작업 리스트')
+      ws2.columns = [
+        { width: 24 }, { width: 16 }, { width: 14 }, { width: 16 }, { width: 22 }, { width: 12 },
+      ]
+      const head2 = ws2.addRow(['상품명', '품번', '색상', '리블리크 사이즈', '바코드', '부족수량'])
+      head2.font = { bold: true, size: 10 }
+      head2.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true }
+      head2.height = 22
+
       let attached = 0
-      if (wsEx) {
-        // 80px ≈ 열너비 11.5, 행높이 60pt
-        wsEx.getColumn(11).width = 11.5
-        images.forEach((img, i) => {
-          const excelRow = wsEx.getRow(i + 2)
-          excelRow.height = 60
-          if (!img) return
+      sheet1Rows.forEach((row, i) => {
+        const values = row.map((val, ci) => (ci === 10 ? null : val === '' ? null : val))
+        const excelRow = ws1.addRow(values)
+        excelRow.height = 60
+        excelRow.alignment = { vertical: 'middle' }
+        const cost = row[12]
+        if (typeof cost === 'number' && !Number.isNaN(cost)) {
+          excelRow.getCell(13).numFmt = Number.isInteger(cost) ? '#,##0' : '#,##0.##########'
+        }
+        const img = images[i]
+        if (img) {
           const imgId = wbEx.addImage({ base64: img.base64, extension: img.extension })
-          // 0-based: K열=10, 데이터 첫 행(엑셀 2행)=1. 크기는 80×80px
-          wsEx.addImage(imgId, {
-            tl: { col: 10, row: i + 1 },
+          ws1.addImage(imgId, {
+            tl: { col: 10, row: excelRow.number - 1 },
             ext: { width: 80, height: 80 },
             editAs: 'oneCell',
           } as never)
           attached++
-        })
+        }
+
+        const sticker = ws2.addRow([row[6], row[0], row[3], 'FFF', row[5], row[13]])
+        sticker.alignment = { vertical: 'middle' }
+      })
+
+      const ws3 = wbEx.addWorksheet(colorSheetName || 'Sheet3')
+      for (const colorRow of colorRows) {
+        if (!colorRow.some(cell => String(cell ?? '').trim() !== '')) continue
+        ws3.addRow(colorRow.map(cell => (cell === '' ? null : cell)))
       }
 
       // ⑥ 다운로드
