@@ -152,6 +152,7 @@ export default function MappingPage() {
           const regMalls = (product.registered_malls ?? []) as (string | { mall: string; code: string; name?: string })[]
           for (const entry of regMalls) {
             const mallName = typeof entry === 'string' ? entry : entry.mall
+            if (mallName === '__mapping_updated_at__') continue
             const mallCode = typeof entry === 'string' ? '' : (entry.code || '')
             const mallCustomName = typeof entry === 'string' ? '' : (entry.name || '')
             if (!mallCode) continue

@@ -578,6 +578,30 @@ function buildLocalMallCodesMap(): Record<string, Record<string, string>> {
 }
 
 interface MappingRow { mallKey:string; mall:string; productId:string; productName:string; tagPrice:string; price:string }
+
+/** 매핑창을 실제로 수정한 시각. registered_malls 안에만 두고 쇼핑몰 뱃지로는 쓰지 않는다. */
+const MAPPING_UPDATED_META = '__mapping_updated_at__'
+
+function mappingUpdatedAtOf(rm: Product['registered_malls'] | undefined): string {
+  const hit = (rm ?? []).find(m => typeof m === 'object' && m.mall === MAPPING_UPDATED_META)
+  return hit && typeof hit === 'object' ? (hit.code || '').trim() : ''
+}
+
+function formatMappingUpdatedAt(iso: string): string {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`
+}
+
+function mappingRowSignature(list: MappingRow[]): string {
+  return JSON.stringify(list.map(r => ({
+    mall: r.mall,
+    productId: r.productId.trim(),
+    productName: r.productName.trim(),
+    tagPrice: r.tagPrice.trim(),
+    price: r.price.trim(),
+  })))
+}
 function MallMappingModal({
   product, onClose, onSave,
 }: { product: Product; onClose: () => void; onSave: (cp: ChannelPrice[], rm: (string|{mall:string;code:string;name?:string})[]) => void }) {
@@ -587,8 +611,9 @@ function MallMappingModal({
   )
   const existingMappings = useMemo(() => loadLocalMappings(), [])
 
-  const [rows, setRows] = useState<MappingRow[]>(() =>
-    channels.map(ch => {
+  const initialSigRef = useRef('')
+  const [rows, setRows] = useState<MappingRow[]>(() => {
+    const next = channels.map(ch => {
       const priceEntry = product.channel_prices.find(cp => cp.channel === ch.name)
       const mallEntry  = (product.registered_malls ?? []).find(m =>
         typeof m === 'object' ? m.mall === ch.name : m === ch.name
@@ -613,7 +638,9 @@ function MallMappingModal({
           : '',
       }
     })
-  )
+    initialSigRef.current = mappingRowSignature(next)
+    return next
+  })
 
   const handleSave = () => {
     // productId가 비어있으면 해당 쇼핑몰의 판매가·등록현황도 함께 제거
@@ -662,7 +689,13 @@ function MallMappingModal({
     saveLocalMappings(allMaps)
     // 매핑관리 탭이 같은 탭(SPA)에 마운트돼 있을 경우 실시간 갱신
     try { window.dispatchEvent(new CustomEvent('pm_mapping_updated')) } catch {}
-    onSave(cp, rm)
+    const changed = mappingRowSignature(rows) !== initialSigRef.current
+    const prevAt = mappingUpdatedAtOf(product.registered_malls)
+    const nextAt = changed ? new Date().toISOString() : prevAt
+    const rmOut = nextAt
+      ? [...rm, { mall: MAPPING_UPDATED_META, code: nextAt }]
+      : rm
+    onSave(cp, rmOut)
   }
 
   const thS: React.CSSProperties = { fontSize:10.5, fontWeight:800, color:'#64748b', padding:'4px 0' }
@@ -2852,13 +2885,14 @@ export default function ProductsPage() {
                     <td style={{ paddingTop:10, paddingBottom:10, overflow:'visible' }}>
                       <div style={{ display:'flex', flexWrap:'wrap', gap:4, maxWidth:160 }}>
                         {(() => {
-                          // Supabase registered_malls + localStorage 매핑 병합
-                          const fromSupabase = (p.registered_malls ?? []).map(m => typeof m === 'string' ? m : m.mall)
+                          // Supabase registered_malls + localStorage 매핑 병합 (최종수정일 메타는 뱃지에서 제외)
+                          const visibleMalls = (p.registered_malls ?? []).filter(m => (typeof m === 'string' ? m : m.mall) !== MAPPING_UPDATED_META)
+                          const fromSupabase = visibleMalls.map(m => typeof m === 'string' ? m : m.mall)
                           const fromLocal = localMallsMap[p.id] ?? []
                           const merged = [...new Set([...fromSupabase, ...fromLocal])]
                           if (merged.length === 0) return <span style={{ fontSize:11, color:'#cbd5e1', fontWeight:600 }}>-</span>
                           return merged.map((mallName, mi) => {
-                          const mallData = (p.registered_malls ?? []).find(m => (typeof m === 'string' ? m : m.mall) === mallName)
+                          const mallData = visibleMalls.find(m => (typeof m === 'string' ? m : m.mall) === mallName)
                           // Supabase registered_malls 코드 우선, 없으면 localStorage mall_product_id 사용
                           const mallCode = (mallData && typeof mallData === 'object' ? (mallData.code || '') : '')
                             || (localMallCodesMap[p.id]?.[mallName] ?? '')
@@ -2950,6 +2984,15 @@ export default function ProductsPage() {
                         })
                       })()}
                       </div>
+                      {(() => {
+                        const label = formatMappingUpdatedAt(mappingUpdatedAtOf(p.registered_malls))
+                        if (!label) return null
+                        return (
+                          <div style={{ marginTop: 6, fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.02em' }}>
+                            최종수정일 {label}
+                          </div>
+                        )
+                      })()}
                       {(p.status === 'active' || p.status === 'pending_delete') && (() => {
                         /* 등록일 = 판매중 전환일(active_since); 없으면 삭제예정은 created_at 등 보조 */
                         const regRaw = (p.active_since && String(p.active_since).trim())
