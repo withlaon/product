@@ -25,6 +25,7 @@ interface MappedRow {
 interface PmOption { name: string; barcode: string }
 interface PmProduct {
   id: string; code: string; name: string; category: string; options: PmOption[]
+  status?: string
   registered_malls?: (string | { mall: string; code: string; name?: string })[]
   channel_prices?:   { channel: string; price: number; tag_price?: number }[]
 }
@@ -53,6 +54,8 @@ interface MallExportRow {
   mappedName: string
   tagPrice: number | ''
   price: number | ''
+  /** 삭제예정=1, 판매중=2, 그 외는 빈칸 */
+  division: 1 | 2 | ''
   category: string
 }
 
@@ -135,7 +138,7 @@ export default function MappingPage() {
 
     supabase
       .from('pm_products')
-      .select('id,code,name,category,options,registered_malls,channel_prices')
+      .select('id,code,name,category,status,options,registered_malls,channel_prices')
       .then(({ data }) => {
         if (!data) return
         const pmProducts = data as PmProduct[]
@@ -340,12 +343,14 @@ export default function MappingPage() {
       const tagPrice      = cp?.tag_price ?? null
       const isMapped = !!mallEntry || !!cp || !!localRow
       if (!isMapped) continue
+      const division: 1 | 2 | '' = p.status === 'pending_delete' ? 1 : p.status === 'active' ? 2 : ''
       result.push({
         mallProductId,
         code:       p.code || '',
         mappedName: mappedName || p.name,
         tagPrice:   tagPrice && tagPrice > 0 ? tagPrice : '',
         price:      price && price > 0 ? price : '',
+        division,
         category:   (p.category || '').trim() || UNCATEGORIZED,
       })
     }
@@ -369,7 +374,7 @@ export default function MappingPage() {
   }, [selectedMall, selectedMallName, products, mappings, catOrder])
 
   /* ── 쇼핑몰 매핑 목록 엑셀 다운로드 (category 미지정 = 전체) ── */
-  const handleDownloadMallExcel = (mallKey: string, mallName: string, category?: string) => {
+  const handleDownloadMallExcel = async (mallKey: string, mallName: string, category?: string) => {
     const all = buildMallExportRows(mallKey, mallName)
     const target = category && category !== '전체' ? all.filter(r => r.category === category) : all
     if (target.length === 0) {
@@ -377,20 +382,44 @@ export default function MappingPage() {
       return
     }
     const today = new Date().toISOString().slice(0, 10)
-    const excelRows = target.map(r => ({
-      '쇼핑몰 상품ID': r.mallProductId,
-      '상품코드':      r.code,
-      '매핑상품명':    r.mappedName,
-      'TAG가':         r.tagPrice,
-      '판매가':        r.price,
-    }))
-    const wb = XLSX.utils.book_new()
-    const ws = XLSX.utils.json_to_sheet(excelRows, { header: ['쇼핑몰 상품ID', '상품코드', '매핑상품명', 'TAG가', '판매가'] })
-    ws['!cols'] = [{ wch: 20 }, { wch: 16 }, { wch: 40 }, { wch: 12 }, { wch: 12 }]
-    const sheetName = (category && category !== '전체' ? category : mallName).replace(/[\\/?*[\]:]/g, '_').slice(0, 30)
-    XLSX.utils.book_append_sheet(wb, ws, sheetName || 'Sheet1')
+    const sheetName = (category && category !== '전체' ? category : mallName).replace(/[\\/?*[\]:]/g, '_').slice(0, 30) || 'Sheet1'
     const catSuffix = category && category !== '전체' ? `_${category}` : '_전체'
-    XLSX.writeFile(wb, `${mallName}${catSuffix}_매핑목록_${today}.xlsx`)
+    try {
+      const ExcelJS = (await import('exceljs')).default
+      const wb = new ExcelJS.Workbook()
+      const ws = wb.addWorksheet(sheetName)
+      ws.columns = [
+        { header: '쇼핑몰 상품ID', key: 'mallProductId', width: 20 },
+        { header: '상품코드', key: 'code', width: 16 },
+        { header: '매핑상품명', key: 'mappedName', width: 40 },
+        { header: 'TAG가', key: 'tagPrice', width: 12 },
+        { header: '판매가', key: 'price', width: 12 },
+        { header: '상품구분', key: 'division', width: 12 },
+      ]
+      for (const r of target) {
+        const row = ws.addRow({
+          mallProductId: r.mallProductId,
+          code: r.code,
+          mappedName: r.mappedName,
+          tagPrice: r.tagPrice === '' ? null : r.tagPrice,
+          price: r.price === '' ? null : r.price,
+          division: r.division === '' ? null : r.division,
+        })
+        if (r.division === 1) {
+          row.getCell(1).font = { color: { argb: 'FFFF0000' } }
+        }
+      }
+      const raw = await wb.xlsx.writeBuffer()
+      const blob = new Blob([raw], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${mallName}${catSuffix}_매핑목록_${today}.xlsx`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (e: unknown) {
+      alert('다운로드 오류: ' + (e instanceof Error ? e.message : String(e)))
+    }
   }
 
   const handleDownloadTemplate = () => {
