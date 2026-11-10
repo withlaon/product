@@ -2984,15 +2984,6 @@ export default function ProductsPage() {
                         })
                       })()}
                       </div>
-                      {(() => {
-                        const label = formatMappingUpdatedAt(mappingUpdatedAtOf(p.registered_malls))
-                        if (!label) return null
-                        return (
-                          <div style={{ marginTop: 6, fontSize: 10, fontWeight: 700, color: '#64748b', letterSpacing: '0.02em' }}>
-                            최종수정일 {label}
-                          </div>
-                        )
-                      })()}
                       {(p.status === 'active' || p.status === 'pending_delete') && (() => {
                         /* 등록일 = 판매중 전환일(active_since); 없으면 삭제예정은 created_at 등 보조 */
                         const regRaw = (p.active_since && String(p.active_since).trim())
@@ -3019,6 +3010,15 @@ export default function ProductsPage() {
                             letterSpacing: '0.02em',
                           }}>
                             등록일 {regLabel}
+                          </div>
+                        )
+                      })()}
+                      {(() => {
+                        const label = formatMappingUpdatedAt(mappingUpdatedAtOf(p.registered_malls))
+                        if (!label) return null
+                        return (
+                          <div style={{ marginTop: 4, fontSize: 10, fontWeight: 700, color: '#6b3a1f', letterSpacing: '0.02em' }}>
+                            최종수정일 {label}
                           </div>
                         )
                       })()}
