@@ -1,5 +1,6 @@
 import { broadcastDashboardRefresh } from './dashboard-sync'
 import { canonicalMallDisplayName } from './mall-display-names'
+import { evacuateOrderRegRawSync, idbGet, idbSet, writeLocalOrders } from './local-quota'
 
 /* ─── 출고내역 타입 ─────────────────────────────────────── */
 export interface ShippedOrder extends Omit<Order, 'status'> {
@@ -262,75 +263,118 @@ export interface Order {
 /* ─── 주문 스토리지 ──────────────────────────────────────── */
 export const ORDERS_KEY = 'pm_orders_v1'
 
-export function loadOrders(): Order[] {
+/* 주문 전체 목록은 IndexedDB가 기준이고, localStorage에는 들어가는 만큼만 둔다.
+   화면은 ordersMemory를 읽어 저장 한도와 상관없이 방금 올린 주문을 바로 보여 준다. */
+let ordersMemory: Order[] | null = null
+let ordersReady = false
+let hydratePromise: Promise<void> | null = null
+let ordersChain: Promise<void> = Promise.resolve()
+
+function readLocalOrders(): Order[] {
+  if (typeof window === 'undefined') return []
   try {
     const raw = localStorage.getItem(ORDERS_KEY)
-    const list = raw ? (JSON.parse(raw) as Order[]) : []
-    // 11/2 주문 쇼핑몰명 보정(카페24·모바일웹 → 위드라온) — 대시보드 쇼핑몰별 집계에도 즉시 반영
-    return readWithLegacyRename(ORDERS_KEY, list)
+    return raw ? (JSON.parse(raw) as Order[]) : []
   } catch { return [] }
 }
 
-/**
- * localStorage 쓰기 실패(용량초과 등) 시 조용히 삼키지 않고,
- * order_reg_v1_* (오늘 제외) 오래된 항목부터 정리 후 재시도.
- * 여러 쇼핑몰을 연속 업로드할 때 두 번째 이후 몰의 주문이 저장 공간 부족으로
- * "조용히" 사라지는 문제의 근본 원인을 차단한다.
- */
-function safeSetOrders(key: string, value: string): boolean {
+export function loadOrders(): Order[] {
   try {
-    localStorage.setItem(key, value)
-    return true
-  } catch {
-    try {
-      const today = (() => {
-        const d = new Date()
-        return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-      })()
-      const candidates: string[] = []
-      for (let i = 0; i < localStorage.length; i++) {
-        const k = localStorage.key(i)
-        if (k && k.startsWith('order_reg_v1_') && !k.endsWith('_' + today)) candidates.push(k)
-      }
-      candidates.sort()
-      for (const k of candidates) {
-        localStorage.removeItem(k)
-        try {
-          localStorage.setItem(key, value)
-          return true
-        } catch { /* 계속 정리 */ }
-      }
-    } catch { /* ignore */ }
-    return false
+    const list = ordersMemory ?? readLocalOrders()
+    const next = readWithLegacyRename(ORDERS_KEY, list)
+    if (ordersMemory && next !== list) ordersMemory = next
+    return next
+  } catch { return [] }
+}
+
+async function hydrateOrdersFromIdb(): Promise<void> {
+  if (typeof window === 'undefined') return
+  evacuateOrderRegRawSync()
+  let fromIdb: Order[] | undefined
+  try { fromIdb = await idbGet<Order[]>(ORDERS_KEY) } catch { fromIdb = undefined }
+  if (ordersReady && ordersMemory) return
+  const local = readLocalOrders()
+  const byId = new Map<string, Order>()
+  for (const o of fromIdb ?? []) byId.set(o.id, o)
+  for (const o of local) if (!byId.has(o.id)) byId.set(o.id, o)
+  if (ordersMemory) for (const o of ordersMemory) byId.set(o.id, o)
+  ordersMemory = [...byId.values()]
+  ordersReady = true
+  if ((fromIdb?.length ?? 0) !== ordersMemory.length) {
+    try { await idbSet(ORDERS_KEY, ordersMemory) } catch { /* 로컬만으로도 동작 */ }
   }
+}
+
+/** 업로드·조회 전에 호출. IndexedDB에 있는 전체 주문을 메모리로 올린다. */
+export function ensureOrdersHydrated(): Promise<void> {
+  if (typeof window === 'undefined') return Promise.resolve()
+  if (!hydratePromise) hydratePromise = hydrateOrdersFromIdb()
+  return hydratePromise
+}
+
+if (typeof window !== 'undefined') {
+  void ensureOrdersHydrated()
+  window.addEventListener('storage', (e: StorageEvent) => {
+    if (e.key !== ORDERS_KEY) return
+    void (async () => {
+      const fromIdb = await idbGet<Order[]>(ORDERS_KEY)
+      if (!fromIdb || !fromIdb.length) return
+      ordersMemory = fromIdb
+      ordersReady = true
+      try { window.dispatchEvent(new CustomEvent('pm_orders_updated')) } catch { /* ignore */ }
+    })()
+  })
+}
+
+function mergeOrders(prev: Order[], updates: Order[]): Order[] {
+  const upd = new Map(updates.map(o => [o.id, o]))
+  const next: Order[] = prev.map(o => upd.get(o.id) ?? o)
+  for (const o of updates) {
+    if (!prev.some(p => p.id === o.id)) next.push(o)
+  }
+  return next
+}
+
+/** 메모리 + IndexedDB + (가능하면) localStorage 에 같은 목록을 남긴다.
+ *  localStorage가 가득 차도 IndexedDB에 전체 목록이 있으면 성공으로 본다. */
+function enqueueOrders(mut: (prev: Order[]) => Order[]): Promise<boolean> {
+  const job = ordersChain.then(async () => {
+    await ensureOrdersHydrated()
+    const next = mut(ordersMemory ?? [])
+    ordersMemory = next
+    ordersReady = true
+    let idbOk = false
+    try { await idbSet(ORDERS_KEY, next); idbOk = true } catch { idbOk = false }
+    const local = writeLocalOrders(ORDERS_KEY, next)
+    broadcastDashboardRefresh()
+    try { window.dispatchEvent(new CustomEvent('pm_orders_updated')) } catch { /* ignore */ }
+    if (!idbOk && local === 'fail' && typeof window !== 'undefined') {
+      console.error('[orders] 주문 저장 실패 (IndexedDB·localStorage 모두 실패)')
+    }
+    return idbOk || local !== 'fail'
+  })
+  ordersChain = job.then(() => undefined, () => undefined)
+  return job
+}
+
+/** 주문서 업로드처럼 목록 전체를 교체할 때. 호출 전에 ensureOrdersHydrated() 로 기존 목록을 읽어야 한다. */
+export function commitOrderList(next: Order[]): Promise<boolean> {
+  return enqueueOrders(() => next)
 }
 
 /** 주문 저장소: id 기준 병합만. 삭제·큐 이동 등은 removeOrdersByIds. */
 export function upsertOrders(updates: Order[]) {
   if (updates.length === 0) return
-  const prev = loadOrders()
-  const upd  = new Map(updates.map(o => [o.id, o]))
-  const next: Order[] = prev.map(o => upd.get(o.id) ?? o)
-  for (const o of updates) {
-    if (!prev.some(p => p.id === o.id)) next.push(o)
-  }
-  const ok = safeSetOrders(ORDERS_KEY, JSON.stringify(next))
-  if (!ok && typeof window !== 'undefined') {
-    // eslint-disable-next-line no-console
-    console.error('[orders] upsertOrders: localStorage 저장 실패 (용량 초과)')
-  }
-  broadcastDashboardRefresh()
+  if (ordersMemory) ordersMemory = mergeOrders(ordersMemory, updates)
+  void enqueueOrders(prev => mergeOrders(prev, updates))
 }
 
 /** 삭제 확인, 송장 큐 이동, 당일 재업로드 교체 등: 지정 id만 제거 */
 export function removeOrdersByIds(ids: string[]) {
   if (ids.length === 0) return
-  try {
-    const idSet = new Set(ids)
-    const prev = loadOrders()
-    localStorage.setItem(ORDERS_KEY, JSON.stringify(prev.filter(o => !idSet.has(o.id))))
-  } catch {}
-  broadcastDashboardRefresh()
+  const idSet = new Set(ids)
+  if (ordersMemory) ordersMemory = ordersMemory.filter(o => !idSet.has(o.id))
+  void enqueueOrders(prev => prev.filter(o => !idSet.has(o.id)))
 }
 
 /** @deprecated 호환용: upsertOrders 와 동일 */

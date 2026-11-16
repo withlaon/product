@@ -9,12 +9,12 @@ import {
   CheckSquare, Square, Trash2, PackageCheck, PenLine,
 } from 'lucide-react'
 import {
-  loadOrders, upsertOrders, removeOrdersByIds, toOrderDate,
+  loadOrders, upsertOrders, removeOrdersByIds, commitOrderList, ensureOrdersHydrated, toOrderDate,
   loadMappings, saveMappings, makeMappingKey, mpToChannel, lookupMapping,
   autoMatchBarcode, loadCachedProductsForMatch, upsertMappingBarcode,
 } from '@/lib/orders'
 import type { Order } from '@/lib/orders'
-import { broadcastDashboardRefresh } from '@/lib/dashboard-sync'
+import { evacuateOrderRegRawSync, idbGet, idbSet, dropRegenerableCaches, type DayRawPayload } from '@/lib/local-quota'
 
 /* ─── 쇼핑몰 정의 (지그재그 제외) ──────────────────────── */
 const MALLS = [
@@ -164,15 +164,20 @@ function safeSetItem(key: string, value: string): boolean {
     localStorage.setItem(key, value)
     return true
   } catch {
-    // 오늘 날짜를 제외한 order_reg_v1_* 키를 오래된 것부터 제거해 공간 확보 후 재시도
+    // 원본 엑셀·이미지 캐시를 먼저 비운 뒤, 오늘을 제외한 오래된 등록본부터 제거
     try {
+      evacuateOrderRegRawSync(key)
+      dropRegenerableCaches()
+      try {
+        localStorage.setItem(key, value)
+        return true
+      } catch { /* 아래 정리로 계속 */ }
       const today = getToday()
       const candidates: string[] = []
       for (let i = 0; i < localStorage.length; i++) {
         const k = localStorage.key(i)
-        if (k && k.startsWith('order_reg_v1_') && !k.endsWith('_' + today)) candidates.push(k)
+        if (k && k.startsWith('order_reg_v1_') && !k.endsWith('_' + today) && k !== key) candidates.push(k)
       }
-      // 날짜 문자열이 키 끝에 있으므로 정렬하면 오래된 날짜가 먼저 옴
       candidates.sort()
       for (const k of candidates) {
         localStorage.removeItem(k)
@@ -186,8 +191,30 @@ function safeSetItem(key: string, value: string): boolean {
   }
 }
 
+function dayRawOf(data: DayData): DayRawPayload | null {
+  if ((!data.raw_rows || data.raw_rows.length === 0) && (!data.toss_raw_aoa || data.toss_raw_aoa.length === 0)) return null
+  return {
+    raw_rows: data.raw_rows,
+    toss_raw_aoa: data.toss_raw_aoa,
+    toss_sheet_name: data.toss_sheet_name,
+    toss_row1_value: data.toss_row1_value,
+  }
+}
+
+function slimDay(data: DayData): DayData {
+  if (!data.raw_rows && !data.toss_raw_aoa) return data
+  const slim: DayData = { ...data }
+  delete slim.raw_rows
+  delete slim.toss_raw_aoa
+  return slim
+}
+
 function saveDayData(data: DayData): boolean {
-  const ok = safeSetItem(storageKey(data.mall, data.date), JSON.stringify(data))
+  const key = storageKey(data.mall, data.date)
+  const raw = dayRawOf(data)
+  evacuateOrderRegRawSync(raw ? key : undefined)
+  if (raw) void idbSet(key, raw)
+  const ok = safeSetItem(key, JSON.stringify(slimDay(data)))
   if (!ok) {
     alert(
       '저장 실패: 브라우저 저장공간(localStorage)이 가득 찼습니다.\n\n' +
@@ -212,6 +239,20 @@ export function loadAllDayData(mall: string): DayData[] {
     }
   } catch {}
   return result
+}
+
+/** 송장 파일 재생성용. localStorage의 주문 목록에 IndexedDB에 둔 원본 엑셀을 합친다. */
+export async function loadAllDayDataWithRaw(mall: string): Promise<DayData[]> {
+  const days = loadAllDayData(mall)
+  await Promise.all(days.map(async day => {
+    const extra = await idbGet<DayRawPayload>(storageKey(day.mall || mall, day.date))
+    if (!extra) return
+    if (!day.raw_rows?.length && extra.raw_rows?.length) day.raw_rows = extra.raw_rows
+    if (!day.toss_raw_aoa?.length && extra.toss_raw_aoa?.length) day.toss_raw_aoa = extra.toss_raw_aoa
+    if (!day.toss_sheet_name && extra.toss_sheet_name) day.toss_sheet_name = extra.toss_sheet_name
+    if (day.toss_row1_value == null && extra.toss_row1_value != null) day.toss_row1_value = extra.toss_row1_value
+  }))
+  return days
 }
 
 /* ─── 유틸리티 ───────────────────────────────────────────── */
@@ -1010,7 +1051,7 @@ export default function OrderRegistrationPage() {
     setImportMsg(null)
 
     const reader = new FileReader()
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       try {
         const wb   = XLSX.read(ev.target?.result, { type: 'array', cellDates: true })
         const ws   = wb.Sheets[wb.SheetNames[0]]
@@ -1220,6 +1261,10 @@ export default function OrderRegistrationPage() {
           toss_row1_value: tossRow1Value,
           uploaded_at: uploadedAt,
         }
+        const rawPayload = dayRawOf(newData)
+        if (rawPayload) {
+          await idbSet(storageKey(capturedMall, today), rawPayload)
+        }
         saveDayData(newData)
         setDayData(newData)
         setCurrentDate(today)
@@ -1246,10 +1291,11 @@ export default function OrderRegistrationPage() {
           extra_data:       o.extra_data,
         }))
 
-        /* ── pm_orders_v1 원자적 동기화 ──
-           removeOrdersByIds + upsertOrders 를 단일 localStorage 쓰기로 합쳐
-           중간 상태(이벤트로 인한 잘못된 읽기)를 원천 차단.
-           __mall_id(캡처된 영문 쇼핑몰 ID)로만 판별 — 라벨 문자열 불일치 가능성 제거 */
+        /* ── pm_orders_v1 동기화 ──
+           전체 목록은 IndexedDB에 두고, localStorage에는 들어가는 만큼만 남긴다.
+           원본 엑셀은 위에서 이미 IndexedDB로 옮겨 두었으므로 용량 부족으로
+           마켓플러스·다른 쇼핑몰 주문이 주문관리에 누락되지 않는다. */
+        await ensureOrdersHydrated()
         const existingAll  = loadOrders()
         // 같은 쇼핑몰(__mall_id)+오늘 날짜의 이전 업로드만 제거 (당일 재업로드 허용).
         // __mall_id가 없는 구버전 데이터는 import_source 라벨로 하위호환 판별.
@@ -1264,19 +1310,15 @@ export default function OrderRegistrationPage() {
         })
         // 다른 쇼핑몰 데이터는 그대로 유지하고 새 주문만 추가
         const finalOrders = [...filtered, ...syncOrders]
-        const pmWriteOk = safeSetItem('pm_orders_v1', JSON.stringify(finalOrders))
+        const pmWriteOk = await commitOrderList(finalOrders)
         if (!pmWriteOk) {
           alert(
-            `주문관리 동기화 실패!\n\n${mallLabel} 주문이 브라우저 저장공간 부족으로 주문관리 탭에 반영되지 못했습니다.\n` +
-            '오래된 데이터를 정리했지만 여전히 공간이 부족합니다.\n브라우저 설정 → 사이트 데이터 삭제 후 다시 시도해주세요.'
+            `주문관리 동기화 실패!\n\n${mallLabel} 주문을 이 브라우저에 저장하지 못했습니다.\n` +
+            '브라우저 설정에서 사이트 데이터를 정리한 뒤 같은 파일을 다시 올려주세요.'
           )
         }
 
-        // 주문관리 탭 즉시 갱신 (같은 창 + 다른 탭)
-        broadcastDashboardRefresh()
-        try { window.dispatchEvent(new CustomEvent('pm_orders_updated')) } catch { /* ignore */ }
-
-        // 오늘 등록 현황 갱신
+        // commitOrderList 가 주문관리·대시보드 갱신 이벤트를 이미 보낸다.
         setTodaySummary(loadTodaySummary(today))
 
         const totalInStore = finalOrders.length

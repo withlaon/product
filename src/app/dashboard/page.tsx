@@ -7,7 +7,7 @@ import {
   CalendarDays, Plus, Trash2, Calendar, Pencil,
 } from 'lucide-react'
 import {
-  loadOrders, loadShippedOrders, loadInvoiceQueue,
+  loadOrders, loadShippedOrders, loadInvoiceQueue, ensureOrdersHydrated,
   dashboardAmountForMergedRow, shippedOrderLocalYmd,
 } from '@/lib/orders'
 import { loadDashboardRetention, type DashboardRetention } from '@/lib/product-delete-cascade'
@@ -1240,6 +1240,9 @@ export default function DashboardPage() {
   useEffect(() => {
     fullRefresh()
     setLoading(false)
+    let cancel = false
+    void ensureOrdersHydrated().then(() => { if (!cancel) setOrders(loadOrders()) })
+    return () => { cancel = true }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   /* ── SPA 내비게이션으로 대시보드 진입 시마다 갱신 ── */

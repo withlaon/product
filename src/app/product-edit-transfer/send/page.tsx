@@ -15,7 +15,7 @@ import {
   hydrateShippedOrdersFromServer,
 } from '@/lib/orders'
 import type { ShippedOrder } from '@/lib/orders'
-import { loadAllDayData } from '@/app/order-registration/page'
+import { loadAllDayDataWithRaw } from '@/app/order-registration/page'
 
 /* ─── 토스쇼핑 송장 파일 가이드 텍스트 (고정 양식) ─────── */
 const TOSS_GUIDE_A1 =
@@ -180,7 +180,7 @@ function downloadJasonDealInvoice(orders: ShippedOrder[]) {
 }
 
 /* ─── 일반 쇼핑몰 송장 파일 생성 ────────────────────────── */
-function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: ShippedOrder[]) {
+async function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: ShippedOrder[]) {
   const mallOrders = orders.filter(o =>
     o.status === 'shipped' && o.tracking_number &&
     o.extra_data?.['import_source'] === mallLabel
@@ -189,7 +189,7 @@ function downloadMallInvoice(mallId: DownloadMallId, mallLabel: string, orders: 
     alert(`${mallLabel} 배송처리된 주문이 없습니다.`)
     return
   }
-  const allDayData = loadAllDayData(mallId)
+  const allDayData = await loadAllDayDataWithRaw(mallId)
 
   /* 토스쇼핑: 「토스쇼핑_송장」 양식으로 파일 생성.
      출력 구조: [가이드행(병합)], [컬럼헤더행], [수정안내행], [데이터행...]
@@ -455,7 +455,7 @@ export default function InvoiceSendPage() {
     return c
   }, [allShipped])
 
-  const handleDownload = (mallId: DownloadMallId, mallLabel: string) => {
+  const handleDownload = async (mallId: DownloadMallId, mallLabel: string) => {
     setDownloading(mallId)
     try {
       if (mallId === 'marketplus') {
@@ -465,7 +465,7 @@ export default function InvoiceSendPage() {
       } else if (mallId === 'jasondeal') {
         downloadJasonDealInvoice(allShipped)
       } else {
-        downloadMallInvoice(mallId, mallLabel, allShipped)
+        await downloadMallInvoice(mallId, mallLabel, allShipped)
       }
     } finally {
       setTimeout(() => setDownloading(null), 800)

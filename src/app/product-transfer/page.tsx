@@ -13,7 +13,7 @@ import {
   loadOrders, saveOrders, removeOrdersByIds, loadMappings, saveMappings,
   saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
   upsertInvoiceQueue,
-  loadShippedOrders, saveShippedOrders,
+  loadShippedOrders, saveShippedOrders, ensureOrdersHydrated,
   mpToChannel, resolveMappedBarcode, resolvePickInfo, comparePickLoca, autoMatchBarcode,
 } from '@/lib/orders'
 import type { Order, MappingStore, PickProduct } from '@/lib/orders'
@@ -465,6 +465,10 @@ export default function OrdersPage() {
   useEffect(() => {
     setOrders(loadAllOrders())
     setMappings(loadMappings())
+    let cancel = false
+    void ensureOrdersHydrated().then(() => {
+      if (!cancel) setOrders(loadAllOrders())
+    })
 
     // 상품 목록을 마운트 시 미리 로드 (스테일 캐시 포함)
     const preFetch = async () => {
@@ -491,6 +495,7 @@ export default function OrdersPage() {
       }
     }
     preFetch()
+    return () => { cancel = true }
   }, [])
 
   /* 같은 탭 내 주문서등록 → 주문관리 실시간 동기화
