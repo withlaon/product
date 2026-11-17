@@ -593,6 +593,17 @@ function formatMappingUpdatedAt(iso: string): string {
   return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`
 }
 
+/** 최종수정일은 등록일(판매중 전환일, 없으면 생성일)보다 나중에 매핑창을 고친 경우에만 보여 준다. */
+function mappingUpdatedAfterRegistration(iso: string, p: { active_since?: string | null; created_at?: string }): boolean {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return false
+  const mapYmd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  const regRaw = (p.active_since && String(p.active_since).trim())
+    || (p.created_at ? String(p.created_at).slice(0, 10) : '')
+  const regYmd = ymdComparable(regRaw.slice(0, 10))
+  return !!regYmd && mapYmd > regYmd
+}
+
 function mappingRowSignature(list: MappingRow[]): string {
   return JSON.stringify(list.map(r => ({
     mall: r.mall,
@@ -3014,8 +3025,9 @@ export default function ProductsPage() {
                         )
                       })()}
                       {(() => {
-                        const label = formatMappingUpdatedAt(mappingUpdatedAtOf(p.registered_malls))
-                        if (!label) return null
+                        const iso = mappingUpdatedAtOf(p.registered_malls)
+                        const label = formatMappingUpdatedAt(iso)
+                        if (!label || !mappingUpdatedAfterRegistration(iso, p)) return null
                         return (
                           <div style={{ marginTop: 4, fontSize: 10, fontWeight: 700, color: '#6b3a1f', letterSpacing: '0.02em' }}>
                             최종수정일 {label}
