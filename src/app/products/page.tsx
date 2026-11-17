@@ -593,15 +593,9 @@ function formatMappingUpdatedAt(iso: string): string {
   return `${d.getFullYear()}.${d.getMonth() + 1}.${d.getDate()}`
 }
 
-/** 최종수정일은 등록일(판매중 전환일, 없으면 생성일)보다 나중에 매핑창을 고친 경우에만 보여 준다. */
-function mappingUpdatedAfterRegistration(iso: string, p: { active_since?: string | null; created_at?: string }): boolean {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return false
-  const mapYmd = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-  const regRaw = (p.active_since && String(p.active_since).trim())
-    || (p.created_at ? String(p.created_at).slice(0, 10) : '')
-  const regYmd = ymdComparable(regRaw.slice(0, 10))
-  return !!regYmd && mapYmd > regYmd
+/** 판매예정은 매핑창을 고쳐도 최종수정일을 남기거나 보여 주지 않는다. */
+function showsMappingUpdatedAt(status: ProductStatus): boolean {
+  return status !== 'upcoming'
 }
 
 function mappingRowSignature(list: MappingRow[]): string {
@@ -702,7 +696,9 @@ function MallMappingModal({
     try { window.dispatchEvent(new CustomEvent('pm_mapping_updated')) } catch {}
     const changed = mappingRowSignature(rows) !== initialSigRef.current
     const prevAt = mappingUpdatedAtOf(product.registered_malls)
-    const nextAt = changed ? new Date().toISOString() : prevAt
+    const nextAt = showsMappingUpdatedAt(product.status)
+      ? (changed ? new Date().toISOString() : prevAt)
+      : ''
     const rmOut = nextAt
       ? [...rm, { mall: MAPPING_UPDATED_META, code: nextAt }]
       : rm
@@ -3025,9 +3021,9 @@ export default function ProductsPage() {
                         )
                       })()}
                       {(() => {
-                        const iso = mappingUpdatedAtOf(p.registered_malls)
-                        const label = formatMappingUpdatedAt(iso)
-                        if (!label || !mappingUpdatedAfterRegistration(iso, p)) return null
+                        if (!showsMappingUpdatedAt(p.status)) return null
+                        const label = formatMappingUpdatedAt(mappingUpdatedAtOf(p.registered_malls))
+                        if (!label) return null
                         return (
                           <div style={{ marginTop: 4, fontSize: 10, fontWeight: 700, color: '#6b3a1f', letterSpacing: '0.02em' }}>
                             최종수정일 {label}
