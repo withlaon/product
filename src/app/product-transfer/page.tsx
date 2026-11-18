@@ -13,7 +13,7 @@ import {
   loadOrders, saveOrders, removeOrdersByIds, loadMappings, saveMappings,
   saveSelectedForInvoice, STATUS_MAP, makeMappingKey, lookupMapping, splitMappingKey,
   upsertInvoiceQueue,
-  loadShippedOrders, saveShippedOrders, ensureOrdersHydrated,
+  loadShippedOrders, saveShippedOrders, ensureOrdersHydrated, cjRecipientName,
   mpToChannel, resolveMappedBarcode, resolvePickInfo, comparePickLoca, autoMatchBarcode,
 } from '@/lib/orders'
 import type { Order, MappingStore, PickProduct } from '@/lib/orders'
@@ -1020,7 +1020,7 @@ export default function OrdersPage() {
         SENDER_NAME,
         SENDER_PHONE,
         SENDER_ADDRESS,
-        order.customer_name ?? '',
+        cjRecipientName(order.customer_name),
         order.customer_phone ?? '',
         order.shipping_address ?? '',
         itemLabel,

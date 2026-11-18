@@ -10,7 +10,7 @@ import {
 import {
   loadInvoiceQueue, removeInvoiceQueueByIds,
   loadShippedOrders, upsertShippedOrders,
-  loadMappings, lookupMapping,
+  loadMappings, lookupMapping, cjRecipientName,
   resolvePickInfo, comparePickLoca,
   hydrateShippedOrdersFromServer,
 } from '@/lib/orders'
@@ -382,7 +382,7 @@ export default function InvoicePrintPage() {
         '보내는분성명':           SENDER_NAME,
         '보내는분전화번호':       SENDER_PHONE,
         '보내는분주소(전체, 분할)': SENDER_ADDRESS,
-        '받는분성명':             o.customer_name,
+        '받는분성명':             cjRecipientName(o.customer_name),
         '받는분전화번호':         o.customer_phone ?? '',
         '받는분주소(전체, 분할)': o.shipping_address,
         '품목명':                 품목명,

@@ -183,6 +183,13 @@ export function ymdComparable(s: string): string {
   return t
 }
 
+/** CJ 송장 받는분성명. 한 글자면 택배 양식용으로 뒤에 마침표를 붙인다. 예: 집 → 집. */
+export function cjRecipientName(name: string | undefined | null): string {
+  const n = String(name ?? '').trim()
+  if (Array.from(n).length === 1) return `${n}.`
+  return n
+}
+
 /* ─── 주문 타입 ─────────────────────────────────────────── */
 export interface OrderItem {
   product_name: string
