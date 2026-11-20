@@ -296,6 +296,14 @@ function parseMarketPlusRow(row: Record<string, unknown>, idx: number, today: st
   const option      = String(row['상품옵션'] ?? row['옵션'] ?? '')
   const mgmtName    = String(row['상품명(관리용)'] ?? '')  // 상품약어
   const orderNum    = String(row['주문번호'] ?? `AUTO-MP-${Date.now()}-${idx}`)
+  // N열 상품구매금액 → 출고내역 판매가. 헤더에 (KRW) 등이 붙어도 찾는다.
+  const purchaseKey = Object.keys(row).find(k => k.replace(/\s+/g, '').includes('상품구매금액'))
+  const hasPurchase = purchaseKey !== undefined
+  const purchaseRaw = hasPurchase ? row[purchaseKey] : undefined
+  const purchaseAmount = typeof purchaseRaw === 'number'
+    ? (Number.isFinite(purchaseRaw) ? purchaseRaw : 0)
+    : (parseFloat(String(purchaseRaw ?? '').replace(/,/g, '')) || 0)
+  const legacyPrice = Number(row['총 실결제금액(최초정보) (KRW)'] ?? row['총 결제금액(KRW)'] ?? 0)
 
   const order: RegOrder = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
@@ -307,7 +315,7 @@ function parseMarketPlusRow(row: Record<string, unknown>, idx: number, today: st
       product_name: productName,
       sku: '',
       quantity: Number(row['수량'] ?? 1),
-      unit_price: Number(row['총 실결제금액(최초정보) (KRW)'] ?? row['총 결제금액(KRW)'] ?? 0),
+      unit_price: hasPurchase ? purchaseAmount : (Number.isFinite(legacyPrice) ? legacyPrice : 0),
       option,
     }],
     total_amount: Number(row['총 결제금액(KRW)'] ?? 0),
@@ -328,6 +336,7 @@ function parseMarketPlusRow(row: Record<string, unknown>, idx: number, today: st
       배송비추가결제:       String(row['배송비 추가결제'] ?? ''),
       주문자명:             String(row['주문자명'] ?? ''),
       상품명관리용:         mgmtName,
+      ...(hasPurchase ? { 상품구매금액: purchaseAmount } : {}),
     },
   }
 
@@ -1202,6 +1211,8 @@ export default function OrderRegistrationPage() {
           orders.forEach(o => {
             o.items.forEach(item => {
               if (!item.unit_price) {
+                // 마켓플러스 N열 상품구매금액이 있으면 0원이어도 채널 판매가로 바꾸지 않는다
+                if (isMarketPlus && o.extra_data && '상품구매금액' in o.extra_data) return
                 const channel = isMarketPlus
                   ? (mpToChannel(String(o.extra_data?.['매출경로'] ?? '').trim()) || mallLabel)
                   : mallLabel
