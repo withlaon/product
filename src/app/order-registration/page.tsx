@@ -304,6 +304,11 @@ function parseMarketPlusRow(row: Record<string, unknown>, idx: number, today: st
     ? (Number.isFinite(purchaseRaw) ? purchaseRaw : 0)
     : (parseFloat(String(purchaseRaw ?? '').replace(/,/g, '')) || 0)
   const legacyPrice = Number(row['총 실결제금액(최초정보) (KRW)'] ?? row['총 결제금액(KRW)'] ?? 0)
+  const isSmartStore = 주문경로.replace(/\s+/g, '').includes('스마트스토어')
+  // 스마트스토어만 상품구매금액 × 0.55 를 출고내역 판매가로 쓴다
+  const salePrice = hasPurchase
+    ? (isSmartStore ? Math.round(purchaseAmount * 0.55) : purchaseAmount)
+    : (Number.isFinite(legacyPrice) ? legacyPrice : 0)
 
   const order: RegOrder = {
     id: `${Date.now()}-${Math.random().toString(36).slice(2)}-${idx}`,
@@ -315,7 +320,7 @@ function parseMarketPlusRow(row: Record<string, unknown>, idx: number, today: st
       product_name: productName,
       sku: '',
       quantity: Number(row['수량'] ?? 1),
-      unit_price: hasPurchase ? purchaseAmount : (Number.isFinite(legacyPrice) ? legacyPrice : 0),
+      unit_price: salePrice,
       option,
     }],
     total_amount: Number(row['총 결제금액(KRW)'] ?? 0),
